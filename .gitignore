@@ -1,0 +1,37 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+*.dart.js
+*.dart.js.deps
+*.dart.js.map
+*.info.json
+
+# Android
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+
+# iOS
+**/ios/.symlinks/
+**/ios/Pods/
+**/ios/Flutter/.last_build_id
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Misc
+.DS_Store
+*.log
+*.pyc
+pubspec.lock
+nul
+deps.txt
+deps_list.txt
