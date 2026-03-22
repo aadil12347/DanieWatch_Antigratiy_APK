@@ -52,6 +52,12 @@ dependencies:
   permission_handler: ^11.3.1
   open_file: ^3.5.10
 
+  # FFmpeg for HLS download with quality selection
+  ffmpeg_kit_flutter_new_full: ^2.0.0
+
+  # Notification progress for downloads
+  flutter_local_notifications: ^18.0.1
+
   # UUID for unique download IDs
   uuid: ^4.5.1
   flutter_svg: ^2.2.4

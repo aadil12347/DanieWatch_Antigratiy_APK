@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 class HlsDownloaderService {
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 15),
-  ));
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+    ),
+  );
 
   Function(double progress, int downloadedParts, int totalParts)? onProgress;
   Function(String error)? onError;
@@ -17,25 +18,13 @@ class HlsDownloaderService {
   bool _isCancelled = false;
   bool _isPaused = false;
 
-  void cancel() {
-    _isCancelled = true;
-  }
+  void cancel() => _isCancelled = true;
+  void pause() => _isPaused = true;
+  void resume() => _isPaused = false;
 
-  void pause() {
-    _isPaused = true;
-  }
-
-  void resume() {
-    _isPaused = false;
-  }
-
-  /// Parses a URL against a base URL
   String _resolveUrl(String baseUrl, String relativeUrl) {
-    if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
-      return relativeUrl;
-    }
-    final uri = Uri.parse(baseUrl);
-    return uri.resolve(relativeUrl).toString();
+    if (relativeUrl.startsWith('http')) return relativeUrl;
+    return Uri.parse(baseUrl).resolve(relativeUrl).toString();
   }
 
   Future<void> startDownload({
@@ -47,170 +36,175 @@ class HlsDownloaderService {
 
     try {
       final dir = Directory(saveDirectory);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
+      if (!await dir.exists()) await dir.create(recursive: true);
 
-      String currentUrl = m3u8Url;
-      String m3u8Content = await _fetchContent(currentUrl);
+      String masterContent = await _fetchContent(m3u8Url);
 
-      // Check if master playlist
-      if (m3u8Content.contains('#EXT-X-STREAM-INF')) {
-        currentUrl = _getBestVariantUrl(m3u8Content, currentUrl);
-        m3u8Content = await _fetchContent(currentUrl);
-      }
+      // If it's a direct chunklist (not a master), wrap it in a pseudo-master
+      bool isMaster =
+          masterContent.contains('#EXT-X-STREAM-INF') ||
+          masterContent.contains('#EXT-X-MEDIA');
 
-      final segments = _extractSegments(m3u8Content, currentUrl);
-      if (segments.isEmpty) {
-        throw Exception('No video segments found in stream');
-      }
+      List<String> segmentDownloadQueue = []; // URLs to download
+      List<String> segmentLocalPaths = []; // Where to save them
 
-      // We will create a local m3u8 file
-      final localM3u8Path = path.join(saveDirectory, 'local_playlist.m3u8');
-      final localM3u8File = File(localM3u8Path);
-      
-      // Parse the m3u8 content and replace remote URLs with local filenames
-      final newM3u8Lines = <String>[];
-      final lines = m3u8Content.split('\n');
-      
-      int segmentIndex = 0;
-      int totalSegments = segments.length;
+      String localMasterPath = path.join(saveDirectory, 'master.m3u8');
 
-      for (String line in lines) {
-        if (line.trim().isEmpty) continue;
-        
-        if (line.startsWith('#EXT-X-KEY:')) {
-          // Handle encryption key if present
-          final keyRegex = RegExp(r'URI="([^"]+)"');
-          final match = keyRegex.firstMatch(line);
-          if (match != null) {
-            final keyUrl = _resolveUrl(currentUrl, match.group(1)!);
-            final keyFilename = 'key.bin';
-            await _downloadFile(keyUrl, path.join(saveDirectory, keyFilename));
-            // Replace URI with local filename
-            final newLine = line.replaceFirst(match.group(0)!, 'URI="$keyFilename"');
-            newM3u8Lines.add(newLine);
-          } else {
-            newM3u8Lines.add(line);
+      if (isMaster) {
+        // --- PHASE 1: Parse Master Playlist & Find Sub-Playlists ---
+        final lines = masterContent.split('\n');
+        final newMasterLines = <String>[];
+        int playlistCounter = 0;
+        int globalSegmentCounter = 0;
+
+        for (int i = 0; i < lines.length; i++) {
+          String line = lines[i];
+          if (line.trim().isEmpty) continue;
+
+          // Handle Audio/Subtitle Tracks (EXT-X-MEDIA)
+          if (line.startsWith('#EXT-X-MEDIA:')) {
+            final uriMatch = RegExp(r'URI="([^"]+)"').firstMatch(line);
+            if (uriMatch != null) {
+              String subUrl = _resolveUrl(m3u8Url, uriMatch.group(1)!);
+              String localSubName = 'playlist_$playlistCounter.m3u8';
+              playlistCounter++;
+
+              // Fetch and process sub-playlist
+              globalSegmentCounter = await _processSubPlaylist(
+                subUrl,
+                saveDirectory,
+                localSubName,
+                globalSegmentCounter,
+                segmentDownloadQueue,
+                segmentLocalPaths,
+              );
+
+              newMasterLines.add(
+                line.replaceFirst(uriMatch.group(0)!, 'URI="$localSubName"'),
+              );
+              continue;
+            }
           }
-        } else if (!line.startsWith('#')) {
-          // This is a segment URL
-          final segmentExt = line.contains('?') ? line.split('?').first.split('.').last : line.split('.').last;
-          final ext = segmentExt.length > 4 ? 'ts' : segmentExt; // fallback to ts
-          final segmentFilename = 'segment_$segmentIndex.$ext';
-          
-          newM3u8Lines.add(segmentFilename);
-          segmentIndex++;
-        } else {
-          newM3u8Lines.add(line);
+
+          // Handle Video Variants (EXT-X-STREAM-INF)
+          if (line.startsWith('#EXT-X-STREAM-INF:')) {
+            newMasterLines.add(line);
+            if (i + 1 < lines.length && !lines[i + 1].startsWith('#')) {
+              i++; // Move to the URL line
+              String subUrl = _resolveUrl(m3u8Url, lines[i].trim());
+              String localSubName = 'playlist_$playlistCounter.m3u8';
+              playlistCounter++;
+
+              globalSegmentCounter = await _processSubPlaylist(
+                subUrl,
+                saveDirectory,
+                localSubName,
+                globalSegmentCounter,
+                segmentDownloadQueue,
+                segmentLocalPaths,
+              );
+
+              newMasterLines.add(localSubName);
+            }
+            continue;
+          }
+
+          newMasterLines.add(line);
         }
+        await File(localMasterPath).writeAsString(newMasterLines.join('\n'));
+      } else {
+        // It's already a single stream, treat it as the only sub-playlist
+        await _processSubPlaylist(
+          m3u8Url,
+          saveDirectory,
+          'master.m3u8',
+          0,
+          segmentDownloadQueue,
+          segmentLocalPaths,
+        );
       }
 
-      // Download all segments sequentially
+      // --- PHASE 2: Download All Segments ---
+      int totalSegments = segmentDownloadQueue.length;
+      if (totalSegments == 0) throw Exception('No segments found to download.');
+
       for (int i = 0; i < totalSegments; i++) {
         while (_isPaused && !_isCancelled) {
           await Future.delayed(const Duration(milliseconds: 500));
         }
+        if (_isCancelled) throw Exception('Download cancelled');
 
-        if (_isCancelled) {
-          throw Exception('Download cancelled by user');
-        }
-
-        final segmentUrl = segments[i];
-        final segmentExt = segmentUrl.contains('?') ? segmentUrl.split('?').first.split('.').last : segmentUrl.split('.').last;
-        final ext = segmentExt.length > 4 ? 'ts' : segmentExt;
-        final segmentFilename = 'segment_$i.$ext';
-        final segmentPath = path.join(saveDirectory, segmentFilename);
-        
-        // Skip if already downloaded completely (simple check by existence, we could improve to size check)
-        final file = File(segmentPath);
+        final file = File(segmentLocalPaths[i]);
         if (!await file.exists() || await file.length() == 0) {
-           await _downloadFile(segmentUrl, segmentPath);
+          await _downloadFile(segmentDownloadQueue[i], segmentLocalPaths[i]);
         }
-
         onProgress?.call((i + 1) / totalSegments, i + 1, totalSegments);
       }
 
-      if (_isCancelled) {
-        throw Exception('Download cancelled by user');
-      }
-
-      await localM3u8File.writeAsString(newM3u8Lines.join('\n'));
-      
-      onComplete?.call(localM3u8Path);
-
+      if (_isCancelled) throw Exception('Download cancelled');
+      onComplete?.call(localMasterPath);
     } catch (e) {
-      if (!_isCancelled) {
-        onError?.call(e.toString());
+      if (!_isCancelled) onError?.call(e.toString());
+    }
+  }
+
+  Future<int> _processSubPlaylist(
+    String subUrl,
+    String saveDir,
+    String localName,
+    int globalSegmentCounter,
+    List<String> downloadQueue,
+    List<String> pathQueue,
+  ) async {
+    String content = await _fetchContent(subUrl);
+    final lines = content.split('\n');
+    final newLines = <String>[];
+
+    for (String line in lines) {
+      if (line.trim().isEmpty) continue;
+
+      if (line.startsWith('#EXT-X-KEY:')) {
+        final keyMatch = RegExp(r'URI="([^"]+)"').firstMatch(line);
+        if (keyMatch != null) {
+          String keyUrl = _resolveUrl(subUrl, keyMatch.group(1)!);
+          String keyName = 'key_$globalSegmentCounter.bin';
+          downloadQueue.add(keyUrl);
+          pathQueue.add(path.join(saveDir, keyName));
+          newLines.add(line.replaceFirst(keyMatch.group(0)!, 'URI="$keyName"'));
+          globalSegmentCounter++;
+        } else {
+          newLines.add(line);
+        }
+      } else if (!line.startsWith('#')) {
+        // This is a TS segment
+        String segmentUrl = _resolveUrl(subUrl, line.trim());
+        String ext = segmentUrl.contains('?')
+            ? segmentUrl.split('?').first.split('.').last
+            : segmentUrl.split('.').last;
+        if (ext.length > 4) ext = 'ts';
+
+        String segName = 'seg_$globalSegmentCounter.$ext';
+        downloadQueue.add(segmentUrl);
+        pathQueue.add(path.join(saveDir, segName));
+        newLines.add(segName);
+        globalSegmentCounter++;
+      } else {
+        newLines.add(line);
       }
     }
+
+    await File(
+      path.join(saveDir, localName),
+    ).writeAsString(newLines.join('\n'));
+    return globalSegmentCounter;
   }
 
   Future<String> _fetchContent(String url) async {
-    try {
-      final response = await _dio.get(url);
-      return response.data.toString();
-    } catch (e) {
-      throw Exception('Failed to fetch playlist: $e');
-    }
+    final response = await _dio.get(url);
+    return response.data.toString();
   }
 
   Future<void> _downloadFile(String url, String savePath) async {
-    try {
-      await _dio.download(url, savePath);
-    } catch (e) {
-      throw Exception('Failed to download segment $url: $e');
-    }
-  }
-
-  String _getBestVariantUrl(String masterContent, String baseUrl) {
-    final lines = masterContent.split('\n');
-    int bestBandwidth = -1;
-    String bestUrl = '';
-    
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      if (line.startsWith('#EXT-X-STREAM-INF:')) {
-        final bandwidthMatch = RegExp(r'BANDWIDTH=(\d+)').firstMatch(line);
-        int bandwidth = 0;
-        if (bandwidthMatch != null) {
-          bandwidth = int.tryParse(bandwidthMatch.group(1)!) ?? 0;
-        }
-        
-        if (i + 1 < lines.length && !lines[i+1].startsWith('#')) {
-          final urlLine = lines[i+1].trim();
-          if (bandwidth > bestBandwidth) {
-            bestBandwidth = bandwidth;
-            bestUrl = urlLine;
-          }
-        }
-      }
-    }
-    
-    if (bestUrl.isNotEmpty) {
-      return _resolveUrl(baseUrl, bestUrl);
-    }
-    
-    // Fallback: finding first non-comment line following EXT-X-STREAM-INF
-    for (int i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('#EXT-X-STREAM-INF:') && i + 1 < lines.length && !lines[i+1].startsWith('#')) {
-            return _resolveUrl(baseUrl, lines[i+1].trim());
-        }
-    }
-
-    throw Exception('Could not parse variant from master playlist');
-  }
-
-  List<String> _extractSegments(String playlistContent, String baseUrl) {
-    final segments = <String>[];
-    final lines = playlistContent.split('\n');
-    for (final line in lines) {
-      final trimmed = line.trim();
-      if (trimmed.isEmpty) continue;
-      if (!trimmed.startsWith('#')) {
-        segments.add(_resolveUrl(baseUrl, trimmed));
-      }
-    }
-    return segments;
+    await _dio.download(url, savePath);
   }
 }

@@ -1,10 +1,7 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/local/download_manager.dart';
-import '../../services/video_extractor_service.dart';
 import '../../domain/models/content_detail.dart';
 
 class DownloadModal extends StatefulWidget {
@@ -14,14 +11,23 @@ class DownloadModal extends StatefulWidget {
   final int episode;
   final String? posterUrl;
 
-  const DownloadModal({
+  DownloadModal({
     super.key,
-    required this.initialUrl,
+    required String initialUrl,
     required this.content,
     required this.season,
     required this.episode,
     this.posterUrl,
-  });
+  }) : initialUrl = _toDownloadUrl(initialUrl);
+
+  /// Extract video ID from embed/detail links → bysebuho.com/download/{id}
+  static String _toDownloadUrl(String url) {
+    final match = RegExp(r'bysebuho\.com\/(e|d)\/([a-z0-9]+)').firstMatch(url);
+    if (match != null) {
+      return 'https://bysebuho.com/download/${match.group(2)}';
+    }
+    return url;
+  }
 
   static void show(BuildContext context, {
     required String url,
@@ -33,9 +39,10 @@ class DownloadModal extends StatefulWidget {
     showDialog(
       context: context,
       barrierColor: Colors.black87,
+      barrierDismissible: false,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 24),
         child: DownloadModal(
           initialUrl: url,
           content: content,
@@ -52,343 +59,264 @@ class DownloadModal extends StatefulWidget {
 }
 
 class _DownloadModalState extends State<DownloadModal> {
-  bool _isExtracting = true;
-  String? _error;
-  List<Map<String, dynamic>> _qualities = [];
+  InAppWebViewController? _controller;
+  bool _captured = false;
+  String? _capturedUrl;
 
-  // Extraction Window variables
-  Timer? _masterWaitTimer;
-  Timer? _autoClickTimer;
-  Timer? _bgDiscoveryTimer;
-  final Set<String> _discoveredLinks = {};
-  bool _discoveryComplete = false;
-  InAppWebViewController? _webViewController;
+  // Block ads & gambling popups but NOT captcha/recaptcha
+  bool _isAd(String url) {
+    // Never block bysebuho.com
+    if (url.contains('bysebuho.com')) return false;
 
-  @override
-  void initState() {
-    super.initState();
-    _startExtractionProcess();
+    final l = url.toLowerCase();
+    // Never block captcha-related URLs
+    if (l.contains('recaptcha') || l.contains('gstatic') || l.contains('google.com/recaptcha')) {
+      return false;
+    }
+
+    const blocked = [
+      'doubleclick', 'googlesyndication', 'adservice', 'popads',
+      'popunder', 'juicyads', 'exoclick', 'trafficjunky', 'jomtingi',
+      'jnbhi.com', 'bet365', '1xbet', 'casino', 'melbet', 'mostbet',
+      'parimatch', 'spin-bet', 'ads-rotation', 'onclick', 'clickhouse'
+    ];
+    return blocked.any((b) => l.contains(b));
   }
 
-  @override
-  void dispose() {
-    _masterWaitTimer?.cancel();
-    _autoClickTimer?.cancel();
-    _bgDiscoveryTimer?.cancel();
-    super.dispose();
+  bool _isCdnLink(String url) {
+    final l = url.toLowerCase();
+    return (l.contains('r66nv9ed.com') ||
+            l.contains('edge1-waw') ||
+            l.contains('sprintcdn')) &&
+        (l.contains('.mp4') || l.contains('download/'));
   }
 
-  void _startExtractionProcess() {
-    _bgDiscoveryTimer = Timer(const Duration(seconds: 30), () {
-      if (mounted && !_discoveryComplete) {
-        _completeDiscovery();
-      }
+  void _onLinkCaptured(String url) {
+    if (_captured) return;
+    if (!_isCdnLink(url) && !url.endsWith('.mp4')) return;
+
+    debugPrint('[Download] CDN link captured: $url');
+    setState(() {
+      _captured = true;
+      _capturedUrl = url;
     });
 
-    _autoClickTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
-      if (_discoveryComplete) {
-        timer.cancel();
-        return;
-      }
-      final controller = _webViewController;
-      if (controller != null && mounted) {
-        try {
-          controller.evaluateJavascript(source: """
-            (function() {
-              var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
-              for(var i=0; i<buttons.length; i++) {
-                buttons[i].click();
-              }
-              var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-              if (el) { el.click(); }
-              var v = document.querySelector('video');
-              if (v) { v.play().catch(function(e){}); }
-            })();
-          """);
-        } catch (e) {
-          debugPrint('Error auto-clicking: $e');
-        }
-      }
+    DownloadManager.instance.startDownload(
+      url: url,
+      title: widget.content.title,
+      season: widget.season,
+      episode: widget.episode,
+      posterUrl: widget.posterUrl,
+    );
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) Navigator.pop(context);
     });
-  }
-
-  void _handleExtractedLink(String link) {
-    if (_discoveryComplete) return;
-
-    final lowerLink = link.toLowerCase();
-    if (!lowerLink.contains('.m3u8') && !lowerLink.contains('.mp4')) return;
-    if (lowerLink.contains('ads')) return;
-
-    if (!_discoveredLinks.contains(link)) {
-      _discoveredLinks.add(link);
-    }
-
-    if (lowerLink.contains('master.m3u8') || lowerLink.contains('.urlset')) {
-      _masterWaitTimer?.cancel();
-      _masterWaitTimer = Timer(const Duration(milliseconds: 200), () {
-        _completeDiscovery();
-      });
-    } else if (_masterWaitTimer == null) {
-      _masterWaitTimer = Timer(const Duration(seconds: 3), () {
-        _completeDiscovery();
-      });
-    }
-  }
-
-  void _completeDiscovery() {
-    if (_discoveryComplete) return;
-    String? bestLink;
-
-    final masterLinks = _discoveredLinks.where((l) => l.contains('master.m3u8') || l.contains('.urlset')).toList();
-    if (masterLinks.isNotEmpty) {
-      masterLinks.sort((a, b) => b.length.compareTo(a.length));
-      bestLink = masterLinks.first;
-    } else {
-      final highQuality = _discoveredLinks.where((l) => l.contains('_h') || l.contains('1080') || l.contains('720')).toList();
-      if (highQuality.isNotEmpty) {
-        highQuality.sort((a, b) => b.length.compareTo(a.length));
-        bestLink = highQuality.first;
-      } else if (_discoveredLinks.isNotEmpty) {
-        bestLink = _discoveredLinks.first;
-      }
-    }
-
-    if (mounted) {
-      if (bestLink != null) {
-        setState(() {
-          _discoveryComplete = true;
-          _webViewController = null;
-        });
-        _autoClickTimer?.cancel();
-        _bgDiscoveryTimer?.cancel();
-        _masterWaitTimer?.cancel();
-        
-        // Now parse qualities using Dio like before
-        _parseQualities(bestLink);
-      } else {
-        setState(() {
-          _isExtracting = false;
-          _error = 'Could not extract streaming link.';
-          _discoveryComplete = true;
-          _webViewController = null;
-        });
-        _autoClickTimer?.cancel();
-        _bgDiscoveryTimer?.cancel();
-        _masterWaitTimer?.cancel();
-      }
-    }
-  }
-
-  Future<void> _parseQualities(String extractedUrl) async {
-    try {
-      if (!extractedUrl.toLowerCase().contains('.m3u8')) {
-        setState(() {
-          _isExtracting = false;
-          _qualities = [{'name': 'Original format', 'url': extractedUrl}];
-        });
-        return;
-      }
-
-      // 2. Parse m3u8 for qualities
-      final startUrl = extractedUrl;
-      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
-      final response = await dio.get(startUrl);
-      final content = response.data.toString();
-      
-      final list = <Map<String, dynamic>>[];
-      
-      if (!content.contains('#EXT-X-STREAM-INF')) {
-        list.add({'name': 'Default Quality', 'url': startUrl, 'isHls': true});
-      } else {
-        final lines = content.split('\n');
-        for (int i = 0; i < lines.length; i++) {
-          if (lines[i].startsWith('#EXT-X-STREAM-INF:')) {
-            final resMatch = RegExp(r'RESOLUTION=\d+x(\d+)').firstMatch(lines[i]);
-            String resolution = 'Unknown';
-            if (resMatch != null) {
-              resolution = '${resMatch.group(1)}p';
-            }
-            if (i + 1 < lines.length && !lines[i+1].startsWith('#')) {
-              final urlLine = lines[i+1].trim();
-              final uri = Uri.parse(startUrl);
-              final fullUrl = uri.resolve(urlLine).toString();
-              if (!list.any((e) => e['name'] == resolution)) {
-                list.add({'name': resolution, 'url': fullUrl, 'isHls': true});
-              }
-            }
-          }
-        }
-        
-        list.sort((a, b) {
-          int valA = int.tryParse(a['name'].replaceAll('p', '')) ?? 0;
-          int valB = int.tryParse(b['name'].replaceAll('p', '')) ?? 0;
-          return valB.compareTo(valA);
-        });
-      }
-
-      if (mounted) {
-        setState(() {
-          _isExtracting = false;
-          _qualities = list.isEmpty ? [{'name': 'Default Quality', 'url': startUrl, 'isHls': true}] : list;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isExtracting = false;
-          _error = e.toString();
-        });
-      }
-    }
-  }
-
-  void _startDownload(Map<String, dynamic> quality) {
-    final url = quality['url'] as String;
-    final isHls = quality['isHls'] == true || url.toLowerCase().contains('.m3u8');
-    final title = widget.content.title;
-
-    if (isHls) {
-      DownloadManager.instance.startHlsDownload(
-        url: url,
-        title: title,
-        season: widget.season,
-        episode: widget.episode,
-        posterUrl: widget.posterUrl,
-      );
-    } else {
-      DownloadManager.instance.startDownload(
-        url: url,
-        title: title,
-        season: widget.season,
-        episode: widget.episode,
-        posterUrl: widget.posterUrl,
-      );
-    }
-    
-    if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Downloading ${quality['name']}...'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.primary,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        if (_isExtracting && !_discoveryComplete)
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: OverflowBox(
-                maxWidth: 1280,
-                maxHeight: 720,
-                child: SizedBox(
-                  width: 1280,
-                  height: 720,
-                  child: Opacity(
-                    opacity: 0.01,
-                    child: InAppWebView(
-                      initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    allowsInlineMediaPlayback: true,
-                    mediaPlaybackRequiresUserGesture: false,
-                    useShouldOverrideUrlLoading: true,
-                    useOnLoadResource: true,
-                    javaScriptCanOpenWindowsAutomatically: false,
-                    supportMultipleWindows: true,
-                  ),
-                  onCreateWindow: (controller, createWindowAction) async {
-                    debugPrint('[Extraction Download] Ad/Popup blocked: ${createWindowAction.request.url}');
-                    return true;
-                  },
-                  shouldOverrideUrlLoading: (controller, navigationAction) async {
-                    final url = navigationAction.request.url.toString();
-                    final isMainFrame = navigationAction.isForMainFrame;
-                    
-                    if (!isMainFrame && (url.contains('google-analytics') || url.contains('doubleclick') || url.contains('ads'))) {
-                      debugPrint('[Extraction Download] Subframe Ad blocked: $url');
-                      return NavigationActionPolicy.CANCEL;
-                    }
-                    
-                    return NavigationActionPolicy.ALLOW;
-                  },
-                  onWebViewCreated: (controller) => _webViewController = controller,
-                  onLoadResource: (controller, resource) {
-                    if (resource.url != null) {
-                      _handleExtractedLink(resource.url.toString());
-                    }
-                  },
-                ),
-              ),
-            ),
-          ),
+    final h = MediaQuery.of(context).size.height;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: h * 0.85,
+        decoration: BoxDecoration(
+          color: AppColors.background, // Solid dark background
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white10),
         ),
-      ),
-        Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: SafeArea(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Download Options',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            if (_isExtracting) ...[
-              const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-              const SizedBox(height: 16),
-              const Text('Extracting stream and discovering qualities...', style: TextStyle(color: AppColors.textSecondary), textAlign: TextAlign.center),
-            ] else if (_error != null) ...[
-              const Icon(Icons.error_outline, color: Colors.white54, size: 40),
-              const SizedBox(height: 16),
-              Text(_error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
-            ] else ...[
-              ..._qualities.map((q) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.surfaceElevated,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () => _startDownload(q),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+            // ── Header ──
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.white10)),
+              ),
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      const Icon(Icons.download, color: Colors.white),
+                      const Icon(Icons.download_rounded, color: AppColors.primary, size: 20),
                       const SizedBox(width: 8),
-                      Text('Download ${q['name']}', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                      Expanded(
+                        child: Text(
+                          _captured ? 'Download Started!' : 'Download',
+                          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.white54, size: 20),
+                        onPressed: () => _controller?.reload(),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                        onPressed: () => Navigator.pop(context),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
                     ],
                   ),
-                ),
-              )).toList(),
-            ],
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+                  if (!_captured)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        widget.initialUrl,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white24, fontSize: 10),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ── WebView or Captured State ──
+            Expanded(
+              child: _captured ? _buildCaptured() : _buildWebView(),
             ),
           ],
         ),
       ),
-    ),
-    ],
-  );
-}
+    );
+  }
+
+  Widget _buildWebView() {
+    debugPrint('[DownloadModal] Loading: ${widget.initialUrl}');
+    return InAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
+      initialSettings: InAppWebViewSettings(
+        javaScriptEnabled: true,
+        domStorageEnabled: true,
+        useShouldOverrideUrlLoading: true,
+        useOnLoadResource: true,
+        javaScriptCanOpenWindowsAutomatically: true,
+        supportMultipleWindows: true,
+        allowFileAccessFromFileURLs: true,
+        allowUniversalAccessFromFileURLs: true,
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+        safeBrowsingEnabled: false,
+        userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+      ),
+      onWebViewCreated: (c) {
+        _controller = c;
+        c.addJavaScriptHandler(handlerName: 'onDownloadUrl', callback: (args) {
+          if (args.isNotEmpty) _onLinkCaptured(args[0].toString());
+        });
+      },
+      onLoadStart: (controller, url) {
+        debugPrint('[DownloadModal] LoadStart: $url');
+      },
+      onProgressChanged: (controller, progress) {
+        if (progress % 20 == 0) {
+          debugPrint('[DownloadModal] Progress: $progress%');
+        }
+      },
+      onReceivedError: (controller, request, error) {
+        debugPrint('[DownloadModal] Error: ${error.description}');
+      },
+      onReceivedHttpError: (controller, request, errorResponse) {
+        debugPrint('[DownloadModal] HTTP Error: ${errorResponse.statusCode}');
+      },
+      onConsoleMessage: (controller, consoleMessage) {
+        debugPrint('[DownloadModal] Console: ${consoleMessage.message}');
+      },
+      onLoadResource: (controller, resource) {
+        final url = resource.url?.toString() ?? '';
+        if (url.contains('bysebuho.com/api')) {
+          debugPrint('[DownloadModal] API Request: $url');
+        }
+        if (_isCdnLink(url)) _onLinkCaptured(url);
+      },
+      shouldOverrideUrlLoading: (c, nav) async {
+        final url = nav.request.url?.toString() ?? '';
+        
+        // Always allow the main site
+        if (url.contains('bysebuho.com')) return NavigationActionPolicy.ALLOW;
+
+        // Try to capture CDN links even from navigation
+        if (_isCdnLink(url)) {
+          _onLinkCaptured(url);
+          return NavigationActionPolicy.CANCEL;
+        }
+        
+        // TEMPORARILY DISABLED: Block obvious ads/popups
+        /*
+        if (_isAd(url)) {
+          debugPrint('[DownloadModal] Blocked Ad Nav: $url');
+          return NavigationActionPolicy.CANCEL;
+        }
+        */
+
+        return NavigationActionPolicy.ALLOW;
+      },
+      onCreateWindow: (c, req) async {
+        final url = req.request.url?.toString() ?? '';
+        debugPrint('[DownloadModal] Popup blocked: $url');
+        // If a popup somehow contains the CDN link, catch it
+        if (_isCdnLink(url)) _onLinkCaptured(url);
+        return false; // Always block popup window creation
+      },
+      onLoadStop: (c, url) async {
+        // Inject XHR/fetch interceptor to catch CDN links from AJAX
+        await c.evaluateJavascript(source: '''
+(function() {
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(m, url) {
+    this._url = url;
+    return origOpen.apply(this, arguments);
+  };
+  var origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function() {
+    var x = this;
+    var orig = x.onreadystatechange;
+    x.onreadystatechange = function() {
+      if (x.readyState === 4 && x.status === 200) {
+        var t = x.responseText || '';
+        var m = t.match(/https?:\\/\\/[^"'\\s]*r66nv9ed\\.com\\/download\\/[^"'\\s]*/);
+        if (m) window.flutter_inappwebview.callHandler('onDownloadUrl', m[0]);
+      }
+      if (orig) orig.apply(this, arguments);
+    };
+    return origSend.apply(this, arguments);
+  };
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest('a');
+    if (a && a.href) {
+      var h = a.href.toLowerCase();
+      if (h.indexOf('r66nv9ed.com') >= 0 || h.indexOf('.mp4') >= 0) {
+        window.flutter_inappwebview.callHandler('onDownloadUrl', a.href);
+      }
+    }
+  }, true);
+})();
+''');
+      },
+      onDownloadStartRequest: (c, req) {
+        debugPrint('[DownloadModal] Download request: ${req.url}');
+        _onLinkCaptured(req.url.toString());
+      },
+    );
+  }
+
+  Widget _buildCaptured() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 64),
+          const SizedBox(height: 16),
+          const Text('Download Started!',
+              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text('Check downloads page for progress',
+              style: TextStyle(color: Colors.white54, fontSize: 13)),
+        ],
+      ),
+    );
+  }
 }

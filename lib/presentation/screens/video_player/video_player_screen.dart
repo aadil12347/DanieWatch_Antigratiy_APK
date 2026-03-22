@@ -72,7 +72,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   int? _currentSeason;
   String? _episodeSearchQuery;
   final TextEditingController _searchController = TextEditingController();
-  
+
   // Extraction State
   BetterPlayerController? _betterPlayerController;
   bool _useWebViewEngine = false;
@@ -99,11 +99,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     );
 
     // Make system bars transparent to ensure drawing behind notch/cutouts if system allows
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
 
     // Start extraction sequence in background
     _webViewKey = const ValueKey('discovery_webview');
@@ -130,14 +132,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     _bgDiscoveryTimer = Timer(timeout, () {
       if (mounted && !_discoveryComplete) {
         debugPrint(
-            '[Discovery] 30s absolute limit reached. Finalizing discovery.');
+          '[Discovery] 30s absolute limit reached. Finalizing discovery.',
+        );
         _completeDiscovery();
       }
     });
 
     // Start background auto-clicker running every 1.5 seconds
-    _autoClickTimer =
-        Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+    _autoClickTimer = Timer.periodic(const Duration(milliseconds: 1500), (
+      timer,
+    ) {
       if (_discoveryComplete) {
         timer.cancel();
         return;
@@ -146,7 +150,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       final controller = _webViewController;
       if (controller != null && mounted && !_discoveryComplete) {
         try {
-          controller.evaluateJavascript(source: """
+          controller
+              .evaluateJavascript(
+                source: """
             (function() {
               var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
               for(var i=0; i<buttons.length; i++) {
@@ -160,10 +166,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
               var v = document.querySelector('video');
               if (v) { v.play().catch(function(e){}); }
             })();
-          """).catchError((e) {
-            if (!e.toString().contains('disposed'))
-              debugPrint('[Extraction] Auto-click failed: $e');
-          });
+          """,
+              )
+              .catchError((e) {
+                if (!e.toString().contains('disposed'))
+                  debugPrint('[Extraction] Auto-click failed: $e');
+              });
         } catch (e) {
           if (!e.toString().contains('disposed'))
             debugPrint('[Extraction] Auto-click Error: $e');
@@ -188,7 +196,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     if (lowerLink.contains('master.m3u8') || lowerLink.contains('.urlset')) {
       debugPrint(
-          '[Discovery] Master found via Auto-Extraction! Stopping early.');
+        '[Discovery] Master found via Auto-Extraction! Stopping early.',
+      );
       _masterWaitTimer?.cancel();
       // Add a tiny delay to grab any other nearby variants just in case
       _masterWaitTimer = Timer(const Duration(milliseconds: 200), () {
@@ -197,7 +206,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     } else if (_masterWaitTimer == null) {
       // Found a fallback link. Wait 3 seconds to give master time to appear
       debugPrint(
-          '[Discovery] Fallback found. Waiting to see if master appears...');
+        '[Discovery] Fallback found. Waiting to see if master appears...',
+      );
       _masterWaitTimer = Timer(const Duration(seconds: 3), () {
         _completeDiscovery();
       });
@@ -224,8 +234,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     // 2. Fallback to high quality variant
     else {
       final highQuality = _discoveredLinks
-          .where((l) =>
-              l.contains('_h') || l.contains('1080') || l.contains('720'))
+          .where(
+            (l) => l.contains('_h') || l.contains('1080') || l.contains('720'),
+          )
           .toList();
       if (highQuality.isNotEmpty) {
         highQuality.sort((a, b) => b.length.compareTo(a.length));
@@ -254,7 +265,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         // Double-Pass Auto-Recovery: First failure is silent
         if (_retryCount == 0) {
           debugPrint(
-              '[Discovery] Initial failure (10s). Triggering SILENT Nuclear Reset...');
+            '[Discovery] Initial failure (10s). Triggering SILENT Nuclear Reset...',
+          );
           _retry();
           return;
         }
@@ -297,20 +309,31 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     }
   }
 
-  Future<void> _initializeBetterPlayer(String url, {bool isOffline = false}) async {
+  Future<void> _initializeBetterPlayer(
+    String url, {
+    bool isOffline = false,
+  }) async {
     try {
       if (_betterPlayerController != null) {
         _betterPlayerController!.dispose();
       }
 
-      debugPrint('[BetterPlayer] Initializing for: $url (isOffline: $isOffline)');
+      debugPrint(
+        '[BetterPlayer] Initializing for: $url (isOffline: $isOffline)',
+      );
 
       BetterPlayerDataSource dataSource = BetterPlayerDataSource(
-        isOffline ? BetterPlayerDataSourceType.file : BetterPlayerDataSourceType.network,
+        isOffline
+            ? BetterPlayerDataSourceType.file
+            : BetterPlayerDataSourceType.network,
         url,
+        useAsmsAudioTracks: true,
+        useAsmsTracks: true,
+        useAsmsSubtitles: true,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
-          title: widget.mediaType != 'movie' &&
+          title:
+              widget.mediaType != 'movie' &&
                   _currentSeason != null &&
                   _currentEpisode != null
               ? '${widget.title} S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}'
@@ -387,8 +410,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       _bgExtractionUrl = url;
       _bgDiscoveredLinks.clear();
       // Nuclear Reset: New Key for fresh WebView
-      _bgWebViewKey =
-          ValueKey('bg_discovery_${DateTime.now().millisecondsSinceEpoch}');
+      _bgWebViewKey = ValueKey(
+        'bg_discovery_${DateTime.now().millisecondsSinceEpoch}',
+      );
     });
 
     _bgTimeoutTimer?.cancel();
@@ -399,15 +423,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     });
 
     _bgAutoClickTimer?.cancel();
-    _bgAutoClickTimer =
-        Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+    _bgAutoClickTimer = Timer.periodic(const Duration(milliseconds: 1500), (
+      timer,
+    ) {
       if (!_isBgExtracting) {
         timer.cancel();
         return;
       }
       final controller = _bgWebViewController;
       if (controller != null && mounted) {
-        controller.evaluateJavascript(source: """
+        controller.evaluateJavascript(
+          source: """
           (function() {
             var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
             for(var i=0; i<buttons.length; i++) { buttons[i].click(); }
@@ -416,7 +442,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
             var v = document.querySelector('video');
             if (v) { v.play().catch(function(e){}); }
           })();
-        """);
+        """,
+        );
       }
     });
 
@@ -450,7 +477,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     if (!_isBgExtracting) return;
 
     debugPrint(
-        '[BG Discovery] Analyzing ${_bgDiscoveredLinks.length} links...');
+      '[BG Discovery] Analyzing ${_bgDiscoveredLinks.length} links...',
+    );
 
     String? bestLink;
     final masterLinks = _bgDiscoveredLinks
@@ -461,8 +489,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       bestLink = masterLinks.first;
     } else {
       final highQuality = _bgDiscoveredLinks
-          .where((l) =>
-              l.contains('_h') || l.contains('1080') || l.contains('720'))
+          .where(
+            (l) => l.contains('_h') || l.contains('1080') || l.contains('720'),
+          )
           .toList();
       if (highQuality.isNotEmpty) {
         highQuality.sort((a, b) => b.length.compareTo(a.length));
@@ -474,11 +503,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     if (mounted) {
       if (bestLink != null) {
-        final contentAsync = ref.read(detailProvider(
-            DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType)));
+        final contentAsync = ref.read(
+          detailProvider(
+            DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
+          ),
+        );
         final content = contentAsync.valueOrNull;
-        final episodesAsync = ref.read(episodesProvider(EpisodeParams(
-            tmdbId: widget.tmdbId, seasonNumber: _currentSeason ?? 1)));
+        final episodesAsync = ref.read(
+          episodesProvider(
+            EpisodeParams(
+              tmdbId: widget.tmdbId,
+              seasonNumber: _currentSeason ?? 1,
+            ),
+          ),
+        );
         final episode = episodesAsync.valueOrNull?[_extractingEpisodeIndex!];
 
         setState(() {
@@ -602,8 +640,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     CookieManager.instance().deleteAllCookies();
 
     // Nuclear Reset: Change Key to force WebView to be destroyed and recreated
-    _webViewKey =
-        ValueKey('discovery_webview_${DateTime.now().millisecondsSinceEpoch}');
+    _webViewKey = ValueKey(
+      'discovery_webview_${DateTime.now().millisecondsSinceEpoch}',
+    );
 
     // Determine next timeout:
     // Attempt 1 (Auto-Retry after 10s fail): 20s
@@ -619,7 +658,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   void _goBack() {
     if (!mounted) return;
-    
+
     // If we're extracting an episode, stop that first
     if (_isBgExtracting) {
       setState(() {
@@ -647,8 +686,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   Widget _buildWebPlayer({Key? key}) {
     // Unique key based on extracted link ensures WebView reloads for new episodes
-    final webKey = _extractedLink != null 
-        ? ValueKey('web_player_${_extractedLink!.hashCode}') 
+    final webKey = _extractedLink != null
+        ? ValueKey('web_player_${_extractedLink!.hashCode}')
         : const ValueKey('web_player_default');
 
     return Container(
@@ -656,52 +695,53 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       child: InAppWebView(
         key: webKey,
         initialFile: "assets/html/player.html",
-      initialSettings: InAppWebViewSettings(
-        javaScriptEnabled: true,
-        allowsInlineMediaPlayback: true,
-        mediaPlaybackRequiresUserGesture: false,
-        useShouldOverrideUrlLoading: true,
+        initialSettings: InAppWebViewSettings(
+          javaScriptEnabled: true,
+          allowsInlineMediaPlayback: true,
+          mediaPlaybackRequiresUserGesture: false,
+          useShouldOverrideUrlLoading: true,
+        ),
+        onWebViewCreated: (controller) {
+          _webViewController = controller;
+          controller.addJavaScriptHandler(
+            handlerName: 'goBack',
+            callback: (args) => _goBack(),
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'showEpisodes',
+            callback: (args) => _showEpisodeSelector(),
+          );
+        },
+        onLoadStop: (controller, url) async {
+          debugPrint('[Engine] Web Player Loaded: $url');
+          if (_extractedLink != null) {
+            await controller.evaluateJavascript(
+              source: "playVideo('$_extractedLink')",
+            );
+
+            const epText = 'Episodes';
+            await controller.evaluateJavascript(
+              source: "updateEpisodeButton('$epText')",
+            );
+
+            final displayTitle =
+                widget.mediaType != 'movie' &&
+                    _currentSeason != null &&
+                    _currentEpisode != null
+                ? 'S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}'
+                : widget.title;
+
+            await controller.evaluateJavascript(
+              source: "videoTitle('$displayTitle')",
+            );
+            await controller.evaluateJavascript(
+              source: "setMediaType('${widget.mediaType}')",
+            );
+          }
+        },
       ),
-      onWebViewCreated: (controller) {
-        _webViewController = controller;
-        controller.addJavaScriptHandler(
-          handlerName: 'goBack',
-          callback: (args) => _goBack(),
-        );
-        controller.addJavaScriptHandler(
-          handlerName: 'showEpisodes',
-          callback: (args) => _showEpisodeSelector(),
-        );
-      },
-      onLoadStop: (controller, url) async {
-        debugPrint('[Engine] Web Player Loaded: $url');
-        if (_extractedLink != null) {
-          await controller.evaluateJavascript(
-            source: "playVideo('$_extractedLink')",
-          );
-          
-          const epText = 'Episodes';
-          await controller.evaluateJavascript(
-            source: "updateEpisodeButton('$epText')",
-          );
-          
-          final displayTitle = widget.mediaType != 'movie' &&
-                  _currentSeason != null &&
-                  _currentEpisode != null
-              ? 'S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}'
-              : widget.title;
-              
-          await controller.evaluateJavascript(
-            source: "videoTitle('$displayTitle')",
-          );
-          await controller.evaluateJavascript(
-            source: "setMediaType('${widget.mediaType}')",
-          );
-        }
-      },
-    ),
-  );
-}
+    );
+  }
 
   void _showEpisodeSelector() {
     final seriesTitle = widget.title;
@@ -719,28 +759,39 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         return FadeTransition(
           opacity: anim1,
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.8, end: 1.0).animate(CurvedAnimation(parent: anim1, curve: curve)),
+            scale: Tween<double>(
+              begin: 0.8,
+              end: 1.0,
+            ).animate(CurvedAnimation(parent: anim1, curve: curve)),
             child: Align(
               alignment: Alignment.center,
               child: Material(
                 color: Colors.transparent,
                 child: Container(
-                  width: MediaQuery.of(context).size.width * 0.75, // Reduced width
+                  width:
+                      MediaQuery.of(context).size.width * 0.75, // Reduced width
                   height: MediaQuery.of(context).size.height * 0.85,
                   decoration: BoxDecoration(
                     color: const Color(0xFF111111),
                     borderRadius: BorderRadius.circular(28),
                     border: Border.all(color: Colors.white10, width: 1),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 40, spreadRadius: 10),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 40,
+                        spreadRadius: 10,
+                      ),
                     ],
                   ),
                   child: Stack(
                     children: [
                       StatefulBuilder(
                         builder: (context, setModalState) {
-                          final episodeParams = EpisodeParams(tmdbId: widget.tmdbId, seasonNumber: tempSeason);
-                          
+                          final episodeParams = EpisodeParams(
+                            tmdbId: widget.tmdbId,
+                            seasonNumber: tempSeason,
+                          );
+
                           return Padding(
                             padding: const EdgeInsets.fromLTRB(32, 32, 32, 24),
                             child: Row(
@@ -750,7 +801,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                 SizedBox(
                                   width: 210,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         seriesTitle,
@@ -763,30 +815,46 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                       const SizedBox(height: 16),
                                       // Season Selector
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.05),
-                                          borderRadius: BorderRadius.circular(12),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.05,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: DropdownButton<int>(
                                           value: tempSeason,
-                                          dropdownColor: const Color(0xFF1A1A1A),
+                                          dropdownColor: const Color(
+                                            0xFF1A1A1A,
+                                          ),
                                           underline: const SizedBox(),
                                           isExpanded: true,
-                                          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white38),
+                                          icon: const Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            color: Colors.white38,
+                                          ),
                                           items: List.generate(
                                             widget.seasons?.length ?? 0,
                                             (i) => DropdownMenuItem(
                                               value: widget.seasons![i],
                                               child: Text(
                                                 'Season ${widget.seasons![i]}',
-                                                style: const TextStyle(color: Colors.white, fontSize: 14),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                ),
                                               ),
                                             ),
                                           ),
                                           onChanged: (val) {
                                             if (val != null) {
-                                              setModalState(() => tempSeason = val);
+                                              setModalState(
+                                                () => tempSeason = val,
+                                              );
                                             }
                                           },
                                         ),
@@ -794,22 +862,47 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                       const SizedBox(height: 12),
                                       // Search Bar
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.05),
-                                          borderRadius: BorderRadius.circular(12),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.05,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Row(
                                           children: [
-                                            Icon(Icons.search_rounded, color: Colors.white.withValues(alpha: 0.3), size: 16),
+                                            Icon(
+                                              Icons.search_rounded,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.3,
+                                              ),
+                                              size: 16,
+                                            ),
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: TextField(
-                                                onChanged: (val) => setModalState(() => _episodeSearchQuery = val),
-                                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                                                onChanged: (val) =>
+                                                    setModalState(
+                                                      () =>
+                                                          _episodeSearchQuery =
+                                                              val,
+                                                    ),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                ),
                                                 decoration: InputDecoration(
                                                   hintText: 'Search episode...',
-                                                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 12),
+                                                  hintStyle: TextStyle(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.3),
+                                                    fontSize: 12,
+                                                  ),
                                                   border: InputBorder.none,
                                                   isDense: true,
                                                 ),
@@ -821,112 +914,232 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                     ],
                                   ),
                                 ),
-                                
+
                                 const SizedBox(width: 24),
-                                Container(width: 1, color: Colors.white.withValues(alpha: 0.05), height: double.infinity),
+                                Container(
+                                  width: 1,
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                  height: double.infinity,
+                                ),
                                 const SizedBox(width: 24),
-                                
+
                                 // Main Panel: Episode List
                                 Expanded(
                                   child: Consumer(
                                     builder: (context, ref, _) {
-                                      final episodesAsync = ref.watch(episodesProvider(episodeParams));
-                                      
+                                      final episodesAsync = ref.watch(
+                                        episodesProvider(episodeParams),
+                                      );
+
                                       return episodesAsync.when(
-                                        loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
-                                        error: (e, _) => const Center(child: Icon(Icons.error_outline, color: Colors.white24)),
+                                        loading: () => const Center(
+                                          child: CircularProgressIndicator(
+                                            color: AppColors.primary,
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                        error: (e, _) => const Center(
+                                          child: Icon(
+                                            Icons.error_outline,
+                                            color: Colors.white24,
+                                          ),
+                                        ),
                                         data: (episodes) {
-                                          final filtered = _episodeSearchQuery == null || _episodeSearchQuery!.isEmpty
+                                          final filtered =
+                                              _episodeSearchQuery == null ||
+                                                  _episodeSearchQuery!.isEmpty
                                               ? episodes
-                                              : episodes.where((e) => 
-                                                  e.episodeNumber.toString().contains(_episodeSearchQuery!) ||
-                                                  (e.title?.toLowerCase().contains(_episodeSearchQuery!.toLowerCase()) ?? false)
-                                                ).toList();
-                                              
+                                              : episodes
+                                                    .where(
+                                                      (e) =>
+                                                          e.episodeNumber
+                                                              .toString()
+                                                              .contains(
+                                                                _episodeSearchQuery!,
+                                                              ) ||
+                                                          (e.title
+                                                                  ?.toLowerCase()
+                                                                  .contains(
+                                                                    _episodeSearchQuery!
+                                                                        .toLowerCase(),
+                                                                  ) ??
+                                                              false),
+                                                    )
+                                                    .toList();
+
                                           return ListView.builder(
-                                            physics: const BouncingScrollPhysics(),
+                                            physics:
+                                                const BouncingScrollPhysics(),
                                             itemCount: filtered.length,
-                                            padding: const EdgeInsets.only(bottom: 20),
+                                            padding: const EdgeInsets.only(
+                                              bottom: 20,
+                                            ),
                                             itemBuilder: (context, index) {
                                               final ep = filtered[index];
-                                              final isCurrent = ep.episodeNumber == _currentEpisode;
+                                              final isCurrent =
+                                                  ep.episodeNumber ==
+                                                  _currentEpisode;
 
                                               return InkWell(
                                                 onTap: () {
-                                                  if (ep.playLink != null && ep.playLink!.isNotEmpty) {
+                                                  if (ep.playLink != null &&
+                                                      ep.playLink!.isNotEmpty) {
                                                     Navigator.pop(context);
                                                     setState(() {
-                                                      _currentEpisode = ep.episodeNumber;
-                                                      _currentExtractionUrl = ep.playLink;
+                                                      _currentEpisode =
+                                                          ep.episodeNumber;
+                                                      _currentExtractionUrl =
+                                                          ep.playLink;
                                                       _isExtracting = true;
-                                                      _discoveryComplete = false;
+                                                      _discoveryComplete =
+                                                          false;
                                                       _isInitialized = false;
                                                       _extractedLink = null;
                                                       _discoveredLinks.clear();
                                                     });
-                                                    _webViewController?.evaluateJavascript(
-                                                      source: "updateEpisodeButton('Episodes')"
+                                                    _webViewController
+                                                        ?.evaluateJavascript(
+                                                          source:
+                                                              "updateEpisodeButton('Episodes')",
+                                                        );
+                                                    _webViewKey = ValueKey(
+                                                      'discovery_${DateTime.now().millisecondsSinceEpoch}',
                                                     );
-                                                    _webViewKey = ValueKey('discovery_${DateTime.now().millisecondsSinceEpoch}');
-                                                    _startExtractionProcess(timeout: const Duration(seconds: 15));
+                                                    _startExtractionProcess(
+                                                      timeout: const Duration(
+                                                        seconds: 15,
+                                                      ),
+                                                    );
                                                   }
                                                 },
                                                 child: Container(
-                                                  margin: const EdgeInsets.only(bottom: 12),
-                                                  padding: const EdgeInsets.all(8),
+                                                  margin: const EdgeInsets.only(
+                                                    bottom: 12,
+                                                  ),
+                                                  padding: const EdgeInsets.all(
+                                                    8,
+                                                  ),
                                                   decoration: BoxDecoration(
-                                                    color: isCurrent ? AppColors.primary.withValues(alpha: 0.1) : Colors.transparent,
-                                                    borderRadius: BorderRadius.circular(12),
+                                                    color: isCurrent
+                                                        ? AppColors.primary
+                                                              .withValues(
+                                                                alpha: 0.1,
+                                                              )
+                                                        : Colors.transparent,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
                                                     border: Border.all(
-                                                      color: isCurrent ? AppColors.primary.withValues(alpha: 0.3) : Colors.transparent,
+                                                      color: isCurrent
+                                                          ? AppColors.primary
+                                                                .withValues(
+                                                                  alpha: 0.3,
+                                                                )
+                                                          : Colors.transparent,
                                                       width: 1,
                                                     ),
                                                   ),
                                                   child: Row(
                                                     children: [
                                                       ClipRRect(
-                                                        borderRadius: BorderRadius.circular(8),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              8,
+                                                            ),
                                                         child: SizedBox(
                                                           width: 120,
                                                           height: 68,
-                                                          child: ep.thumbnailUrl != null
+                                                          child:
+                                                              ep.thumbnailUrl !=
+                                                                  null
                                                               ? CachedNetworkImage(
-                                                                  imageUrl: ep.thumbnailUrl!,
-                                                                  fit: BoxFit.cover,
-                                                                  placeholder: (_, __) => Container(color: Colors.white10),
-                                                                  errorWidget: (_, __, ___) => Container(color: Colors.black26),
+                                                                  imageUrl: ep
+                                                                      .thumbnailUrl!,
+                                                                  fit: BoxFit
+                                                                      .cover,
+                                                                  placeholder:
+                                                                      (
+                                                                        _,
+                                                                        __,
+                                                                      ) => Container(
+                                                                        color: Colors
+                                                                            .white10,
+                                                                      ),
+                                                                  errorWidget:
+                                                                      (
+                                                                        _,
+                                                                        __,
+                                                                        ___,
+                                                                      ) => Container(
+                                                                        color: Colors
+                                                                            .black26,
+                                                                      ),
                                                                 )
-                                                              : Container(color: Colors.black26),
+                                                              : Container(
+                                                                  color: Colors
+                                                                      .black26,
+                                                                ),
                                                         ),
                                                       ),
                                                       const SizedBox(width: 16),
                                                       Expanded(
                                                         child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
                                                           children: [
                                                             Text(
                                                               'EP ${ep.episodeNumber}: ${ep.title ?? 'Episode ${ep.episodeNumber}'}',
                                                               style: TextStyle(
-                                                                color: isCurrent ? AppColors.primary : Colors.white70,
+                                                                color: isCurrent
+                                                                    ? AppColors
+                                                                          .primary
+                                                                    : Colors
+                                                                          .white70,
                                                                 fontSize: 13,
-                                                                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                                                fontWeight:
+                                                                    isCurrent
+                                                                    ? FontWeight
+                                                                          .bold
+                                                                    : FontWeight
+                                                                          .normal,
                                                               ),
                                                               maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                             ),
-                                                            const SizedBox(height: 4),
+                                                            const SizedBox(
+                                                              height: 4,
+                                                            ),
                                                             Text(
-                                                              ep.runtime != null && ep.runtime! > 0 
-                                                                  ? '${ep.runtime} min' 
+                                                              ep.runtime !=
+                                                                          null &&
+                                                                      ep.runtime! >
+                                                                          0
+                                                                  ? '${ep.runtime} min'
                                                                   : '',
-                                                              style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                                              style:
+                                                                  const TextStyle(
+                                                                    color: Colors
+                                                                        .white38,
+                                                                    fontSize:
+                                                                        11,
+                                                                  ),
                                                             ),
                                                           ],
                                                         ),
                                                       ),
                                                       Icon(
-                                                        Icons.play_circle_fill_rounded,
-                                                        color: isCurrent ? AppColors.primary : Colors.white.withValues(alpha: 0.2),
+                                                        Icons
+                                                            .play_circle_fill_rounded,
+                                                        color: isCurrent
+                                                            ? AppColors.primary
+                                                            : Colors.white
+                                                                  .withValues(
+                                                                    alpha: 0.2,
+                                                                  ),
                                                         size: 28,
                                                       ),
                                                     ],
@@ -957,7 +1170,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                               color: Colors.white.withValues(alpha: 0.05),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close_rounded, color: Colors.white38, size: 24),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              color: Colors.white38,
+                              size: 24,
+                            ),
                           ),
                         ),
                       ),
@@ -994,8 +1211,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     // Re-enforce immersive mode every build to prevent system UI from popping back up
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky,
-        overlays: []);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.immersiveSticky,
+      overlays: [],
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1008,9 +1227,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         child: Stack(
           children: [
             // 0. Base Screen Constraints (Forces Stack to fill screen)
-            const SizedBox.expand(
-              child: ColoredBox(color: Colors.black),
-            ),
+            const SizedBox.expand(child: ColoredBox(color: Colors.black)),
 
             // 1. Player / WebView Stack (Exactly as per commit 133b287b...)
             Positioned.fill(
@@ -1024,7 +1241,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       child: InAppWebView(
                         key: _webViewKey,
                         initialUrlRequest: URLRequest(
-                            url: WebUri(_currentExtractionUrl ?? widget.url)),
+                          url: WebUri(_currentExtractionUrl ?? widget.url),
+                        ),
                         initialSettings: InAppWebViewSettings(
                           javaScriptEnabled: true,
                           allowsInlineMediaPlayback: true,
@@ -1037,7 +1255,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                         onWebViewCreated: (controller) =>
                             _webViewController = controller,
                         onCreateWindow: (controller, createWindowAction) async {
-                          debugPrint('[Extraction] Ad/Popup blocked: ${createWindowAction.request.url}');
+                          debugPrint(
+                            '[Extraction] Ad/Popup blocked: ${createWindowAction.request.url}',
+                          );
                           return true;
                         },
                         onLoadResource: (controller, resource) {
@@ -1045,17 +1265,25 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                             _handleExtractedLink(resource.url.toString());
                           }
                         },
-                        shouldOverrideUrlLoading: (controller, navigationAction) async {
-                          final url = navigationAction.request.url.toString();
-                          final isMainFrame = navigationAction.isForMainFrame;
-                          
-                          if (!isMainFrame && (url.contains('google-analytics') || url.contains('doubleclick') || url.contains('ads'))) {
-                            debugPrint('[Extraction] Subframe Ad blocked: $url');
-                            return NavigationActionPolicy.CANCEL;
-                          }
-                          
-                          return NavigationActionPolicy.ALLOW;
-                        },
+                        shouldOverrideUrlLoading:
+                            (controller, navigationAction) async {
+                              final url = navigationAction.request.url
+                                  .toString();
+                              final isMainFrame =
+                                  navigationAction.isForMainFrame;
+
+                              if (!isMainFrame &&
+                                  (url.contains('google-analytics') ||
+                                      url.contains('doubleclick') ||
+                                      url.contains('ads'))) {
+                                debugPrint(
+                                  '[Extraction] Subframe Ad blocked: $url',
+                                );
+                                return NavigationActionPolicy.CANCEL;
+                              }
+
+                              return NavigationActionPolicy.ALLOW;
+                            },
                       ),
                     ),
 
@@ -1067,8 +1295,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                         height: 1,
                         child: InAppWebView(
                           key: _bgWebViewKey,
-                          initialUrlRequest:
-                              URLRequest(url: WebUri(_bgExtractionUrl!)),
+                          initialUrlRequest: URLRequest(
+                            url: WebUri(_bgExtractionUrl!),
+                          ),
                           initialSettings: InAppWebViewSettings(
                             javaScriptEnabled: true,
                             allowsInlineMediaPlayback: true,
@@ -1100,38 +1329,39 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       if (_currentEpisode != null)
-                                          Padding(
-                                            padding: const EdgeInsets.only(bottom: 24),
-                                            child: Text(
-                                              'Episode ${_currentEpisode.toString().padLeft(2, '0')}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.w900,
-                                              ),
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 24,
+                                          ),
+                                          child: Text(
+                                            'Episode ${_currentEpisode.toString().padLeft(2, '0')}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.w900,
                                             ),
                                           ),
+                                        ),
                                       const _CinematicLoader(),
                                     ],
                                   ),
                                 ),
                               )
                             : _isLoading
-                                ? _buildLoadingState(key: const ValueKey('prep'))
-                                : _useWebViewEngine
-                                    ? _buildWebPlayer(
-                                        key: const ValueKey('web_player'))
-                                    : (_betterPlayerController != null)
-                                        ? AspectRatio(
-                                            key: const ValueKey('native_player'),
-                                            aspectRatio: 16 / 9,
-                                            child: BetterPlayer(
-                                              controller:
-                                                  _betterPlayerController!,
-                                            ),
-                                          )
-                                        : _buildDiscoveryProgress(
-                                            key: const ValueKey('manual_retry')),
+                            ? _buildLoadingState(key: const ValueKey('prep'))
+                            : _useWebViewEngine
+                            ? _buildWebPlayer(key: const ValueKey('web_player'))
+                            : (_betterPlayerController != null)
+                            ? AspectRatio(
+                                key: const ValueKey('native_player'),
+                                aspectRatio: 16 / 9,
+                                child: BetterPlayer(
+                                  controller: _betterPlayerController!,
+                                ),
+                              )
+                            : _buildDiscoveryProgress(
+                                key: const ValueKey('manual_retry'),
+                              ),
                       ),
                     ),
                   ),
@@ -1230,7 +1460,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                 backgroundColor: AppColors.primary,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 28, vertical: 14),
+                                  horizontal: 28,
+                                  vertical: 14,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -1240,7 +1472,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                               label: const Text(
                                 'Retry',
                                 style: TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 15),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -1249,17 +1483,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                               style: TextButton.styleFrom(
                                 foregroundColor: Colors.white60,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 14),
+                                  horizontal: 20,
+                                  vertical: 14,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon:
-                                  const Icon(Icons.arrow_back_rounded, size: 20),
+                              icon: const Icon(
+                                Icons.arrow_back_rounded,
+                                size: 20,
+                              ),
                               label: const Text(
                                 'Back',
                                 style: TextStyle(
-                                    fontWeight: FontWeight.w500, fontSize: 15),
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 15,
+                                ),
                               ),
                             ),
                           ],
@@ -1309,7 +1549,7 @@ class _CinematicLoaderState extends State<_CinematicLoader>
       "Ready for tears?",
       "Starting the jump scares",
       "Warming up the pixels",
-      "Wait for the post-credits"
+      "Wait for the post-credits",
     ];
     _shuffledPhrases = phrases..shuffle();
 
@@ -1389,7 +1629,9 @@ class _CinematicLoaderState extends State<_CinematicLoader>
                                 shadows: isCompleted
                                     ? [
                                         const Shadow(
-                                            color: Colors.white, blurRadius: 8),
+                                          color: Colors.white,
+                                          blurRadius: 8,
+                                        ),
                                       ]
                                     : null,
                               ),

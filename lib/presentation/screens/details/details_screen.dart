@@ -4,18 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../widgets/custom_toast.dart';
-import '../../widgets/download_modal.dart';
+import '../../widgets/quality_selector_sheet.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/clients/tmdb_client.dart';
 import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
+import '../../../services/video_extractor_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../video_player/video_player_screen.dart';
+import '../downloads/downloads_screen.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -338,7 +341,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     }
 
     final bool hasWatch = watchLink != null && watchLink.isNotEmpty;
-    final bool hasDownload = downloadLink != null && downloadLink.isNotEmpty;
+    // User wants to use watchLink for download as well
+    final bool hasDownload = hasWatch; 
 
     return Row(
       children: [
@@ -391,7 +395,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         if (content.isMovie)
           _AnimatedActionButton(
             icon: Icons.download_rounded,
-            onTap: hasDownload ? () => _handleDownload(downloadLink!) : null,
+            onTap: hasDownload ? () => _handleDownload(watchLink!) : null,
             isActive: false,
           ),
       ],
@@ -760,9 +764,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
             // Download button (Icon Only)
             GestureDetector(
-              onTap: hasDownloadLink
-                  ? () => _startDownload(episode.downloadLink!, epNum, content)
-                  : () => _showErrorSnackBar('No download link available'),
+              onTap: hasPlayLink
+                  ? () => _startDownload(episode.playLink!, epNum, content)
+                  : () => _showErrorSnackBar('No play/download link available'),
               child: Container(
                 width: 44,
                 height: 44,
@@ -938,14 +942,118 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   void _startDownload(
       String url, int episodeNumber, ContentDetail content) async {
     HapticFeedback.mediumImpact();
-    DownloadModal.show(
-      context,
-      url: url,
-      content: content,
-      season: _selectedSeason,
-      episode: episodeNumber,
-      posterUrl: content.posterUrl,
+
+    // Show loading indicator
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+              SizedBox(height: 16),
+              Text('Finding sources…',
+                  style: TextStyle(color: Colors.white70, fontSize: 13)),
+              SizedBox(height: 4),
+              Text('This may take a moment',
+                  style: TextStyle(color: Colors.white30, fontSize: 11)),
+            ],
+          ),
+        ),
+      ),
     );
+
+    try {
+      // Extract m3u8 URL using the same WebView-based approach as the player
+      final extractor = VideoExtractorService();
+      String? m3u8Url = await extractor.extractVideoUrl(url);
+
+      // Double-Pass Auto-Recovery: if first attempt fails, retry once
+      if ((m3u8Url == null || m3u8Url.isEmpty) && mounted) {
+        debugPrint('[Download] First extraction failed, retrying...');
+        // Clear the cache for this URL so the retry is fresh
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('extract_$url');
+        m3u8Url = await extractor.extractVideoUrl(url);
+      }
+
+      // Dismiss loading
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+
+      if (m3u8Url == null || m3u8Url.isEmpty) {
+        _showErrorSnackBar('Could not find stream source. Try playing the video first, then download.');
+        return;
+      }
+
+      if (!mounted) return;
+
+      // Show quality selector bottom sheet
+      final selection = await showQualitySelectorSheet(
+        context: context,
+        m3u8Url: m3u8Url,
+        title: content.title,
+      );
+
+      if (selection == null || !mounted) return;
+
+      // Start ffmpeg download
+      final item = await DownloadManager.instance.startFfmpegDownload(
+        m3u8Url: m3u8Url,
+        title: content.title,
+        season: _selectedSeason,
+        episode: episodeNumber,
+        posterUrl: content.posterUrl,
+        variant: selection.quality,
+        audioTrack: selection.audioTrack,
+      );
+
+      if (item != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Row(
+              children: [
+                const Icon(Icons.download_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}'
+                    'Download started',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.white,
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DownloadsScreen()),
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Dismiss loading if still showing
+      if (mounted) {
+        try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
+      }
+      _showErrorSnackBar('Download error: $e');
+    }
   }
 
   // ─── Playback ──────────────────────────────────────────────────────────────
@@ -987,7 +1095,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
     if (content != null) {
-      // episode 0 signifies it's a movie
+      // episode 0 signifies it's a movie, use watch link
       _startDownload(url, 0, content);
     }
   }

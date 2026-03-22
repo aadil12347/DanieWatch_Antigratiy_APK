@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:open_file/open_file.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/local/download_manager.dart';
@@ -31,10 +30,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   Widget build(BuildContext context) {
     final downloads = DownloadManager.instance.downloads;
     final downloading = downloads
-        .where((d) =>
-            d.status == DownloadStatus.downloading ||
-            d.status == DownloadStatus.pending ||
-            d.status == DownloadStatus.paused)
+        .where(
+          (d) =>
+              d.status == DownloadStatus.downloading ||
+              d.status == DownloadStatus.pending ||
+              d.status == DownloadStatus.paused ||
+              d.status == DownloadStatus.failed ||
+              d.status == DownloadStatus.canceled,
+        )
         .toList();
     final completed = downloads
         .where((d) => d.status == DownloadStatus.completed)
@@ -55,73 +58,73 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     // Title header
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        top: 16,
-                        left: 16,
-                        right: 16,
-                        bottom: 8,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Downloads',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (completed.isNotEmpty)
-                            GestureDetector(
-                              onTap: _showClearDialog,
-                              child: const Text(
-                                'Clear All',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          top: 16,
+                          left: 16,
+                          right: 16,
+                          bottom: 8,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Downloads',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                        ],
+                            if (completed.isNotEmpty)
+                              GestureDetector(
+                                onTap: _showClearDialog,
+                                child: const Text(
+                                  'Clear All',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
-                  // Downloading section
-                  if (downloading.isNotEmpty) ...[
-                    _buildSectionHeader(
-                        'DOWNLOADING (${downloading.length})'),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) =>
-                            _buildDownloadingItem(downloading[index]),
-                        childCount: downloading.length,
+                    // Downloading section
+                    if (downloading.isNotEmpty) ...[
+                      _buildSectionHeader(
+                        'DOWNLOADING (${downloading.length})',
                       ),
-                    ),
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) =>
+                              _buildDownloadingItem(downloading[index]),
+                          childCount: downloading.length,
+                        ),
+                      ),
+                    ],
+
+                    // Completed section
+                    if (completed.isNotEmpty) ...[
+                      _buildSectionHeader('DOWNLOADED (${completed.length})'),
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) =>
+                              _buildCompletedItem(completed[index]),
+                          childCount: completed.length,
+                        ),
+                      ),
+                    ],
+
+                    // Bottom spacing for nav bar
+                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
                   ],
-
-                  // Completed section
-                  if (completed.isNotEmpty) ...[
-                    _buildSectionHeader(
-                        'DOWNLOADED (${completed.length})'),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) =>
-                            _buildCompletedItem(completed[index]),
-                        childCount: completed.length,
-                      ),
-                    ),
-                  ],
-
-                  // Bottom spacing for nav bar
-                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                ],
+                ),
               ),
-            ),
       ),
     );
   }
@@ -207,8 +210,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             height: 10,
             decoration: const BoxDecoration(
               color: AppColors.primary,
-              borderRadius:
-                  BorderRadius.vertical(bottom: Radius.circular(6)),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(6)),
             ),
             child: Center(
               child: Container(
@@ -217,8 +219,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
-                  border:
-                      Border.all(color: AppColors.primary, width: 1.5),
+                  border: Border.all(color: AppColors.primary, width: 1.5),
                 ),
               ),
             ),
@@ -293,7 +294,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.3),
+                    ),
                   ),
                   textStyle: const TextStyle(color: Colors.white, fontSize: 13),
                   child: Text(
@@ -307,17 +310,31 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // Quality tag
+                if (item.qualityTag.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    item.qualityTag,
+                    style: TextStyle(
+                      color: AppColors.primary.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 // Progress bar
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: item.progress,
+                    value: item.progress > 0 ? item.progress : null,
                     backgroundColor: AppColors.surface,
                     valueColor: AlwaysStoppedAnimation<Color>(
                       item.status == DownloadStatus.paused
                           ? Colors.orange
-                          : AppColors.primary,
+                          : item.status == DownloadStatus.failed
+                            ? Colors.red
+                            : AppColors.primary,
                     ),
                     minHeight: 6,
                   ),
@@ -329,7 +346,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     Text(
                       item.status == DownloadStatus.paused
                           ? 'Paused'
-                          : item.formattedProgress,
+                          : item.status == DownloadStatus.failed
+                            ? item.error ?? 'Failed'
+                            : item.formattedProgress,
                       style: TextStyle(
                         color: item.status == DownloadStatus.paused
                             ? Colors.orange
@@ -355,23 +374,37 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           // Actions
           Column(
             children: [
-              if (item.status == DownloadStatus.paused)
+              if (item.status == DownloadStatus.failed)
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.orange),
+                  tooltip: 'Retry',
+                  onPressed: () {
+                    if (item.isFfmpegDownload) {
+                      DownloadManager.instance.retryFfmpegDownload(item.id);
+                    } else {
+                      DownloadManager.instance.resumeDownload(item.id);
+                    }
+                    setState(() {});
+                  },
+                )
+              else if (item.status == DownloadStatus.paused)
                 IconButton(
                   icon: const Icon(Icons.play_arrow, color: Colors.white),
                   onPressed: () =>
                       DownloadManager.instance.resumeDownload(item.id),
                 )
-              else
+              else if (!item.isFfmpegDownload)
                 IconButton(
                   icon: const Icon(Icons.pause, color: Colors.white),
                   onPressed: () =>
                       DownloadManager.instance.pauseDownload(item.id),
                 ),
               IconButton(
-                icon:
-                    const Icon(Icons.close, color: Colors.red, size: 20),
-                onPressed: () =>
-                    DownloadManager.instance.cancelDownload(item.id),
+                icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                onPressed: () {
+                  DownloadManager.instance.cancelDownload(item.id);
+                  setState(() {});
+                },
               ),
             ],
           ),
@@ -437,7 +470,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.3),
+                    ),
                   ),
                   textStyle: const TextStyle(color: Colors.white, fontSize: 13),
                   child: Text(
@@ -467,8 +502,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       Text(
                         '• ${_formatDate(item.completedAt!)}',
                         style: TextStyle(
-                          color:
-                              AppColors.textMuted.withValues(alpha: 0.7),
+                          color: AppColors.textMuted.withValues(alpha: 0.7),
                           fontSize: 11,
                         ),
                       ),
@@ -493,8 +527,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   width: 1,
                 ),
               ),
-              child: const Icon(Icons.play_arrow_rounded,
-                  color: AppColors.primary, size: 22),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: AppColors.primary,
+                size: 22,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -510,8 +547,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   width: 1,
                 ),
               ),
-              child: Icon(Icons.delete_outline,
-                  color: Colors.red.withValues(alpha: 0.8), size: 20),
+              child: Icon(
+                Icons.delete_outline,
+                color: Colors.red.withValues(alpha: 0.8),
+                size: 20,
+              ),
             ),
           ),
         ],
@@ -539,23 +579,19 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   void _playDownload(DownloadItem item) async {
     if (item.localPath != null) {
-      if (item.fileExtension == '.m3u8') {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => VideoPlayerScreen(
-              url: item.localPath!,
-              title: item.title,
-              tmdbId: 0, 
-              mediaType: item.season > 0 ? 'tv' : 'movie',
-              season: item.season,
-              episode: item.episode,
-              isOffline: true,
-            ),
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => VideoPlayerScreen(
+            url: item.localPath!,
+            title: item.displayName,
+            tmdbId: 0,
+            mediaType: item.season > 0 ? 'tv' : 'movie',
+            season: item.season,
+            episode: item.episode,
+            isOffline: true,
           ),
-        );
-      } else {
-        await OpenFile.open(item.localPath!);
-      }
+        ),
+      );
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
