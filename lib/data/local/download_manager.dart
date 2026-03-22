@@ -396,10 +396,13 @@ class DownloadManager {
     final audioUrl = item.audioStreamUrl;
     final out = item.localPath!;
 
+    // Common headers to avoid 403/404 on protected streams
+    final headers = '-headers "User-Agent: Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\\r\\nAccept: */*\\r\\n"';
+
     if (audioUrl != null && audioUrl.isNotEmpty) {
       // Separate audio track file → merge with video
-      return '-i "$videoUrl" '
-          '-i "$audioUrl" '
+      return '$headers -i "$videoUrl" '
+          '$headers -i "$audioUrl" '
           '-map 0:v:0 '
           '-map 1:a:0 '
           '-c:v copy '
@@ -409,7 +412,7 @@ class DownloadManager {
           '-y "$out"';
     } else {
       // Audio already in video stream (most common case)
-      return '-i "$videoUrl" '
+      return '$headers -i "$videoUrl" '
           '-c copy '
           '-bsf:a aac_adtstoasc '
           '-movflags +faststart '
