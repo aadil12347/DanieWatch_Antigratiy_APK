@@ -5,8 +5,11 @@
 // taps Download — returns their selection.
 // ─────────────────────────────────────────────────────────
 
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/m3u8_parser.dart';
+import '../providers/download_modal_provider.dart';
 
 // ── What the user selected ────────────────────────────────
 class DownloadSelection {
@@ -24,39 +27,46 @@ class DownloadSelection {
 // ── Show the sheet ────────────────────────────────────────
 Future<DownloadSelection?> showQualitySelectorSheet({
   required BuildContext context,
+  required WidgetRef ref,
   required String m3u8Url,
   required String title,
+  bool isLoading = false,
+  int? season,
+  int? episode,
 }) async {
-  DownloadSelection? result;
+  final completer = Completer<DownloadSelection?>();
 
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _QualitySelectorSheet(
-      m3u8Url: m3u8Url,
-      title: title,
-      onSelected: (sel) {
-        result = sel;
-        Navigator.of(context).pop();
-      },
-      onCancel: () => Navigator.of(context).pop(),
-    ),
+  ref.read(downloadModalProvider.notifier).state = DownloadModalState(
+    isOpen: true,
+    isLoading: isLoading,
+    m3u8Url: m3u8Url,
+    title: title,
+    season: season,
+    episode: episode,
+    onSelected: (sel) {
+      ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+      if (!completer.isCompleted) completer.complete(sel);
+    },
+    onCancel: () {
+      ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+      if (!completer.isCompleted) completer.complete(null);
+    },
   );
 
-  return result;
+  return completer.future;
 }
 
 // ══════════════════════════════════════════════════════════
-//  QUALITY SELECTOR SHEET
+//  QUALITY SELECTOR CONTENT
 // ══════════════════════════════════════════════════════════
-class _QualitySelectorSheet extends StatefulWidget {
+class QualitySelectorContent extends ConsumerStatefulWidget {
   final String m3u8Url;
   final String title;
   final void Function(DownloadSelection) onSelected;
   final VoidCallback onCancel;
 
-  const _QualitySelectorSheet({
+  const QualitySelectorContent({
+    super.key,
     required this.m3u8Url,
     required this.title,
     required this.onSelected,
@@ -64,12 +74,12 @@ class _QualitySelectorSheet extends StatefulWidget {
   });
 
   @override
-  State<_QualitySelectorSheet> createState() => _QualitySelectorSheetState();
+  ConsumerState<QualitySelectorContent> createState() => _QualitySelectorContentState();
 }
 
-class _QualitySelectorSheetState extends State<_QualitySelectorSheet> {
+class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent> {
   PlaylistInfo? _playlist;
-  bool _isLoading = true;
+  bool _internalLoading = true;
   String? _error;
 
   StreamVariant? _selectedVariant;
@@ -85,596 +95,281 @@ class _QualitySelectorSheetState extends State<_QualitySelectorSheet> {
     try {
       final parser = M3u8Parser();
       final info = await parser.parse(widget.m3u8Url);
-      setState(() {
-        _playlist = info;
-        _selectedVariant = info.bestVariant;
-        _selectedAudio = info.defaultAudio;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _playlist = info;
+          _selectedVariant = info.bestVariant;
+          _selectedAudio = info.defaultAudio;
+          _internalLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _internalLoading = false;
+        });
+      }
     }
+  }
+
+  String _getAudioDisplayName(AudioTrack track) {
+    final name = track.name.toLowerCase();
+    final lang = track.language.toLowerCase();
+    
+    if (name.contains('hindi') || lang == 'hi') return '🇮🇳 Hindi';
+    if (name.contains('english') || lang == 'en') return '🇺🇸 English';
+    if (name.contains('japanese') || lang == 'ja') return '🇯🇵 Japanese';
+    if (name.contains('korean') || lang == 'ko') return '🇰🇷 Korean';
+    if (name.contains('tamil') || lang == 'ta') return '🇮🇳 Tamil';
+    if (name.contains('telugu') || lang == 'te') return '🇮🇳 Telugu';
+    if (name.contains('french') || lang == 'fr') return '🇫🇷 French';
+    if (name.contains('spanish') || lang == 'es') return '🇪🇸 Spanish';
+    
+    return '🌐 ${track.name}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final modalState = ref.watch(downloadModalProvider);
+    final isLoading = modalState.isLoading || _internalLoading;
+
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF161B22),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Handle bar ───────────────────────────────────
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFF30363D),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
           // ── Header ───────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             child: Row(
               children: [
-                const Icon(Icons.tune_rounded,
-                    color: Color(0xFF1F6FEB), size: 20),
-                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.download_rounded, color: Colors.red, size: 22),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    widget.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (modalState.season != null && modalState.episode != null && modalState.season! > 0)
+                        Text(
+                          'SEASON ${modalState.season} · EPISODE ${modalState.episode}',
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close,
-                      color: Color(0xFF8B949E), size: 20),
+                  icon: const Icon(Icons.close, color: Colors.white54, size: 22),
                   onPressed: widget.onCancel,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
           ),
 
-          const Divider(color: Color(0xFF30363D), height: 24),
+          const Divider(color: Colors.white10, height: 32),
 
-          // ── Body ─────────────────────────────────────────
-          if (_isLoading) _buildLoading()
-          else if (_error != null) _buildError()
-          else _buildSelectors(),
+          if (isLoading) 
+            _buildSkeleton()
+          else if (_error != null) 
+            _buildError()
+          else ...[
+            _buildSelectors(),
+            const SizedBox(height: 16),
+            _buildDownloadButton(),
+          ],
         ],
       ),
     );
   }
 
-  // ── Loading state ─────────────────────────────────────
-  Widget _buildLoading() {
+  Widget _buildSkeleton() {
     return Padding(
-      padding: const EdgeInsets.all(40),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       child: Column(
         children: [
-          const CircularProgressIndicator(
-            color: Color(0xFF1F6FEB),
-            strokeWidth: 2.5,
+          Row(
+            children: List.generate(3, (i) => Container(
+              margin: const EdgeInsets.only(right: 12),
+              width: 80,
+              height: 45,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+            )),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Fetching available qualities...',
-            style: TextStyle(
-                color: Colors.white.withOpacity(0.5), fontSize: 13),
-          ),
+          const SizedBox(height: 24),
+          ...List.generate(2, (i) => Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            width: double.infinity,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          )),
         ],
       ),
     );
   }
 
-  // ── Error state ───────────────────────────────────────
   Widget _buildError() {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(32),
       child: Column(
         children: [
-          const Icon(Icons.warning_amber_rounded,
-              color: Color(0xFFD29922), size: 40),
-          const SizedBox(height: 12),
-          const Text(
-            'Could not parse playlist',
-            style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 15),
-          ),
+          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 48),
+          const SizedBox(height: 16),
+          const Text('Extraction failed', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text(
-            _error ?? '',
-            style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          // Fallback: download as-is
+          Text(_error ?? 'Unknown error', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () => widget.onSelected(DownloadSelection(
-                quality: StreamVariant(
-                    url: widget.m3u8Url,
-                    bandwidth: 0),
+                quality: StreamVariant(url: widget.m3u8Url, bandwidth: 0),
                 audioTrack: null,
                 title: widget.title,
               )),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1F6FEB),
+                backgroundColor: Colors.white10,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Download anyway (auto quality)'),
+              child: const Text('Download Original'),
             ),
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );
   }
 
-  // ── Main selectors ────────────────────────────────────
   Widget _buildSelectors() {
     final playlist = _playlist!;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── QUALITY section ────────────────────────────
-        if (playlist.variants.isNotEmpty) ...[
-          _SectionHeader(
-            icon: Icons.high_quality_outlined,
-            label: 'Quality',
-            count: playlist.variants.length,
-          ),
-          SizedBox(
-            height: 54,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: playlist.variants.length,
-              itemBuilder: (_, i) {
-                final v = playlist.variants[i];
-                final selected = _selectedVariant == v;
-                final isBest = i == 0;
-                return _QualityChip(
-                  label: v.badgeLabel,
-                  subLabel: v.estimatedSize,
-                  selected: selected,
-                  isBest: isBest,
-                  onTap: () => setState(() => _selectedVariant = v),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-
-        // ── AUDIO TRACKS section ───────────────────────
-        if (playlist.audioTracks.isNotEmpty) ...[
-          const Divider(
-              color: Color(0xFF30363D), height: 24, indent: 16, endIndent: 16),
-          _SectionHeader(
-            icon: Icons.audiotrack_outlined,
-            label: 'Audio track',
-            count: playlist.audioTracks.length,
-          ),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: playlist.audioTracks.length,
+        // Quality
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Text('SELECT QUALITY', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+        ),
+        SizedBox(
+          height: 48,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: playlist.variants.length,
             itemBuilder: (_, i) {
-              final track = playlist.audioTracks[i];
-              final selected = _selectedAudio?.name == track.name &&
-                  _selectedAudio?.language == track.language;
-              return _AudioTrackTile(
-                track: track,
-                selected: selected,
-                onTap: () => setState(() => _selectedAudio = track),
+              final v = playlist.variants[i];
+              final isSelected = _selectedVariant == v;
+              return GestureDetector(
+                onTap: () => setState(() => _selectedVariant = v),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.red : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: isSelected ? Colors.red : Colors.white10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    v.badgeLabel.replaceAll(' HD', '').replaceAll('SD', 'Original'),
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white70,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
               );
             },
           ),
-          const SizedBox(height: 8),
-        ],
+        ),
 
-        // ── No options found ───────────────────────────
-        if (playlist.variants.isEmpty && playlist.audioTracks.isEmpty)
+        if (playlist.audioTracks.isNotEmpty) ...[
+          const SizedBox(height: 24),
           const Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Single stream detected (no quality options)',
-              style: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Text('AUDIO TRACK', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
           ),
-
-        const Divider(color: Color(0xFF30363D), height: 24),
-
-        // ── Selected summary + Download button ─────────
-        _buildDownloadFooter(),
-
-        // Bottom safe area
-        SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+          ...playlist.audioTracks.map((track) {
+            final isSelected = _selectedAudio == track;
+            return GestureDetector(
+              onTap: () => setState(() => _selectedAudio = track),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.red.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isSelected ? Colors.red : Colors.white10),
+                ),
+                child: Row(
+                  children: [
+                    Text(_getAudioDisplayName(track), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (isSelected) const Icon(Icons.check_circle, color: Colors.red, size: 20),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
 
-  Widget _buildDownloadFooter() {
-    final variant = _selectedVariant;
-    final audio = _selectedAudio;
-
+  Widget _buildDownloadButton() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Summary row
-          Row(
-            children: [
-              if (variant != null) ...[
-                _SummaryBadge(
-                  icon: Icons.hd_outlined,
-                  label: variant.badgeLabel,
-                  color: const Color(0xFF1F6FEB),
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (audio != null)
-                _SummaryBadge(
-                  icon: Icons.audiotrack_outlined,
-                  label: audio.displayName,
-                  color: const Color(0xFF3FB950),
-                ),
-            ],
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: ElevatedButton(
+          onPressed: _selectedVariant != null ? () {
+            widget.onSelected(DownloadSelection(
+              quality: _selectedVariant!,
+              audioTrack: _selectedAudio,
+              title: widget.title,
+            ));
+          } : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.white10,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 0,
           ),
-          const SizedBox(height: 12),
-
-          // Download button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: (variant != null)
-                  ? () => widget.onSelected(DownloadSelection(
-                        quality: variant,
-                        audioTrack: audio,
-                        title: widget.title,
-                      ))
-                  : null,
-              icon: const Icon(Icons.download_rounded, size: 20),
-              label: Text(
-                variant != null
-                    ? 'Download ${variant.badgeLabel}'
-                        '${audio != null ? " · ${audio.name}" : ""}'
-                    : 'Select a quality',
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1F6FEB),
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xFF21262D),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Quality pill chip ─────────────────────────────────────
-class _QualityChip extends StatelessWidget {
-  final String label;
-  final String subLabel;
-  final bool selected;
-  final bool isBest;
-  final VoidCallback onTap;
-
-  const _QualityChip({
-    required this.label,
-    required this.subLabel,
-    required this.selected,
-    required this.isBest,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.only(right: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF1F6FEB).withOpacity(0.15)
-              : const Color(0xFF21262D),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected
-                ? const Color(0xFF1F6FEB)
-                : const Color(0xFF30363D),
-            width: selected ? 1.5 : 0.5,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? Colors.white : const Color(0xFF8B949E),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                if (isBest) ...[
-                  const SizedBox(width: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3FB950).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'BEST',
-                      style: TextStyle(
-                        color: Color(0xFF3FB950),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            Text(
-              subLabel,
-              style: TextStyle(
-                color: selected
-                    ? const Color(0xFF1F6FEB).withOpacity(0.8)
-                    : const Color(0xFF484F58),
-                fontSize: 10,
-              ),
-            ),
-          ],
+          child: const Text('Start Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
         ),
       ),
     );
   }
 }
 
-// ── Audio track list tile ─────────────────────────────────
-class _AudioTrackTile extends StatelessWidget {
-  final AudioTrack track;
-  final bool selected;
-  final VoidCallback onTap;
 
-  const _AudioTrackTile({
-    required this.track,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF3FB950).withOpacity(0.08)
-              : const Color(0xFF21262D),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected
-                ? const Color(0xFF3FB950)
-                : const Color(0xFF30363D),
-            width: selected ? 1.5 : 0.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            // Flag / icon
-            Text(
-              track.displayName.split(' ').first, // just the flag emoji
-              style: const TextStyle(fontSize: 22),
-            ),
-            const SizedBox(width: 12),
-
-            // Track info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    track.name,
-                    style: TextStyle(
-                      color: selected ? Colors.white : const Color(0xFFCDD9E5),
-                      fontWeight: FontWeight.w500,
-                      fontSize: 14,
-                    ),
-                  ),
-                  Text(
-                    '${track.language.toUpperCase()}'
-                    '${track.url != null ? ' · Separate track' : ' · Embedded'}',
-                    style: const TextStyle(
-                        color: Color(0xFF8B949E), fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-
-            // Badges
-            Row(
-              children: [
-                if (track.isDefault)
-                  _badge('DEFAULT', const Color(0xFF1F6FEB)),
-                if (track.isForced)
-                  _badge('FORCED', const Color(0xFFD29922)),
-                const SizedBox(width: 8),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: selected
-                        ? const Color(0xFF3FB950)
-                        : Colors.transparent,
-                    border: Border.all(
-                      color: selected
-                          ? const Color(0xFF3FB950)
-                          : const Color(0xFF30363D),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: selected
-                      ? const Icon(Icons.check,
-                          color: Colors.white, size: 12)
-                      : null,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _badge(String label, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 9,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-}
-
-// ── Section header ────────────────────────────────────────
-class _SectionHeader extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final int count;
-
-  const _SectionHeader(
-      {required this.icon, required this.label, required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFF8B949E), size: 16),
-          const SizedBox(width: 7),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF8B949E),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(
-              color: const Color(0xFF30363D),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '$count',
-              style: const TextStyle(
-                  color: Color(0xFF8B949E), fontSize: 11),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Summary badge ─────────────────────────────────────────
-class _SummaryBadge extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  const _SummaryBadge(
-      {required this.icon, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 13),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

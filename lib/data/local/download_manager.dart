@@ -460,17 +460,29 @@ class DownloadManager {
     onDownloadUpdate?.call(item);
   }
 
+  int _lastProgressUpdate = 0;
+  int _lastPct = -1;
+
   void _onFfmpegProgress(DownloadItem item, Statistics stats) {
     if (item.status != DownloadStatus.downloading) return;
+    
     final processedKb = stats.getSize();
-    if (processedKb > 0) {
-      // ffmpeg doesn't know total duration reliably, estimate based on data processed
-      // Use a rough 500 MB assumed max for progress estimation
-      final estimated = (processedKb / (500 * 1024)).clamp(0.0, 0.95);
-      item.progress = estimated;
-      item.downloadedBytes = processedKb;
+    if (processedKb <= 0) return;
 
-      final pct = (estimated * 100).toInt();
+    // Estimate progress (HLS doesn't provide total size reliably)
+    final estimated = (processedKb / (500 * 1024)).clamp(0.0, 0.95);
+    item.progress = estimated;
+    item.downloadedBytes = processedKb;
+
+    final pct = (estimated * 100).toInt();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    // Throttle updates: only update UI if percentage changes 
+    // OR at least 1000ms passed since last update.
+    if (pct != _lastPct || (now - _lastProgressUpdate) > 1000) {
+      _lastPct = pct;
+      _lastProgressUpdate = now;
+
       _notifService.showProgress(
         id: item.id.hashCode,
         title: item.displayName,

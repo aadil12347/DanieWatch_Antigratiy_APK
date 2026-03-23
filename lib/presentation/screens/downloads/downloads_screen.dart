@@ -401,10 +401,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 ),
               IconButton(
                 icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                onPressed: () {
-                  DownloadManager.instance.cancelDownload(item.id);
-                  setState(() {});
-                },
+                onPressed: () => _showCancelDialog(item),
               ),
             ],
           ),
@@ -721,6 +718,147 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       child: const Center(
                         child: Text(
                           'Delete',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCancelDialog(DownloadItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textMuted,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Cancel Download',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Are you sure you want to stop this download? It will be removed from your list.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            // Item preview
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: item.posterUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl!,
+                          width: 50,
+                          height: 70,
+                          fit: BoxFit.cover,
+                        )
+                      : _buildPlaceholder(),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.status == DownloadStatus.downloading ? item.formattedProgress : 'Paused',
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            // Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.textMuted.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Keep',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      DownloadManager.instance.cancelDownload(item.id);
+                      DownloadManager.instance.deleteDownload(item.id);
+                      setState(() {});
+                    },
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Cancel It',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,

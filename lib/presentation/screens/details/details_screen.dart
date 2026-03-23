@@ -5,6 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
+import '../../providers/download_modal_provider.dart';
 import '../../widgets/custom_toast.dart';
 import '../../widgets/quality_selector_sheet.dart';
 
@@ -943,71 +945,65 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       String url, int episodeNumber, ContentDetail content) async {
     HapticFeedback.mediumImpact();
 
-    // Show loading indicator
     if (!mounted) return;
-    showDialog(
+
+    // 1. Immediately morph navbar to loading modal
+    final selectionFuture = showQualitySelectorSheet(
       context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black54,
-      builder: (_) => Center(
-        child: Container(
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
-              SizedBox(height: 16),
-              Text('Finding sources…',
-                  style: TextStyle(color: Colors.white70, fontSize: 13)),
-              SizedBox(height: 4),
-              Text('This may take a moment',
-                  style: TextStyle(color: Colors.white30, fontSize: 11)),
-            ],
-          ),
-        ),
-      ),
+      ref: ref,
+      m3u8Url: '', // To be updated
+      title: content.title,
+      isLoading: true,
+      season: _selectedSeason,
+      episode: episodeNumber,
     );
 
+    String? m3u8Url;
     try {
-      // Extract m3u8 URL using the same WebView-based approach as the player
+      // 2. Extract m3u8 URL in the background
       final extractor = VideoExtractorService();
-      String? m3u8Url = await extractor.extractVideoUrl(url);
+      m3u8Url = await extractor.extractVideoUrl(url);
 
-      // Double-Pass Auto-Recovery: if first attempt fails, retry once
+      // Auto-Recovery: if first attempt fails, retry once
       if ((m3u8Url == null || m3u8Url.isEmpty) && mounted) {
         debugPrint('[Download] First extraction failed, retrying...');
-        // Clear the cache for this URL so the retry is fresh
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('extract_$url');
         m3u8Url = await extractor.extractVideoUrl(url);
       }
 
-      // Dismiss loading
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
 
       if (m3u8Url == null || m3u8Url.isEmpty) {
-        _showErrorSnackBar('Could not find stream source. Try playing the video first, then download.');
+        // Close modal and show error
+        ref.read(downloadModalProvider.notifier).state = DownloadModalState();
+        _showErrorSnackBar('Could not find stream source.');
         return;
       }
 
-      if (!mounted) return;
+      // 3. Update modal with the real URL and stop loading skeleton
+      ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
+            m3u8Url: m3u8Url,
+            isLoading: false,
+          ));
+    } catch (e) {
+      if (mounted) {
+        ref.read(downloadModalProvider.notifier).state = DownloadModalState();
+        _showErrorSnackBar('Extraction error. Please try again.');
+      }
+      return;
+    }
 
-      // Show quality selector bottom sheet
-      final selection = await showQualitySelectorSheet(
-        context: context,
-        m3u8Url: m3u8Url,
-        title: content.title,
-      );
+    // 4. Wait for user to pick quality/audio
+    final selection = await selectionFuture;
+    if (selection == null || !mounted) return;
 
-      if (selection == null || !mounted) return;
-
-      // Start ffmpeg download
+    // 5. Start ffmpeg download (with a tiny delay to ensure sheet closes smoothly if needed, 
+    // although our provider handles the closing animation via morphing back)
+    try {
+      // Ensure we don't block the UI thread during initialization
       final item = await DownloadManager.instance.startFfmpegDownload(
-        m3u8Url: m3u8Url,
+        m3u8Url: m3u8Url!,
         title: content.title,
         season: _selectedSeason,
         episode: episodeNumber,
@@ -1015,45 +1011,44 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         variant: selection.quality,
         audioTrack: selection.audioTrack,
       );
-
       if (item != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.primary,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: Row(
-              children: [
-                const Icon(Icons.download_rounded, color: Colors.white, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}'
-                    'Download started',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                  ),
-                ),
-              ],
-            ),
-            action: SnackBarAction(
-              label: 'View',
-              textColor: Colors.white,
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const DownloadsScreen()),
-              ),
-            ),
-          ),
-        );
+        _showDownloadStartedToast(item);
       }
     } catch (e) {
-      // Dismiss loading if still showing
       if (mounted) {
-        try { Navigator.of(context, rootNavigator: true).pop(); } catch (_) {}
+        _showErrorSnackBar('Failed to start download: $e');
       }
-      _showErrorSnackBar('Download error: $e');
     }
+  }
+
+  void _showDownloadStartedToast(DownloadItem item) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Row(
+          children: [
+            const Icon(Icons.download_done_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Download started',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'VIEW',
+          textColor: Colors.white,
+          onPressed: () => context.push('/downloads'),
+        ),
+      ),
+    );
   }
 
   // ─── Playback ──────────────────────────────────────────────────────────────

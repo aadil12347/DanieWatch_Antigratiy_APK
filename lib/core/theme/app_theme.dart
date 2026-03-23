@@ -6,8 +6,8 @@ class AppColors {
 
   // Backgrounds
   static const background = Color(0xFF0A0A0A);
-  static const surface = Color(0x801E293B); // rgba(30, 41, 59, 0.5)
-  static const surfaceElevated = Color(0xFF1E293B);
+  static const surface = Color(0x80121212); 
+  static const surfaceElevated = Color(0xFF121212);
   static const card = Color(0xFF111111);
 
   // Brand / Accent
