@@ -77,7 +77,9 @@ class DownloadItem {
 
   String get displayName {
     if (season > 0 && episode > 0) {
-      return '$title S${season.toString().padLeft(2, '0')} E${episode.toString().padLeft(2, '0')}';
+      final s = season.toString().padLeft(2, '0');
+      final e = episode.toString().padLeft(2, '0');
+      return 'S$s E$e $title';
     }
     return title;
   }
@@ -108,13 +110,19 @@ class DownloadItem {
   }
 
   String get formattedProgress {
-    return '${(progress * 100).toStringAsFixed(0)}%';
+    // Show MB downloaded instead of percentage
+    return formattedDownloadedBytes;
+  }
+
+  String get formattedDownloadedBytes {
+    if (downloadedBytes == 0) return '0.0 MB';
+    return '${(downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   String get statusLabel {
     switch (status) {
       case DownloadStatus.pending:     return 'Queued';
-      case DownloadStatus.downloading: return '${(progress * 100).toInt()}%';
+      case DownloadStatus.downloading: return formattedDownloadedBytes;
       case DownloadStatus.completed:   return 'Ready';
       case DownloadStatus.failed:      return 'Failed';
       case DownloadStatus.canceled:    return 'Cancelled';
@@ -486,8 +494,8 @@ class DownloadManager {
       _notifService.showProgress(
         id: item.id.hashCode,
         title: item.displayName,
-        progress: pct,
-        body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Downloading… $pct%',
+        progress: pct, // Keep system progress bar percentage
+        body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Downloading… ${item.formattedDownloadedBytes}',
       );
 
       onDownloadUpdate?.call(item);
