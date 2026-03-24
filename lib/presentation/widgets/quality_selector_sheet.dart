@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../services/m3u8_parser.dart';
 import '../providers/download_modal_provider.dart';
 
@@ -88,7 +89,23 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
   @override
   void initState() {
     super.initState();
-    _loadPlaylist();
+    if (widget.m3u8Url.isNotEmpty) {
+      _loadPlaylist();
+    }
+  }
+
+  @override
+  void didUpdateWidget(QualitySelectorContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.m3u8Url != oldWidget.m3u8Url && widget.m3u8Url.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _internalLoading = true;
+          _error = null;
+        });
+      }
+      _loadPlaylist();
+    }
   }
 
   Future<void> _loadPlaylist() async {
@@ -205,32 +222,36 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
   }
 
   Widget _buildSkeleton() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      child: Column(
-        children: [
-          Row(
-            children: List.generate(3, (i) => Container(
-              margin: const EdgeInsets.only(right: 12),
-              width: 80,
-              height: 45,
+    return Shimmer.fromColors(
+      baseColor: Colors.white.withOpacity(0.05),
+      highlightColor: Colors.white.withOpacity(0.1),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        child: Column(
+          children: [
+            Row(
+              children: List.generate(3, (i) => Container(
+                margin: const EdgeInsets.only(right: 12),
+                width: 80,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              )),
+            ),
+            const SizedBox(height: 24),
+            ...List.generate(2, (i) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              width: double.infinity,
+              height: 56,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
               ),
             )),
-          ),
-          const SizedBox(height: 24),
-          ...List.generate(2, (i) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            width: double.infinity,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
-            ),
-          )),
-        ],
+          ],
+        ),
       ),
     );
   }

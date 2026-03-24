@@ -962,14 +962,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     try {
       // 2. Extract m3u8 URL in the background
       final extractor = VideoExtractorService();
-      m3u8Url = await extractor.extractVideoUrl(url);
+      m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
 
       // Auto-Recovery: if first attempt fails, retry once
       if ((m3u8Url == null || m3u8Url.isEmpty) && mounted) {
         debugPrint('[Download] First extraction failed, retrying...');
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('extract_$url');
-        m3u8Url = await extractor.extractVideoUrl(url);
+        m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
       }
 
       if (!mounted) return;

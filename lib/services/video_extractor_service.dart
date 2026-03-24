@@ -15,21 +15,20 @@ class VideoExtractorService {
   factory VideoExtractorService() => _instance;
   VideoExtractorService._internal();
 
-  /// Extract a streaming URL from the given embed/watch URL.
-  ///
   /// Uses an off-screen InAppWebView widget approach identical to the player.
   /// Returns the best discovered m3u8/mp4 link, or null on timeout.
   ///
-  /// [context] is used to insert an overlay WebView for extraction.
-  /// If you cannot provide a context (e.g. background), use
-  /// [extractVideoUrlHeadless] below.
-  Future<String?> extractVideoUrl(String embedUrl) async {
+  /// This implements a 4-click sequence to trigger HLS link generation
+  /// while handling/blocking pop-ups and redirects.
+  Future<String?> extractVideoUrl(String embedUrl, {bool bypassCache = false}) async {
     // 1. Check cache
     final prefs = await SharedPreferences.getInstance();
-    final cachedUrl = prefs.getString('extract_$embedUrl');
-    if (cachedUrl != null) {
-      developer.log('[Extractor] Found cached URL: $cachedUrl', name: 'Extractor');
-      return cachedUrl;
+    if (!bypassCache) {
+      final cachedUrl = prefs.getString('extract_$embedUrl');
+      if (cachedUrl != null) {
+        developer.log('[Extractor] Found cached URL: $cachedUrl', name: 'Extractor');
+        return cachedUrl;
+      }
     }
 
     developer.log('[Extractor] Starting WebView extraction for: $embedUrl', name: 'Extractor');
@@ -128,16 +127,58 @@ class VideoExtractorService {
         useOnLoadResource: true, // Crucial for discovery
         javaScriptCanOpenWindowsAutomatically: false,
         supportMultipleWindows: true,
+        useShouldInterceptRequest: true,
       ),
       onWebViewCreated: (controller) {
         webViewController = controller;
+      },
+      onLoadStop: (controller, url) async {
+        developer.log('[Extractor] Page loaded: $url', name: 'Extractor');
+        
+        // Start the 4-click sequence after load
+        for (int i = 1; i <= 4; i++) {
+          if (discoveryComplete) break;
+          
+          developer.log('[Extractor] Click sequence $i/4...', name: 'Extractor');
+          
+          try {
+            await controller.evaluateJavascript(source: """
+              (function() {
+                // 1. Close any visible overlays/popups if possible
+                var overlays = document.querySelectorAll('[class*="popup"], [class*="modal"], [id*="popup"], [id*="modal"]');
+                overlays.forEach(function(el) { 
+                  if (el.offsetWidth > 0 || el.offsetHeight > 0) el.remove(); 
+                });
+
+                // 2. Click the center (where player usually is)
+                var x = window.innerWidth / 2;
+                var y = window.innerHeight / 2;
+                var el = document.elementFromPoint(x, y);
+                if (el) {
+                  el.click();
+                  console.log('Antigravity: Clicked at center (' + x + ',' + y + ')');
+                }
+
+                // 3. Also try clicking common play buttons
+                var playBtns = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
+                playBtns.forEach(function(b) { b.click(); });
+              })();
+            """);
+          } catch (e) {
+            // ignore
+          }
+
+          // Wait between clicks to allow for popups to trigger and be handled
+          await Future.delayed(const Duration(milliseconds: 1200));
+        }
       },
       onCreateWindow: (controller, createWindowAction) async {
         developer.log(
           '[Extractor] Popup blocked: ${createWindowAction.request.url}',
           name: 'Extractor',
         );
-        return true; // Block popups
+        // Returning true without creating a window blocks it
+        return true;
       },
       onLoadResource: (controller, resource) {
         if (resource.url != null) {
@@ -148,11 +189,21 @@ class VideoExtractorService {
         final url = navigationAction.request.url.toString();
         final isMainFrame = navigationAction.isForMainFrame;
 
-        if (!isMainFrame &&
-            (url.contains('google-analytics') ||
-                url.contains('doubleclick') ||
-                url.contains('ads'))) {
+        // Block non-main-frame redirects and common ad domains
+        if (!isMainFrame || 
+            url.contains('google-analytics') ||
+            url.contains('doubleclick') ||
+            url.contains('ads') ||
+            url.contains('popad') ||
+            url.contains('onclick')) {
+          developer.log('[Extractor] Blocking redirect/resource: $url', name: 'Extractor');
           return NavigationActionPolicy.CANCEL;
+        }
+
+        // If it's a main frame redirect but looks like an ad or popunder, block it
+        if (isMainFrame && url != embedUrl && !url.contains(Uri.parse(embedUrl).host)) {
+           developer.log('[Extractor] Blocking potential popup redirect: $url', name: 'Extractor');
+           return NavigationActionPolicy.CANCEL;
         }
 
         return NavigationActionPolicy.ALLOW;
@@ -167,39 +218,6 @@ class VideoExtractorService {
 
     headlessWebView.run();
 
-    // Auto-click play buttons every 1.5 seconds (same as player)
-    autoClickTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
-      if (discoveryComplete) {
-        timer.cancel();
-        return;
-      }
-      final controller = webViewController;
-      if (controller != null) {
-        try {
-          controller.evaluateJavascript(
-            source: """
-            (function() {
-              var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
-              for(var i=0; i<buttons.length; i++) {
-                buttons[i].click();
-              }
-              var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-              if (el) {
-                el.click();
-                console.log('Antigravity: Auto-clicked element at center.');
-              }
-              var v = document.querySelector('video');
-              if (v) { v.play().catch(function(e){}); }
-            })();
-          """,
-          ).catchError((e) {
-            // ignore disposed errors
-          });
-        } catch (e) {
-          // ignore
-        }
-      }
-    });
 
     // Absolute timeout: 20 seconds (give it enough time)
     absoluteTimer = Timer(const Duration(seconds: 20), () {
