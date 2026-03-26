@@ -1002,7 +1002,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     // although our provider handles the closing animation via morphing back)
     try {
       // Ensure we don't block the UI thread during initialization
-      final item = await DownloadManager.instance.startFfmpegDownload(
+      final item = await DownloadManager.instance.startSegmentDownload(
         m3u8Url: m3u8Url!,
         title: content.title,
         season: _selectedSeason,

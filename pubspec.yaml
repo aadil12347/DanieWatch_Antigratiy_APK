@@ -52,8 +52,11 @@ dependencies:
   permission_handler: ^11.3.1
   open_file: ^3.5.10
 
-  # FFmpeg for HLS download with quality selection
-  ffmpeg_kit_flutter_new_full: ^2.0.0
+  # FFmpeg for .ts → .mp4 concat only (min = smaller APK)
+  ffmpeg_kit_flutter_new_min: ^3.1.0
+
+  # Network connectivity monitoring (auto-pause/resume downloads)
+  connectivity_plus: ^6.1.4
 
   # Notification progress for downloads
   flutter_local_notifications: ^18.0.1

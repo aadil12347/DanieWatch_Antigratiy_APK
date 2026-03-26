@@ -3,10 +3,6 @@ import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
-import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit_config.dart';
-import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
-import 'package:ffmpeg_kit_flutter_new_full/statistics.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,7 +20,7 @@ void downloadCallback(String id, int status, int progress) {
   send?.send([id, status, progress]);
 }
 
-enum DownloadStatus { pending, downloading, paused, completed, failed, canceled }
+enum DownloadStatus { pending, downloading, paused, completed, failed, canceled, converting }
 
 class DownloadItem {
   final String id;
@@ -44,12 +40,16 @@ class DownloadItem {
   DateTime? completedAt;
   String? error;
 
-  // ── FFmpeg download fields ──
+  // ── Quality/audio fields ──
   final String? videoStreamUrl;
   final String? audioStreamUrl;
   final String? qualityLabel;
   final String? audioLabel;
-  final bool isFfmpegDownload;
+
+  // ── Segment download tracking ──
+  int totalSegments;
+  int completedSegments;
+  String? segmentDirectory;
 
   DownloadItem({
     required this.id,
@@ -72,7 +72,9 @@ class DownloadItem {
     this.audioStreamUrl,
     this.qualityLabel,
     this.audioLabel,
-    this.isFfmpegDownload = false,
+    this.totalSegments = 0,
+    this.completedSegments = 0,
+    this.segmentDirectory,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -110,7 +112,7 @@ class DownloadItem {
   }
 
   String get formattedProgress {
-    // Show MB downloaded instead of percentage
+    // Show MB downloaded
     return formattedDownloadedBytes;
   }
 
@@ -119,14 +121,22 @@ class DownloadItem {
     return '${(downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  String get segmentProgressLabel {
+    if (totalSegments > 0) {
+      return '$completedSegments/$totalSegments';
+    }
+    return '';
+  }
+
   String get statusLabel {
     switch (status) {
       case DownloadStatus.pending:     return 'Queued';
-      case DownloadStatus.downloading: return formattedDownloadedBytes;
+      case DownloadStatus.downloading: return '${formattedDownloadedBytes} · $segmentProgressLabel';
       case DownloadStatus.completed:   return 'Ready';
       case DownloadStatus.failed:      return 'Failed';
       case DownloadStatus.canceled:    return 'Cancelled';
       case DownloadStatus.paused:      return 'Paused';
+      case DownloadStatus.converting:  return 'Converting…';
     }
   }
 
@@ -151,7 +161,9 @@ class DownloadItem {
     'audioStreamUrl': audioStreamUrl,
     'qualityLabel': qualityLabel,
     'audioLabel': audioLabel,
-    'isFfmpegDownload': isFfmpegDownload,
+    'totalSegments': totalSegments,
+    'completedSegments': completedSegments,
+    'segmentDirectory': segmentDirectory,
   };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -162,7 +174,7 @@ class DownloadItem {
     episode: json['episode'],
     posterUrl: json['posterUrl'],
     fileExtension: json['fileExtension'] ?? '.mp4',
-    status: DownloadStatus.values[json['status']],
+    status: DownloadStatus.values[json['status'].clamp(0, DownloadStatus.values.length - 1)],
     progress: (json['progress'] as num).toDouble(),
     totalBytes: json['totalBytes'],
     downloadedBytes: json['downloadedBytes'],
@@ -175,7 +187,9 @@ class DownloadItem {
     audioStreamUrl: json['audioStreamUrl'],
     qualityLabel: json['qualityLabel'],
     audioLabel: json['audioLabel'],
-    isFfmpegDownload: json['isFfmpegDownload'] ?? false,
+    totalSegments: json['totalSegments'] ?? 0,
+    completedSegments: json['completedSegments'] ?? 0,
+    segmentDirectory: json['segmentDirectory'],
   );
 }
 
@@ -193,7 +207,7 @@ class DownloadManager {
   List<DownloadItem> get downloads => List.unmodifiable(_downloads);
   
   List<DownloadItem> get downloadingItems => 
-      _downloads.where((d) => d.status == DownloadStatus.downloading || d.status == DownloadStatus.pending).toList();
+      _downloads.where((d) => d.status == DownloadStatus.downloading || d.status == DownloadStatus.pending || d.status == DownloadStatus.converting).toList();
   
   List<DownloadItem> get completedItems => 
       _downloads.where((d) => d.status == DownloadStatus.completed).toList();
@@ -210,21 +224,16 @@ class DownloadManager {
     await _notifService.init();
     await _loadDownloads();
     
-    // Reset interrupted downloads
+    // Reset interrupted downloads to paused (so user can resume)
     for (var d in _downloads) {
-      if (d.status == DownloadStatus.downloading) {
-        if (d.isFfmpegDownload) {
-          d.status = DownloadStatus.failed;
-          d.error = 'Interrupted — tap retry';
-          d.progress = 0;
-        } else if (d.fileExtension == '.m3u8') {
-          d.status = DownloadStatus.paused;
-        }
+      if (d.status == DownloadStatus.downloading || d.status == DownloadStatus.converting) {
+        d.status = DownloadStatus.paused;
+        d.error = null;
       }
     }
     await _saveDownloads();
     
-    // Register the port for isolate communication
+    // Register the port for isolate communication (legacy flutter_downloader)
     _unbindPort();
     IsolateNameServer.registerPortWithName(_port.sendPort, _downloadPortName);
     
@@ -328,11 +337,12 @@ class DownloadManager {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  FFMPEG-BASED HLS DOWNLOAD (NEW)
+  //  SEGMENT-BASED HLS DOWNLOAD (PRIMARY METHOD)
   // ═══════════════════════════════════════════════════════════
 
-  /// Start an ffmpeg-based download with optional quality variant and audio track
-  Future<DownloadItem?> startFfmpegDownload({
+  /// Start a segment-based HLS download with quality selection.
+  /// Downloads .ts segments in parallel, then converts to .mp4.
+  Future<DownloadItem?> startSegmentDownload({
     required String m3u8Url,
     required String title,
     required int season,
@@ -353,6 +363,7 @@ class DownloadManager {
     final safeTitle = _buildSafeTitle(title, season, episode, qualityLbl);
     final ts = DateTime.now().millisecondsSinceEpoch;
     final outputPath = '${dir.path}/${safeTitle}_$ts.mp4';
+    final segmentDir = '${dir.path}/.segments_${safeTitle}_$ts';
 
     final item = DownloadItem(
       id: ts.toString(),
@@ -368,7 +379,7 @@ class DownloadManager {
       qualityLabel: qualityLbl,
       audioLabel: audioLbl,
       localPath: outputPath,
-      isFfmpegDownload: true,
+      segmentDirectory: segmentDir,
     );
 
     _downloads.insert(0, item);
@@ -383,7 +394,7 @@ class DownloadManager {
       body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Starting download…',
     );
 
-    _runFfmpeg(item);
+    _runSegmentDownload(item);
     return item;
   }
 
@@ -393,158 +404,252 @@ class DownloadManager {
       parts.add('S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}');
     }
     if (quality != null) parts.add(quality.replaceAll(' ', ''));
-    return parts.join('_')
-        .replaceAll(RegExp(r'[<>:"/\\|?* ]'), '_')
-        .substring(0, parts.join('_').length.clamp(0, 80));
+    String result = parts.join('_').replaceAll(RegExp(r'[<>:"/\\|?* ]'), '_');
+    if (result.length > 80) result = result.substring(0, 80);
+    return result;
   }
 
-  /// Build the ffmpeg command for video + optional separate audio
-  String _buildFfmpegCommand(DownloadItem item) {
-    final videoUrl = item.videoStreamUrl ?? item.url;
-    final audioUrl = item.audioStreamUrl;
-    final out = item.localPath!;
+  /// Run the segment download in the background.
+  Future<void> _runSegmentDownload(DownloadItem item) async {
+    final service = HlsDownloaderService();
+    _activeHlsDownloads[item.id] = service;
 
-    // Common headers to avoid 403/404 on protected streams
-    final headers = '-headers "User-Agent: Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\\r\\nAccept: */*\\r\\n"';
+    int lastNotifPct = -1;
+    int lastNotifTime = 0;
 
-    if (audioUrl != null && audioUrl.isNotEmpty) {
-      // Separate audio track file → merge with video
-      return '$headers -i "$videoUrl" '
-          '$headers -i "$audioUrl" '
-          '-map 0:v:0 '
-          '-map 1:a:0 '
-          '-c:v copy '
-          '-c:a copy '
-          '-bsf:a aac_adtstoasc '
-          '-movflags +faststart '
-          '-y "$out"';
-    } else {
-      // Audio already in video stream (most common case)
-      return '$headers -i "$videoUrl" '
-          '-c copy '
-          '-bsf:a aac_adtstoasc '
-          '-movflags +faststart '
-          '-y "$out"';
-    }
-  }
+    service.onProgress = (progress, completedSegs, totalSegs, downloadedBytes) {
+      if (item.status == DownloadStatus.canceled) return;
+      
+      item.progress = progress;
+      item.completedSegments = completedSegs;
+      item.totalSegments = totalSegs;
+      item.downloadedBytes = downloadedBytes;
+      
+      if (item.status != DownloadStatus.paused) {
+        item.status = DownloadStatus.downloading;
+      }
 
-  Future<void> _runFfmpeg(DownloadItem item) async {
-    final command = _buildFfmpegCommand(item);
+      final pct = (progress * 100).toInt();
+      final now = DateTime.now().millisecondsSinceEpoch;
 
-    FFmpegKitConfig.enableStatisticsCallback((Statistics stats) {
-      _onFfmpegProgress(item, stats);
-    });
+      // Throttle notification updates
+      if (pct != lastNotifPct || (now - lastNotifTime) > 1000) {
+        lastNotifPct = pct;
+        lastNotifTime = now;
 
-    debugPrint('▶ FFmpeg: $command');
+        _notifService.showProgress(
+          id: item.id.hashCode,
+          title: item.displayName,
+          progress: pct,
+          body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}$completedSegs/$totalSegs · ${item.formattedDownloadedBytes}',
+        );
+      }
 
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    };
 
-    if (ReturnCode.isSuccess(returnCode)) {
-      final file = File(item.localPath!);
-      item.totalBytes = await file.length().catchError((_) => 0);
-      item.downloadedBytes = item.totalBytes;
-      item.status = DownloadStatus.completed;
-      item.progress = 1.0;
-      item.completedAt = DateTime.now();
-      _notifService.showComplete(id: item.id.hashCode, title: item.displayName);
-      onDownloadComplete?.call(item);
-    } else if (ReturnCode.isCancel(returnCode)) {
-      item.status = DownloadStatus.canceled;
-      _notifService.cancel(item.id.hashCode);
-    } else {
-      final logs = await session.getAllLogsAsString();
+    service.onConversionStarted = () {
+      item.status = DownloadStatus.converting;
+      item.progress = 1.0; // Segments done, now converting
+      
+      _notifService.showProgress(
+        id: item.id.hashCode,
+        title: item.displayName,
+        progress: 99,
+        body: 'Converting to MP4…',
+      );
+      
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    };
+
+    service.onError = (error) {
       item.status = DownloadStatus.failed;
-      item.error = _parseFfmpegError(logs ?? '');
-      debugPrint('✗ FFmpeg error logs: $logs');
+      item.error = _parseError(error);
+      _activeHlsDownloads.remove(item.id);
+      
       _notifService.showFailed(
         id: item.id.hashCode,
         title: item.displayName,
         error: item.error,
       );
-    }
+      
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    };
 
-    await _saveDownloads();
-    onDownloadUpdate?.call(item);
+    service.onComplete = (mp4Path) {
+      item.status = DownloadStatus.completed;
+      item.localPath = mp4Path;
+      item.progress = 1.0;
+      item.completedAt = DateTime.now();
+      item.segmentDirectory = null;
+      _activeHlsDownloads.remove(item.id);
+
+      // Get final file size
+      final file = File(mp4Path);
+      if (file.existsSync()) {
+        item.totalBytes = file.lengthSync();
+        item.downloadedBytes = item.totalBytes;
+      }
+
+      _notifService.showComplete(id: item.id.hashCode, title: item.displayName);
+      onDownloadComplete?.call(item);
+      _saveDownloads();
+    };
+
+    service.startDownload(
+      videoM3u8Url: item.videoStreamUrl ?? item.url,
+      audioM3u8Url: item.audioStreamUrl,
+      saveDirectory: item.segmentDirectory!,
+      outputMp4Path: item.localPath!,
+    );
   }
 
-  int _lastProgressUpdate = 0;
-  int _lastPct = -1;
+  String _parseError(String error) {
+    if (error.contains('403'))              return 'Access denied (403) — stream may have expired';
+    if (error.contains('404'))              return 'Stream not found (404)';
+    if (error.contains('Connection timed')) return 'Connection timed out';
+    if (error.contains('Invalid'))          return 'Invalid stream format';
+    if (error.contains('No segments'))      return 'No segments found in stream';
+    if (error.contains('MP4 conversion'))   return 'Conversion failed — tap retry';
+    return 'Download failed — tap retry';
+  }
 
-  void _onFfmpegProgress(DownloadItem item, Statistics stats) {
-    if (item.status != DownloadStatus.downloading) return;
-    
-    final processedKb = stats.getSize();
-    if (processedKb <= 0) return;
+  // ═══════════════════════════════════════════════════════════
+  //  PAUSE / RESUME / CANCEL
+  // ═══════════════════════════════════════════════════════════
 
-    // Estimate progress (HLS doesn't provide total size reliably)
-    final estimated = (processedKb / (500 * 1024)).clamp(0.0, 0.95);
-    item.progress = estimated;
-    item.downloadedBytes = processedKb;
+  Future<void> pauseDownload(String id) async {
+    if (kIsWeb) return;
+    final item = _findById(id);
+    if (item == null) return;
 
-    final pct = (estimated * 100).toInt();
-    final now = DateTime.now().millisecondsSinceEpoch;
+    // Segment-based download
+    if (_activeHlsDownloads.containsKey(item.id)) {
+      _activeHlsDownloads[item.id]?.pause();
+      item.status = DownloadStatus.paused;
+      _saveDownloads();
+      onDownloadUpdate?.call(item);
+      return;
+    }
 
-    // Throttle updates: only update UI if percentage changes 
-    // OR at least 1000ms passed since last update.
-    if (pct != _lastPct || (now - _lastProgressUpdate) > 1000) {
-      _lastPct = pct;
-      _lastProgressUpdate = now;
+    // Legacy flutter_downloader
+    if (item.taskId != null) {
+      await FlutterDownloader.pause(taskId: item.taskId!);
+      item.status = DownloadStatus.paused;
+      _saveDownloads();
+      onDownloadUpdate?.call(item);
+    }
+  }
+
+  Future<void> resumeDownload(String id) async {
+    if (kIsWeb) return;
+    final item = _findById(id);
+    if (item == null) return;
+
+    // If there's an active service, just unpause it
+    if (_activeHlsDownloads.containsKey(item.id)) {
+      _activeHlsDownloads[item.id]?.resume();
+      item.status = DownloadStatus.downloading;
+      _saveDownloads();
+      onDownloadUpdate?.call(item);
+      return;
+    }
+
+    // If paused/failed with a segment directory, restart the download service
+    // (it will auto-skip already completed segments)
+    if (item.segmentDirectory != null && item.localPath != null) {
+      item.status = DownloadStatus.downloading;
+      item.error = null;
+      await _saveDownloads();
+      onDownloadUpdate?.call(item);
 
       _notifService.showProgress(
         id: item.id.hashCode,
         title: item.displayName,
-        progress: pct, // Keep system progress bar percentage
-        body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Downloading… ${item.formattedDownloadedBytes}',
+        progress: (item.progress * 100).toInt(),
+        body: 'Resuming download…',
       );
 
+      _runSegmentDownload(item);
+      return;
+    }
+
+    // Legacy flutter_downloader
+    if (item.taskId != null) {
+      final taskId = await FlutterDownloader.resume(taskId: item.taskId!);
+      item.taskId = taskId;
+      item.status = DownloadStatus.downloading;
+      _saveDownloads();
       onDownloadUpdate?.call(item);
     }
   }
 
-  String _parseFfmpegError(String logs) {
-    if (logs.contains('403'))              return 'Access denied (403) — stream may have expired';
-    if (logs.contains('404'))              return 'Stream not found (404)';
-    if (logs.contains('Connection timed')) return 'Connection timed out';
-    if (logs.contains('Invalid data'))     return 'Invalid stream format';
-    if (logs.contains('moov atom'))        return 'Incomplete download — retry';
-    return 'Download failed — tap retry';
-  }
-
-  /// Cancel an ffmpeg download
-  Future<void> cancelFfmpegDownload(String id) async {
-    await FFmpegKit.cancel();
+  Future<void> cancelDownload(String id) async {
+    if (kIsWeb) return;
     final item = _findById(id);
-    if (item != null) {
-      item.status = DownloadStatus.canceled;
-      _notifService.cancel(item.id.hashCode);
-      await _saveDownloads();
-      onDownloadUpdate?.call(item);
+    if (item == null) return;
+
+    // Cancel active segment download
+    if (_activeHlsDownloads.containsKey(item.id)) {
+      _activeHlsDownloads[item.id]?.cancel();
+      _activeHlsDownloads.remove(item.id);
     }
-  }
 
-  /// Retry a failed ffmpeg download
-  Future<void> retryFfmpegDownload(String id) async {
-    final item = _findById(id);
-    if (item == null || !item.isFfmpegDownload) return;
-    item.status = DownloadStatus.downloading;
-    item.progress = 0;
-    item.error = null;
-    await _saveDownloads();
+    // Legacy flutter_downloader
+    if (item.taskId != null) {
+      await FlutterDownloader.cancel(taskId: item.taskId!);
+    }
+
+    item.status = DownloadStatus.canceled;
+    _notifService.cancel(item.id.hashCode);
+
+    // Clean up segment directory if exists
+    if (item.segmentDirectory != null) {
+      try {
+        final segDir = Directory(item.segmentDirectory!);
+        if (await segDir.exists()) await segDir.delete(recursive: true);
+      } catch (_) {}
+    }
+
+    _saveDownloads();
     onDownloadUpdate?.call(item);
+  }
 
-    _notifService.showProgress(
-      id: item.id.hashCode,
-      title: item.displayName,
-      progress: 0,
-      body: 'Retrying download…',
-    );
+  Future<void> deleteDownload(String id) async {
+    final item = _findById(id);
+    if (item == null) return;
+    
+    _notifService.cancel(item.id.hashCode);
 
-    _runFfmpeg(item);
+    // Cancel if still active
+    if (_activeHlsDownloads.containsKey(item.id)) {
+      _activeHlsDownloads[item.id]?.cancel();
+      _activeHlsDownloads.remove(item.id);
+    }
+
+    // Delete the output file
+    if (item.localPath != null && !kIsWeb) {
+      final file = File(item.localPath!);
+      if (await file.exists()) await file.delete();
+    }
+
+    // Delete segment directory if exists
+    if (item.segmentDirectory != null && !kIsWeb) {
+      try {
+        final segDir = Directory(item.segmentDirectory!);
+        if (await segDir.exists()) await segDir.delete(recursive: true);
+      } catch (_) {}
+    }
+    
+    _downloads.removeWhere((d) => d.id == id);
+    _saveDownloads();
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  LEGACY DOWNLOAD METHODS (kept for backward compatibility)
+  //  LEGACY DOWNLOAD METHOD (direct MP4 URLs via flutter_downloader)
   // ═══════════════════════════════════════════════════════════
 
   Future<DownloadItem> startDownload({
@@ -601,192 +706,6 @@ class DownloadManager {
     }
 
     return item;
-  }
-
-  Future<DownloadItem> startHlsDownload({
-    required String url,
-    required String title,
-    required int season,
-    required int episode,
-    String? posterUrl,
-  }) async {
-    if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
-    final hasPermission = await requestPermissions();
-    if (!hasPermission) throw Exception('Storage permission denied');
-
-    final item = DownloadItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      url: url,
-      title: title,
-      season: season,
-      episode: episode,
-      posterUrl: posterUrl,
-      fileExtension: '.m3u8',
-      status: DownloadStatus.downloading,
-    );
-
-    _downloads.insert(0, item);
-    _saveDownloads();
-
-    _startHlsTask(item);
-
-    return item;
-  }
-
-  Future<void> _startHlsTask(DownloadItem item) async {
-    final dir = await getDownloadDirectory();
-    final folderName = item.displayName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
-    final saveDirectory = '${dir.path}/$folderName';
-
-    item.localPath = '$saveDirectory/local_playlist.m3u8';
-    
-    final service = HlsDownloaderService();
-    _activeHlsDownloads[item.id] = service;
-
-    service.onProgress = (progress, downloaded, total) {
-      item.progress = progress;
-      item.downloadedBytes = downloaded;
-      item.totalBytes = total;
-      item.status = DownloadStatus.downloading;
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-    };
-
-    service.onError = (error) {
-      item.status = DownloadStatus.failed;
-      item.error = error;
-      _activeHlsDownloads.remove(item.id);
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-    };
-
-    service.onComplete = (localPath) {
-      item.status = DownloadStatus.completed;
-      item.localPath = localPath;
-      item.completedAt = DateTime.now();
-      _activeHlsDownloads.remove(item.id);
-      onDownloadComplete?.call(item);
-      _saveDownloads();
-    };
-
-    service.startDownload(
-      m3u8Url: item.url,
-      saveDirectory: saveDirectory,
-    );
-  }
-
-  Future<void> pauseDownload(String id) async {
-    if (kIsWeb) return;
-    final item = _findById(id);
-    if (item == null) return;
-    
-    if (item.isFfmpegDownload) {
-      // FFmpeg downloads can't be paused, only canceled
-      return;
-    }
-
-    if (item.fileExtension == '.m3u8') {
-      _activeHlsDownloads[item.id]?.pause();
-      item.status = DownloadStatus.paused;
-      _saveDownloads();
-      onDownloadUpdate?.call(item);
-      return;
-    }
-
-    if (item.taskId != null) {
-      await FlutterDownloader.pause(taskId: item.taskId!);
-      item.status = DownloadStatus.paused;
-      _saveDownloads();
-      onDownloadUpdate?.call(item);
-    }
-  }
-
-  Future<void> resumeDownload(String id) async {
-    if (kIsWeb) return;
-    final item = _findById(id);
-    if (item == null) return;
-    
-    if (item.isFfmpegDownload && item.status == DownloadStatus.failed) {
-      retryFfmpegDownload(id);
-      return;
-    }
-
-    if (item.fileExtension == '.m3u8') {
-      if (_activeHlsDownloads.containsKey(item.id)) {
-        _activeHlsDownloads[item.id]?.resume();
-      } else {
-        _startHlsTask(item);
-      }
-      item.status = DownloadStatus.downloading;
-      _saveDownloads();
-      onDownloadUpdate?.call(item);
-      return;
-    }
-
-    if (item.taskId != null) {
-      final taskId = await FlutterDownloader.resume(taskId: item.taskId!);
-      item.taskId = taskId;
-      item.status = DownloadStatus.downloading;
-      _saveDownloads();
-      onDownloadUpdate?.call(item);
-    }
-  }
-
-  Future<void> cancelDownload(String id) async {
-    if (kIsWeb) return;
-    final item = _findById(id);
-    if (item == null) return;
-    
-    if (item.isFfmpegDownload) {
-      await cancelFfmpegDownload(id);
-      return;
-    }
-
-    if (item.fileExtension == '.m3u8') {
-      _activeHlsDownloads[item.id]?.cancel();
-      _activeHlsDownloads.remove(id);
-    } else if (item.taskId != null) {
-      await FlutterDownloader.cancel(taskId: item.taskId!);
-    }
-    item.status = DownloadStatus.canceled;
-    _notifService.cancel(item.id.hashCode);
-    _saveDownloads();
-    onDownloadUpdate?.call(item);
-  }
-
-  Future<void> deleteDownload(String id) async {
-    final item = _findById(id);
-    if (item == null) return;
-    
-    _notifService.cancel(item.id.hashCode);
-
-    if (item.isFfmpegDownload) {
-      if (item.localPath != null && !kIsWeb) {
-        final file = File(item.localPath!);
-        if (await file.exists()) await file.delete();
-      }
-    } else if (item.fileExtension == '.m3u8') {
-      _activeHlsDownloads[item.id]?.cancel();
-      _activeHlsDownloads.remove(id);
-      
-      if (item.localPath != null && !kIsWeb) {
-        final file = File(item.localPath!);
-        final parentDir = file.parent;
-        if (await parentDir.exists()) {
-          await parentDir.delete(recursive: true);
-        }
-      }
-    } else {
-      if (item.localPath != null && !kIsWeb) {
-        final file = File(item.localPath!);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      }
-    }
-    
-    _downloads.removeWhere((d) => d.id == id);
-    _saveDownloads();
   }
 
   Future<void> clearCompleted() async {

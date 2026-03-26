@@ -36,7 +36,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               d.status == DownloadStatus.pending ||
               d.status == DownloadStatus.paused ||
               d.status == DownloadStatus.failed ||
-              d.status == DownloadStatus.canceled,
+              d.status == DownloadStatus.canceled ||
+              d.status == DownloadStatus.converting,
         )
         .toList();
     final completed = downloads
@@ -327,14 +328,18 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: item.progress > 0 ? item.progress : null,
+                    value: item.status == DownloadStatus.converting
+                        ? null // Indeterminate for conversion
+                        : item.progress > 0 ? item.progress : null,
                     backgroundColor: AppColors.surface,
                     valueColor: AlwaysStoppedAnimation<Color>(
                       item.status == DownloadStatus.paused
                           ? Colors.orange
                           : item.status == DownloadStatus.failed
                             ? Colors.red
-                            : AppColors.primary,
+                            : item.status == DownloadStatus.converting
+                              ? Colors.blue
+                              : AppColors.primary,
                     ),
                     minHeight: 6,
                   ),
@@ -343,18 +348,26 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      item.status == DownloadStatus.paused
-                          ? 'Paused'
-                          : item.status == DownloadStatus.failed
-                             ? item.error ?? 'Failed'
-                             : item.formattedProgress, // Shows MBs now
-                      style: TextStyle(
-                        color: item.status == DownloadStatus.paused
-                            ? Colors.orange
-                            : AppColors.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Text(
+                        item.status == DownloadStatus.paused
+                            ? 'Paused · ${item.formattedDownloadedBytes}'
+                            : item.status == DownloadStatus.failed
+                               ? item.error ?? 'Failed'
+                               : item.status == DownloadStatus.converting
+                                 ? 'Converting to MP4…'
+                                 : '${item.formattedDownloadedBytes} · ${item.segmentProgressLabel}',
+                        style: TextStyle(
+                          color: item.status == DownloadStatus.paused
+                              ? Colors.orange
+                              : item.status == DownloadStatus.converting
+                                ? Colors.blue
+                                : AppColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -372,25 +385,25 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   icon: const Icon(Icons.refresh, color: Colors.orange),
                   tooltip: 'Retry',
                   onPressed: () {
-                    if (item.isFfmpegDownload) {
-                      DownloadManager.instance.retryFfmpegDownload(item.id);
-                    } else {
-                      DownloadManager.instance.resumeDownload(item.id);
-                    }
+                    DownloadManager.instance.resumeDownload(item.id);
                     setState(() {});
                   },
                 )
               else if (item.status == DownloadStatus.paused)
                 IconButton(
                   icon: const Icon(Icons.play_arrow, color: Colors.white),
-                  onPressed: () =>
-                      DownloadManager.instance.resumeDownload(item.id),
+                  onPressed: () {
+                    DownloadManager.instance.resumeDownload(item.id);
+                    setState(() {});
+                  },
                 )
-              else if (!item.isFfmpegDownload)
+              else if (item.status == DownloadStatus.downloading)
                 IconButton(
                   icon: const Icon(Icons.pause, color: Colors.white),
-                  onPressed: () =>
-                      DownloadManager.instance.pauseDownload(item.id),
+                  onPressed: () {
+                    DownloadManager.instance.pauseDownload(item.id);
+                    setState(() {});
+                  },
                 ),
               IconButton(
                 icon: const Icon(Icons.close, color: Colors.red, size: 20),
