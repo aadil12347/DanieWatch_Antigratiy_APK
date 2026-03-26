@@ -1,11 +1,15 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/search_provider.dart';
 import '../../providers/download_modal_provider.dart';
+import '../../providers/filter_modal_provider.dart';
 import '../../widgets/quality_selector_sheet.dart';
+import '../../widgets/filter_selector_sheet.dart';
+import '../../widgets/main_filter_panel_sheet.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -18,10 +22,11 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _currentIndex = 0;
+  DateTime? _lastBackPressed;
 
   static const _tabs = [
     '/home',
-    '/korean', // Mapping Explore to Korean instead of Anime
+    '/search', // Replacing explore with search
     '/watchlist',
     '/downloads',
     '/profile',
@@ -29,7 +34,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   static const _icons = [
     Icons.home_outlined,
-    Icons.explore_outlined,
+    Icons.search_outlined,
     Icons.bookmark_outline_rounded,
     Icons.download_outlined,
     Icons.person_outline,
@@ -37,7 +42,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   static const _activeIcons = [
     Icons.home_rounded,
-    Icons.explore,
+    Icons.search_rounded,
     Icons.bookmark_rounded,
     Icons.download_rounded,
     Icons.person,
@@ -45,7 +50,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   static const _labels = [
     'Home',
-    'Explore',
+    'Search',
     'My List',
     'Download',
     'Profile',
@@ -88,15 +93,70 @@ class _AppShellState extends ConsumerState<AppShell> {
     final _bottomActiveIcons = _activeIcons.sublist(0, 4);
 
     final downloadState = ref.watch(downloadModalProvider);
-    final isModalOpen = downloadState.isOpen;
+    final filterState = ref.watch(filterModalProvider);
+    final isModalOpen = downloadState.isOpen || filterState.isOpen;
 
-    return Scaffold(
-      extendBody: true,
-      body: Stack(
-        children: [
-          widget.child,
-          // Floating Bottom Nav Bar or Download Modal
-          if (!location.contains('/search') && !isSearchExpanded)
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+
+        // 1. If modal is open, close modal or step back
+        if (isModalOpen) {
+          if (downloadState.isOpen) {
+            ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+          } else if (filterState.view == FilterView.optionsList && filterState.isSubMenu) {
+            ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.mainPanel);
+          } else {
+            ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+          }
+          return;
+        }
+
+        // 2. If not on Home Tab, route back to Home Tab
+        if (_currentIndex != 0) {
+          _onTap(0);
+          return;
+        }
+
+        // 3. We are on Home Tab. Handle double back to exit
+        final now = DateTime.now();
+        if (_lastBackPressed == null || now.difference(_lastBackPressed!) > const Duration(seconds: 3)) {
+          _lastBackPressed = now;
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Press back again to close the app'),
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: AppColors.surfaceElevated,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          );
+        } else {
+          // Double back pressed within 3 seconds, close the app
+          await SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        extendBody: true,
+        body: Stack(
+          children: [
+            widget.child,
+            // Barrier to dismiss modal when tapping outside
+            if (isModalOpen)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+                    ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+                  },
+                  child: Container(color: Colors.black.withOpacity(0.4)),
+                ),
+              ),
+            // Floating Bottom Nav Bar or Download/Filter Modal
+          if (!isSearchExpanded)
             Positioned(
               bottom: MediaQuery.paddingOf(context).bottom + 24,
               left: 0,
@@ -138,12 +198,28 @@ class _AppShellState extends ConsumerState<AppShell> {
                             child: isModalOpen
                                 ? Material(
                                     color: Colors.transparent,
-                                    child: QualitySelectorContent(
-                                      m3u8Url: downloadState.m3u8Url ?? '',
-                                      title: downloadState.title ?? 'Download',
-                                      onSelected: downloadState.onSelected ?? (_) {},
-                                      onCancel: downloadState.onCancel ?? () {},
-                                    ),
+                                    child: downloadState.isOpen
+                                        ? QualitySelectorContent(
+                                            m3u8Url: downloadState.m3u8Url ?? '',
+                                            title: downloadState.title ?? 'Download',
+                                            onSelected: downloadState.onSelected ?? (_) {},
+                                            onCancel: downloadState.onCancel ?? () {},
+                                          )
+                                        : (filterState.view == FilterView.optionsList
+                                            ? FilterSelectorContent(
+                                                title: filterState.title,
+                                                currentValue: filterState.currentValue,
+                                                options: filterState.options,
+                                                onChanged: filterState.onChanged ?? (_) {},
+                                                onCancel: () {
+                                                  if (filterState.isSubMenu) {
+                                                    ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.mainPanel);
+                                                  } else {
+                                                    ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+                                                  }
+                                                },
+                                              )
+                                            : const MainFilterPanelContent()),
                                   )
                                 : Container(
                                     height: 64,
@@ -203,6 +279,7 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
         ],
       ),
+    ),
     );
   }
 }

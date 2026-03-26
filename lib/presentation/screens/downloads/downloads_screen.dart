@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -205,7 +206,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       ),
       child: Column(
         children: [
-          // Red accent strip at top (matching watchlist clipboard clip)
+          // Red accent strip at top
           Container(
             width: 40,
             height: 10,
@@ -226,7 +227,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             ),
           ),
           const Spacer(),
-          // Download icon in center
           Icon(
             Icons.download_rounded,
             size: 40,
@@ -258,227 +258,233 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   // ─── Downloading Item ───────────────────────────────────────────────────
   Widget _buildDownloadingItem(DownloadItem item) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: item.posterUrl != null
-                ? CachedNetworkImage(
-                    imageUrl: item.posterUrl!,
-                    width: 60,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => _buildPlaceholder(),
-                    errorWidget: (_, __, ___) => _buildPlaceholder(),
-                  )
-                : _buildPlaceholder(),
-          ),
-          const SizedBox(width: 12),
+    final pct = (item.progress * 100).toInt().clamp(0, 100);
 
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Tooltip(
-                  message: item.fileName,
-                  preferBelow: false,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.3),
+    return GestureDetector(
+      onLongPress: () => _showDeleteTooltip(context, item),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            // Thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: item.posterUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: item.posterUrl!,
+                      width: 60,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => _buildPlaceholder(),
+                      errorWidget: (_, __, ___) => _buildPlaceholder(),
+                    )
+                  : _buildPlaceholder(),
+            ),
+            const SizedBox(width: 12),
+
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tooltip(
+                    message: item.fileName,
+                    preferBelow: false,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    textStyle: const TextStyle(color: Colors.white, fontSize: 13),
+                    child: Text(
+                      item.displayName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  textStyle: const TextStyle(color: Colors.white, fontSize: 13),
-                  child: Text(
-                    item.displayName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                // Quality & Audio tag
-                if (item.qualityTag.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    item.qualityTag,
-                    style: TextStyle(
-                      color: AppColors.textSecondary.withValues(alpha: 0.7),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                // Progress bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: item.status == DownloadStatus.converting
-                        ? null // Indeterminate for conversion
-                        : item.progress > 0 ? item.progress : null,
-                    backgroundColor: AppColors.surface,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      item.status == DownloadStatus.paused
-                          ? Colors.orange
-                          : item.status == DownloadStatus.failed
-                            ? Colors.red
-                            : item.status == DownloadStatus.converting
-                              ? Colors.blue
-                              : AppColors.primary,
-                    ),
-                    minHeight: 6,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.status == DownloadStatus.paused
-                            ? 'Paused · ${item.formattedDownloadedBytes}'
-                            : item.status == DownloadStatus.failed
-                               ? item.error ?? 'Failed'
-                               : item.status == DownloadStatus.converting
-                                 ? 'Converting to MP4…'
-                                 : '${item.formattedDownloadedBytes} · ${item.segmentProgressLabel}',
-                        style: TextStyle(
-                          color: item.status == DownloadStatus.paused
-                              ? Colors.orange
-                              : item.status == DownloadStatus.converting
-                                ? Colors.blue
-                                : AppColors.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                  // Quality & Audio tag
+                  if (item.qualityTag.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.qualityTag,
+                      style: TextStyle(
+                        color: AppColors.textSecondary.withValues(alpha: 0.7),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  // Progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: item.progress > 0 ? item.progress : null,
+                      backgroundColor: AppColors.surface,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        item.status == DownloadStatus.paused
+                            ? Colors.orange
+                            : item.status == DownloadStatus.failed
+                              ? Colors.red
+                              : AppColors.primary,
+                      ),
+                      minHeight: 6,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _getProgressText(item, pct),
+                          style: TextStyle(
+                            color: item.status == DownloadStatus.paused
+                                ? Colors.orange
+                                : item.status == DownloadStatus.failed
+                                  ? Colors.red
+                                  : AppColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Actions
+            Column(
+              children: [
+                if (item.status == DownloadStatus.failed)
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.orange),
+                    tooltip: 'Retry',
+                    onPressed: () {
+                      DownloadManager.instance.resumeDownload(item.id);
+                      setState(() {});
+                    },
+                  )
+                else if (item.status == DownloadStatus.paused)
+                  IconButton(
+                    icon: const Icon(Icons.play_arrow, color: Colors.white),
+                    onPressed: () {
+                      DownloadManager.instance.resumeDownload(item.id);
+                      setState(() {});
+                    },
+                  )
+                else if (item.status == DownloadStatus.downloading ||
+                    item.status == DownloadStatus.converting)
+                  IconButton(
+                    icon: const Icon(Icons.pause, color: Colors.white),
+                    onPressed: () {
+                      DownloadManager.instance.pauseDownload(item.id);
+                      setState(() {});
+                    },
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                  onPressed: () => _showDeleteConfirmation(item),
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-
-          // Actions
-          Column(
-            children: [
-              if (item.status == DownloadStatus.failed)
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.orange),
-                  tooltip: 'Retry',
-                  onPressed: () {
-                    DownloadManager.instance.resumeDownload(item.id);
-                    setState(() {});
-                  },
-                )
-              else if (item.status == DownloadStatus.paused)
-                IconButton(
-                  icon: const Icon(Icons.play_arrow, color: Colors.white),
-                  onPressed: () {
-                    DownloadManager.instance.resumeDownload(item.id);
-                    setState(() {});
-                  },
-                )
-              else if (item.status == DownloadStatus.downloading)
-                IconButton(
-                  icon: const Icon(Icons.pause, color: Colors.white),
-                  onPressed: () {
-                    DownloadManager.instance.pauseDownload(item.id);
-                    setState(() {});
-                  },
-                ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                onPressed: () => _showCancelDialog(item),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
+  String _getProgressText(DownloadItem item, int pct) {
+    final mb = item.formattedDownloadedBytes;
+    if (item.status == DownloadStatus.paused) {
+      return 'Paused · $pct% · $mb';
+    }
+    if (item.status == DownloadStatus.failed) {
+      return item.error ?? 'Failed';
+    }
+    if (item.status == DownloadStatus.converting) {
+      return '$pct% · $mb · Finalizing...';
+    }
+    // Downloading
+    final speedStr = item.formattedSpeed;
+    if (speedStr.isNotEmpty) {
+      return '$pct% · $mb · $speedStr';
+    }
+    return '$pct% · $mb';
+  }
+
   // ─── Completed Item ─────────────────────────────────────────────────────
   Widget _buildCompletedItem(DownloadItem item) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          // Thumbnail with play overlay
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: item.posterUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: item.posterUrl!,
-                        width: 60,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _buildPlaceholder(),
-                        errorWidget: (_, __, ___) => _buildPlaceholder(),
-                      )
-                    : _buildPlaceholder(),
-              ),
-              // Play icon overlay
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.black.withValues(alpha: 0.3),
-                  ),
-                  child: const Icon(
-                    Icons.play_circle_outline,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: () => _playDownload(item),
+      onLongPress: () => _showDeleteTooltip(context, item),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            // Thumbnail with play overlay
+            Stack(
               children: [
-                Tooltip(
-                  message: item.fileName,
-                  preferBelow: false,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.3),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: item.posterUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl!,
+                          width: 60,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _buildPlaceholder(),
+                          errorWidget: (_, __, ___) => _buildPlaceholder(),
+                        )
+                      : _buildPlaceholder(),
+                ),
+                // Play icon overlay
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.black.withValues(alpha: 0.3),
+                    ),
+                    child: const Icon(
+                      Icons.play_circle_outline,
+                      color: Colors.white,
+                      size: 28,
                     ),
                   ),
-                  textStyle: const TextStyle(color: Colors.white, fontSize: 13),
-                  child: Text(
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                     item.displayName,
                     style: const TextStyle(
                       color: Colors.white,
@@ -488,74 +494,82 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    if (item.qualityTag.isNotEmpty)
-                      Text(
-                        '${item.qualityTag} • ',
-                        style: TextStyle(
-                          color: AppColors.textMuted.withValues(alpha: 0.7),
-                          fontSize: 12,
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (item.qualityTag.isNotEmpty)
+                        Flexible(
+                          child: Text(
+                            '${item.qualityTag} • ',
+                            style: TextStyle(
+                              color: AppColors.textMuted.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      Flexible(
+                        child: Text(
+                          item.formattedSize,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    Text(
-                      item.formattedSize,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
 
-          // Actions: Play + Delete
-          GestureDetector(
-            onTap: () => _playDownload(item),
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.5),
-                  width: 1,
+            // Actions: Play + Delete
+            GestureDetector(
+              onTap: () => _playDownload(item),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.5),
+                    width: 1,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: AppColors.primary,
+                  size: 22,
                 ),
               ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                color: AppColors.primary,
-                size: 22,
-              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () => _showDeleteDialog(item),
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.red.withValues(alpha: 0.3),
-                  width: 1,
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _showDeleteConfirmation(item),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.red.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Icon(
+                  Icons.delete_outline,
+                  color: Colors.red.withValues(alpha: 0.8),
+                  size: 20,
                 ),
               ),
-              child: Icon(
-                Icons.delete_outline,
-                color: Colors.red.withValues(alpha: 0.8),
-                size: 20,
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -567,15 +581,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       color: AppColors.surface,
       child: const Icon(Icons.movie, color: AppColors.textMuted, size: 30),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inDays == 0) return 'Today';
-    if (diff.inDays == 1) return 'Yesterday';
-    if (diff.inDays < 7) return '${diff.inDays} days ago';
-    return '${date.day}/${date.month}/${date.year}';
   }
 
   void _playDownload(DownloadItem item) async {
@@ -606,305 +611,408 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     }
   }
 
-  void _showDeleteDialog(DownloadItem item) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border, width: 1),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Colors.red,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Delete Download?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Are you sure you want to delete\n"${item.displayName}"?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textSecondary.withValues(alpha: 0.8),
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: AppColors.border),
+  // ─── Long-press Delete Tooltip ──────────────────────────────────────────
+  void _showDeleteTooltip(BuildContext context, DownloadItem item) {
+    HapticFeedback.mediumImpact();
+    
+    final RenderBox? box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    
+    final cardPosition = box.localToGlobal(Offset.zero);
+    final cardSize = box.size;
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+
+    // Position tooltip just above the card
+    final tooltipTop = cardPosition.dy - 56;
+
+    entry = OverlayEntry(
+      builder: (ctx) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => entry.remove(),
+        child: Stack(
+          children: [
+            // Dismiss layer
+            Positioned.fill(
+              child: Container(color: Colors.transparent),
+            ),
+            // Tooltip positioned above the held card
+            Positioned(
+              top: tooltipTop < 60 ? cardPosition.dy + cardSize.height + 8 : tooltipTop,
+              left: 16,
+              right: 16,
+              child: Center(
+                child: Material(
+                  color: Colors.transparent,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutBack,
+                    builder: (context, value, child) {
+                      return Transform.scale(
+                        scale: value,
+                        child: Opacity(
+                          opacity: value.clamp(0.0, 1.0),
+                          child: child,
                         ),
+                      );
+                    },
+                    child: Container(
+                      constraints: BoxConstraints(maxWidth: screenWidth - 64),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 20,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          entry.remove();
+                          _showDeleteConfirmation(item);
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            Icon(Icons.delete_outline, color: Colors.red.withValues(alpha: 0.9), size: 22),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Delete "${item.displayName}"',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        DownloadManager.instance.deleteDownload(item.id);
-                        setState(() {});
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Delete',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+
+    overlay.insert(entry);
   }
 
-  void _showCancelDialog(DownloadItem item) {
-    showDialog(
+  // ─── Delete Confirmation Modal (with smooth animation + storage toggle) ─
+  void _showDeleteConfirmation(DownloadItem item) {
+    bool deleteFromStorage = true;
+
+    showGeneralDialog(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border, width: 1),
+      barrierDismissible: true,
+      barrierLabel: 'Delete Confirmation',
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+            ),
+            child: child,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close_rounded,
-                  color: AppColors.primary,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Cancel Download?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Stop downloading "${item.displayName}"?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textSecondary.withValues(alpha: 0.8),
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: AppColors.border),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Center(
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.85,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.border, width: 1),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.red,
+                          size: 32,
                         ),
                       ),
-                      child: const Text(
-                        'No',
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Delete Download?',
                         style: TextStyle(
                           color: Colors.white,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        DownloadManager.instance.cancelDownload(item.id);
-                        setState(() {});
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Are you sure you want to delete\n"${item.displayName}"?',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary.withValues(alpha: 0.8),
+                          fontSize: 14,
+                          height: 1.5,
                         ),
                       ),
-                      child: const Text(
-                        'Stop',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      const SizedBox(height: 20),
+                      // Storage toggle
+                      GestureDetector(
+                        onTap: () {
+                          setModalState(() {
+                            deleteFromStorage = !deleteFromStorage;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: deleteFromStorage
+                                  ? Colors.red.withValues(alpha: 0.4)
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                deleteFromStorage
+                                    ? Icons.check_box_rounded
+                                    : Icons.check_box_outline_blank_rounded,
+                                color: deleteFromStorage
+                                    ? Colors.red
+                                    : AppColors.textMuted,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Also delete from device storage',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(color: AppColors.border),
+                                ),
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                DownloadManager.instance.deleteDownload(
+                                  item.id,
+                                  deleteFile: deleteFromStorage,
+                                );
+                                setState(() {});
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+              );
+            },
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
+  // _showCancelDialog removed — cancel/X button now uses _showDeleteConfirmation directly
+
+  // ─── Clear All Dialog (with smooth animation) ──────────────────────────
   void _showClearDialog() {
-    showDialog(
+    showGeneralDialog(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border, width: 1),
+      barrierDismissible: true,
+      barrierLabel: 'Clear All',
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+            ),
+            child: child,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.delete_sweep_rounded,
-                  color: AppColors.primary,
-                  size: 32,
-                ),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.85,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppColors.border, width: 1),
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'Clear All Downloads?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'This will delete all completed downloads from your device. This action cannot be undone.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 32),
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: AppColors.border),
-                        ),
-                      ),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.delete_sweep_rounded,
+                      color: AppColors.primary,
+                      size: 32,
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        for (final item in DownloadManager.instance.completedItems) {
-                          DownloadManager.instance.deleteDownload(item.id);
-                        }
-                        setState(() {});
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Clear All Downloads?',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'This will delete all completed downloads from your device. This action cannot be undone.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(color: AppColors.border),
+                            ),
+                          ),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Text(
-                        'Clear All',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            for (final item in DownloadManager.instance.completedItems) {
+                              DownloadManager.instance.deleteDownload(item.id);
+                            }
+                            setState(() {});
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Clear All',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

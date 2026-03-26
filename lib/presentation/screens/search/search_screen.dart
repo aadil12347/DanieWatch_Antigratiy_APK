@@ -1,6 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
@@ -9,9 +8,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/manifest_item.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/search_provider.dart';
+import '../../providers/filter_modal_provider.dart';
+import '../../widgets/filter_selector_sheet.dart';
 import '../../widgets/movie_card.dart';
-import '../../widgets/custom_app_bar.dart';
-import 'widgets/filter_bottom_sheet.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -20,306 +19,372 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _enterController;
-  late final Animation<double> _fadeAnimation;
+class _SearchScreenState extends ConsumerState<SearchScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    
-    _enterController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _enterController,
-      curve: Curves.easeInOut,
-    );
+    final currentQuery = ref.read(searchProvider).query;
+    if (currentQuery.isNotEmpty) {
+      _searchController.text = currentQuery;
+    }
+    _searchFocus.addListener(_onFocusChange);
+  }
 
-    _enterController.forward();
+  void _onFocusChange() {
+    // If the user taps away, unfocus. If they tap the text field, focus.
+    // Trigger a rebuild so the animated layout changes happen smoothly.
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
-    _enterController.dispose();
+    _searchController.dispose();
+    _searchFocus.removeListener(_onFocusChange);
+    _searchFocus.dispose();
     super.dispose();
   }
 
+  void _onSearchChanged(String query) {
+    ref.read(searchProvider.notifier).search(query);
+  }
 
+  List<ManifestItem> _getFilteredItems(List<ManifestItem> allItems, SearchState searchState, Map<String, ManifestItem> index) {
+    List<ManifestItem> baseList;
+    
+    if (searchState.query.trim().isNotEmpty) {
+      // Use FTS results mapping
+      baseList = searchState.results
+          .map((r) => index['${r.itemId}-${r.mediaType}'])
+          .whereType<ManifestItem>()
+          .toList();
+    } else {
+      // Use all items if query is empty
+      baseList = List.from(allItems);
+    }
+
+    final f = searchState.filters;
+
+    // Filter by Category
+    if (f.category != 'All') {
+      baseList = baseList.where((item) {
+        if (f.category == 'Movies' && item.mediaType == 'movie') return true;
+        if (f.category == 'TV Shows' && item.mediaType == 'tv') return true;
+        if (f.category == 'Anime' && item.mediaType == 'anime') return true;
+        return false;
+      }).toList();
+    }
+
+    // Filter by Genre
+    if (f.genre != 'All Genres') {
+      final genreMap = {
+        'Action': 28,
+        'Animation': 16,
+        'Comedy': 35,
+        'Crime': 80,
+        'Documentary': 99,
+        'Drama': 18,
+        'Family': 10751,
+        'Fantasy': 14,
+        'History': 36,
+        'Horror': 27,
+        'Music': 10402,
+        'Mystery': 9648,
+        'Romance': 10749,
+        'Science Fiction': 878,
+        'Thriller': 53,
+        'War': 10752,
+        'Western': 37,
+      };
+
+      if (genreMap.containsKey(f.genre)) {
+         final genreId = genreMap[f.genre]!;
+         baseList = baseList.where((item) => item.genreIds.contains(genreId)).toList();
+      }
+    }
+
+    // Filter by Year
+    if (f.year != 'All Years') {
+       baseList = baseList.where((item) {
+          if (item.releaseYear == null) return false;
+          return item.releaseYear.toString() == f.year;
+       }).toList();
+    }
+
+    // Sort By
+    if (f.sortBy == 'Popularity (High to Low)') {
+       baseList.sort((a, b) => b.voteCount.compareTo(a.voteCount));
+    } else if (f.sortBy == 'Popularity (Low to High)') {
+       baseList.sort((a, b) => a.voteCount.compareTo(b.voteCount));
+    } else if (f.sortBy == 'Rating (High to Low)') {
+       baseList.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+    } else if (f.sortBy == 'Rating (Low to High)') {
+       baseList.sort((a, b) => a.voteAverage.compareTo(b.voteAverage));
+    } else if (f.sortBy == 'Release Date (Newest)') {
+       baseList.sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
+    }
+
+    return baseList;
+  }
+
+  void _showSelectionModal(String title, String currentValue, List<String> options, Function(String) onChanged) {
+    _searchFocus.unfocus(); // Ensure search keyboard goes away
+    
+    // The Category selector is outside the filter panel, so it acts as standard modal
+    ref.read(filterModalProvider.notifier).state = FilterModalState(
+      view: FilterView.optionsList,
+      title: title,
+      currentValue: currentValue,
+      options: options,
+      onChanged: onChanged,
+      isSubMenu: false, // Cancel should close the modal completely
+    );
+  }
+
+  Widget _buildModalSelector({
+    required String title,
+    required String value,
+    required List<String> options,
+    required Function(String) onChanged,
+    bool isExpandedWidth = false,
+  }) {
+    return GestureDetector(
+      onTap: () => _showSelectionModal(title, value, options, onChanged),
+      child: Container(
+        height: 48,
+        width: isExpandedWidth ? double.infinity : null,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: isExpandedWidth ? Colors.black.withOpacity(0.3) : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: isExpandedWidth ? Border.all(color: Colors.white.withOpacity(0.1)) : null,
+        ),
+        child: Row(
+          mainAxisSize: isExpandedWidth ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(value, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+            if (isExpandedWidth) const Spacer(),
+            if (!isExpandedWidth) const SizedBox(width: 8),
+            const Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
     final allItems = ref.watch(allItemsProvider);
+    final trending = ref.watch(trendingProvider);
     final index = ref.watch(manifestIndexProvider);
-    
-    // Using 3 columns as requested
-    final crossAxisCount = 3;
 
-    return CustomAppBar(
-      isSearchScreen: true,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
-            children: [
-                // Glassmorphism background - only blur when searching or showing content
-                if (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters)
-                  Positioned.fill(
-                    child: AnimatedBuilder(
-                      animation: _fadeAnimation,
-                      builder: (context, child) {
-                        return BackdropFilter(
-                          filter: ImageFilter.blur(
-                            sigmaX: 20 * _fadeAnimation.value,
-                            sigmaY: 20 * _fadeAnimation.value,
-                          ),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  AppColors.background.withValues(alpha: 0.85 * _fadeAnimation.value),
-                                  AppColors.background.withValues(alpha: 0.98 * _fadeAnimation.value),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                // Main Content
-                SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 80), // Space for floating CustomAppBar
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Column(
-                      children: [
-                        // Active filters pushed down below the CustomAppBar
-                        _buildActiveFilters(searchState.filters),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 400),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            child: _buildResultsArea(
-                              searchState,
-                              allItems,
-                              index,
-                              crossAxisCount,
-                            ),
-                          ),
-                        ),
-                      ],
+    final showResults = searchState.query.isNotEmpty || searchState.filters.hasActiveFilters;
+    final itemsToDisplay = showResults ? _getFilteredItems(allItems, searchState, index) : trending;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: GestureDetector(
+          // Unfocus when tapping anywhere outside
+          onTap: () => _searchFocus.unfocus(),
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+                  child: Text(
+                    'Search All Content',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
                 ),
               ),
+              
+              // Search Bar Row
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                       Expanded(
+                         child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: TextField(
+                               controller: _searchController,
+                               focusNode: _searchFocus,
+                               style: const TextStyle(color: Colors.white, fontSize: 16),
+                               decoration: InputDecoration(
+                                  hintText: 'Search all content...',
+                                  hintStyle: TextStyle(color: AppColors.textMuted),
+                                  prefixIcon: const Icon(Icons.search, color: AppColors.textMuted),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                               ),
+                               onChanged: _onSearchChanged,
+                            ),
+                         ),
+                       ),
+                       // Animated Size handles expanding/collapsing of buttons naturally
+                       AnimatedSize(
+                         duration: const Duration(milliseconds: 200),
+                         curve: Curves.easeInOut,
+                         child: Row(
+                           mainAxisSize: MainAxisSize.min,
+                           children: _searchFocus.hasFocus ? [] : [
+                             const SizedBox(width: 12),
+                             Container(
+                               height: 48,
+                               width: 48,
+                               decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                               ),
+                               child: IconButton(
+                                  icon: const Icon(Icons.tune_rounded, color: Colors.white),
+                                  onPressed: () {
+                                    _searchFocus.unfocus();
+                                    final currentState = ref.read(filterModalProvider);
+                                    if (currentState.isOpen) {
+                                      ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+                                    } else {
+                                      ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.mainPanel);
+                                    }
+                                  },
+                               ),
+                             ),
+                             const SizedBox(width: 12),
+                             // Type Modal Selector
+                             _buildModalSelector(
+                               title: 'Select Category',
+                               value: searchState.filters.category,
+                               options: ['All', 'Movies', 'TV Shows', 'Anime'],
+                               onChanged: (val) {
+                                  ref.read(searchProvider.notifier).updateFilters(searchState.filters.copyWith(category: val));
+                               },
+                             ),
+                           ],
+                         ),
+                       ),
+                    ],
+                  ),
+                ),
+              ),
+          
+              // Expanding Filters Panel (Removed)
+          
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          
+              // Content Title
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    showResults 
+                      ? (searchState.query.isNotEmpty ? 'Search Results for "${searchState.query}"' : 'Search Results')
+                      : 'Trending Now',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          
+              // Grid Content
+              _buildGridContent(searchState, itemsToDisplay),
             ],
           ),
         ),
-    );
-  }
-
-  Widget _buildActiveFilters(SearchFilters filters) {
-    if (!filters.hasActiveFilters) {
-      return const SizedBox.shrink();
-    }
-
-    final activeChips = [
-      ...filters.categories,
-      ...filters.genres,
-      ...filters.periods,
-    ];
-
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: Container(
-        height: 50,
-        margin: const EdgeInsets.only(bottom: 8),
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          itemCount: activeChips.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (context, index) {
-            final label = activeChips[index];
-            return TweenAnimationBuilder<double>(
-              key: ValueKey(label),
-              tween: Tween(begin: 0.0, end: 1.0),
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              builder: (context, value, child) {
-                return Transform.scale(
-                  scale: value,
-                  child: Opacity(
-                    opacity: value,
-                    child: child,
-                  ),
-                );
-              },
-              child: Chip(
-                label: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                backgroundColor: AppColors.primary,
-                deleteIcon: const Icon(Icons.close_rounded, size: 16, color: Colors.white),
-                onDeleted: () {
-                  ref.read(searchProvider.notifier).removeFilterChip(label);
-                },
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: const BorderSide(color: Colors.transparent),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-              ),
-            );
-          },
-        ),
       ),
     );
   }
 
-  Widget _buildResultsArea(
-    SearchState searchState,
-    List<ManifestItem> allItems,
-    Map<String, ManifestItem> index,
-    int crossAxisCount,
-  ) {
-    if (searchState.query.isEmpty && !searchState.filters.hasActiveFilters) {
-      return _buildExploreState();
-    }
-
+  Widget _buildGridContent(SearchState searchState, List<ManifestItem> items) {
     if (searchState.isSearching) {
-      return _buildShimmerGrid(crossAxisCount);
+       return _buildShimmerSliverGrid(3);
     }
-
-    if (searchState.results.isEmpty) {
-      return _buildEmptyState(
-        icon: Icons.search_off_rounded,
-        title: 'No results found',
-        subtitle: 'Try adjusting your filters or search terms.',
+    
+    if (items.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 60),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.search_off_rounded, size: 72, color: Colors.white30),
+              SizedBox(height: 16),
+              Text('No results found', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('Try adjusting your filters or search terms.', style: TextStyle(color: Colors.white54, fontSize: 14)),
+            ],
+          ),
+        ),
       );
     }
 
-    final resultItems = searchState.results
-        .map((r) => index['${r.itemId}-${r.mediaType}'])
-        .where((item) => item != null)
-        .cast<ManifestItem>()
-        .toList();
-
-    return _buildGrid(resultItems, crossAxisCount);
-  }
-
-  Widget _buildExploreState() {
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildGrid(List<ManifestItem> items, int crossAxisCount) {
-    return GridView.builder(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 24,
-      ),
-      physics: const BouncingScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        childAspectRatio: 0.65,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        return TweenAnimationBuilder<double>(
-          key: ValueKey('${items[index].id}_$index'),
-          tween: Tween(begin: 0.0, end: 1.0),
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeOutQuart,
-          builder: (context, value, child) {
-            return Opacity(
-              opacity: value,
-              child: Transform.translate(
-                offset: Offset(0, 40 * (1 - value)),
-                child: child,
-              ),
+    return SliverPadding(
+      padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 100),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: 0.65,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 16,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            return MovieCard(
+              key: ValueKey('${items[index].id}_$index'),
+              item: items[index],
+              onTap: () => context.push('/search-details/${items[index].mediaType}/${items[index].id}'),
             );
           },
-          child: MovieCard(
-            item: items[index],
-            onTap: () => context.push('/search-details/${items[index].mediaType}/${items[index].id}'),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildShimmerGrid(int crossAxisCount) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        childAspectRatio: 0.65,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: crossAxisCount * 4,
-      itemBuilder: (context, index) => _buildShimmerCard(),
-    );
-  }
-
-  Widget _buildShimmerCard() {
-    return Shimmer.fromColors(
-      baseColor: AppColors.surface,
-      highlightColor: AppColors.surfaceElevated.withValues(alpha: 0.4),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
+          childCount: items.length,
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState({required IconData icon, required String title, required String subtitle}) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 72, color: AppColors.primary.withValues(alpha: 0.5)),
-          const SizedBox(height: 24),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
+  Widget _buildShimmerSliverGrid(int crossAxisCount) {
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      sliver: SliverGrid(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          childAspectRatio: 0.65,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 16,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Shimmer.fromColors(
+            baseColor: AppColors.surface,
+            highlightColor: AppColors.surfaceElevated.withAlpha(100),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 14,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+          childCount: crossAxisCount * 4,
+        ),
       ),
     );
   }

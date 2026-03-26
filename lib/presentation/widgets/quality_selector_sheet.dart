@@ -35,6 +35,15 @@ Future<DownloadSelection?> showQualitySelectorSheet({
   int? season,
   int? episode,
 }) async {
+  final currentState = ref.read(downloadModalProvider);
+  if (currentState.isOpen) {
+    // Cancel any previous pending selection to prevent memory leaks
+    currentState.onCancel?.call();
+    // Force the modal to close briefly to trigger a fresh opening animation
+    ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+    await Future.delayed(const Duration(milliseconds: 150));
+  }
+
   final completer = Completer<DownloadSelection?>();
 
   ref.read(downloadModalProvider.notifier).state = DownloadModalState(
@@ -366,6 +375,21 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
   }
 
   Widget _buildDownloadButton() {
+    // Build button label with quality + audio info
+    String buttonLabel = 'Start Download';
+    if (_selectedVariant != null) {
+      final parts = <String>[];
+      if (_selectedAudio != null) {
+        final audioName = _getAudioDisplayName(_selectedAudio!);
+        // Strip emoji flag for button label
+        final cleanName = audioName.replaceAll(RegExp(r'[^\w\s]'), '').trim();
+        if (cleanName.isNotEmpty) parts.add(cleanName);
+      }
+      final quality = _selectedVariant!.badgeLabel.replaceAll(' HD', '');
+      parts.add(quality);
+      buttonLabel = 'Download · ${parts.join(" ")}';
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: SizedBox(
@@ -386,7 +410,7 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 0,
           ),
-          child: const Text('Start Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          child: Text(buttonLabel, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
         ),
       ),
     );

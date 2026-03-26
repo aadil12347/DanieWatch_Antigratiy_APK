@@ -2,6 +2,9 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import '../../core/router/app_router.dart';
+import '../../core/theme/app_theme.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -50,6 +53,7 @@ class DownloadItem {
   int totalSegments;
   int completedSegments;
   String? segmentDirectory;
+  int downloadSpeed; // bytes per second
 
   DownloadItem({
     required this.id,
@@ -75,6 +79,7 @@ class DownloadItem {
     this.totalSegments = 0,
     this.completedSegments = 0,
     this.segmentDirectory,
+    this.downloadSpeed = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -123,9 +128,17 @@ class DownloadItem {
 
   String get segmentProgressLabel {
     if (totalSegments > 0) {
-      return '$completedSegments/$totalSegments';
+      final pct = (progress * 100).toInt().clamp(0, 100);
+      return '$pct%';
     }
     return '';
+  }
+
+  String get formattedSpeed {
+    if (downloadSpeed <= 0) return '';
+    if (downloadSpeed < 1024) return '$downloadSpeed B/s';
+    if (downloadSpeed < 1024 * 1024) return '${(downloadSpeed / 1024).toStringAsFixed(1)} KB/s';
+    return '${(downloadSpeed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
   String get statusLabel {
@@ -164,6 +177,7 @@ class DownloadItem {
     'totalSegments': totalSegments,
     'completedSegments': completedSegments,
     'segmentDirectory': segmentDirectory,
+    'downloadSpeed': downloadSpeed,
   };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -190,6 +204,7 @@ class DownloadItem {
     totalSegments: json['totalSegments'] ?? 0,
     completedSegments: json['completedSegments'] ?? 0,
     segmentDirectory: json['segmentDirectory'],
+    downloadSpeed: json['downloadSpeed'] ?? 0,
   );
 }
 
@@ -232,6 +247,27 @@ class DownloadManager {
       }
     }
     await _saveDownloads();
+    
+    // Wire notification action buttons (Pause/Resume/Cancel from notification bar)
+    _notifService.onNotificationAction = (actionId, notifId) {
+      final item = _downloads.cast<DownloadItem?>().firstWhere(
+        (d) => d!.id.hashCode == notifId,
+        orElse: () => null,
+      );
+      if (item == null) return;
+      
+      switch (actionId) {
+        case 'pause':
+          pauseDownload(item.id);
+          break;
+        case 'resume':
+          resumeDownload(item.id);
+          break;
+        case 'cancel':
+          _showDeleteConfirmationGlobal(item);
+          break;
+      }
+    };
     
     // Register the port for isolate communication (legacy flutter_downloader)
     _unbindPort();
@@ -417,19 +453,21 @@ class DownloadManager {
     int lastNotifPct = -1;
     int lastNotifTime = 0;
 
-    service.onProgress = (progress, completedSegs, totalSegs, downloadedBytes) {
+    service.onProgress = (progress, completedSegs, totalSegs, downloadedBytes, bytesPerSecond) {
       if (item.status == DownloadStatus.canceled) return;
       
-      item.progress = progress;
+      // Map segment progress 0.0–1.0 to 0–96%
+      item.progress = progress * 0.96;
       item.completedSegments = completedSegs;
       item.totalSegments = totalSegs;
       item.downloadedBytes = downloadedBytes;
+      item.downloadSpeed = bytesPerSecond;
       
       if (item.status != DownloadStatus.paused) {
         item.status = DownloadStatus.downloading;
       }
 
-      final pct = (progress * 100).toInt();
+      final pct = (item.progress * 100).toInt();
       final now = DateTime.now().millisecondsSinceEpoch;
 
       // Throttle notification updates
@@ -437,11 +475,12 @@ class DownloadManager {
         lastNotifPct = pct;
         lastNotifTime = now;
 
+        final speedStr = item.formattedSpeed;
         _notifService.showProgress(
           id: item.id.hashCode,
           title: item.displayName,
           progress: pct,
-          body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}$completedSegs/$totalSegs · ${item.formattedDownloadedBytes}',
+          body: '$pct%${speedStr.isNotEmpty ? " · $speedStr" : ""}',
         );
       }
 
@@ -451,13 +490,14 @@ class DownloadManager {
 
     service.onConversionStarted = () {
       item.status = DownloadStatus.converting;
-      item.progress = 1.0; // Segments done, now converting
+      item.progress = 0.97;
+      item.downloadSpeed = 0;
       
       _notifService.showProgress(
         id: item.id.hashCode,
         title: item.displayName,
-        progress: 99,
-        body: 'Converting to MP4…',
+        progress: 97,
+        body: '97% · Finalizing...',
       );
       
       onDownloadUpdate?.call(item);
@@ -618,7 +658,7 @@ class DownloadManager {
     onDownloadUpdate?.call(item);
   }
 
-  Future<void> deleteDownload(String id) async {
+  Future<void> deleteDownload(String id, {bool deleteFile = true}) async {
     final item = _findById(id);
     if (item == null) return;
     
@@ -630,18 +670,20 @@ class DownloadManager {
       _activeHlsDownloads.remove(item.id);
     }
 
-    // Delete the output file
-    if (item.localPath != null && !kIsWeb) {
-      final file = File(item.localPath!);
-      if (await file.exists()) await file.delete();
-    }
+    if (deleteFile) {
+      // Delete the output file
+      if (item.localPath != null && !kIsWeb) {
+        final file = File(item.localPath!);
+        if (await file.exists()) await file.delete();
+      }
 
-    // Delete segment directory if exists
-    if (item.segmentDirectory != null && !kIsWeb) {
-      try {
-        final segDir = Directory(item.segmentDirectory!);
-        if (await segDir.exists()) await segDir.delete(recursive: true);
-      } catch (_) {}
+      // Delete segment directory if exists
+      if (item.segmentDirectory != null && !kIsWeb) {
+        try {
+          final segDir = Directory(item.segmentDirectory!);
+          if (await segDir.exists()) await segDir.delete(recursive: true);
+        } catch (_) {}
+      }
     }
     
     _downloads.removeWhere((d) => d.id == id);
@@ -749,5 +791,189 @@ class DownloadManager {
       if (d.url == url) return d;
     }
     return null;
+  }
+
+  // ─── Delete Confirmation Modal (trigger from Notification) ────────────────
+  void _showDeleteConfirmationGlobal(DownloadItem item) {
+    final context = rootNavKey.currentContext;
+    if (context == null) {
+      // App is killed or no context; just cancel fallback
+      cancelDownload(item.id);
+      return;
+    }
+
+    bool deleteFromStorage = true;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Delete Confirmation',
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+            ),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Center(
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.85,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.border, width: 1),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.red,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Delete Download?',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Are you sure you want to delete\n"${item.displayName}"?',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary.withValues(alpha: 0.8),
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Storage toggle
+                      GestureDetector(
+                        onTap: () {
+                          setModalState(() {
+                            deleteFromStorage = !deleteFromStorage;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: deleteFromStorage
+                                  ? Colors.red.withValues(alpha: 0.4)
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                deleteFromStorage
+                                    ? Icons.check_box_rounded
+                                    : Icons.check_box_outline_blank_rounded,
+                                color: deleteFromStorage
+                                    ? Colors.red
+                                    : AppColors.textMuted,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Also delete from device storage',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(color: AppColors.border),
+                                ),
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                deleteDownload(
+                                  item.id,
+                                  deleteFile: deleteFromStorage,
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }

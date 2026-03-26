@@ -16,7 +16,7 @@ import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 ///  - FFmpeg mux to .mp4 at the end + cleanup
 class HlsDownloaderService {
   // ── Configuration ──────────────────────────────────────
-  static const int _maxWorkers = 3;
+  static const int _maxWorkers = 5;
   static const int _maxRetries = 3;
   static const List<int> _retryDelaysMs = [0, 2000, 5000];
 
@@ -34,7 +34,7 @@ class HlsDownloaderService {
 
   // ── Callbacks ──────────────────────────────────────────
   Function(double progress, int completedSegments, int totalSegments,
-      int downloadedBytes)? onProgress;
+      int downloadedBytes, int bytesPerSecond)? onProgress;
   Function(String error)? onError;
   Function(String mp4Path)? onComplete;
   VoidCallback? onConversionStarted;
@@ -46,6 +46,11 @@ class HlsDownloaderService {
   int _completedSegments = 0;
   int _totalSegments = 0;
   int _downloadedBytes = 0;
+
+  // ── Speed tracking ─────────────────────────────────────
+  int _bytesPerSecond = 0;
+  int _lastSpeedBytes = 0;
+  int _lastSpeedTime = 0;
 
   StreamSubscription? _connectivitySub;
 
@@ -363,7 +368,24 @@ class HlsDownloaderService {
   void _reportProgress() {
     if (_totalSegments > 0) {
       final progress = _completedSegments / _totalSegments;
-      onProgress?.call(progress, _completedSegments, _totalSegments, _downloadedBytes);
+      _updateSpeed();
+      onProgress?.call(progress, _completedSegments, _totalSegments, _downloadedBytes, _bytesPerSecond);
+    }
+  }
+
+  void _updateSpeed() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_lastSpeedTime == 0) {
+      _lastSpeedTime = now;
+      _lastSpeedBytes = _downloadedBytes;
+      return;
+    }
+    final elapsed = now - _lastSpeedTime;
+    if (elapsed >= 1000) {
+      final bytesDelta = _downloadedBytes - _lastSpeedBytes;
+      _bytesPerSecond = (bytesDelta * 1000 ~/ elapsed);
+      _lastSpeedTime = now;
+      _lastSpeedBytes = _downloadedBytes;
     }
   }
 

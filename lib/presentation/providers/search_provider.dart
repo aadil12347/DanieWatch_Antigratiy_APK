@@ -4,34 +4,39 @@ import '../../data/local/manifest_dao.dart';
 
 /// Comprehensive filter state
 class SearchFilters {
-  final List<String> categories;
-  final List<String> genres;
-  final List<String> periods;
+  final String category;
+  final String genre;
+  final String year;
+  final String country;
   final String sortBy;
 
   const SearchFilters({
-    this.categories = const [],
-    this.genres = const [],
-    this.periods = const [],
-    this.sortBy = 'Popularity',
+    this.category = 'All',
+    this.genre = 'All Genres',
+    this.year = 'All Years',
+    this.country = 'All Countries',
+    this.sortBy = 'Popularity (High to Low)',
   });
 
   bool get hasActiveFilters =>
-      categories.isNotEmpty ||
-      genres.isNotEmpty ||
-      periods.isNotEmpty ||
-      sortBy != 'Popularity';
+      category != 'All' ||
+      genre != 'All Genres' ||
+      year != 'All Years' ||
+      country != 'All Countries' ||
+      sortBy != 'Popularity (High to Low)';
 
   SearchFilters copyWith({
-    List<String>? categories,
-    List<String>? genres,
-    List<String>? periods,
+    String? category,
+    String? genre,
+    String? year,
+    String? country,
     String? sortBy,
   }) {
     return SearchFilters(
-      categories: categories ?? this.categories,
-      genres: genres ?? this.genres,
-      periods: periods ?? this.periods,
+      category: category ?? this.category,
+      genre: genre ?? this.genre,
+      year: year ?? this.year,
+      country: country ?? this.country,
       sortBy: sortBy ?? this.sortBy,
     );
   }
@@ -66,7 +71,7 @@ class SearchState {
   }
 }
 
-/// Search provider using FTS and local filtering
+/// Search provider using FTS
 class SearchNotifier extends StateNotifier<SearchState> {
   final ManifestDao _dao = ManifestDao();
   Timer? _debounce;
@@ -83,10 +88,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
   void search(String query) {
     _debounce?.cancel();
     
-    // Keep pulse of what user is typing
     state = state.copyWith(query: query);
 
-    if (query.trim().isEmpty && !state.filters.hasActiveFilters) {
+    if (query.trim().isEmpty) {
       _unfilteredResults = [];
       state = state.copyWith(results: [], isSearching: false);
       return;
@@ -98,13 +102,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
       state = state.copyWith(isSearching: true);
       
       try {
-        if (query.trim().isNotEmpty) {
-           _unfilteredResults = await _dao.searchFts(query);
-        } else {
-           _unfilteredResults = []; 
-        }
-        
-        _applyFiltersAndSort();
+        _unfilteredResults = await _dao.searchFts(query);
+        state = state.copyWith(results: _unfilteredResults, isSearching: false);
       } catch (e) {
         if (mounted) {
           state = state.copyWith(results: [], isSearching: false);
@@ -114,50 +113,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   void updateFilters(SearchFilters newFilters) {
-    state = state.copyWith(filters: newFilters, isSearching: true);
-    if (state.query.trim().isEmpty) {
-      // In a real app we'd query by filters directly against the DB.
-    }
-    _applyFiltersAndSort();
-  }
-
-  void removeFilterChip(String label) {
-    var f = state.filters;
-    f = f.copyWith(
-      categories: f.categories.where((e) => e != label).toList(),
-      genres: f.genres.where((e) => e != label).toList(),
-      periods: f.periods.where((e) => e != label).toList(),
-    );
-    updateFilters(f);
+    state = state.copyWith(filters: newFilters);
   }
 
   void clearFilters() {
     updateFilters(const SearchFilters());
-  }
-
-  void _applyFiltersAndSort() {
-    if (!mounted) return;
-
-    List<ManifestSearchResult> filtered = List.from(_unfilteredResults);
-    final f = state.filters;
-
-    // Filter by Category
-    if (f.categories.isNotEmpty) {
-      filtered = filtered.where((item) {
-        if (f.categories.contains('Movie') && item.mediaType == 'movie') return true;
-        if (f.categories.contains('Series') && item.mediaType == 'tv') return true;
-        return false;
-      }).toList();
-    }
-
-    // Sort
-    if (f.sortBy == 'Latest Release') {
-       filtered.sort((a, b) => b.itemId.compareTo(a.itemId));
-    } else {
-       // Popularity default (no-op as FTS rank is usually default)
-    }
-
-    state = state.copyWith(results: filtered, isSearching: false);
   }
 
   void clear() {
@@ -172,5 +132,5 @@ final searchProvider =
   return SearchNotifier();
 });
 
-/// Tracks if the global header search is expanded
+/// Tracks if the global header search is expanded (legacy, kept for app_shell compat)
 final searchExpandedProvider = StateProvider<bool>((ref) => false);

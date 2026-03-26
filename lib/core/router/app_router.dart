@@ -12,7 +12,7 @@ import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 
-final _rootNavKey = GlobalKey<NavigatorState>();
+final rootNavKey = GlobalKey<NavigatorState>();
 final _shellNavKey = GlobalKey<NavigatorState>();
 
 /// Smooth fade + scale transition for tab pages
@@ -40,7 +40,7 @@ CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
 }
 
 final appRouter = GoRouter(
-  navigatorKey: _rootNavKey,
+  navigatorKey: rootNavKey,
   initialLocation: '/home',
   routes: [
     // Shell route with bottom navigation
@@ -65,8 +65,8 @@ final appRouter = GoRouter(
           pageBuilder: (context, state) => _fadePage(const AnimeScreen(), state),
         ),
         GoRoute(
-          path: '/korean',
-          pageBuilder: (context, state) => _fadePage(const KoreanScreen(), state),
+          path: '/search',
+          pageBuilder: (context, state) => _fadePage(const SearchScreen(), state),
         ),
         GoRoute(
           path: '/watchlist',
@@ -101,27 +101,10 @@ final appRouter = GoRouter(
         ),
       ],
     ),
-    // Instant transition for search overlay since CustomAppBar handles the interaction animation
-    GoRoute(
-      path: '/search',
-      parentNavigatorKey: _rootNavKey,
-      pageBuilder: (context, state) {
-        return CustomTransitionPage<void>(
-          key: state.pageKey,
-          child: const SearchScreen(),
-          transitionDuration: const Duration(milliseconds: 300),
-          reverseTransitionDuration: const Duration(milliseconds: 300),
-          opaque: false, // Allows the background blur to stack
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return child; // Instant render
-          },
-        );
-      },
-    ),
     // Root-level details route for navigation from search (which is outside the ShellRoute)
     GoRoute(
       path: '/search-details/:mediaType/:id',
-      parentNavigatorKey: _rootNavKey,
+      parentNavigatorKey: rootNavKey,
       pageBuilder: (context, state) {
         final mediaType = state.pathParameters['mediaType']!;
         final id = int.parse(state.pathParameters['id']!);
