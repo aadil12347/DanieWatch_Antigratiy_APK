@@ -15,12 +15,15 @@ class SearchRepository {
       if (manifest == null) return [];
 
       final queryLower = query.toLowerCase();
-      
+
       // Filter items by search query
-      final results = manifest.items.where((item) {
-        return item.title.toLowerCase().contains(queryLower) ||
-            (item.overview?.toLowerCase().contains(queryLower) ?? false);
-      }).take(30).toList();
+      final results = manifest.items
+          .where((item) {
+            return item.title.toLowerCase().contains(queryLower) ||
+                (item.overview?.toLowerCase().contains(queryLower) ?? false);
+          })
+          .take(30)
+          .toList();
 
       return results.map((item) => _manifestToContentDetail(item)).toList();
     } catch (e) {
@@ -35,7 +38,9 @@ class SearchRepository {
       final manifest = await ManifestDao().readManifest();
       if (manifest == null) return [];
 
-      return manifest.items.map((item) => _manifestToContentDetail(item)).toList();
+      return manifest.items
+          .map((item) => _manifestToContentDetail(item))
+          .toList();
     } catch (e) {
       print('Error getting all content: $e');
       return [];

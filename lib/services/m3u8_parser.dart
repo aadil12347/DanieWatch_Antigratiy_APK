@@ -8,9 +8,9 @@ import 'package:dio/dio.dart';
 
 // ── Quality variant (video stream) ───────────────────────
 class StreamVariant {
-  final String url;           // absolute URL to the variant playlist
-  final int bandwidth;        // bits per second
-  final String? resolution;   // e.g. "1280x720"
+  final String url; // absolute URL to the variant playlist
+  final int bandwidth; // bits per second
+  final String? resolution; // e.g. "1280x720"
   final String? codecs;
   final String? audioGroupId; // links to AudioTrack.groupId
 
@@ -47,22 +47,23 @@ class StreamVariant {
     final h = int.tryParse(parts.length == 2 ? parts[1] : '0') ?? 0;
     if (h >= 2160) return '4K';
     if (h >= 1080) return '1080p HD';
-    if (h >= 720)  return '720p HD';
-    if (h >= 480)  return '480p';
-    if (h >= 360)  return '360p';
+    if (h >= 720) return '720p HD';
+    if (h >= 480) return '480p';
+    if (h >= 360) return '360p';
     return qualityLabel;
   }
 
   @override
-  String toString() => 'StreamVariant($qualityLabel, $bandwidth bps, $resolution)';
+  String toString() =>
+      'StreamVariant($qualityLabel, $bandwidth bps, $resolution)';
 }
 
 // ── Audio track ───────────────────────────────────────────
 class AudioTrack {
-  final String groupId;     // links to StreamVariant.audioGroupId
-  final String language;    // e.g. "en", "hi", "ar"
-  final String name;        // e.g. "English", "Hindi 5.1"
-  final String? url;        // direct URI (null if embedded in video stream)
+  final String groupId; // links to StreamVariant.audioGroupId
+  final String language; // e.g. "en", "hi", "ar"
+  final String name; // e.g. "English", "Hindi 5.1"
+  final String? url; // direct URI (null if embedded in video stream)
   final bool isDefault;
   final bool isForced;
 
@@ -84,10 +85,22 @@ class AudioTrack {
   String _languageFlag(String lang) {
     final lower = lang.toLowerCase().split('-').first;
     const map = {
-      'en': '🇬🇧', 'hi': '🇮🇳', 'ar': '🇸🇦', 'fr': '🇫🇷',
-      'de': '🇩🇪', 'es': '🇪🇸', 'pt': '🇵🇹', 'ru': '🇷🇺',
-      'zh': '🇨🇳', 'ja': '🇯🇵', 'ko': '🇰🇷', 'tr': '🇹🇷',
-      'it': '🇮🇹', 'nl': '🇳🇱', 'pl': '🇵🇱', 'ur': '🇵🇰',
+      'en': '🇬🇧',
+      'hi': '🇮🇳',
+      'ar': '🇸🇦',
+      'fr': '🇫🇷',
+      'de': '🇩🇪',
+      'es': '🇪🇸',
+      'pt': '🇵🇹',
+      'ru': '🇷🇺',
+      'zh': '🇨🇳',
+      'ja': '🇯🇵',
+      'ko': '🇰🇷',
+      'tr': '🇹🇷',
+      'it': '🇮🇹',
+      'nl': '🇳🇱',
+      'pl': '🇵🇱',
+      'ur': '🇵🇰',
     };
     return map[lower] ?? '🔊';
   }
@@ -98,9 +111,9 @@ class AudioTrack {
 
 // ── Parsed playlist result ────────────────────────────────
 class PlaylistInfo {
-  final List<StreamVariant> variants;   // sorted best → worst quality
-  final List<AudioTrack> audioTracks;   // all available audio tracks
-  final bool isMasterPlaylist;          // false = already a media playlist
+  final List<StreamVariant> variants; // sorted best → worst quality
+  final List<AudioTrack> audioTracks; // all available audio tracks
+  final bool isMasterPlaylist; // false = already a media playlist
 
   PlaylistInfo({
     required this.variants,
@@ -112,10 +125,10 @@ class PlaylistInfo {
   bool get hasMultipleAudioTracks => audioTracks.length > 1;
 
   StreamVariant? get bestVariant => variants.isNotEmpty ? variants.first : null;
-  AudioTrack? get defaultAudio =>
-      audioTracks.firstWhere((a) => a.isDefault, orElse: () =>
-          audioTracks.isNotEmpty ? audioTracks.first : AudioTrack(
-            groupId: '', language: 'en', name: 'Default'));
+  AudioTrack? get defaultAudio => audioTracks.firstWhere((a) => a.isDefault,
+      orElse: () => audioTracks.isNotEmpty
+          ? audioTracks.first
+          : AudioTrack(groupId: '', language: 'en', name: 'Default'));
 }
 
 // ── Parser ────────────────────────────────────────────────
@@ -214,12 +227,12 @@ class M3u8Parser {
   // ── Parse #EXT-X-MEDIA tag ─────────────────────────────
   AudioTrack? _parseAudioTag(String line, String baseUrl) {
     try {
-      final groupId  = _attr(line, 'GROUP-ID')  ?? 'audio';
-      final language = _attr(line, 'LANGUAGE')  ?? 'und';
-      final name     = _attr(line, 'NAME')       ?? language;
-      final uriRaw   = _attr(line, 'URI');
+      final groupId = _attr(line, 'GROUP-ID') ?? 'audio';
+      final language = _attr(line, 'LANGUAGE') ?? 'und';
+      final name = _attr(line, 'NAME') ?? language;
+      final uriRaw = _attr(line, 'URI');
       final isDefault = line.contains('DEFAULT=YES');
-      final isForced  = line.contains('FORCED=YES');
+      final isForced = line.contains('FORCED=YES');
 
       final uri = uriRaw != null ? _resolveUrl(uriRaw, baseUrl) : null;
 
@@ -239,9 +252,9 @@ class M3u8Parser {
   // ── Parse #EXT-X-STREAM-INF + following URL line ───────
   StreamVariant? _parseStreamInf(String tag, String urlLine, String baseUrl) {
     try {
-      final bandwidth  = int.tryParse(_rawAttr(tag, 'BANDWIDTH')  ?? '0') ?? 0;
+      final bandwidth = int.tryParse(_rawAttr(tag, 'BANDWIDTH') ?? '0') ?? 0;
       final resolution = _rawAttr(tag, 'RESOLUTION');
-      final codecs     = _attr(tag, 'CODECS');
+      final codecs = _attr(tag, 'CODECS');
       final audioGroup = _attr(tag, 'AUDIO');
 
       final url = _resolveUrl(urlLine, baseUrl);

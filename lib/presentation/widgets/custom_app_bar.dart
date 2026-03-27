@@ -1,9 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/theme/app_theme.dart';
 import '../providers/search_provider.dart';
 
 class CustomAppBar extends ConsumerStatefulWidget {
@@ -12,8 +9,8 @@ class CustomAppBar extends ConsumerStatefulWidget {
   final bool showBackButton;
   final bool extendBehindAppBar;
   const CustomAppBar({
-    super.key, 
-    required this.child, 
+    super.key,
+    required this.child,
     this.isSearchScreen = false,
     this.showBackButton = false,
     this.extendBehindAppBar = true,
@@ -70,7 +67,7 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
     if (currentQuery.isNotEmpty) {
       _searchController.text = currentQuery;
     }
-    
+
     // Sync expanded state with provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -124,9 +121,9 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
         // Delay focus slightly to let the animation start
         Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted) {
-          ref.read(searchExpandedProvider.notifier).state = true;
-          _searchFocus.requestFocus();
-        }
+            ref.read(searchExpandedProvider.notifier).state = true;
+            _searchFocus.requestFocus();
+          }
         });
       } else {
         _searchFocus.unfocus();

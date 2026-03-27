@@ -16,7 +16,7 @@ void main() async {
     final movies = await client.from('entries').select('id, type, title, content').eq('type', 'movie').limit(2);
     for (var m in movies) {
       sink.writeln('Movie ID: ${m['id']} - Title: ${m['title']}');
-      JsonEncoder encoder = JsonEncoder.withIndent('  ');
+      JsonEncoder encoder = const JsonEncoder.withIndent('  ');
       var contentData = m['content'];
       if (contentData is String) {
         try {
@@ -31,7 +31,7 @@ void main() async {
     final series = await client.from('entries').select('id, type, title, content').eq('type', 'series').limit(2);
     for (var s in series) {
       sink.writeln('Series ID: ${s['id']} - Title: ${s['title']}');
-      JsonEncoder encoder = JsonEncoder.withIndent('  ');
+      JsonEncoder encoder = const JsonEncoder.withIndent('  ');
       var contentData = s['content'];
       if (contentData is String) {
         try {

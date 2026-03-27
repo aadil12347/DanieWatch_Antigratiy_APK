@@ -88,7 +88,8 @@ class ManifestDao {
   }
 
   Future<void> ensureSearchIndex(List<ManifestItem> items) async {
-    final count = Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM search_fts'));
+    final count = Sqflite.firstIntValue(
+        await _db.rawQuery('SELECT COUNT(*) FROM search_fts'));
     if (count == 0 && items.isNotEmpty) {
       await _rebuildSearchIndex(items);
     }

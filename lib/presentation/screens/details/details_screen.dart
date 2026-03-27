@@ -22,7 +22,6 @@ import '../../widgets/custom_app_bar.dart';
 import '../../widgets/play_loader_overlay.dart';
 import '../video_player/video_player_screen.dart';
 
-
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
   final String mediaType;
@@ -52,9 +51,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   Widget build(BuildContext context) {
     final detailAsync = ref.watch(detailProvider(_detailParams));
     final isInWatchlist = ref.watch(watchlistProvider).maybeWhen(
-      data: (items) => items.any((i) => i.tmdbId == widget.tmdbId && i.mediaType == widget.mediaType),
-      orElse: () => false,
-    );
+          data: (items) => items.any((i) =>
+              i.tmdbId == widget.tmdbId && i.mediaType == widget.mediaType),
+          orElse: () => false,
+        );
 
     return detailAsync.when(
       loading: () => _buildLoadingScreen(),
@@ -915,7 +915,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   void _toggleWatchlist(ContentDetail content, bool currentIsInWatchlist) {
     HapticFeedback.lightImpact();
-    
+
     // Optmistically update through the provider
     ref.read(watchlistProvider.notifier).toggle(
           tmdbId: widget.tmdbId,
@@ -924,7 +924,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           posterPath: content.posterUrl,
           voteAverage: content.voteAverage,
         );
-        
+
     if (mounted) {
       CustomToast.show(
         context,
@@ -973,7 +973,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
       if (m3u8Url == null || m3u8Url.isEmpty) {
         // Close modal and show error
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+        ref.read(downloadModalProvider.notifier).state =
+            const DownloadModalState();
         _showToastError('Could not find stream source.');
         return;
       }
@@ -985,7 +986,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ));
     } catch (e) {
       if (mounted) {
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+        ref.read(downloadModalProvider.notifier).state =
+            const DownloadModalState();
         _showToastError('Extraction error. Please try again.');
       }
       return;
@@ -995,7 +997,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final selection = await selectionFuture;
     if (selection == null || !mounted) return;
 
-    // 5. Start ffmpeg download (with a tiny delay to ensure sheet closes smoothly if needed, 
+    // 5. Start ffmpeg download (with a tiny delay to ensure sheet closes smoothly if needed,
     // although our provider handles the closing animation via morphing back)
     try {
       // Ensure we don't block the UI thread during initialization
@@ -1020,7 +1022,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   void _showDownloadStartedToast(DownloadItem item) {
     if (!mounted) return;
-    
+
     CustomToast.show(
       context,
       '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Download started',
@@ -1046,7 +1048,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       fetchLinkFuture: () async {
         try {
           final extractor = VideoExtractorService();
-          String? m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
+          String? m3u8Url =
+              await extractor.extractVideoUrl(url, bypassCache: true);
 
           // Auto-Recovery: if first attempt fails, retry once
           if (m3u8Url == null || m3u8Url.isEmpty) {

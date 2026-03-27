@@ -69,8 +69,7 @@ class ManifestSyncEngine {
       } else {
         // Legacy: the file itself is an array wrapped in a container
         final items = (jsonMap['data'] as List?)
-                ?.map(
-                    (e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+                ?.map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             [];
         manifest = Manifest(
@@ -85,8 +84,8 @@ class ManifestSyncEngine {
       final cachedGeneratedAt = await _dao.getGeneratedAt();
       final remoteGeneratedAt = manifest.generatedAt;
 
-      final isNewer = remoteGeneratedAt != null &&
-          remoteGeneratedAt != cachedGeneratedAt;
+      final isNewer =
+          remoteGeneratedAt != null && remoteGeneratedAt != cachedGeneratedAt;
 
       if (isNewer) {
         dev.log(

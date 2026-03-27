@@ -8,7 +8,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../providers/detail_provider.dart';
-import '../../../domain/models/content_detail.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -184,9 +183,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       final controller = _webViewController;
       if (controller != null && mounted && !_discoveryComplete) {
         try {
-          controller
-              .evaluateJavascript(
-                source: """
+          controller.evaluateJavascript(
+            source: """
             (function() {
               var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
               for(var i=0; i<buttons.length; i++) {
@@ -201,14 +199,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               if (v) { v.play().catch(function(e){}); }
             })();
           """,
-              )
-              .catchError((e) {
-                if (!e.toString().contains('disposed'))
-                  debugPrint('[Extraction] Auto-click failed: $e');
-              });
+          ).catchError((e) {
+            if (!e.toString().contains('disposed')) {
+              debugPrint('[Extraction] Auto-click failed: $e');
+            }
+          });
         } catch (e) {
-          if (!e.toString().contains('disposed'))
+          if (!e.toString().contains('disposed')) {
             debugPrint('[Extraction] Auto-click Error: $e');
+          }
         }
       }
     });
@@ -366,13 +365,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         useAsmsSubtitles: true,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
-          title:
-              widget.mediaType != 'movie' &&
+          title: widget.mediaType != 'movie' &&
                   _currentSeason != null &&
                   _currentEpisode != null
               ? '${widget.title} S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}'
               : widget.title,
-          author: "DanieWatch",
+          author: 'DanieWatch',
         ),
         bufferingConfiguration: const BetterPlayerBufferingConfiguration(
           minBufferMs: 5000,
@@ -500,8 +498,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _bgMasterWaitTimer = Timer(const Duration(milliseconds: 200), () {
         _completeBackgroundDiscovery();
       });
-    } else if (_bgMasterWaitTimer == null) {
-      _bgMasterWaitTimer = Timer(const Duration(seconds: 3), () {
+    } else {
+      _bgMasterWaitTimer ??= Timer(const Duration(seconds: 3), () {
         _completeBackgroundDiscovery();
       });
     }
@@ -581,7 +579,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return Container(
       key: key,
       color: Colors.black,
-      child: Center(
+      child: const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -593,8 +591,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
+            SizedBox(height: 20),
+            Text(
               'Loading Stream',
               style: TextStyle(
                 color: Colors.white,
@@ -603,8 +601,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 letterSpacing: 0.3,
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
+            SizedBox(height: 6),
+            Text(
               'Preparing playback...',
               style: TextStyle(
                 color: Colors.white38,
@@ -622,7 +620,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return Container(
       key: key,
       color: Colors.black,
-      child: Center(
+      child: const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -634,8 +632,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-            const SizedBox(height: 24),
-            const Text(
+            SizedBox(height: 24),
+            Text(
               'Finding sources...',
               style: TextStyle(
                 color: Colors.white,
@@ -729,7 +727,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       key: key,
       child: InAppWebView(
         key: webKey,
-        initialFile: "assets/html/player.html",
+        initialFile: 'assets/html/player.html',
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           allowsInlineMediaPlayback: true,
@@ -759,8 +757,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               source: "updateEpisodeButton('$epText')",
             );
 
-            final displayTitle =
-                widget.mediaType != 'movie' &&
+            final displayTitle = widget.mediaType != 'movie' &&
                     _currentSeason != null &&
                     _currentEpisode != null
                 ? 'S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}'
@@ -790,7 +787,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       transitionDuration: const Duration(milliseconds: 400),
       pageBuilder: (context, anim1, anim2) => const SizedBox.shrink(),
       transitionBuilder: (context, anim1, anim2, child) {
-        final curve = Curves.easeInOutBack;
+        const curve = Curves.easeInOutBack;
         return FadeTransition(
           opacity: anim1,
           child: ScaleTransition(
@@ -923,10 +920,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                               child: TextField(
                                                 onChanged: (val) =>
                                                     setModalState(
-                                                      () =>
-                                                          _episodeSearchQuery =
-                                                              val,
-                                                    ),
+                                                  () =>
+                                                      _episodeSearchQuery = val,
+                                                ),
                                                 style: const TextStyle(
                                                   color: Colors.white,
                                                   fontSize: 12,
@@ -982,25 +978,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                         data: (episodes) {
                                           final filtered =
                                               _episodeSearchQuery == null ||
-                                                  _episodeSearchQuery!.isEmpty
-                                              ? episodes
-                                              : episodes
-                                                    .where(
-                                                      (e) =>
-                                                          e.episodeNumber
-                                                              .toString()
-                                                              .contains(
-                                                                _episodeSearchQuery!,
-                                                              ) ||
-                                                          (e.title
-                                                                  ?.toLowerCase()
-                                                                  .contains(
-                                                                    _episodeSearchQuery!
-                                                                        .toLowerCase(),
-                                                                  ) ??
-                                                              false),
-                                                    )
-                                                    .toList();
+                                                      _episodeSearchQuery!
+                                                          .isEmpty
+                                                  ? episodes
+                                                  : episodes
+                                                      .where(
+                                                        (e) =>
+                                                            e.episodeNumber
+                                                                .toString()
+                                                                .contains(
+                                                                  _episodeSearchQuery!,
+                                                                ) ||
+                                                            (e.title
+                                                                    ?.toLowerCase()
+                                                                    .contains(
+                                                                      _episodeSearchQuery!
+                                                                          .toLowerCase(),
+                                                                    ) ??
+                                                                false),
+                                                      )
+                                                      .toList();
 
                                           return ListView.builder(
                                             physics:
@@ -1013,7 +1010,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                               final ep = filtered[index];
                                               final isCurrent =
                                                   ep.episodeNumber ==
-                                                  _currentEpisode;
+                                                      _currentEpisode;
 
                                               return InkWell(
                                                 onTap: () {
@@ -1034,9 +1031,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                     });
                                                     _webViewController
                                                         ?.evaluateJavascript(
-                                                          source:
-                                                              "updateEpisodeButton('Episodes')",
-                                                        );
+                                                      source:
+                                                          "updateEpisodeButton('Episodes')",
+                                                    );
                                                     _webViewKey = ValueKey(
                                                       'discovery_${DateTime.now().millisecondsSinceEpoch}',
                                                     );
@@ -1057,20 +1054,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                   decoration: BoxDecoration(
                                                     color: isCurrent
                                                         ? AppColors.primary
-                                                              .withValues(
-                                                                alpha: 0.1,
-                                                              )
+                                                            .withValues(
+                                                            alpha: 0.1,
+                                                          )
                                                         : Colors.transparent,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          12,
-                                                        ),
+                                                      12,
+                                                    ),
                                                     border: Border.all(
                                                       color: isCurrent
                                                           ? AppColors.primary
-                                                                .withValues(
-                                                                  alpha: 0.3,
-                                                                )
+                                                              .withValues(
+                                                              alpha: 0.3,
+                                                            )
                                                           : Colors.transparent,
                                                       width: 1,
                                                     ),
@@ -1079,37 +1076,37 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                     children: [
                                                       ClipRRect(
                                                         borderRadius:
-                                                            BorderRadius.circular(
-                                                              8,
-                                                            ),
+                                                            BorderRadius
+                                                                .circular(
+                                                          8,
+                                                        ),
                                                         child: SizedBox(
                                                           width: 120,
                                                           height: 68,
-                                                          child:
-                                                              ep.thumbnailUrl !=
+                                                          child: ep.thumbnailUrl !=
                                                                   null
                                                               ? CachedNetworkImage(
                                                                   imageUrl: ep
                                                                       .thumbnailUrl!,
                                                                   fit: BoxFit
                                                                       .cover,
-                                                                  placeholder:
-                                                                      (
-                                                                        _,
-                                                                        __,
-                                                                      ) => Container(
-                                                                        color: Colors
-                                                                            .white10,
-                                                                      ),
-                                                                  errorWidget:
-                                                                      (
-                                                                        _,
-                                                                        __,
-                                                                        ___,
-                                                                      ) => Container(
-                                                                        color: Colors
-                                                                            .black26,
-                                                                      ),
+                                                                  placeholder: (
+                                                                    _,
+                                                                    __,
+                                                                  ) =>
+                                                                      Container(
+                                                                    color: Colors
+                                                                        .white10,
+                                                                  ),
+                                                                  errorWidget: (
+                                                                    _,
+                                                                    __,
+                                                                    ___,
+                                                                  ) =>
+                                                                      Container(
+                                                                    color: Colors
+                                                                        .black26,
+                                                                  ),
                                                                 )
                                                               : Container(
                                                                   color: Colors
@@ -1129,16 +1126,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                               style: TextStyle(
                                                                 color: isCurrent
                                                                     ? AppColors
-                                                                          .primary
+                                                                        .primary
                                                                     : Colors
-                                                                          .white70,
+                                                                        .white70,
                                                                 fontSize: 13,
-                                                                fontWeight:
-                                                                    isCurrent
+                                                                fontWeight: isCurrent
                                                                     ? FontWeight
-                                                                          .bold
+                                                                        .bold
                                                                     : FontWeight
-                                                                          .normal,
+                                                                        .normal,
                                                               ),
                                                               maxLines: 2,
                                                               overflow:
@@ -1157,11 +1153,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                                   : '',
                                                               style:
                                                                   const TextStyle(
-                                                                    color: Colors
-                                                                        .white38,
-                                                                    fontSize:
-                                                                        11,
-                                                                  ),
+                                                                color: Colors
+                                                                    .white38,
+                                                                fontSize: 11,
+                                                              ),
                                                             ),
                                                           ],
                                                         ),
@@ -1172,9 +1167,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                         color: isCurrent
                                                             ? AppColors.primary
                                                             : Colors.white
-                                                                  .withValues(
-                                                                    alpha: 0.2,
-                                                                  ),
+                                                                .withValues(
+                                                                alpha: 0.2,
+                                                              ),
                                                         size: 28,
                                                       ),
                                                     ],
@@ -1339,7 +1334,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   mediaPlaybackRequiresUserGesture: false,
                   useOnLoadResource: true,
                 ),
-                onWebViewCreated: (controller) => _bgWebViewController = controller,
+                onWebViewCreated: (controller) =>
+                    _bgWebViewController = controller,
                 onLoadResource: (controller, resource) {
                   if (resource.url != null) {
                     _handleBgExtractedLink(resource.url.toString());
@@ -1458,7 +1454,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               ),
               if (widget.mediaType != 'movie')
                 IconButton(
-                  icon: const Icon(Icons.grid_view_rounded, color: Colors.white),
+                  icon:
+                      const Icon(Icons.grid_view_rounded, color: Colors.white),
                   onPressed: _showEpisodeSelector,
                 ),
             ],
@@ -1470,7 +1467,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   Widget _buildEpisodeInfoOverlay() => const SizedBox.shrink();
   Widget _buildControlHints() => const SizedBox.shrink();
-
 
   Widget _buildErrorOverlay() {
     return Container(
@@ -1523,7 +1519,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   onPressed: _retry,
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('Retry'),
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary),
                 ),
                 const SizedBox(width: 14),
                 TextButton.icon(
@@ -1559,22 +1556,22 @@ class _CinematicLoaderState extends State<_CinematicLoader>
   void initState() {
     super.initState();
     final List<String> phrases = [
-      "Getting the popcorn",
-      "Dimming the lights",
-      "Buffering your movie",
-      "Finding the best part",
-      "Skip intro in... wait",
-      "Just one more episode",
-      "Are you still watching?",
-      "Setting up the drama",
-      "Queuing cliffhangers",
-      "Action incoming",
-      "Plot twists ahead",
-      "Preparing the comedy",
-      "Ready for tears?",
-      "Starting the jump scares",
-      "Warming up the pixels",
-      "Wait for the post-credits",
+      'Getting the popcorn',
+      'Dimming the lights',
+      'Buffering your movie',
+      'Finding the best part',
+      'Skip intro in... wait',
+      'Just one more episode',
+      'Are you still watching?',
+      'Setting up the drama',
+      'Queuing cliffhangers',
+      'Action incoming',
+      'Plot twists ahead',
+      'Preparing the comedy',
+      'Ready for tears?',
+      'Starting the jump scares',
+      'Warming up the pixels',
+      'Wait for the post-credits',
     ];
     _shuffledPhrases = phrases..shuffle();
 
@@ -1642,7 +1639,7 @@ class _CinematicLoaderState extends State<_CinematicLoader>
                           const SizedBox(width: 15),
                           Expanded(
                             child: Text(
-                              "${_shuffledPhrases[index]}...",
+                              '${_shuffledPhrases[index]}...',
                               style: TextStyle(
                                 color: isCompleted
                                     ? Colors.white

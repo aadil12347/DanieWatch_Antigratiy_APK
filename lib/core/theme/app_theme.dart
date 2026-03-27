@@ -6,7 +6,7 @@ class AppColors {
 
   // Backgrounds
   static const background = Color(0xFF0A0A0A);
-  static const surface = Color(0x80121212); 
+  static const surface = Color(0x80121212);
   static const surfaceElevated = Color(0xFF121212);
   static const card = Color(0xFF111111);
 
@@ -39,7 +39,8 @@ class AppTheme {
   AppTheme._();
 
   static ThemeData get dark {
-    final baseTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+    final baseTextTheme =
+        GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
 
     return ThemeData(
       useMaterial3: true,
@@ -57,7 +58,7 @@ class AppTheme {
 
       // AppBar
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.background.withOpacity(0.8),
+        backgroundColor: AppColors.background.withValues(alpha: 0.8),
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
@@ -72,7 +73,7 @@ class AppTheme {
 
       // Bottom Nav
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: AppColors.background.withOpacity(0.8),
+        backgroundColor: AppColors.background.withValues(alpha: 0.8),
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textSecondary,
         selectedLabelStyle: GoogleFonts.inter(
@@ -90,23 +91,24 @@ class AppTheme {
       textTheme: baseTextTheme.copyWith(
         displayLarge: GoogleFonts.inter(
           fontSize: 32,
-          fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
-          letterSpacing: -1,
-        ),
-        headlineMedium: GoogleFonts.inter(
-          fontSize: 22,
           fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
-          letterSpacing: -0.5,
+          letterSpacing: -0.8,
+        ),
+        headlineMedium: GoogleFonts.inter(
+          fontSize: 24,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+          letterSpacing: -0.4,
         ),
         titleLarge: GoogleFonts.inter(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
+          letterSpacing: -0.2,
         ),
         titleMedium: GoogleFonts.inter(
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
         ),
@@ -114,11 +116,13 @@ class AppTheme {
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: AppColors.textPrimary,
+          height: 1.4,
         ),
         bodyMedium: GoogleFonts.inter(
           fontSize: 13,
           fontWeight: FontWeight.w400,
           color: AppColors.textSecondary,
+          height: 1.4,
         ),
         bodySmall: GoogleFonts.inter(
           fontSize: 11,
@@ -129,7 +133,7 @@ class AppTheme {
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: AppColors.textMuted,
-          letterSpacing: 0.5,
+          letterSpacing: 0.8,
         ),
       ),
 
@@ -146,7 +150,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
 
       // Icon

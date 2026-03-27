@@ -69,8 +69,7 @@ class VisibilityPolicy {
   static List<ManifestItem> filterKorean(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.originalLanguage == 'ko' ||
-            item.originCountry.contains('KR'))
+            item.originalLanguage == 'ko' || item.originCountry.contains('KR'))
         .toList();
   }
 
@@ -82,8 +81,7 @@ class VisibilityPolicy {
   /// Filter for TV/series only
   static List<ManifestItem> filterTv(List<ManifestItem> all) {
     return all
-        .where((item) =>
-            item.mediaType == 'tv' || item.mediaType == 'series')
+        .where((item) => item.mediaType == 'tv' || item.mediaType == 'series')
         .toList();
   }
 

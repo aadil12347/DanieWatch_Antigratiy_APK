@@ -112,15 +112,18 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
           _updateOverlay();
         }
       }
-    } else if (notification is OverscrollNotification && notification.overscroll < 0) {
+    } else if (notification is OverscrollNotification &&
+        notification.overscroll < 0) {
       // Clamp physics fallback
       _dragOffset += (-notification.overscroll) * 0.5;
       _dragOffset = _applyFriction(_dragOffset);
       _showOverlay();
       _updateOverlay();
       _checkHaptic();
-    } else if (notification is ScrollEndNotification || notification is UserScrollNotification) {
-      if (notification is UserScrollNotification && notification.direction != ScrollDirection.idle) {
+    } else if (notification is ScrollEndNotification ||
+        notification is UserScrollNotification) {
+      if (notification is UserScrollNotification &&
+          notification.direction != ScrollDirection.idle) {
         return false;
       }
 
@@ -153,10 +156,10 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
 
   void _triggerRefresh() async {
     _isRefreshing = true;
-    
+
     // Animate to the fixed "refreshing" height
     _springController.stop();
-    
+
     // Start the spinning and pulsing animations
     _rotationController.repeat();
     _pulseController.repeat(reverse: true);
@@ -239,7 +242,8 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
 
   Widget _buildIndicatorCircle(double progress, bool isReady) {
     final scale = Curves.easeOutBack.transform(progress.clamp(0.0, 1.0));
-    final pulseScale = _isRefreshing ? 1.0 + (_pulseController.value * 0.1) : 1.0;
+    final pulseScale =
+        _isRefreshing ? 1.0 + (_pulseController.value * 0.1) : 1.0;
 
     return Transform.scale(
       scale: scale * pulseScale,
@@ -251,7 +255,8 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withValues(alpha: isReady || _isRefreshing ? 0.4 : 0.1),
+              color: AppColors.primary
+                  .withValues(alpha: isReady || _isRefreshing ? 0.4 : 0.1),
               blurRadius: isReady || _isRefreshing ? 20 : 8,
               spreadRadius: isReady || _isRefreshing ? 2 : 0,
             ),
@@ -262,7 +267,8 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
             ),
           ],
           border: Border.all(
-            color: AppColors.primary.withValues(alpha: isReady || _isRefreshing ? 0.6 : 0.2),
+            color: AppColors.primary
+                .withValues(alpha: isReady || _isRefreshing ? 0.6 : 0.2),
             width: 2,
           ),
         ),
@@ -286,7 +292,9 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
             strokeWidth: 2.5,
             backgroundColor: AppColors.textMuted.withValues(alpha: 0.15),
             valueColor: AlwaysStoppedAnimation<Color>(
-              isReady ? AppColors.primary : AppColors.textMuted.withValues(alpha: 0.5),
+              isReady
+                  ? AppColors.primary
+                  : AppColors.textMuted.withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -294,7 +302,9 @@ class _CustomPullToRefreshState extends State<CustomPullToRefresh>
         Transform.rotate(
           angle: progress * 2 * math.pi,
           child: Icon(
-            isReady ? Icons.arrow_downward_rounded : Icons.arrow_downward_rounded,
+            isReady
+                ? Icons.arrow_downward_rounded
+                : Icons.arrow_downward_rounded,
             color: isReady ? AppColors.primary : AppColors.textMuted,
             size: 18,
           ),

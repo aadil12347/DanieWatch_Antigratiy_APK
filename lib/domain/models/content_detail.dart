@@ -27,7 +27,7 @@ class ContentDetail {
   final String? downloadUrl;
   final String? trailerUrl;
   final List<EpisodeData>? episodesData;
-  
+
   // Supabase entries table fields
   final String? watchLink;
   final String? downloadLink;
@@ -148,7 +148,7 @@ class ContentDetail {
 
   factory ContentDetail.fromJson(Map<String, dynamic> json) {
     List<EpisodeData>? episodes;
-    
+
     if (json['episodes_data'] != null) {
       if (json['episodes_data'] is String) {
         try {
@@ -167,7 +167,8 @@ class ContentDetail {
     List<String>? genresList;
     if (json['genres'] != null) {
       if (json['genres'] is String) {
-        genresList = (json['genres'] as String).split(',').map((e) => e.trim()).toList();
+        genresList =
+            (json['genres'] as String).split(',').map((e) => e.trim()).toList();
       } else if (json['genres'] is List) {
         genresList = (json['genres'] as List).map((e) {
           if (e is Map) return e['name']?.toString() ?? e.toString();
@@ -182,7 +183,8 @@ class ContentDetail {
         try {
           final decoded = jsonDecode(json['genre_ids'] as String);
           if (decoded is List) {
-            genreIdsList = decoded.map((e) => int.tryParse(e.toString()) ?? 0).toList();
+            genreIdsList =
+                decoded.map((e) => int.tryParse(e.toString()) ?? 0).toList();
           }
         } catch (_) {
           genreIdsList = (json['genre_ids'] as String)
@@ -217,7 +219,9 @@ class ContentDetail {
     if (json['cast_data'] != null) {
       dynamic castData = json['cast_data'];
       if (castData is String) {
-        try { castData = jsonDecode(castData); } catch (_) {}
+        try {
+          castData = jsonDecode(castData);
+        } catch (_) {}
       }
       if (castData is List) {
         castMembers = castData.map((e) {
@@ -228,17 +232,25 @@ class ContentDetail {
     }
 
     return ContentDetail(
-      id: (json['id'] is int) ? json['id'] as int : int.tryParse(json['id'].toString()) ?? 0,
-      title: json['title']?.toString() ?? json['name']?.toString() ?? 'Unknown Title',
-      description: json['description']?.toString() ?? json['overview']?.toString(),
+      id: (json['id'] is int)
+          ? json['id'] as int
+          : int.tryParse(json['id'].toString()) ?? 0,
+      title: json['title']?.toString() ??
+          json['name']?.toString() ??
+          'Unknown Title',
+      description:
+          json['description']?.toString() ?? json['overview']?.toString(),
       overview: json['overview']?.toString(),
       mediaType: json['media_type']?.toString() ?? 'movie',
       voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
       voteCount: (json['vote_count'] as num?)?.toInt(),
-      posterUrl: json['poster_url']?.toString() ?? json['poster_path']?.toString(),
-      backdropUrl: json['backdrop_url']?.toString() ?? json['backdrop_path']?.toString(),
+      posterUrl:
+          json['poster_url']?.toString() ?? json['poster_path']?.toString(),
+      backdropUrl:
+          json['backdrop_url']?.toString() ?? json['backdrop_path']?.toString(),
       logoUrl: json['logo_url']?.toString(),
-      releaseDate: json['release_date']?.toString() ?? json['first_air_date']?.toString(),
+      releaseDate: json['release_date']?.toString() ??
+          json['first_air_date']?.toString(),
       releaseYear: year,
       genreIds: genreIdsList,
       genres: genresList,
@@ -256,13 +268,15 @@ class ContentDetail {
     );
   }
 
-  bool get isTv => mediaType.toLowerCase() == 'tv' || 
-                    mediaType.toLowerCase() == 'tv series' ||
-                    mediaType.toLowerCase() == 'series';
+  bool get isTv =>
+      mediaType.toLowerCase() == 'tv' ||
+      mediaType.toLowerCase() == 'tv series' ||
+      mediaType.toLowerCase() == 'series';
   bool get isMovie => mediaType.toLowerCase() == 'movie';
 
-  String get displayYear => releaseYear?.toString() ?? (releaseDate?.substring(0, 4) ?? '');
-  
+  String get displayYear =>
+      releaseYear?.toString() ?? (releaseDate?.substring(0, 4) ?? '');
+
   String get displayGenres => genres?.join(', ') ?? '';
 
   String? get primaryWatchLink => watchLink ?? playUrl;
@@ -270,14 +284,16 @@ class ContentDetail {
 
   bool get hasSeasonsData => seasonsData != null && seasonsData!.isNotEmpty;
 
-  bool get hasLogo => (logoUrl != null && logoUrl!.isNotEmpty) || (tmdbLogoUrl != null && tmdbLogoUrl!.isNotEmpty);
+  bool get hasLogo =>
+      (logoUrl != null && logoUrl!.isNotEmpty) ||
+      (tmdbLogoUrl != null && tmdbLogoUrl!.isNotEmpty);
 
   String? get displayLogoUrl => tmdbLogoUrl ?? logoUrl;
 
   List<int> get seasonNumbers {
     // Check content JSON for season_X keys
     final Set<int> seasons = {};
-    
+
     if (metadataEpisodes != null) {
       for (final key in metadataEpisodes!.keys) {
         final num = int.tryParse(key.replaceAll('season_', ''));
@@ -352,12 +368,18 @@ class EpisodeData {
 
   factory EpisodeData.fromJson(Map<String, dynamic> json) {
     return EpisodeData(
-      episodeNumber: (json['episode_number'] as num?)?.toInt() ?? json['episode'] as int?,
+      episodeNumber:
+          (json['episode_number'] as num?)?.toInt() ?? json['episode'] as int?,
       title: json['title']?.toString() ?? json['name']?.toString(),
-      description: json['description']?.toString() ?? json['overview']?.toString(),
-      playLink: json['play_link']?.toString() ?? json['play_url']?.toString() ?? json['stream_url']?.toString(),
-      downloadLink: json['download_link']?.toString() ?? json['download_url']?.toString(),
-      thumbnailUrl: json['thumbnail_url']?.toString() ?? json['thumbnail']?.toString(),
+      description:
+          json['description']?.toString() ?? json['overview']?.toString(),
+      playLink: json['play_link']?.toString() ??
+          json['play_url']?.toString() ??
+          json['stream_url']?.toString(),
+      downloadLink:
+          json['download_link']?.toString() ?? json['download_url']?.toString(),
+      thumbnailUrl:
+          json['thumbnail_url']?.toString() ?? json['thumbnail']?.toString(),
       runtime: (json['runtime'] as num?)?.toInt(),
       airDate: json['air_date']?.toString(),
       voteAverage: (json['vote_average'] as num?)?.toDouble(),
@@ -382,7 +404,8 @@ class SimilarItem {
     required this.mediaType,
   });
 
-  factory SimilarItem.fromTmdbJson(Map<String, dynamic> json, String mediaType) {
+  factory SimilarItem.fromTmdbJson(
+      Map<String, dynamic> json, String mediaType) {
     return SimilarItem(
       id: json['id'] as int? ?? 0,
       title: json['title']?.toString() ?? json['name']?.toString() ?? '',

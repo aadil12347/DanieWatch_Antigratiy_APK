@@ -53,7 +53,8 @@ final detailProvider = FutureProvider.family<ContentDetail?, DetailParams>(
 );
 
 /// Episodes for selected season — refreshed on season change only
-final episodesProvider = FutureProvider.family<List<EpisodeData>, EpisodeParams>(
+final episodesProvider =
+    FutureProvider.family<List<EpisodeData>, EpisodeParams>(
   (ref, params) async {
     return ContentRepository.instance.fetchEpisodes(
       params.tmdbId.toString(),

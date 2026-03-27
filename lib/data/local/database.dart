@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -14,7 +13,8 @@ class AppDatabase {
   Database? _db;
 
   Database get db {
-    if (_db == null) throw StateError('Database not initialized. Call initialize() first.');
+    if (_db == null)
+      throw StateError('Database not initialized. Call initialize() first.');
     return _db!;
   }
 
@@ -32,7 +32,7 @@ class AppDatabase {
         // PRAGMA statements that return results must use rawQuery on Android
         await db.rawQuery('PRAGMA journal_mode=WAL');
         await db.execute('PRAGMA synchronous=NORMAL');
-        await db.execute('PRAGMA cache_size=-8000');  // 8MB cache
+        await db.execute('PRAGMA cache_size=-8000'); // 8MB cache
         await db.execute('PRAGMA temp_store=MEMORY');
       },
     );
@@ -132,7 +132,8 @@ class AppDatabase {
     ''');
 
     // Indexes for performance
-    await db.execute('CREATE INDEX idx_entry_cache_cached ON entry_cache(cached_at)');
+    await db.execute(
+        'CREATE INDEX idx_entry_cache_cached ON entry_cache(cached_at)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {

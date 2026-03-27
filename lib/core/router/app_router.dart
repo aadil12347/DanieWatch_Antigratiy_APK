@@ -6,11 +6,11 @@ import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/movies/movies_screen.dart';
 import '../../presentation/screens/tv/tv_screen.dart';
 import '../../presentation/screens/anime/anime_screen.dart';
-import '../../presentation/screens/korean/korean_screen.dart';
 import '../../presentation/screens/search/search_screen.dart';
 import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
+import '../../presentation/screens/korean/korean_screen.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
 final _shellNavKey = GlobalKey<NavigatorState>();
@@ -27,7 +27,7 @@ CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
       final scale = Tween<double>(begin: 0.96, end: 1.0)
           .chain(CurveTween(curve: Curves.easeOutCubic))
           .animate(animation);
-          
+
       return FadeTransition(
         opacity: fade,
         child: ScaleTransition(
@@ -54,7 +54,8 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/movies',
-          pageBuilder: (context, state) => _fadePage(const MoviesScreen(), state),
+          pageBuilder: (context, state) =>
+              _fadePage(const MoviesScreen(), state),
         ),
         GoRoute(
           path: '/tv',
@@ -62,19 +63,28 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/anime',
-          pageBuilder: (context, state) => _fadePage(const AnimeScreen(), state),
+          pageBuilder: (context, state) =>
+              _fadePage(const AnimeScreen(), state),
+        ),
+        GoRoute(
+          path: '/korean',
+          pageBuilder: (context, state) =>
+              _fadePage(const KoreanScreen(), state),
         ),
         GoRoute(
           path: '/search',
-          pageBuilder: (context, state) => _fadePage(const SearchScreen(), state),
+          pageBuilder: (context, state) =>
+              _fadePage(const SearchScreen(), state),
         ),
         GoRoute(
           path: '/watchlist',
-          pageBuilder: (context, state) => _fadePage(const WatchlistScreen(), state),
+          pageBuilder: (context, state) =>
+              _fadePage(const WatchlistScreen(), state),
         ),
         GoRoute(
           path: '/downloads',
-          pageBuilder: (context, state) => _fadePage(const DownloadsScreen(), state),
+          pageBuilder: (context, state) =>
+              _fadePage(const DownloadsScreen(), state),
         ),
         // Detail route INSIDE shell so bottom nav stays visible
         GoRoute(
@@ -87,7 +97,8 @@ final appRouter = GoRouter(
               child: DetailsScreen(tmdbId: id, mediaType: mediaType),
               transitionDuration: const Duration(milliseconds: 400),
               reverseTransitionDuration: const Duration(milliseconds: 350),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
                 return FadeTransition(
                   opacity: CurvedAnimation(
                     parent: animation,
@@ -126,4 +137,44 @@ final appRouter = GoRouter(
       },
     ),
   ],
+  errorBuilder: (context, state) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, result) {
+      if (didPop) return;
+      context.go('/home');
+    },
+    child: Scaffold(
+      backgroundColor: const Color(0xFF0F0F1E),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 64),
+            const SizedBox(height: 16),
+            const Text(
+              'Page Not Found',
+              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              state.error.toString(),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: () => context.go('/home'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE91E63),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Go to Home'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  ),
 );

@@ -109,26 +109,58 @@ class CustomDrawer extends StatelessWidget {
                 // ── Nav Items ────────────────────────────────────
                 Expanded(
                   child: ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
                     children: [
-                      _NavItem(label: 'Home', icon: Icons.home_rounded, route: '/home', currentRoute: currentRoute),
-                      _NavItem(label: 'Movies', icon: Icons.movie_rounded, route: '/movies', currentRoute: currentRoute),
-                      _NavItem(label: 'TV Series', icon: Icons.tv_rounded, route: '/tv', currentRoute: currentRoute),
-                      _NavItem(label: 'Anime', icon: Icons.animation_rounded, route: '/anime', currentRoute: currentRoute),
-                      _NavItem(label: 'K-Dramas', icon: Icons.language_rounded, route: '/korean', currentRoute: currentRoute),
-                      _NavItem(label: 'Watchlist', icon: Icons.bookmark_rounded, route: '/watchlist', currentRoute: currentRoute),
-                      _NavItem(label: 'Downloads', icon: Icons.download_rounded, route: '/downloads', currentRoute: currentRoute),
-
+                      _NavItem(
+                          label: 'Home',
+                          icon: Icons.home_rounded,
+                          route: '/home',
+                          currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'Movies',
+                          icon: Icons.movie_rounded,
+                          route: '/movies',
+                          currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'TV Series',
+                          icon: Icons.tv_rounded,
+                          route: '/tv',
+                          currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'Anime',
+                          icon: Icons.animation_rounded,
+                          route: '/anime',
+                          currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'K-Dramas',
+                          icon: Icons.language_rounded,
+                          route: '/korean',
+                          currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'Watchlist',
+                          icon: Icons.bookmark_rounded,
+                          route: '/watchlist',
+                          currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'Downloads',
+                          icon: Icons.download_rounded,
+                          route: '/downloads',
+                          currentRoute: currentRoute),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 10),
                         child: Divider(
                           color: Colors.white.withValues(alpha: 0.07),
                           height: 1,
                           thickness: 0.5,
                         ),
                       ),
-
-                      _NavItem(label: 'Search', icon: Icons.search_rounded, route: '/search', currentRoute: currentRoute),
+                      _NavItem(
+                          label: 'Search',
+                          icon: Icons.search_rounded,
+                          route: '/search',
+                          currentRoute: currentRoute),
                     ],
                   ),
                 ),
@@ -138,7 +170,9 @@ class CustomDrawer extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline_rounded, size: 13, color: AppColors.textMuted.withValues(alpha: 0.4)),
+                      Icon(Icons.info_outline_rounded,
+                          size: 13,
+                          color: AppColors.textMuted.withValues(alpha: 0.4)),
                       const SizedBox(width: 6),
                       Text(
                         'DanieWatch v1.0.0',
@@ -229,13 +263,16 @@ class _NavItem extends StatelessWidget {
                 Icon(
                   icon,
                   size: 20,
-                  color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                  color:
+                      isSelected ? AppColors.primary : AppColors.textSecondary,
                 ),
                 const SizedBox(width: 12),
                 Text(
                   label,
                   style: TextStyle(
-                    color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+                    color: isSelected
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
                     fontSize: 14,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                     letterSpacing: isSelected ? 0.1 : 0.0,

@@ -14,6 +14,7 @@ import 'dart:convert';
 import '../../services/hls_downloader_service.dart';
 import '../../services/m3u8_parser.dart';
 import '../../services/download_notification_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Port name for isolate communication
 const String _downloadPortName = 'downloader_send_port';
@@ -24,7 +25,24 @@ void downloadCallback(String id, int status, int progress) {
   send?.send([id, status, progress]);
 }
 
-enum DownloadStatus { pending, downloading, paused, completed, failed, canceled, converting }
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) {
+  // Handle background notification actions
+  // This runs in a separate isolate. For now, we'll just log it.
+  // Full background support would require IPC to the main isolate.
+  debugPrint(
+      'Notification background action: ${response.actionId} for payload: ${response.payload}');
+}
+
+enum DownloadStatus {
+  pending,
+  downloading,
+  paused,
+  completed,
+  failed,
+  canceled,
+  converting
+}
 
 class DownloadItem {
   final String id;
@@ -94,7 +112,8 @@ class DownloadItem {
 
   /// Full filename with the original extension preserved
   String get fileName {
-    final ext = fileExtension.startsWith('.') ? fileExtension : '.$fileExtension';
+    final ext =
+        fileExtension.startsWith('.') ? fileExtension : '.$fileExtension';
     if (season > 0 && episode > 0) {
       return '$title S${season.toString().padLeft(2, '0')} E${episode.toString().padLeft(2, '0')}$ext';
     }
@@ -112,8 +131,10 @@ class DownloadItem {
   String get formattedSize {
     if (totalBytes == 0) return 'Unknown';
     if (totalBytes < 1024) return '$totalBytes B';
-    if (totalBytes < 1024 * 1024) return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
-    if (totalBytes < 1024 * 1024 * 1024) return '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (totalBytes < 1024 * 1024)
+      return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
+    if (totalBytes < 1024 * 1024 * 1024)
+      return '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
@@ -138,75 +159,86 @@ class DownloadItem {
   String get formattedSpeed {
     if (downloadSpeed <= 0) return '';
     if (downloadSpeed < 1024) return '$downloadSpeed B/s';
-    if (downloadSpeed < 1024 * 1024) return '${(downloadSpeed / 1024).toStringAsFixed(1)} KB/s';
+    if (downloadSpeed < 1024 * 1024)
+      return '${(downloadSpeed / 1024).toStringAsFixed(1)} KB/s';
     return '${(downloadSpeed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
   String get statusLabel {
     switch (status) {
-      case DownloadStatus.pending:     return 'Queued';
-      case DownloadStatus.downloading: return '${formattedDownloadedBytes} · $segmentProgressLabel';
-      case DownloadStatus.completed:   return 'Ready';
-      case DownloadStatus.failed:      return 'Failed';
-      case DownloadStatus.canceled:    return 'Cancelled';
-      case DownloadStatus.paused:      return 'Paused';
-      case DownloadStatus.converting:  return 'Converting…';
+      case DownloadStatus.pending:
+        return 'Queued';
+      case DownloadStatus.downloading:
+        return '$formattedDownloadedBytes · $segmentProgressLabel';
+      case DownloadStatus.completed:
+        return 'Ready';
+      case DownloadStatus.failed:
+        return 'Failed';
+      case DownloadStatus.canceled:
+        return 'Cancelled';
+      case DownloadStatus.paused:
+        return 'Paused';
+      case DownloadStatus.converting:
+        return 'Converting…';
     }
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'url': url,
-    'title': title,
-    'season': season,
-    'episode': episode,
-    'posterUrl': posterUrl,
-    'fileExtension': fileExtension,
-    'status': status.index,
-    'progress': progress,
-    'totalBytes': totalBytes,
-    'downloadedBytes': downloadedBytes,
-    'localPath': localPath,
-    'taskId': taskId,
-    'createdAt': createdAt.toIso8601String(),
-    'completedAt': completedAt?.toIso8601String(),
-    'error': error,
-    'videoStreamUrl': videoStreamUrl,
-    'audioStreamUrl': audioStreamUrl,
-    'qualityLabel': qualityLabel,
-    'audioLabel': audioLabel,
-    'totalSegments': totalSegments,
-    'completedSegments': completedSegments,
-    'segmentDirectory': segmentDirectory,
-    'downloadSpeed': downloadSpeed,
-  };
+        'id': id,
+        'url': url,
+        'title': title,
+        'season': season,
+        'episode': episode,
+        'posterUrl': posterUrl,
+        'fileExtension': fileExtension,
+        'status': status.index,
+        'progress': progress,
+        'totalBytes': totalBytes,
+        'downloadedBytes': downloadedBytes,
+        'localPath': localPath,
+        'taskId': taskId,
+        'createdAt': createdAt.toIso8601String(),
+        'completedAt': completedAt?.toIso8601String(),
+        'error': error,
+        'videoStreamUrl': videoStreamUrl,
+        'audioStreamUrl': audioStreamUrl,
+        'qualityLabel': qualityLabel,
+        'audioLabel': audioLabel,
+        'totalSegments': totalSegments,
+        'completedSegments': completedSegments,
+        'segmentDirectory': segmentDirectory,
+        'downloadSpeed': downloadSpeed,
+      };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
-    id: json['id'],
-    url: json['url'],
-    title: json['title'],
-    season: json['season'],
-    episode: json['episode'],
-    posterUrl: json['posterUrl'],
-    fileExtension: json['fileExtension'] ?? '.mp4',
-    status: DownloadStatus.values[json['status'].clamp(0, DownloadStatus.values.length - 1)],
-    progress: (json['progress'] as num).toDouble(),
-    totalBytes: json['totalBytes'],
-    downloadedBytes: json['downloadedBytes'],
-    localPath: json['localPath'],
-    taskId: json['taskId'],
-    createdAt: DateTime.parse(json['createdAt']),
-    completedAt: json['completedAt'] != null ? DateTime.parse(json['completedAt']) : null,
-    error: json['error'],
-    videoStreamUrl: json['videoStreamUrl'],
-    audioStreamUrl: json['audioStreamUrl'],
-    qualityLabel: json['qualityLabel'],
-    audioLabel: json['audioLabel'],
-    totalSegments: json['totalSegments'] ?? 0,
-    completedSegments: json['completedSegments'] ?? 0,
-    segmentDirectory: json['segmentDirectory'],
-    downloadSpeed: json['downloadSpeed'] ?? 0,
-  );
+        id: json['id'],
+        url: json['url'],
+        title: json['title'],
+        season: json['season'],
+        episode: json['episode'],
+        posterUrl: json['posterUrl'],
+        fileExtension: json['fileExtension'] ?? '.mp4',
+        status: DownloadStatus
+            .values[json['status'].clamp(0, DownloadStatus.values.length - 1)],
+        progress: (json['progress'] as num).toDouble(),
+        totalBytes: json['totalBytes'],
+        downloadedBytes: json['downloadedBytes'],
+        localPath: json['localPath'],
+        taskId: json['taskId'],
+        createdAt: DateTime.parse(json['createdAt']),
+        completedAt: json['completedAt'] != null
+            ? DateTime.parse(json['completedAt'])
+            : null,
+        error: json['error'],
+        videoStreamUrl: json['videoStreamUrl'],
+        audioStreamUrl: json['audioStreamUrl'],
+        qualityLabel: json['qualityLabel'],
+        audioLabel: json['audioLabel'],
+        totalSegments: json['totalSegments'] ?? 0,
+        completedSegments: json['completedSegments'] ?? 0,
+        segmentDirectory: json['segmentDirectory'],
+        downloadSpeed: json['downloadSpeed'] ?? 0,
+      );
 }
 
 class DownloadManager {
@@ -214,21 +246,26 @@ class DownloadManager {
   static final DownloadManager instance = DownloadManager._();
 
   static const String _downloadsKey = 'download_items';
-  
+
   final List<DownloadItem> _downloads = [];
   final ReceivePort _port = ReceivePort();
   final Map<String, HlsDownloaderService> _activeHlsDownloads = {};
-  final DownloadNotificationService _notifService = DownloadNotificationService();
-  
+  final DownloadNotificationService _notifService =
+      DownloadNotificationService();
+
   List<DownloadItem> get downloads => List.unmodifiable(_downloads);
-  
-  List<DownloadItem> get downloadingItems => 
-      _downloads.where((d) => d.status == DownloadStatus.downloading || d.status == DownloadStatus.pending || d.status == DownloadStatus.converting).toList();
-  
-  List<DownloadItem> get completedItems => 
+
+  List<DownloadItem> get downloadingItems => _downloads
+      .where((d) =>
+          d.status == DownloadStatus.downloading ||
+          d.status == DownloadStatus.pending ||
+          d.status == DownloadStatus.converting)
+      .toList();
+
+  List<DownloadItem> get completedItems =>
       _downloads.where((d) => d.status == DownloadStatus.completed).toList();
-  
-  List<DownloadItem> get failedItems => 
+
+  List<DownloadItem> get failedItems =>
       _downloads.where((d) => d.status == DownloadStatus.failed).toList();
 
   final _updateController = StreamController<DownloadItem>.broadcast();
@@ -245,26 +282,35 @@ class DownloadManager {
   Future<void> initialize() async {
     if (kIsWeb) return;
     await FlutterDownloader.initialize();
-    await _notifService.init();
+    await _notifService.init(
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
     await _loadDownloads();
-    
+
     // Reset interrupted downloads to paused (so user can resume)
     for (var d in _downloads) {
-      if (d.status == DownloadStatus.downloading || d.status == DownloadStatus.converting) {
+      if (d.status == DownloadStatus.downloading ||
+          d.status == DownloadStatus.converting) {
         d.status = DownloadStatus.paused;
         d.error = null;
       }
     }
     await _saveDownloads();
-    
+
     // Wire notification action buttons (Pause/Resume/Cancel from notification bar)
-    _notifService.onNotificationAction = (actionId, notifId) {
-      final item = _downloads.cast<DownloadItem?>().firstWhere(
-        (d) => d!.id.hashCode == notifId,
-        orElse: () => null,
-      );
+    _notifService.onNotificationAction = (actionId, notifId, payload) {
+      // Find item by payload ID (most reliable) or fallback to hashCode
+      DownloadItem? item;
+      if (payload != null) {
+        item = _findById(payload);
+      }
+      item ??= _downloads.cast<DownloadItem?>().firstWhere(
+            (d) => d!.id.hashCode == notifId,
+            orElse: () => null,
+          );
+
       if (item == null) return;
-      
+
       switch (actionId) {
         case 'pause':
           pauseDownload(item.id);
@@ -273,22 +319,23 @@ class DownloadManager {
           resumeDownload(item.id);
           break;
         case 'cancel':
-          _showDeleteConfirmationGlobal(item);
+          // Cancel directly from notification (no UI modal)
+          cancelDownload(item.id);
           break;
       }
     };
-    
+
     // Register the port for isolate communication (legacy flutter_downloader)
     _unbindPort();
     IsolateNameServer.registerPortWithName(_port.sendPort, _downloadPortName);
-    
+
     _port.listen((dynamic data) {
       final taskId = data[0] as String;
       final status = data[1] as int;
       final progress = data[2] as int;
       _handleDownloadProgress(taskId, status, progress);
     });
-    
+
     await FlutterDownloader.registerCallback(downloadCallback);
   }
 
@@ -302,19 +349,21 @@ class DownloadManager {
       debugPrint('Download item not found for taskId: $taskId');
       return;
     }
-    
+
     item.progress = progress / 100.0;
     item.downloadedBytes = (item.totalBytes * item.progress).toInt();
-    
+
     if (status == DownloadTaskStatus.complete.index) {
       item.status = DownloadStatus.completed;
       item.completedAt = DateTime.now();
-      _notifService.showComplete(id: item.id.hashCode, title: item.displayName);
+      _notifService.showComplete(
+          id: item.id.hashCode, title: item.displayName, payload: item.id);
       onDownloadComplete?.call(item);
     } else if (status == DownloadTaskStatus.failed.index) {
       item.status = DownloadStatus.failed;
       item.error = 'Download failed';
-      _notifService.showFailed(id: item.id.hashCode, title: item.displayName);
+      _notifService.showFailed(
+          id: item.id.hashCode, title: item.displayName, payload: item.id);
     } else if (status == DownloadTaskStatus.canceled.index) {
       item.status = DownloadStatus.canceled;
       _notifService.cancel(item.id.hashCode);
@@ -324,11 +373,12 @@ class DownloadManager {
         id: item.id.hashCode,
         title: item.displayName,
         progress: progress,
+        payload: item.id,
       );
     } else if (status == DownloadTaskStatus.paused.index) {
       item.status = DownloadStatus.paused;
     }
-    
+
     _updateController.add(item);
     onDownloadUpdate?.call(item);
     _saveDownloads();
@@ -348,7 +398,18 @@ class DownloadManager {
       final dotIndex = lastSegment.lastIndexOf('.');
       if (dotIndex != -1 && dotIndex < lastSegment.length - 1) {
         final ext = lastSegment.substring(dotIndex).toLowerCase();
-        const validExts = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.m3u8'];
+        const validExts = [
+          '.mp4',
+          '.mkv',
+          '.avi',
+          '.mov',
+          '.wmv',
+          '.flv',
+          '.webm',
+          '.m4v',
+          '.ts',
+          '.m3u8'
+        ];
         if (validExts.contains(ext)) {
           return ext;
         }
@@ -401,9 +462,9 @@ class DownloadManager {
     if (!hasPermission) return null;
 
     final qualityLbl = variant?.badgeLabel;
-    final audioLbl   = audioTrack?.displayName;
-    final videoUrl   = variant?.url ?? m3u8Url;
-    final audioUrl   = audioTrack?.url;
+    final audioLbl = audioTrack?.displayName;
+    final videoUrl = variant?.url ?? m3u8Url;
+    final audioUrl = audioTrack?.url;
 
     final dir = await getDownloadDirectory();
     final safeTitle = _buildSafeTitle(title, season, episode, qualityLbl);
@@ -438,17 +499,21 @@ class DownloadManager {
       id: item.id.hashCode,
       title: item.displayName,
       progress: 0,
-      body: '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Starting download…',
+      body:
+          '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Starting download…',
+      payload: item.id,
     );
 
     _runSegmentDownload(item);
     return item;
   }
 
-  String _buildSafeTitle(String title, int season, int episode, String? quality) {
+  String _buildSafeTitle(
+      String title, int season, int episode, String? quality) {
     final parts = <String>[title];
     if (season > 0 && episode > 0) {
-      parts.add('S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}');
+      parts.add(
+          'S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}');
     }
     if (quality != null) parts.add(quality.replaceAll(' ', ''));
     String result = parts.join('_').replaceAll(RegExp(r'[<>:"/\\|?* ]'), '_');
@@ -464,16 +529,17 @@ class DownloadManager {
     int lastNotifPct = -1;
     int lastNotifTime = 0;
 
-    service.onProgress = (progress, completedSegs, totalSegs, downloadedBytes, bytesPerSecond) {
+    service.onProgress =
+        (progress, completedSegs, totalSegs, downloadedBytes, bytesPerSecond) {
       if (item.status == DownloadStatus.canceled) return;
-      
+
       // Map segment progress 0.0–1.0 to 0–96%
       item.progress = progress * 0.96;
       item.completedSegments = completedSegs;
       item.totalSegments = totalSegs;
       item.downloadedBytes = downloadedBytes;
       item.downloadSpeed = bytesPerSecond;
-      
+
       if (item.status != DownloadStatus.paused) {
         item.status = DownloadStatus.downloading;
       }
@@ -492,6 +558,8 @@ class DownloadManager {
           title: item.displayName,
           progress: pct,
           body: '$pct%${speedStr.isNotEmpty ? " · $speedStr" : ""}',
+          payload: item.id,
+          isPaused: item.status == DownloadStatus.paused,
         );
       }
 
@@ -504,14 +572,15 @@ class DownloadManager {
       item.status = DownloadStatus.converting;
       item.progress = 0.97;
       item.downloadSpeed = 0;
-      
+
       _notifService.showProgress(
         id: item.id.hashCode,
         title: item.displayName,
         progress: 97,
         body: '97% · Finalizing...',
+        payload: item.id,
       );
-      
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
@@ -521,13 +590,14 @@ class DownloadManager {
       item.status = DownloadStatus.failed;
       item.error = _parseError(error);
       _activeHlsDownloads.remove(item.id);
-      
+
       _notifService.showFailed(
         id: item.id.hashCode,
         title: item.displayName,
         error: item.error,
+        payload: item.id,
       );
-      
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
@@ -548,7 +618,8 @@ class DownloadManager {
         item.downloadedBytes = item.totalBytes;
       }
 
-      _notifService.showComplete(id: item.id.hashCode, title: item.displayName);
+      _notifService.showComplete(
+          id: item.id.hashCode, title: item.displayName, payload: item.id);
       _updateController.add(item);
       onDownloadComplete?.call(item);
       onDownloadUpdate?.call(item);
@@ -564,12 +635,14 @@ class DownloadManager {
   }
 
   String _parseError(String error) {
-    if (error.contains('403'))              return 'Access denied (403) — stream may have expired';
-    if (error.contains('404'))              return 'Stream not found (404)';
+    if (error.contains('403'))
+      return 'Access denied (403) — stream may have expired';
+    if (error.contains('404')) return 'Stream not found (404)';
     if (error.contains('Connection timed')) return 'Connection timed out';
-    if (error.contains('Invalid'))          return 'Invalid stream format';
-    if (error.contains('No segments'))      return 'No segments found in stream';
-    if (error.contains('MP4 conversion'))   return 'Conversion failed — tap retry';
+    if (error.contains('Invalid')) return 'Invalid stream format';
+    if (error.contains('No segments')) return 'No segments found in stream';
+    if (error.contains('MP4 conversion'))
+      return 'Conversion failed — tap retry';
     return 'Download failed — tap retry';
   }
 
@@ -587,6 +660,17 @@ class DownloadManager {
       _activeHlsDownloads[item.id]?.pause();
       item.status = DownloadStatus.paused;
       _saveDownloads();
+
+      // Update notification to show 'Resume'
+      _notifService.showProgress(
+        id: item.id.hashCode,
+        title: item.displayName,
+        progress: (item.progress * 100).toInt(),
+        body: 'Paused · ${(item.progress * 100).toInt()}%',
+        payload: item.id,
+        isPaused: true,
+      );
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       return;
@@ -612,6 +696,17 @@ class DownloadManager {
       _activeHlsDownloads[item.id]?.resume();
       item.status = DownloadStatus.downloading;
       _saveDownloads();
+
+      // Update notification to show 'Pause'
+      _notifService.showProgress(
+        id: item.id.hashCode,
+        title: item.displayName,
+        progress: (item.progress * 100).toInt(),
+        body: 'Downloading · ${(item.progress * 100).toInt()}%',
+        payload: item.id,
+        isPaused: false,
+      );
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       return;
@@ -631,6 +726,7 @@ class DownloadManager {
         title: item.displayName,
         progress: (item.progress * 100).toInt(),
         body: 'Resuming download…',
+        payload: item.id,
       );
 
       _runSegmentDownload(item);
@@ -685,7 +781,7 @@ class DownloadManager {
   Future<void> deleteDownload(String id, {bool deleteFile = true}) async {
     final item = _findById(id);
     if (item == null) return;
-    
+
     _notifService.cancel(item.id.hashCode);
 
     // Cancel if still active
@@ -709,7 +805,7 @@ class DownloadManager {
         } catch (_) {}
       }
     }
-    
+
     _downloads.removeWhere((d) => d.id == id);
     _saveDownloads();
   }
@@ -762,7 +858,7 @@ class DownloadManager {
       item.taskId = taskId;
       item.localPath = '${dir.path}/$fileName';
       _saveDownloads();
-      
+
       onDownloadUpdate?.call(item);
     } catch (e) {
       item.status = DownloadStatus.failed;
@@ -948,10 +1044,12 @@ class DownloadManager {
                             child: TextButton(
                               onPressed: () => Navigator.pop(context),
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(color: AppColors.border),
+                                  side:
+                                      const BorderSide(color: AppColors.border),
                                 ),
                               ),
                               child: const Text(
@@ -976,7 +1074,8 @@ class DownloadManager {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.red,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),

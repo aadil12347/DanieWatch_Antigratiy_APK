@@ -1,146 +1,375 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../providers/search_provider.dart';
 import '../providers/filter_modal_provider.dart';
-import 'filter_selector_sheet.dart';
 
 class MainFilterPanelContent extends ConsumerStatefulWidget {
   const MainFilterPanelContent({super.key});
 
   @override
-  ConsumerState<MainFilterPanelContent> createState() => _MainFilterPanelContentState();
+  ConsumerState<MainFilterPanelContent> createState() =>
+      _MainFilterPanelContentState();
 }
 
-class _MainFilterPanelContentState extends ConsumerState<MainFilterPanelContent> {
+class _MainFilterPanelContentState
+    extends ConsumerState<MainFilterPanelContent> {
+  // Temporary filter state so changes only apply on "Apply"
+  late SearchFilters _pendingFilters;
 
-  void _showSelectionModal(String title, String currentValue, List<String> options, Function(String) onChanged) {
-    ref.read(filterModalProvider.notifier).state = FilterModalState(
-      view: FilterView.optionsList,
-      title: title,
-      currentValue: currentValue,
-      options: options,
-      onChanged: onChanged,
-      isSubMenu: true, // Tell it to return to mainPanel on cancel
-    );
+  @override
+  void initState() {
+    super.initState();
+    _pendingFilters = ref.read(searchProvider).filters;
   }
 
-  Widget _buildDropdownSection(String title, String value, List<String> options, Function(String) onChanged) {
+  // ── Categories ──
+  static const _categories = ['Movie', 'TV Shows', 'K-Drama', 'Anime'];
+
+  // ── Regions ──
+  static const _regions = [
+    'US',
+    'South Korea',
+    'China',
+    'Japan',
+    'India',
+    'UK'
+  ];
+
+  // ── Genres ──
+  static const _genres = [
+    'Action',
+    'Comedy',
+    'Romance',
+    'Thriller',
+    'Drama',
+    'Horror',
+    'Sci-Fi',
+    'Fantasy',
+    'Animation',
+    'Documentary'
+  ];
+
+  // ── Years ──
+  static const _years = [
+    '2026',
+    '2025',
+    '2024',
+    '2023',
+    '2022',
+    '2021',
+    '2020',
+    '2019',
+    '2018'
+  ];
+
+  // ── Sort ──
+  static const _sorts = ['Popularity', 'Latest Release'];
+
+  Widget _buildMultiSelectSection(String title, List<String> options,
+      Set<String> selectedValues, void Function(String) onToggle) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: () => _showSelectionModal(title, value, options, onChanged),
-          child: Container(
-            height: 48,
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(value, style: const TextStyle(color: Colors.white, fontSize: 16)),
-                const Icon(Icons.keyboard_arrow_down, color: Colors.white54),
-              ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: options.map((option) {
+            final isSelected = selectedValues.contains(option);
+            return GestureDetector(
+              onTap: () => onToggle(option),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.primary.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  option,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : AppColors.primary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Widget _buildSingleSelectSection(String title, List<String> options,
+      String selectedValue, void Function(String) onTap) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: options.map((option) {
+            final isSelected = option == selectedValue;
+            return GestureDetector(
+              onTap: () => onTap(option),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.primary.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  option,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : AppColors.primary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final searchState = ref.watch(searchProvider);
-    final filters = searchState.filters;
+    final location = GoRouterState.of(context).uri.path;
+    final isCategoryPage = location == '/anime' || 
+                          location == '/korean' || 
+                          location == '/movies' || 
+                          location == '/tv';
+
+    final categoriesToDisplay = isCategoryPage ? ['Movie', 'Season'] : _categories;
+    final sortsToDisplay = isCategoryPage ? ['Latest', 'Top Rated', 'Popularity'] : _sorts;
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-      padding: const EdgeInsets.only(bottom: 20),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Header ───────────────────────────────────────
+          // ── Drag handle ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.tune_rounded, color: Colors.red, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Filters',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54, size: 22),
-                  onPressed: () => ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none),
-                ),
-              ],
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
 
-          const Divider(color: Colors.white10, height: 24),
+          // ── Title ──
+          const Padding(
+            padding: EdgeInsets.only(bottom: 20),
+            child: Text(
+              'Sort & Filter',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
 
-          // ── Options List ───────────────────────────────────────
+          // ── Scrollable filter options ──
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDropdownSection('Genre', filters.genre, ['All Genres', 'Action', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery', 'Romance', 'Science Fiction', 'Thriller', 'War', 'Western'], (val) {
-                     ref.read(searchProvider.notifier).updateFilters(filters.copyWith(genre: val));
-                  }),
-                  _buildDropdownSection('Year', filters.year, ['All Years', '2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016'], (val) {
-                     ref.read(searchProvider.notifier).updateFilters(filters.copyWith(year: val));
-                  }),
-                  _buildDropdownSection('Country', filters.country, ['All Countries', 'United States', 'United Kingdom', 'South Korea', 'Japan', 'India'], (val) {
-                     ref.read(searchProvider.notifier).updateFilters(filters.copyWith(country: val));
-                  }),
-                  _buildDropdownSection('Sort By', filters.sortBy, ['Popularity (High to Low)', 'Popularity (Low to High)', 'Rating (High to Low)', 'Rating (Low to High)', 'Release Date (Newest)'], (val) {
-                     ref.read(searchProvider.notifier).updateFilters(filters.copyWith(sortBy: val));
-                  }),
+                  // Categories
+                  _buildMultiSelectSection(
+                    'Categories',
+                    categoriesToDisplay,
+                    _pendingFilters.categories,
+                    (val) => setState(() {
+                      final newSet =
+                          Set<String>.from(_pendingFilters.categories);
+                      if (newSet.contains(val)) {
+                        newSet.remove(val);
+                      } else {
+                        newSet.add(val);
+                      }
+                      _pendingFilters =
+                          _pendingFilters.copyWith(categories: newSet);
+                    }),
+                  ),
+
+                  // Regions (Only on Explore page)
+                  if (!isCategoryPage)
+                    _buildMultiSelectSection(
+                      'Regions',
+                      _regions,
+                      _pendingFilters.regions,
+                      (val) => setState(() {
+                        final newSet = Set<String>.from(_pendingFilters.regions);
+                        if (newSet.contains(val)) {
+                          newSet.remove(val);
+                        } else {
+                          newSet.add(val);
+                        }
+                        _pendingFilters =
+                            _pendingFilters.copyWith(regions: newSet);
+                      }),
+                    ),
+
+                  // Genre
+                  _buildMultiSelectSection(
+                    'Genre',
+                    _genres,
+                    _pendingFilters.genres,
+                    (val) => setState(() {
+                      final newSet = Set<String>.from(_pendingFilters.genres);
+                      if (newSet.contains(val)) {
+                        newSet.remove(val);
+                      } else {
+                        newSet.add(val);
+                      }
+                      _pendingFilters =
+                          _pendingFilters.copyWith(genres: newSet);
+                    }),
+                  ),
+
+                  // Time/Periods
+                  _buildMultiSelectSection(
+                    'Time/Periods',
+                    _years,
+                    _pendingFilters.years,
+                    (val) => setState(() {
+                      final newSet = Set<String>.from(_pendingFilters.years);
+                      if (newSet.contains(val)) {
+                        newSet.remove(val);
+                      } else {
+                        newSet.add(val);
+                      }
+                      _pendingFilters = _pendingFilters.copyWith(years: newSet);
+                    }),
+                  ),
+
+                  // Sort
+                  _buildSingleSelectSection(
+                    'Sort',
+                    sortsToDisplay,
+                    _pendingFilters.sortBy,
+                    (val) => setState(() {
+                      _pendingFilters = _pendingFilters.copyWith(sortBy: val);
+                    }),
+                  ),
+
                   const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
+                ],
+              ),
+            ),
+          ),
+
+          // ── Reset + Apply buttons ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
+              children: [
+                // Reset
+                Expanded(
+                  child: SizedBox(
+                    height: 52,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        setState(() {
+                          _pendingFilters = const SearchFilters();
+                        });
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.2)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28)),
+                      ),
+                      child: const Text(
+                        'Reset',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Apply
+                Expanded(
+                  child: SizedBox(
                     height: 52,
                     child: ElevatedButton(
                       onPressed: () {
-                        ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+                        ref
+                            .read(searchProvider.notifier)
+                            .updateFilters(_pendingFilters);
+                        ref.read(filterModalProvider.notifier).state =
+                            const FilterModalState(view: FilterView.none);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28)),
+                        elevation: 0,
                       ),
-                      child: const Text('Apply Filters', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      child: const Text(
+                        'Apply',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

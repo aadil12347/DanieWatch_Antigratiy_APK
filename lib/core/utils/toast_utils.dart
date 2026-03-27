@@ -109,7 +109,7 @@ class _ToastWidgetState extends State<_ToastWidget>
     _timer = Timer(widget.duration, () => _dismiss());
   }
 
-  void _dismiss({Offset? velocity}) {
+  void _dismiss() {
     if (mounted) {
       if (_isDragging) return; // Don't auto-dismiss while dragging
       _controller.reverse().then((_) {
@@ -142,7 +142,8 @@ class _ToastWidgetState extends State<_ToastWidget>
 
     // Dismiss if swiped fast or dragged far enough
     // Only allow dismissal Up, Left, or Right (not significant Down)
-    final isDismissGesture = (speed > 500 || distance > 100) && _dragOffset.dy < 50;
+    final isDismissGesture =
+        (speed > 500 || distance > 100) && _dragOffset.dy < 50;
 
     if (isDismissGesture) {
       widget.onDismiss();
@@ -200,7 +201,8 @@ class _ToastWidgetState extends State<_ToastWidget>
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceElevated.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(28),

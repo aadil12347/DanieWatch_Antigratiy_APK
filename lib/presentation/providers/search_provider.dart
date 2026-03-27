@@ -4,39 +4,39 @@ import '../../data/local/manifest_dao.dart';
 
 /// Comprehensive filter state
 class SearchFilters {
-  final String category;
-  final String genre;
-  final String year;
-  final String country;
+  final Set<String> categories;
+  final Set<String> regions;
+  final Set<String> genres;
+  final Set<String> years;
   final String sortBy;
 
   const SearchFilters({
-    this.category = 'All',
-    this.genre = 'All Genres',
-    this.year = 'All Years',
-    this.country = 'All Countries',
-    this.sortBy = 'Popularity (High to Low)',
+    this.categories = const {},
+    this.regions = const {},
+    this.genres = const {},
+    this.years = const {},
+    this.sortBy = 'Popularity',
   });
 
   bool get hasActiveFilters =>
-      category != 'All' ||
-      genre != 'All Genres' ||
-      year != 'All Years' ||
-      country != 'All Countries' ||
-      sortBy != 'Popularity (High to Low)';
+      categories.isNotEmpty ||
+      regions.isNotEmpty ||
+      genres.isNotEmpty ||
+      years.isNotEmpty ||
+      sortBy != 'Popularity';
 
   SearchFilters copyWith({
-    String? category,
-    String? genre,
-    String? year,
-    String? country,
+    Set<String>? categories,
+    Set<String>? regions,
+    Set<String>? genres,
+    Set<String>? years,
     String? sortBy,
   }) {
     return SearchFilters(
-      category: category ?? this.category,
-      genre: genre ?? this.genre,
-      year: year ?? this.year,
-      country: country ?? this.country,
+      categories: categories ?? this.categories,
+      regions: regions ?? this.regions,
+      genres: genres ?? this.genres,
+      years: years ?? this.years,
       sortBy: sortBy ?? this.sortBy,
     );
   }
@@ -87,7 +87,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   void search(String query) {
     _debounce?.cancel();
-    
+
     state = state.copyWith(query: query);
 
     if (query.trim().isEmpty) {
@@ -98,9 +98,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
-      
+
       state = state.copyWith(isSearching: true);
-      
+
       try {
         _unfilteredResults = await _dao.searchFts(query);
         state = state.copyWith(results: _unfilteredResults, isSearching: false);

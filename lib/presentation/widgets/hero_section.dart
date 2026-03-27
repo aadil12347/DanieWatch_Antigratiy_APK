@@ -67,7 +67,8 @@ class _HeroSectionState extends State<HeroSection> {
               final logoUrl = item.logoUrl;
 
               return GestureDetector(
-                onTap: () => context.push('/details/${item.mediaType}/${item.id}'),
+                onTap: () =>
+                    context.push('/details/${item.mediaType}/${item.id}'),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -92,7 +93,7 @@ class _HeroSectionState extends State<HeroSection> {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            AppColors.background.withOpacity(0.5),
+                            AppColors.background.withValues(alpha: 0.5),
                             AppColors.background,
                           ],
                           stops: const [0.3, 0.8, 1.0],
@@ -113,20 +114,22 @@ class _HeroSectionState extends State<HeroSection> {
                               imageUrl: logoUrl,
                               height: 60,
                               alignment: Alignment.centerLeft,
-                              errorWidget: (_, __, ___) => _buildTextTitle(item),
+                              errorWidget: (_, __, ___) =>
+                                  _buildTextTitle(item),
                             ),
                           ] else ...[
                             _buildTextTitle(item),
                           ],
-                          
+
                           const SizedBox(height: 12),
                           Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  "Action, Superhero, Science Fiction, ...",
+                                  'Action, Superhero, Science Fiction, ...',
                                   style: TextStyle(
-                                    color: AppColors.textPrimary.withOpacity(0.9),
+                                    color: AppColors.textPrimary
+                                        .withValues(alpha: 0.9),
                                     fontSize: 14,
                                     fontWeight: FontWeight.w400,
                                   ),
@@ -137,7 +140,7 @@ class _HeroSectionState extends State<HeroSection> {
                             ],
                           ),
                           const SizedBox(height: 20),
-                          
+
                           // Buttons
                           Row(
                             children: [
@@ -146,7 +149,8 @@ class _HeroSectionState extends State<HeroSection> {
                                 flex: 4,
                                 child: ElevatedButton.icon(
                                   onPressed: () {},
-                                  icon: const Icon(Icons.play_circle_fill, color: Colors.white, size: 22),
+                                  icon: const Icon(Icons.play_circle_fill,
+                                      color: Colors.white, size: 22),
                                   label: const Text(
                                     'Play',
                                     style: TextStyle(
@@ -157,7 +161,8 @@ class _HeroSectionState extends State<HeroSection> {
                                   ),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.primary,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(30),
                                     ),
@@ -171,7 +176,8 @@ class _HeroSectionState extends State<HeroSection> {
                                 flex: 5,
                                 child: OutlinedButton.icon(
                                   onPressed: () {},
-                                  icon: const Icon(Icons.add, color: Colors.white, size: 22),
+                                  icon: const Icon(Icons.add,
+                                      color: Colors.white, size: 22),
                                   label: const Text(
                                     'My List',
                                     style: TextStyle(
@@ -181,8 +187,10 @@ class _HeroSectionState extends State<HeroSection> {
                                     ),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Colors.white, width: 1.5),
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    side: const BorderSide(
+                                        color: Colors.white, width: 1.5),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(30),
                                     ),
@@ -204,7 +212,7 @@ class _HeroSectionState extends State<HeroSection> {
       ),
     );
   }
-  
+
   Widget _buildTextTitle(ManifestItem item) {
     return Text(
       item.title,

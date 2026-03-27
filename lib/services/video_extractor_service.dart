@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer' as developer;
@@ -11,7 +10,8 @@ import 'dart:developer' as developer;
 /// This replaces the old headless-only approach that looked for <video> src,
 /// which failed on many embed pages.
 class VideoExtractorService {
-  static final VideoExtractorService _instance = VideoExtractorService._internal();
+  static final VideoExtractorService _instance =
+      VideoExtractorService._internal();
   factory VideoExtractorService() => _instance;
   VideoExtractorService._internal();
 
@@ -20,18 +20,21 @@ class VideoExtractorService {
   ///
   /// This implements a 4-click sequence to trigger HLS link generation
   /// while handling/blocking pop-ups and redirects.
-  Future<String?> extractVideoUrl(String embedUrl, {bool bypassCache = false}) async {
+  Future<String?> extractVideoUrl(String embedUrl,
+      {bool bypassCache = false}) async {
     // 1. Check cache
     final prefs = await SharedPreferences.getInstance();
     if (!bypassCache) {
       final cachedUrl = prefs.getString('extract_$embedUrl');
       if (cachedUrl != null) {
-        developer.log('[Extractor] Found cached URL: $cachedUrl', name: 'Extractor');
+        developer.log('[Extractor] Found cached URL: $cachedUrl',
+            name: 'Extractor');
         return cachedUrl;
       }
     }
 
-    developer.log('[Extractor] Starting WebView extraction for: $embedUrl', name: 'Extractor');
+    developer.log('[Extractor] Starting WebView extraction for: $embedUrl',
+        name: 'Extractor');
 
     final completer = Completer<String?>();
     final Set<String> discoveredLinks = {};
@@ -64,7 +67,8 @@ class VideoExtractorService {
       if (masterLinks.isNotEmpty) {
         masterLinks.sort((a, b) => b.length.compareTo(a.length));
         bestLink = masterLinks.first;
-        developer.log('[Extractor] Selected MASTER: $bestLink', name: 'Extractor');
+        developer.log('[Extractor] Selected MASTER: $bestLink',
+            name: 'Extractor');
       }
       // 2. High quality variant
       else {
@@ -75,10 +79,12 @@ class VideoExtractorService {
         if (highQuality.isNotEmpty) {
           highQuality.sort((a, b) => b.length.compareTo(a.length));
           bestLink = highQuality.first;
-          developer.log('[Extractor] Selected HIGH QUALITY: $bestLink', name: 'Extractor');
+          developer.log('[Extractor] Selected HIGH QUALITY: $bestLink',
+              name: 'Extractor');
         } else if (discoveredLinks.isNotEmpty) {
           bestLink = discoveredLinks.first;
-          developer.log('[Extractor] Selected FALLBACK: $bestLink', name: 'Extractor');
+          developer.log('[Extractor] Selected FALLBACK: $bestLink',
+              name: 'Extractor');
         }
       }
 
@@ -97,19 +103,22 @@ class VideoExtractorService {
       if (lowerLink.contains('ads')) return;
 
       if (!discoveredLinks.contains(link)) {
-        developer.log('[Extractor] New link discovered: $link', name: 'Extractor');
+        developer.log('[Extractor] New link discovered: $link',
+            name: 'Extractor');
         discoveredLinks.add(link);
       }
 
       if (lowerLink.contains('master.m3u8') || lowerLink.contains('.urlset')) {
-        developer.log('[Extractor] Master found! Completing soon...', name: 'Extractor');
+        developer.log('[Extractor] Master found! Completing soon...',
+            name: 'Extractor');
         masterWaitTimer?.cancel();
         masterWaitTimer = Timer(const Duration(milliseconds: 200), () {
           completeDiscovery();
         });
       } else if (masterWaitTimer == null) {
         // Found a fallback; wait 3s to see if master appears
-        developer.log('[Extractor] Fallback found, waiting for master...', name: 'Extractor');
+        developer.log('[Extractor] Fallback found, waiting for master...',
+            name: 'Extractor');
         masterWaitTimer = Timer(const Duration(seconds: 3), () {
           completeDiscovery();
         });
@@ -134,13 +143,14 @@ class VideoExtractorService {
       },
       onLoadStop: (controller, url) async {
         developer.log('[Extractor] Page loaded: $url', name: 'Extractor');
-        
+
         // Start the 4-click sequence after load
         for (int i = 1; i <= 4; i++) {
           if (discoveryComplete) break;
-          
-          developer.log('[Extractor] Click sequence $i/4...', name: 'Extractor');
-          
+
+          developer.log('[Extractor] Click sequence $i/4...',
+              name: 'Extractor');
+
           try {
             await controller.evaluateJavascript(source: """
               (function() {
@@ -190,20 +200,24 @@ class VideoExtractorService {
         final isMainFrame = navigationAction.isForMainFrame;
 
         // Block non-main-frame redirects and common ad domains
-        if (!isMainFrame || 
+        if (!isMainFrame ||
             url.contains('google-analytics') ||
             url.contains('doubleclick') ||
             url.contains('ads') ||
             url.contains('popad') ||
             url.contains('onclick')) {
-          developer.log('[Extractor] Blocking redirect/resource: $url', name: 'Extractor');
+          developer.log('[Extractor] Blocking redirect/resource: $url',
+              name: 'Extractor');
           return NavigationActionPolicy.CANCEL;
         }
 
         // If it's a main frame redirect but looks like an ad or popunder, block it
-        if (isMainFrame && url != embedUrl && !url.contains(Uri.parse(embedUrl).host)) {
-           developer.log('[Extractor] Blocking potential popup redirect: $url', name: 'Extractor');
-           return NavigationActionPolicy.CANCEL;
+        if (isMainFrame &&
+            url != embedUrl &&
+            !url.contains(Uri.parse(embedUrl).host)) {
+          developer.log('[Extractor] Blocking potential popup redirect: $url',
+              name: 'Extractor');
+          return NavigationActionPolicy.CANCEL;
         }
 
         return NavigationActionPolicy.ALLOW;
@@ -218,11 +232,11 @@ class VideoExtractorService {
 
     headlessWebView.run();
 
-
     // Absolute timeout: 20 seconds (give it enough time)
     absoluteTimer = Timer(const Duration(seconds: 20), () {
       if (!discoveryComplete) {
-        developer.log('[Extractor] Absolute timeout reached.', name: 'Extractor');
+        developer.log('[Extractor] Absolute timeout reached.',
+            name: 'Extractor');
         completeDiscovery();
       }
     });
@@ -236,9 +250,9 @@ class VideoExtractorService {
       return result;
     } finally {
       autoClickTimer?.cancel();
-      absoluteTimer?.cancel();
+      absoluteTimer.cancel();
       masterWaitTimer?.cancel();
-      headlessWebView?.dispose();
+      headlessWebView.dispose();
     }
   }
 }

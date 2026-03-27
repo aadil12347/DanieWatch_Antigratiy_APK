@@ -13,9 +13,20 @@ class ContentRepository {
 
   // ─── Suspicious Domains Filter ─────────────────────────────────────────────
   static final List<String> _suspiciousDomains = [
-    'click', 'clk', 'ads', 'pop', 'banner', 'tracker', 'analytics',
-    'doubleclick', 'googlesyndication', 'googleadservices',
-    'adf', 'adb', 'traffic', 'visit'
+    'click',
+    'clk',
+    'ads',
+    'pop',
+    'banner',
+    'tracker',
+    'analytics',
+    'doubleclick',
+    'googlesyndication',
+    'googleadservices',
+    'adf',
+    'adb',
+    'traffic',
+    'visit'
   ];
 
   static bool isSuspiciousLink(String url) {
@@ -52,8 +63,14 @@ class ContentRepository {
     if (content == null) return false;
 
     if (type == 'movie') {
-      final watchLink = (content['watch_link'] ?? content['play_url'] ?? content['stream_url'])?.toString() ?? '';
-      final downloadLink = (content['download_link'] ?? content['download_url'])?.toString() ?? '';
+      final watchLink = (content['watch_link'] ??
+                  content['play_url'] ??
+                  content['stream_url'])
+              ?.toString() ??
+          '';
+      final downloadLink =
+          (content['download_link'] ?? content['download_url'])?.toString() ??
+              '';
       return watchLink.isNotEmpty || downloadLink.isNotEmpty;
     }
 
@@ -64,15 +81,18 @@ class ContentRepository {
       if (seasonData == null) continue;
       final watchLinks = seasonData['watch_links'] as List?;
       final downloadLinks = seasonData['download_links'] as List?;
-      final hasWatch = watchLinks != null && watchLinks.any((l) => l.toString().isNotEmpty);
-      final hasDownload = downloadLinks != null && downloadLinks.any((l) => l.toString().isNotEmpty);
+      final hasWatch =
+          watchLinks != null && watchLinks.any((l) => l.toString().isNotEmpty);
+      final hasDownload = downloadLinks != null &&
+          downloadLinks.any((l) => l.toString().isNotEmpty);
       if (hasWatch || hasDownload) return true;
     }
     return false;
   }
 
   // ─── Extract Season Links ──────────────────────────────────────────────────
-  static ({List<String> watchLinks, List<String> downloadLinks}) _extractSeasonLinks(
+  static ({List<String> watchLinks, List<String> downloadLinks})
+      _extractSeasonLinks(
     dynamic content,
     int season,
   ) {
@@ -94,17 +114,20 @@ class ContentRepository {
     }
 
     final seasonKey = 'season_$season';
-    final seasonData = parsedContent[seasonKey] as Map<String, dynamic>? ?? parsedContent[seasonKey] as Map?;
-    
+    final seasonData = parsedContent[seasonKey] as Map<String, dynamic>? ??
+        parsedContent[seasonKey] as Map?;
+
     if (seasonData == null) {
       return (watchLinks: [], downloadLinks: []);
     }
 
-    final watchLinks = ((seasonData['watch_links'] as List?) ?? (seasonData['play_urls'] as List?))
+    final watchLinks = ((seasonData['watch_links'] as List?) ??
+                (seasonData['play_urls'] as List?))
             ?.map((e) => e.toString())
             .toList() ??
         [];
-    final downloadLinks = ((seasonData['download_links'] as List?) ?? (seasonData['download_urls'] as List?))
+    final downloadLinks = ((seasonData['download_links'] as List?) ??
+                (seasonData['download_urls'] as List?))
             ?.map((e) => e.toString())
             .toList() ??
         [];
@@ -116,17 +139,24 @@ class ContentRepository {
   static List<String> _parseGenres(dynamic genresData) {
     if (genresData == null) return [];
     if (genresData is List) {
-      return genresData.map((e) {
-        if (e is Map) return e['name']?.toString() ?? e.toString();
-        return e.toString();
-      }).where((g) => g.isNotEmpty).toList();
+      return genresData
+          .map((e) {
+            if (e is Map) return e['name']?.toString() ?? e.toString();
+            return e.toString();
+          })
+          .where((g) => g.isNotEmpty)
+          .toList();
     }
     if (genresData is String) {
       try {
         final decoded = jsonDecode(genresData);
         if (decoded is List) return _parseGenres(decoded);
       } catch (_) {}
-      return genresData.split(',').map((e) => e.trim()).where((g) => g.isNotEmpty).toList();
+      return genresData
+          .split(',')
+          .map((e) => e.trim())
+          .where((g) => g.isNotEmpty)
+          .toList();
     }
     return [];
   }
@@ -136,7 +166,11 @@ class ContentRepository {
     if (castData == null) return [];
     dynamic data = castData;
     if (data is String) {
-      try { data = jsonDecode(data); } catch (_) { return []; }
+      try {
+        data = jsonDecode(data);
+      } catch (_) {
+        return [];
+      }
     }
     if (data is List) {
       return data.map((e) {
@@ -183,7 +217,8 @@ class ContentRepository {
   // ═══════════════════════════════════════════════════════════════════════════
   // MAIN FETCH: TMDB-first + DB-override merge
   // ═══════════════════════════════════════════════════════════════════════════
-  Future<ContentDetail?> fetchContentDetail(int tmdbId, {String mediaType = 'movie'}) async {
+  Future<ContentDetail?> fetchContentDetail(int tmdbId,
+      {String mediaType = 'movie'}) async {
     try {
       final isTv = mediaType.toLowerCase() == 'tv' ||
           mediaType.toLowerCase() == 'series' ||
@@ -209,9 +244,12 @@ class ContentRepository {
         dbEntry = rawDbEntry;
         final actualType = dbEntry['type']?.toString().toLowerCase();
         final expectedType = isTv ? 'series' : 'movie';
-        
-        if (actualType != null && actualType != expectedType && actualType != 'tv') {
-          dev.log('[ContentRepo] Type mismatch: Expected $expectedType but got $actualType. Ignoring DB entry.');
+
+        if (actualType != null &&
+            actualType != expectedType &&
+            actualType != 'tv') {
+          dev.log(
+              '[ContentRepo] Type mismatch: Expected $expectedType but got $actualType. Ignoring DB entry.');
           dbEntry = null; // Ignore mismatched DB entry
         }
       }
@@ -227,7 +265,8 @@ class ContentRepository {
             : dbEntry['content'] as Map<String, dynamic>;
       }
 
-      final dbType = dbEntry?['type']?.toString() ?? (isTv ? 'series' : 'movie');
+      final dbType =
+          dbEntry?['type']?.toString() ?? (isTv ? 'series' : 'movie');
       final hasActiveLinks = _detectActiveLinks(contentJson, dbType);
 
       // Step 4: Build ContentDetail with merge strategy
@@ -246,8 +285,10 @@ class ContentRepository {
             tmdbDetails['name']?.toString() ??
             'Unknown';
         overview = tmdbDetails['overview']?.toString();
-        posterUrl = TmdbClient.posterUrl(tmdbDetails['poster_path']?.toString());
-        backdropUrl = TmdbClient.backdropUrl(tmdbDetails['backdrop_path']?.toString());
+        posterUrl =
+            TmdbClient.posterUrl(tmdbDetails['poster_path']?.toString());
+        backdropUrl =
+            TmdbClient.backdropUrl(tmdbDetails['backdrop_path']?.toString());
         logoUrl = _extractTmdbLogo(tmdbDetails);
         tagline = tmdbDetails['tagline']?.toString();
         voteAverage = (tmdbDetails['vote_average'] as num?)?.toDouble() ?? 0.0;
@@ -289,16 +330,24 @@ class ContentRepository {
       // Step 4b: DB override when has active links
       if (hasActiveLinks && dbEntry != null) {
         if (dbEntry['title'] != null) title = dbEntry['title'].toString();
-        if (dbEntry['overview'] != null) overview = dbEntry['overview'].toString();
-        if (dbEntry['poster_url'] != null) posterUrl = dbEntry['poster_url'].toString();
-        if (dbEntry['backdrop_url'] != null) backdropUrl = dbEntry['backdrop_url'].toString();
-        if (dbEntry['logo_url'] != null) logoUrl = dbEntry['logo_url'].toString();
+        if (dbEntry['overview'] != null)
+          overview = dbEntry['overview'].toString();
+        if (dbEntry['poster_url'] != null)
+          posterUrl = dbEntry['poster_url'].toString();
+        if (dbEntry['backdrop_url'] != null)
+          backdropUrl = dbEntry['backdrop_url'].toString();
+        if (dbEntry['logo_url'] != null)
+          logoUrl = dbEntry['logo_url'].toString();
         if (dbEntry['tagline'] != null) tagline = dbEntry['tagline'].toString();
-        if (dbEntry['vote_average'] != null) voteAverage = (dbEntry['vote_average'] as num).toDouble();
+        if (dbEntry['vote_average'] != null)
+          voteAverage = (dbEntry['vote_average'] as num).toDouble();
         if (dbEntry['imdb_id'] != null) imdbId = dbEntry['imdb_id'].toString();
-        if (dbEntry['runtime'] != null) runtime = (dbEntry['runtime'] as num).toInt();
-        if (dbEntry['number_of_seasons'] != null) numberOfSeasons = (dbEntry['number_of_seasons'] as num).toInt();
-        if (dbEntry['number_of_episodes'] != null) numberOfEpisodes = (dbEntry['number_of_episodes'] as num).toInt();
+        if (dbEntry['runtime'] != null)
+          runtime = (dbEntry['runtime'] as num).toInt();
+        if (dbEntry['number_of_seasons'] != null)
+          numberOfSeasons = (dbEntry['number_of_seasons'] as num).toInt();
+        if (dbEntry['number_of_episodes'] != null)
+          numberOfEpisodes = (dbEntry['number_of_episodes'] as num).toInt();
 
         // DB genres/cast override
         final dbGenres = _parseGenres(dbEntry['genres']);
@@ -313,7 +362,8 @@ class ContentRepository {
         final seasons = tmdbDetails['seasons'] as List?;
         if (seasons != null) {
           tmdbSeasons = seasons
-              .where((s) => s['season_number'] != null && (s['season_number'] as int) > 0)
+              .where((s) =>
+                  s['season_number'] != null && (s['season_number'] as int) > 0)
               .map((s) => TmdbSeason.fromJson(s as Map<String, dynamic>))
               .toList();
         }
@@ -322,11 +372,14 @@ class ContentRepository {
       // Extract movie watch/download links
       String? watchLink, downloadLink;
       if (!isTv && contentJson != null) {
-        final rawWatch = contentJson['watch_link'] ?? contentJson['play_url'] ?? contentJson['stream_url'];
+        final rawWatch = contentJson['watch_link'] ??
+            contentJson['play_url'] ??
+            contentJson['stream_url'];
         if (rawWatch != null) {
           watchLink = extractValidEmbedUrl(rawWatch.toString());
         }
-        final rawDownload = contentJson['download_link'] ?? contentJson['download_url'];
+        final rawDownload =
+            contentJson['download_link'] ?? contentJson['download_url'];
         if (rawDownload != null) {
           downloadLink = extractValidDownloadUrl(rawDownload.toString());
         }
@@ -374,7 +427,8 @@ class ContentRepository {
   // ═══════════════════════════════════════════════════════════════════════════
   // EPISODES FETCH: entry_metadata + TMDB fallback + placeholder generation
   // ═══════════════════════════════════════════════════════════════════════════
-  Future<List<EpisodeData>> fetchEpisodes(String entryId, int seasonNumber) async {
+  Future<List<EpisodeData>> fetchEpisodes(
+      String entryId, int seasonNumber) async {
     try {
       // Step 1: Parallel fetch metadata + content links + TMDB season
       final tmdbId = int.tryParse(entryId) ?? 0;
@@ -399,7 +453,8 @@ class ContentRepository {
       final tmdbSeasonDetails = futures[2] as Map<String, dynamic>?;
 
       // Parse content JSON for links
-      final seasonLinks = _extractSeasonLinks(entryResponse?['content'], seasonNumber);
+      final seasonLinks =
+          _extractSeasonLinks(entryResponse?['content'], seasonNumber);
 
       // Parse TMDB episodes
       List<TmdbEpisode> tmdbEpisodes = [];
@@ -423,7 +478,8 @@ class ContentRepository {
 
           // Find matching TMDB episode for enrichment
           final epNum = ep['episode_number'] as int? ?? (idx + 1);
-          final tmdbEp = tmdbEpisodes.where((t) => t.episodeNumber == epNum).firstOrNull;
+          final tmdbEp =
+              tmdbEpisodes.where((t) => t.episodeNumber == epNum).firstOrNull;
 
           // DB metadata values take priority (admin_edited), then TMDB fallback
           final adminEdited = ep['admin_edited'] == true;
@@ -431,7 +487,8 @@ class ContentRepository {
           if (thumbnailUrl != null && !thumbnailUrl.startsWith('http')) {
             thumbnailUrl = TmdbClient.thumbUrl(thumbnailUrl);
           }
-          if ((thumbnailUrl == null || thumbnailUrl.isEmpty) && tmdbEp?.stillPath != null) {
+          if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
+              tmdbEp?.stillPath != null) {
             thumbnailUrl = TmdbClient.thumbUrl(tmdbEp!.stillPath);
           }
 
@@ -483,19 +540,22 @@ class ContentRepository {
         final epNo = i + 1;
         final base = episodes.where((e) => e.episodeNumber == epNo).firstOrNull;
 
-        final episode = base ?? EpisodeData(
-          episodeNumber: epNo,
-          title: 'Episode $epNo',
-          description: '',
-        );
+        final episode = base ??
+            EpisodeData(
+              episodeNumber: epNo,
+              title: 'Episode $epNo',
+              description: '',
+            );
 
         String? playLink;
-        if (i < seasonLinks.watchLinks.length && seasonLinks.watchLinks[i].isNotEmpty) {
+        if (i < seasonLinks.watchLinks.length &&
+            seasonLinks.watchLinks[i].isNotEmpty) {
           playLink = extractValidEmbedUrl(seasonLinks.watchLinks[i]);
         }
 
         String? dlLink;
-        if (i < seasonLinks.downloadLinks.length && seasonLinks.downloadLinks[i].isNotEmpty) {
+        if (i < seasonLinks.downloadLinks.length &&
+            seasonLinks.downloadLinks[i].isNotEmpty) {
           dlLink = extractValidDownloadUrl(seasonLinks.downloadLinks[i]);
         }
 
@@ -515,11 +575,14 @@ class ContentRepository {
   // ─── Fetch Similar Content ─────────────────────────────────────────────────
   Future<List<SimilarItem>> fetchSimilar(int tmdbId, String mediaType) async {
     try {
-      final isTv = mediaType.toLowerCase() == 'tv' || mediaType.toLowerCase() == 'series';
+      final isTv = mediaType.toLowerCase() == 'tv' ||
+          mediaType.toLowerCase() == 'series';
       final results = isTv
           ? await TmdbClient.instance.getSimilarTv(tmdbId)
           : await TmdbClient.instance.getSimilarMovies(tmdbId);
-      return results.map((r) => SimilarItem.fromTmdbJson(r, isTv ? 'tv' : 'movie')).toList();
+      return results
+          .map((r) => SimilarItem.fromTmdbJson(r, isTv ? 'tv' : 'movie'))
+          .toList();
     } catch (e) {
       dev.log('[ContentRepo] fetchSimilar error: $e');
       return [];

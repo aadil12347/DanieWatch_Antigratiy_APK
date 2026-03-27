@@ -48,7 +48,9 @@ class ManifestItem {
 
   factory ManifestItem.fromJson(Map<String, dynamic> json) {
     return ManifestItem(
-      id: (json['id'] is int) ? json['id'] as int : int.parse(json['id'].toString()),
+      id: (json['id'] is int)
+          ? json['id'] as int
+          : int.parse(json['id'].toString()),
       mediaType: json['media_type'].toString(),
       title: json['title'].toString(),
       posterUrl: json['poster_url']?.toString(),
@@ -57,7 +59,8 @@ class ManifestItem {
       hoverImageUrl: json['hover_image_url']?.toString(),
       voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
       voteCount: (json['vote_count'] as num?)?.toInt() ?? 0,
-      releaseYear: (json['release_year'] as num?)?.toInt() ?? int.tryParse(json['release_year']?.toString() ?? ''),
+      releaseYear: (json['release_year'] as num?)?.toInt() ??
+          int.tryParse(json['release_year']?.toString() ?? ''),
       originalLanguage: json['original_language']?.toString(),
       originCountry: (json['origin_country'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -69,9 +72,12 @@ class ManifestItem {
           [],
       overview: json['overview']?.toString(),
       tagline: json['tagline']?.toString(),
-      runtime: (json['runtime'] as num?)?.toInt() ?? int.tryParse(json['runtime']?.toString() ?? ''),
-      numberOfSeasons: (json['number_of_seasons'] as num?)?.toInt() ?? int.tryParse(json['number_of_seasons']?.toString() ?? ''),
-      numberOfEpisodes: (json['number_of_episodes'] as num?)?.toInt() ?? int.tryParse(json['number_of_episodes']?.toString() ?? ''),
+      runtime: (json['runtime'] as num?)?.toInt() ??
+          int.tryParse(json['runtime']?.toString() ?? ''),
+      numberOfSeasons: (json['number_of_seasons'] as num?)?.toInt() ??
+          int.tryParse(json['number_of_seasons']?.toString() ?? ''),
+      numberOfEpisodes: (json['number_of_episodes'] as num?)?.toInt() ??
+          int.tryParse(json['number_of_episodes']?.toString() ?? ''),
       status: json['status']?.toString(),
       imdbId: json['imdb_id']?.toString(),
     );

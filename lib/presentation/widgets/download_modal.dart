@@ -29,7 +29,8 @@ class DownloadModal extends StatefulWidget {
     return url;
   }
 
-  static void show(BuildContext context, {
+  static void show(
+    BuildContext context, {
     required String url,
     required ContentDetail content,
     required int season,
@@ -70,15 +71,33 @@ class _DownloadModalState extends State<DownloadModal> {
 
     final l = url.toLowerCase();
     // Never block captcha-related URLs
-    if (l.contains('recaptcha') || l.contains('gstatic') || l.contains('google.com/recaptcha')) {
+    if (l.contains('recaptcha') ||
+        l.contains('gstatic') ||
+        l.contains('google.com/recaptcha')) {
       return false;
     }
 
     const blocked = [
-      'doubleclick', 'googlesyndication', 'adservice', 'popads',
-      'popunder', 'juicyads', 'exoclick', 'trafficjunky', 'jomtingi',
-      'jnbhi.com', 'bet365', '1xbet', 'casino', 'melbet', 'mostbet',
-      'parimatch', 'spin-bet', 'ads-rotation', 'onclick', 'clickhouse'
+      'doubleclick',
+      'googlesyndication',
+      'adservice',
+      'popads',
+      'popunder',
+      'juicyads',
+      'exoclick',
+      'trafficjunky',
+      'jomtingi',
+      'jnbhi.com',
+      'bet365',
+      '1xbet',
+      'casino',
+      'melbet',
+      'mostbet',
+      'parimatch',
+      'spin-bet',
+      'ads-rotation',
+      'onclick',
+      'clickhouse'
     ];
     return blocked.any((b) => l.contains(b));
   }
@@ -138,23 +157,29 @@ class _DownloadModalState extends State<DownloadModal> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.download_rounded, color: AppColors.primary, size: 20),
+                      const Icon(Icons.download_rounded,
+                          color: AppColors.primary, size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _captured ? 'Download Started!' : 'Download',
-                          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600),
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.refresh, color: Colors.white54, size: 20),
+                        icon: const Icon(Icons.refresh,
+                            color: Colors.white54, size: 20),
                         onPressed: () => _controller?.reload(),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
                       const SizedBox(width: 12),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                        icon: const Icon(Icons.close,
+                            color: Colors.white54, size: 20),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -168,7 +193,8 @@ class _DownloadModalState extends State<DownloadModal> {
                         widget.initialUrl,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white24, fontSize: 10),
+                        style: const TextStyle(
+                            color: Colors.white24, fontSize: 10),
                       ),
                     ),
                 ],
@@ -200,13 +226,16 @@ class _DownloadModalState extends State<DownloadModal> {
         allowUniversalAccessFromFileURLs: true,
         mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
         safeBrowsingEnabled: false,
-        userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
       ),
       onWebViewCreated: (c) {
         _controller = c;
-        c.addJavaScriptHandler(handlerName: 'onDownloadUrl', callback: (args) {
-          if (args.isNotEmpty) _onLinkCaptured(args[0].toString());
-        });
+        c.addJavaScriptHandler(
+            handlerName: 'onDownloadUrl',
+            callback: (args) {
+              if (args.isNotEmpty) _onLinkCaptured(args[0].toString());
+            });
       },
       onLoadStart: (controller, url) {
         debugPrint('[DownloadModal] LoadStart: $url');
@@ -234,7 +263,7 @@ class _DownloadModalState extends State<DownloadModal> {
       },
       shouldOverrideUrlLoading: (c, nav) async {
         final url = nav.request.url?.toString() ?? '';
-        
+
         // Always allow the main site
         if (url.contains('bysebuho.com')) return NavigationActionPolicy.ALLOW;
 
@@ -243,7 +272,7 @@ class _DownloadModalState extends State<DownloadModal> {
           _onLinkCaptured(url);
           return NavigationActionPolicy.CANCEL;
         }
-        
+
         // TEMPORARILY DISABLED: Block obvious ads/popups
         /*
         if (_isAd(url)) {
@@ -304,16 +333,19 @@ class _DownloadModalState extends State<DownloadModal> {
   }
 
   Widget _buildCaptured() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 64),
-          const SizedBox(height: 16),
-          const Text('Download Started!',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text('Check downloads page for progress',
+          Icon(Icons.check_circle, color: Colors.green, size: 64),
+          SizedBox(height: 16),
+          Text('Download Started!',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          Text('Check downloads page for progress',
               style: TextStyle(color: Colors.white54, fontSize: 13)),
         ],
       ),

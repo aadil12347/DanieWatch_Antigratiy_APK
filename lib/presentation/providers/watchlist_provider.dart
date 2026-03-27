@@ -16,14 +16,17 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
   Future<List<WatchlistItem>> _loadWatchlist() async {
     final db = AppDatabase.instance.db;
     final rows = await db.query('watchlist', orderBy: 'added_at DESC');
-    return rows.map((r) => WatchlistItem(
-      tmdbId: r['tmdb_id'] as int,
-      mediaType: r['media_type'] as String,
-      title: r['title'] as String,
-      posterPath: r['poster_path'] as String?,
-      voteAverage: (r['vote_average'] as num?)?.toDouble() ?? 0.0,
-      addedAt: DateTime.fromMillisecondsSinceEpoch(r['added_at'] as int),
-    )).toList();
+    return rows
+        .map((r) => WatchlistItem(
+              tmdbId: r['tmdb_id'] as int,
+              mediaType: r['media_type'] as String,
+              title: r['title'] as String,
+              posterPath: r['poster_path'] as String?,
+              voteAverage: (r['vote_average'] as num?)?.toDouble() ?? 0.0,
+              addedAt:
+                  DateTime.fromMillisecondsSinceEpoch(r['added_at'] as int),
+            ))
+        .toList();
   }
 
   Future<void> toggle({
@@ -47,10 +50,12 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
       await db.delete('watchlist',
           where: 'tmdb_id = ? AND media_type = ?',
           whereArgs: [tmdbId, mediaType]);
-          
+
       if (user != null) {
         try {
-          await client.from('watchlist').delete()
+          await client
+              .from('watchlist')
+              .delete()
               .eq('user_id', user.id)
               .eq('tmdb_id', tmdbId)
               .eq('media_type', mediaType);
@@ -67,7 +72,7 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
         'vote_average': voteAverage,
         'added_at': DateTime.now().millisecondsSinceEpoch,
       });
-      
+
       if (user != null) {
         try {
           await client.from('watchlist').upsert({
@@ -96,28 +101,29 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
     final localItems = await db.query('watchlist');
 
     try {
-      final remoteItems = await client.from('watchlist').select().eq('user_id', user.id);
-      
+      final remoteItems =
+          await client.from('watchlist').select().eq('user_id', user.id);
+
       if (localItems.isEmpty && remoteItems.isNotEmpty) {
         // Pull down from Supabase
         for (final r in remoteItems) {
           final createdAtStr = r['created_at']?.toString();
-          final addedAt = createdAtStr != null 
-              ? DateTime.tryParse(createdAtStr)?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch
+          final addedAt = createdAtStr != null
+              ? DateTime.tryParse(createdAtStr)?.millisecondsSinceEpoch ??
+                  DateTime.now().millisecondsSinceEpoch
               : DateTime.now().millisecondsSinceEpoch;
-              
+
           await db.insert(
-            'watchlist', 
-            {
-              'tmdb_id': r['tmdb_id'],
-              'media_type': r['media_type'],
-              'title': r['title'],
-              'poster_path': r['poster_path'],
-              'vote_average': r['vote_average'],
-              'added_at': addedAt,
-            }, 
-            conflictAlgorithm: ConflictAlgorithm.replace
-          );
+              'watchlist',
+              {
+                'tmdb_id': r['tmdb_id'],
+                'media_type': r['media_type'],
+                'title': r['title'],
+                'poster_path': r['poster_path'],
+                'vote_average': r['vote_average'],
+                'added_at': addedAt,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace);
         }
         state = AsyncValue.data(await _loadWatchlist());
       } else if (localItems.isNotEmpty) {
@@ -150,7 +156,8 @@ final watchlistProvider =
         () => WatchlistNotifier());
 
 /// Continue watching provider
-class ContinueWatchingNotifier extends AsyncNotifier<List<ContinueWatchingItem>> {
+class ContinueWatchingNotifier
+    extends AsyncNotifier<List<ContinueWatchingItem>> {
   @override
   Future<List<ContinueWatchingItem>> build() async {
     return _load();
@@ -158,18 +165,22 @@ class ContinueWatchingNotifier extends AsyncNotifier<List<ContinueWatchingItem>>
 
   Future<List<ContinueWatchingItem>> _load() async {
     final db = AppDatabase.instance.db;
-    final rows = await db.query('continue_watching', orderBy: 'updated_at DESC');
-    return rows.map((r) => ContinueWatchingItem(
-      tmdbId: r['tmdb_id'] as int,
-      mediaType: r['media_type'] as String,
-      title: r['title'] as String,
-      posterPath: r['poster_path'] as String?,
-      season: r['season'] as int?,
-      episode: r['episode'] as int?,
-      progressSeconds: r['progress_seconds'] as int? ?? 0,
-      totalSeconds: r['total_seconds'] as int? ?? 0,
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(r['updated_at'] as int),
-    )).toList();
+    final rows =
+        await db.query('continue_watching', orderBy: 'updated_at DESC');
+    return rows
+        .map((r) => ContinueWatchingItem(
+              tmdbId: r['tmdb_id'] as int,
+              mediaType: r['media_type'] as String,
+              title: r['title'] as String,
+              posterPath: r['poster_path'] as String?,
+              season: r['season'] as int?,
+              episode: r['episode'] as int?,
+              progressSeconds: r['progress_seconds'] as int? ?? 0,
+              totalSeconds: r['total_seconds'] as int? ?? 0,
+              updatedAt:
+                  DateTime.fromMillisecondsSinceEpoch(r['updated_at'] as int),
+            ))
+        .toList();
   }
 
   Future<void> updateProgress({

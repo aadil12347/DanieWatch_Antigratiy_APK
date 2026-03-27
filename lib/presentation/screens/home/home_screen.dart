@@ -9,7 +9,6 @@ import '../../widgets/section_header.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
-import '../../widgets/hero_section.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -29,34 +28,34 @@ class HomeScreen extends ConsumerWidget {
         }
 
         return Scaffold(
-          drawer: CustomDrawer(),
+          drawer: const CustomDrawer(),
           body: CustomAppBar(
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                  // Content sections
-                  if (trending.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: HeroSection(items: trending),
-                    ),
-
-                  // Content sections
-                  ...sections.map((section) => SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SectionHeader(title: section.title),
-                            ContentRow(items: section.items),
-                          ],
-                        ),
-                      )),
-
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: 80),
+                // Content sections
+                if (trending.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: HeroSection(items: trending),
                   ),
-                ],
-              ),
+
+                // Content sections
+                ...sections.map((section) => SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SectionHeader(title: section.title),
+                          ContentRow(items: section.items),
+                        ],
+                      ),
+                    )),
+
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 80),
+                ),
+              ],
             ),
+          ),
         );
       },
     );
@@ -119,7 +118,7 @@ class _ErrorHome extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.cloud_off_rounded,
+              const Icon(Icons.cloud_off_rounded,
                   size: 64, color: AppColors.textMuted),
               const SizedBox(height: 16),
               Text(
@@ -130,7 +129,8 @@ class _ErrorHome extends StatelessWidget {
               Text(
                 error,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                style:
+                    const TextStyle(color: AppColors.textMuted, fontSize: 13),
               ),
             ],
           ),
@@ -151,7 +151,8 @@ class _EmptyHome extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.movie_outlined, size: 64, color: AppColors.textMuted),
+            const Icon(Icons.movie_outlined,
+                size: 64, color: AppColors.textMuted),
             const SizedBox(height: 16),
             Text(
               'No content available',

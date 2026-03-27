@@ -129,12 +129,14 @@ class HlsDownloaderService {
 
       // ── Phase 1: Parse playlists & build segment queues ──
       debugPrint('📦 Parsing video playlist: $videoM3u8Url');
-      final videoSegments = await _parseMediaPlaylist(videoM3u8Url, saveDirectory, 'v');
+      final videoSegments =
+          await _parseMediaPlaylist(videoM3u8Url, saveDirectory, 'v');
 
       List<_SegmentTask> audioSegments = [];
       if (audioM3u8Url != null && audioM3u8Url.isNotEmpty) {
         debugPrint('📦 Parsing audio playlist: $audioM3u8Url');
-        audioSegments = await _parseMediaPlaylist(audioM3u8Url, saveDirectory, 'a');
+        audioSegments =
+            await _parseMediaPlaylist(audioM3u8Url, saveDirectory, 'a');
       }
 
       final allSegments = [...videoSegments, ...audioSegments];
@@ -144,7 +146,8 @@ class HlsDownloaderService {
         throw Exception('No segments found to download.');
       }
 
-      debugPrint('📦 HLS: ${videoSegments.length} video + ${audioSegments.length} audio = $_totalSegments total segments');
+      debugPrint(
+          '📦 HLS: ${videoSegments.length} video + ${audioSegments.length} audio = $_totalSegments total segments');
 
       // ── Phase 2: Download all segments (3 parallel) ────
       await _downloadAllSegments(allSegments);
@@ -154,7 +157,8 @@ class HlsDownloaderService {
       // ── Phase 3: Mux to .mp4 with FFmpeg ──────────────
       onConversionStarted?.call();
       debugPrint('🔧 Converting to MP4...');
-      await _muxToMp4(videoSegments, audioSegments, saveDirectory, outputMp4Path);
+      await _muxToMp4(
+          videoSegments, audioSegments, saveDirectory, outputMp4Path);
 
       if (_isCancelled) throw Exception('Download cancelled');
 
@@ -196,7 +200,8 @@ class HlsDownloaderService {
 
     // If this is somehow a master playlist, find the first variant and use it
     if (content.contains('#EXT-X-STREAM-INF')) {
-      debugPrint('⚠ Got master playlist instead of media — extracting first variant');
+      debugPrint(
+          '⚠ Got master playlist instead of media — extracting first variant');
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i].trim();
         if (line.startsWith('#EXT-X-STREAM-INF:')) {
@@ -247,7 +252,8 @@ class HlsDownloaderService {
       String ext = _extractSegmentExt(segmentUrl);
       segments.add(_SegmentTask(
         url: segmentUrl,
-        localPath: p.join(saveDir, '${prefix}_seg_${segIndex.toString().padLeft(5, '0')}.$ext'),
+        localPath: p.join(saveDir,
+            '${prefix}_seg_${segIndex.toString().padLeft(5, '0')}.$ext'),
         isTsSegment: true,
       ));
       segIndex++;
@@ -307,8 +313,10 @@ class HlsDownloaderService {
       if (_isCancelled) return;
 
       if (attempt > 0) {
-        final delayMs = _retryDelaysMs[attempt.clamp(0, _retryDelaysMs.length - 1)];
-        debugPrint('🔄 Retry ${attempt + 1}/$_maxRetries for ${p.basename(seg.localPath)} after ${delayMs}ms');
+        final delayMs =
+            _retryDelaysMs[attempt.clamp(0, _retryDelaysMs.length - 1)];
+        debugPrint(
+            '🔄 Retry ${attempt + 1}/$_maxRetries for ${p.basename(seg.localPath)} after ${delayMs}ms');
         await Future.delayed(Duration(milliseconds: delayMs));
       }
 
@@ -323,7 +331,8 @@ class HlsDownloaderService {
         _reportProgress();
         return;
       } catch (e) {
-        debugPrint('⚠ ${p.basename(seg.localPath)} attempt ${attempt + 1} failed: $e');
+        debugPrint(
+            '⚠ ${p.basename(seg.localPath)} attempt ${attempt + 1} failed: $e');
         if (attempt == _maxRetries - 1) {
           throw Exception(
               'Failed to download ${p.basename(seg.localPath)} after $_maxRetries attempts: $e');
@@ -369,7 +378,8 @@ class HlsDownloaderService {
     if (_totalSegments > 0) {
       final progress = _completedSegments / _totalSegments;
       _updateSpeed();
-      onProgress?.call(progress, _completedSegments, _totalSegments, _downloadedBytes, _bytesPerSecond);
+      onProgress?.call(progress, _completedSegments, _totalSegments,
+          _downloadedBytes, _bytesPerSecond);
     }
   }
 
@@ -404,7 +414,10 @@ class HlsDownloaderService {
     // Build video concat file
     final videoListPath = p.join(saveDir, 'video_list.txt');
     await File(videoListPath).writeAsString(
-      videoTs.map((s) => "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'").join('\n'),
+      videoTs
+          .map((s) =>
+              "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
+          .join('\n'),
     );
 
     final audioTs = audioSegments.where((s) => s.isTsSegment).toList();
@@ -414,7 +427,10 @@ class HlsDownloaderService {
       // Build audio concat file
       final audioListPath = p.join(saveDir, 'audio_list.txt');
       await File(audioListPath).writeAsString(
-        audioTs.map((s) => "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'").join('\n'),
+        audioTs
+            .map((s) =>
+                "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
+            .join('\n'),
       );
 
       // Concat video, concat audio, then mux both into MP4
@@ -424,7 +440,8 @@ class HlsDownloaderService {
           '-map 0:v -map 1:a -c copy -y "$outputMp4Path"';
     } else {
       // No separate audio — just concat video (audio is muxed in .ts)
-      command = '-f concat -safe 0 -i "$videoListPath" -c copy -y "$outputMp4Path"';
+      command =
+          '-f concat -safe 0 -i "$videoListPath" -c copy -y "$outputMp4Path"';
     }
 
     debugPrint('▶ FFmpeg: $command');

@@ -27,12 +27,12 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
       if (result.error != null) {
         throw Exception('Failed to load catalog: ${result.error}');
       }
-      return ManifestSyncEngine.instance.readCache(); 
+      return ManifestSyncEngine.instance.readCache();
     } else {
       // Background update
       ManifestSyncEngine.instance.sync().then((result) {
         if (result.error != null) {
-           // We might log this, but we have cached data so no need to blow up the UI
+          // We might log this, but we have cached data so no need to blow up the UI
         }
       });
       return cached;
@@ -47,8 +47,8 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
   }
 }
 
-final manifestProvider =
-    AsyncNotifierProvider<ManifestNotifier, Manifest?>(() => ManifestNotifier());
+final manifestProvider = AsyncNotifierProvider<ManifestNotifier, Manifest?>(
+    () => ManifestNotifier());
 
 /// Provides the visibility index for quick lookups
 final manifestIndexProvider = Provider<Map<String, ManifestItem>>((ref) {
@@ -130,12 +130,14 @@ final homeSectionsProvider = Provider<List<ContentSection>>((ref) {
 
   final anime = VisibilityPolicy.filterAnime(all);
   if (anime.isNotEmpty) {
-    sections.add(ContentSection(title: 'Anime', items: anime.take(20).toList()));
+    sections
+        .add(ContentSection(title: 'Anime', items: anime.take(20).toList()));
   }
 
   final korean = VisibilityPolicy.filterKorean(all);
   if (korean.isNotEmpty) {
-    sections.add(ContentSection(title: 'Korean', items: korean.take(20).toList()));
+    sections
+        .add(ContentSection(title: 'Korean', items: korean.take(20).toList()));
   }
 
   // Genre-based sections

@@ -29,10 +29,11 @@ class SectionHeader extends StatelessWidget {
               letterSpacing: -0.3,
             ),
           ),
-          if (onSeeAll != null || true) // We enforce it here to show "See all" per design
+          if (onSeeAll != null ||
+              true) // We enforce it here to show "See all" per design
             GestureDetector(
               onTap: onSeeAll,
-              child: Text(
+              child: const Text(
                 'See all',
                 style: TextStyle(
                   color: AppColors.primary,

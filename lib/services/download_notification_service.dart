@@ -22,9 +22,13 @@ class DownloadNotificationService {
   /// Callback for notification action buttons
   /// actionId: 'pause', 'resume', or 'cancel'
   /// notificationId: the id of the notification
-  Function(String actionId, int notificationId)? onNotificationAction;
+  Function(String actionId, int notificationId, String? payload)?
+      onNotificationAction;
 
-  Future<void> init() async {
+  Future<void> init({
+    DidReceiveNotificationResponseCallback?
+        onDidReceiveBackgroundNotificationResponse,
+  }) async {
     if (_initialized || kIsWeb || !Platform.isAndroid) return;
 
     const android = AndroidInitializationSettings('@mipmap/launcher_icon');
@@ -33,6 +37,8 @@ class DownloadNotificationService {
     await _plugin.initialize(
       settings,
       onDidReceiveNotificationResponse: _handleNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse:
+          onDidReceiveBackgroundNotificationResponse,
     );
 
     // Create notification channel
@@ -55,8 +61,9 @@ class DownloadNotificationService {
   void _handleNotificationResponse(NotificationResponse response) {
     final actionId = response.actionId;
     final notifId = response.id;
+    final payload = response.payload;
     if (actionId != null && notifId != null) {
-      onNotificationAction?.call(actionId, notifId);
+      onNotificationAction?.call(actionId, notifId, payload);
     }
   }
 
@@ -66,6 +73,7 @@ class DownloadNotificationService {
     required String title,
     required int progress, // 0 – 100
     String? body,
+    String? payload,
     bool isPaused = false,
   }) async {
     if (!_initialized) return;
@@ -105,6 +113,7 @@ class DownloadNotificationService {
       title,
       body ?? '$progress%',
       NotificationDetails(android: androidDetails),
+      payload: payload,
     );
   }
 
@@ -112,6 +121,7 @@ class DownloadNotificationService {
   Future<void> showComplete({
     required int id,
     required String title,
+    String? payload,
   }) async {
     if (!_initialized) return;
 
@@ -131,6 +141,7 @@ class DownloadNotificationService {
       '✅ $title',
       'Download complete',
       const NotificationDetails(android: androidDetails),
+      payload: payload,
     );
   }
 
@@ -139,6 +150,7 @@ class DownloadNotificationService {
     required int id,
     required String title,
     String? error,
+    String? payload,
   }) async {
     if (!_initialized) return;
 
@@ -158,6 +170,7 @@ class DownloadNotificationService {
       '❌ $title',
       error ?? 'Download failed',
       const NotificationDetails(android: androidDetails),
+      payload: payload,
     );
   }
 

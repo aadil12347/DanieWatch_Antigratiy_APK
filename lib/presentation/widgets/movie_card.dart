@@ -73,12 +73,14 @@ class _MovieCardState extends ConsumerState<MovieCard>
 
     final watchlistAsync = ref.watch(watchlistProvider);
     final isInWatchlist = watchlistAsync.maybeWhen(
-      data: (items) => items.any((w) => w.tmdbId == item.id && w.mediaType == item.mediaType),
+      data: (items) => items
+          .any((w) => w.tmdbId == item.id && w.mediaType == item.mediaType),
       orElse: () => false,
     );
 
     return GestureDetector(
-      onTap: widget.onTap ?? () => context.push('/details/${item.mediaType}/${item.id}'),
+      onTap: widget.onTap ??
+          () => context.push('/details/${item.mediaType}/${item.id}'),
       onLongPress: () => _activateHover(),
       child: Container(
         width: widget.width,
@@ -109,7 +111,8 @@ class _MovieCardState extends ConsumerState<MovieCard>
     AnimationController? hoverAnimation,
   }) {
     // Determine the rating to display, optionally capped to 10
-    final rating = item.voteAverage > 0 ? item.voteAverage.toStringAsFixed(1) : 'NR';
+    final rating =
+        item.voteAverage > 0 ? item.voteAverage.toStringAsFixed(1) : 'NR';
 
     return Stack(
       fit: StackFit.expand,
@@ -119,7 +122,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
           AnimatedBuilder(
             animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
             builder: (context, _) {
-              final showHover = hoverAnimation != null && 
+              final showHover = hoverAnimation != null &&
                   hoverAnimation.value > 0.5 &&
                   item.hoverImageUrl != null &&
                   item.hoverImageUrl!.isNotEmpty;
@@ -156,8 +159,10 @@ class _MovieCardState extends ConsumerState<MovieCard>
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                           colors: [
-                            Colors.black.withOpacity(0.9 * hoverAnimation.value),
-                            Colors.black.withOpacity(0.4 * hoverAnimation.value),
+                            Colors.black
+                                .withValues(alpha: 0.9 * hoverAnimation.value),
+                            Colors.black
+                                .withValues(alpha: 0.4 * hoverAnimation.value),
                           ],
                         ),
                       ),
@@ -174,7 +179,8 @@ class _MovieCardState extends ConsumerState<MovieCard>
                               imageUrl: logoUrl,
                               height: 36,
                               fit: BoxFit.contain,
-                              errorWidget: (_, __, ___) => _titleText(item.title),
+                              errorWidget: (_, __, ___) =>
+                                  _titleText(item.title),
                             )
                           : _titleText(item.title),
                     ),
@@ -190,18 +196,18 @@ class _MovieCardState extends ConsumerState<MovieCard>
             top: 0,
             left: 0,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: const BoxDecoration(
                 color: AppColors.primary,
-                borderRadius: const BorderRadius.only(
-                  bottomRight: Radius.circular(12),
+                borderRadius: BorderRadius.only(
+                  bottomRight: Radius.circular(10),
                 ),
               ),
               child: Text(
                 rating,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 10,
                   fontWeight: FontWeight.w800,
                 ),
               ),

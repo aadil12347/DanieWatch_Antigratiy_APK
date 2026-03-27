@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:open_file/open_file.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/local/download_manager.dart';
-import '../../widgets/custom_app_bar.dart';
-import '../../../core/utils/toast_utils.dart';
 import '../video_player/video_player_screen.dart';
+import '../../widgets/category_header.dart';
+import '../../widgets/empty_results_view.dart';
+import '../../providers/search_provider.dart';
+import '../../../core/utils/toast_utils.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
@@ -19,16 +24,27 @@ class DownloadsScreen extends ConsumerStatefulWidget {
 
 class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   StreamSubscription? _updateSub;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _updateSub = DownloadManager.instance.updateStream.listen(_onDownloadUpdate);
+    _updateSub =
+        DownloadManager.instance.updateStream.listen(_onDownloadUpdate);
+    _searchFocus.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _updateSub?.cancel();
+    _searchController.dispose();
+    _searchFocus.removeListener(_onFocusChange);
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -36,9 +52,41 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     if (mounted) setState(() {});
   }
 
+  void _onSearchChanged(String query) {
+    ref.read(searchProvider.notifier).search(query);
+  }
+
+  List<DownloadItem> _getFilteredDownloads(List<DownloadItem> allDownloads, SearchState searchState) {
+    var filtered = List<DownloadItem>.from(allDownloads);
+
+    // Search query
+    if (searchState.query.isNotEmpty) {
+      final q = searchState.query.toLowerCase();
+      filtered = filtered.where((d) => d.displayName.toLowerCase().contains(q)).toList();
+    }
+
+    // Category filter
+    if (searchState.filters.categories.isNotEmpty) {
+      final cat = searchState.filters.categories.first.toLowerCase();
+      if (cat == 'movie') {
+        filtered = filtered.where((d) => d.season == 0).toList();
+      } else if (cat == 'season' || cat == 'series') {
+        filtered = filtered.where((d) => d.season > 0).toList();
+      }
+    }
+
+    // Sorting (Latest first by default)
+    filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return filtered;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final downloads = DownloadManager.instance.downloads;
+    final searchState = ref.watch(searchProvider);
+    final allDownloads = DownloadManager.instance.downloads;
+    final downloads = _getFilteredDownloads(allDownloads, searchState);
+
     final downloading = downloads
         .where(
           (d) =>
@@ -50,151 +98,85 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               d.status == DownloadStatus.converting,
         )
         .toList();
-    final completed = downloads
-        .where((d) => d.status == DownloadStatus.completed)
-        .toList();
+    final completed =
+        downloads.where((d) => d.status == DownloadStatus.completed).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: CustomAppBar(
-        extendBehindAppBar: false,
-        child: downloads.isEmpty
-            ? _buildEmptyState()
-            : CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    // Title header
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          top: 16,
-                          left: 16,
-                          right: 16,
-                          bottom: 8,
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: () => _searchFocus.unfocus(),
+          child: Column(
+            children: [
+              CategoryHeader(
+                title: 'Downloads',
+                searchController: _searchController,
+                searchFocus: _searchFocus,
+                onSearchChanged: _onSearchChanged,
+                trailing: completed.isNotEmpty
+                    ? GestureDetector(
+                        onTap: _showClearDialog,
+                        child: Text(
+                          'Clear All',
+                          style: GoogleFonts.inter(
+                            color: AppColors.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Downloads',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            if (completed.isNotEmpty)
-                              GestureDetector(
-                                onTap: _showClearDialog,
-                                child: const Text(
-                                  'Clear All',
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                      )
+                    : null,
+              ),
+              Expanded(
+                child: allDownloads.isEmpty
+                    ? _buildEmptyState()
+                    : (downloads.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters))
+                        ? const EmptyResultsView()
+                        : CustomScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              // Sections only show if filtered results have them
+                              if (downloading.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  'DOWNLOADING (${downloading.length})',
+                                ),
+                                SliverList(
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) =>
+                                        _buildDownloadingItem(downloading[index]),
+                                    childCount: downloading.length,
                                   ),
                                 ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
+                              ],
 
-                    // Downloading section
-                    if (downloading.isNotEmpty) ...[
-                      _buildSectionHeader(
-                        'DOWNLOADING (${downloading.length})',
-                      ),
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) =>
-                              _buildDownloadingItem(downloading[index]),
-                          childCount: downloading.length,
-                        ),
-                      ),
-                    ],
+                              if (completed.isNotEmpty) ...[
+                                _buildSectionHeader('DOWNLOADED (${completed.length})'),
+                                SliverList(
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) =>
+                                        _buildCompletedItem(completed[index]),
+                                    childCount: completed.length,
+                                  ),
+                                ),
+                              ],
 
-                    // Completed section
-                    if (completed.isNotEmpty) ...[
-                      _buildSectionHeader('DOWNLOADED (${completed.length})'),
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) =>
-                              _buildCompletedItem(completed[index]),
-                          childCount: completed.length,
-                        ),
-                      ),
-                    ],
-
-                    // Bottom spacing for nav bar
-                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                  ],
-                ),
+                              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                            ],
+                          ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   // ─── Empty State (matching watchlist style) ──────────────────────────────
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Download arrow graphic (similar to watchlist clipboard style)
-          SizedBox(
-            width: 200,
-            height: 180,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Back card
-                Positioned(
-                  left: 20,
-                  top: 10,
-                  child: Transform.rotate(
-                    angle: -0.15,
-                    child: _buildDownloadCardShape(
-                      140,
-                      160,
-                      AppColors.surfaceElevated.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ),
-                // Front card
-                Positioned(
-                  right: 20,
-                  top: 0,
-                  child: _buildDownloadCardShape(
-                    140,
-                    160,
-                    AppColors.surfaceElevated,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'No Downloads Yet',
-            style: TextStyle(
-              color: AppColors.primary,
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Movies and episodes you download\nwill appear here',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 14,
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
+    return const EmptyResultsView(
+      title: 'No Downloads Yet',
+      message: 'Movies and episodes you download will appear here',
+      icon: Icons.download_rounded,
     );
   }
 
@@ -306,7 +288,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                         color: AppColors.primary.withValues(alpha: 0.3),
                       ),
                     ),
-                    textStyle: const TextStyle(color: Colors.white, fontSize: 13),
+                    textStyle:
+                        const TextStyle(color: Colors.white, fontSize: 13),
                     child: Text(
                       item.displayName,
                       style: const TextStyle(
@@ -341,8 +324,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                         item.status == DownloadStatus.paused
                             ? Colors.orange
                             : item.status == DownloadStatus.failed
-                              ? Colors.red
-                              : AppColors.primary,
+                                ? Colors.red
+                                : AppColors.primary,
                       ),
                       minHeight: 6,
                     ),
@@ -357,8 +340,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                             color: item.status == DownloadStatus.paused
                                 ? Colors.orange
                                 : item.status == DownloadStatus.failed
-                                  ? Colors.red
-                                  : AppColors.primary,
+                                    ? Colors.red
+                                    : AppColors.primary,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -588,24 +571,32 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   void _playDownload(DownloadItem item) async {
     if (item.localPath != null) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => VideoPlayerScreen(
-            url: item.localPath!,
-            title: item.displayName,
-            tmdbId: 0,
-            mediaType: item.season > 0 ? 'tv' : 'movie',
-            season: item.season,
-            episode: item.episode,
-            isOffline: true,
-          ),
-        ),
-      );
+      final file = File(item.localPath!);
+      if (await file.exists()) {
+        final result = await OpenFile.open(item.localPath);
+        if (result.type != ResultType.done) {
+          if (mounted) {
+            CustomToast.show(
+              context,
+              'Could not open file: ${result.message}',
+              type: ToastType.error,
+            );
+          }
+        }
+      } else {
+        if (mounted) {
+          CustomToast.show(
+            context,
+            'File not found on storage',
+            type: ToastType.error,
+          );
+        }
+      }
     } else {
       if (mounted) {
         CustomToast.show(
           context,
-          'File not found',
+          'Local path missing',
           type: ToastType.error,
         );
       }
@@ -615,14 +606,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   // ─── Long-press Delete Tooltip ──────────────────────────────────────────
   void _showDeleteTooltip(BuildContext context, DownloadItem item) {
     HapticFeedback.mediumImpact();
-    
+
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
-    
+
     final cardPosition = box.localToGlobal(Offset.zero);
     final cardSize = box.size;
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     final overlay = Overlay.of(context);
     late OverlayEntry entry;
 
@@ -641,7 +632,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             ),
             // Tooltip positioned above the held card
             Positioned(
-              top: tooltipTop < 60 ? cardPosition.dy + cardSize.height + 8 : tooltipTop,
+              top: tooltipTop < 60
+                  ? cardPosition.dy + cardSize.height + 8
+                  : tooltipTop,
               left: 16,
               right: 16,
               child: Center(
@@ -662,11 +655,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     },
                     child: Container(
                       constraints: BoxConstraints(maxWidth: screenWidth - 64),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceElevated,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                        border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.3)),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.5),
@@ -684,7 +679,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.max,
                           children: [
-                            Icon(Icons.delete_outline, color: Colors.red.withValues(alpha: 0.9), size: 22),
+                            Icon(Icons.delete_outline,
+                                color: Colors.red.withValues(alpha: 0.9),
+                                size: 22),
                             const SizedBox(width: 10),
                             Flexible(
                               child: Text(
@@ -838,10 +835,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                             child: TextButton(
                               onPressed: () => Navigator.pop(context),
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(color: AppColors.border),
+                                  side:
+                                      const BorderSide(color: AppColors.border),
                                 ),
                               ),
                               child: const Text(
@@ -873,7 +872,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.red,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -975,7 +975,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(color: AppColors.border),
+                              side: const BorderSide(color: AppColors.border),
                             ),
                           ),
                           child: const Text(
@@ -992,7 +992,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
-                            for (final item in DownloadManager.instance.completedItems) {
+                            for (final item
+                                in DownloadManager.instance.completedItems) {
                               DownloadManager.instance.deleteDownload(item.id);
                             }
                             CustomToast.show(

@@ -12,6 +12,7 @@ import '../../../core/utils/toast_utils.dart';
 import '../../widgets/main_filter_panel_sheet.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/filter_selector_sheet.dart';
+import '../../widgets/more_modal_content.dart';
 import 'dart:async';
 
 /// App shell with custom glassmorphism bottom navigation bar
@@ -25,45 +26,46 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _currentIndex = 0;
+  bool _isMoreOpen = false;
   DateTime? _lastBackPressed;
 
   static const _tabs = [
     '/home',
-    '/search', // Replacing explore with search
+    '/search',
     '/watchlist',
-    '/downloads',
-    '/profile',
   ];
 
   static const _icons = [
     Icons.home_outlined,
     Icons.search_outlined,
     Icons.bookmark_outline_rounded,
-    Icons.download_outlined,
-    Icons.person_outline,
+    Icons.more_horiz_rounded,
   ];
 
   static const _activeIcons = [
     Icons.home_rounded,
     Icons.search_rounded,
     Icons.bookmark_rounded,
-    Icons.download_rounded,
-    Icons.person,
+    Icons.more_horiz_rounded,
   ];
 
   static const _labels = [
     'Home',
-    'Search',
-    'My List',
-    'Download',
-    'Profile',
+    'Explore',
+    'Favourite',
+    'More',
   ];
 
   void _onTap(int index) {
+    // 4th button (More) toggles the modal instead of navigating
+    if (index == 3) {
+      setState(() => _isMoreOpen = !_isMoreOpen);
+      return;
+    }
+    // Close more modal if navigating
+    if (_isMoreOpen) setState(() => _isMoreOpen = false);
     if (index != _currentIndex) {
       setState(() => _currentIndex = index);
-      // Failsafe for missing directories, let's keep it mostly intact but only route if we want.
-      // We will try routing and handle missing gracefully, but standard go_router is what we use.
       context.go(_tabs[index]);
     }
   }
@@ -73,7 +75,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void initState() {
     super.initState();
-    _downloadSub = DownloadManager.instance.updateStream.listen(_handleDownloadUpdate);
+    _downloadSub =
+        DownloadManager.instance.updateStream.listen(_handleDownloadUpdate);
   }
 
   void _handleDownloadUpdate(DownloadItem item) {
@@ -119,13 +122,20 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   void _updateIndex() {
     final location = GoRouterState.of(context).uri.toString();
-    for (int i = 0; i < _tabs.length; i++) {
-      if (location.startsWith(_tabs[i])) {
+    
+    // Check main tabs first
+    for (int i = 0; i < 3; i++) {
+      if (location == _tabs[i]) {
         if (_currentIndex != i) {
           setState(() => _currentIndex = i);
         }
-        break;
+        return;
       }
+    }
+
+    // If it's any other route (anime, korean, bollywood, tv, downloads), it belongs to "More" (index 3)
+    if (_currentIndex != 3) {
+      setState(() => _currentIndex = 3);
     }
   }
 
@@ -133,28 +143,35 @@ class _AppShellState extends ConsumerState<AppShell> {
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
     final isSearchExpanded = ref.watch(searchExpandedProvider);
-    // Only keeping the first 4 tabs
-    final _bottomTabs = _tabs.sublist(0, 4);
-    final _bottomIcons = _icons.sublist(0, 4);
-    final _bottomActiveIcons = _activeIcons.sublist(0, 4);
 
     final downloadState = ref.watch(downloadModalProvider);
     final filterState = ref.watch(filterModalProvider);
-    final isModalOpen = downloadState.isOpen || filterState.isOpen;
+    final isModalOpen =
+        downloadState.isOpen || filterState.isOpen || _isMoreOpen;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
 
-        // 1. If modal is open, close modal or step back
-        if (isModalOpen) {
+        // 1. If more modal is open, close it
+        if (_isMoreOpen) {
+          setState(() => _isMoreOpen = false);
+          return;
+        }
+
+        // 2. If download/filter modal is open, close modal or step back
+        if (downloadState.isOpen || filterState.isOpen) {
           if (downloadState.isOpen) {
-            ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-          } else if (filterState.view == FilterView.optionsList && filterState.isSubMenu) {
-            ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.mainPanel);
+            ref.read(downloadModalProvider.notifier).state =
+                const DownloadModalState();
+          } else if (filterState.view == FilterView.optionsList &&
+              filterState.isSubMenu) {
+            ref.read(filterModalProvider.notifier).state =
+                const FilterModalState(view: FilterView.mainPanel);
           } else {
-            ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+            ref.read(filterModalProvider.notifier).state =
+                const FilterModalState(view: FilterView.none);
           }
           return;
         }
@@ -167,7 +184,8 @@ class _AppShellState extends ConsumerState<AppShell> {
 
         // 3. We are on Home Tab. Handle double back to exit
         final now = DateTime.now();
-        if (_lastBackPressed == null || now.difference(_lastBackPressed!) > const Duration(seconds: 3)) {
+        if (_lastBackPressed == null ||
+            now.difference(_lastBackPressed!) > const Duration(seconds: 3)) {
           _lastBackPressed = now;
           CustomToast.show(
             context,
@@ -191,126 +209,209 @@ class _AppShellState extends ConsumerState<AppShell> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
-                    ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-                    ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
+                    setState(() => _isMoreOpen = false);
+                    ref.read(downloadModalProvider.notifier).state =
+                        const DownloadModalState();
+                    ref.read(filterModalProvider.notifier).state =
+                        const FilterModalState(view: FilterView.none);
                   },
-                  child: Container(color: Colors.black.withOpacity(0.4)),
+                  child: Container(color: Colors.black.withValues(alpha: 0.4)),
                 ),
               ),
             // Floating Bottom Nav Bar or Download/Filter Modal
-          if (!isSearchExpanded)
-            Positioned(
-              bottom: MediaQuery.paddingOf(context).bottom + 24,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.fastOutSlowIn,
-                  constraints: BoxConstraints(maxWidth: isModalOpen ? 600 : 400),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: isModalOpen ? 16 : 24),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(isModalOpen ? 24 : 32),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 350),
-                          curve: Curves.fastOutSlowIn,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(isModalOpen ? 24 : 32),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              width: 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 20,
-                                spreadRadius: -5,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: AnimatedSize(
+            if (!isSearchExpanded)
+              Positioned(
+                bottom: MediaQuery.paddingOf(context).bottom + 24,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.fastOutSlowIn,
+                    constraints:
+                        BoxConstraints(maxWidth: isModalOpen ? 600 : 400),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: isModalOpen ? 16 : 24),
+                      child: ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(isModalOpen ? 24 : 32),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: AnimatedContainer(
                             duration: const Duration(milliseconds: 350),
                             curve: Curves.fastOutSlowIn,
-                            alignment: Alignment.bottomCenter,
-                            child: isModalOpen
-                                ? Material(
-                                    color: Colors.transparent,
-                                    child: downloadState.isOpen
-                                        ? QualitySelectorContent(
-                                            m3u8Url: downloadState.m3u8Url ?? '',
-                                            title: downloadState.title ?? 'Download',
-                                            onSelected: downloadState.onSelected ?? (_) {},
-                                            onCancel: downloadState.onCancel ?? () {},
-                                          )
-                                        : (filterState.view == FilterView.optionsList
-                                            ? FilterSelectorContent(
-                                                title: filterState.title,
-                                                currentValue: filterState.currentValue,
-                                                options: filterState.options,
-                                                onChanged: filterState.onChanged ?? (_) {},
-                                                onCancel: () {
-                                                  if (filterState.isSubMenu) {
-                                                    ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.mainPanel);
-                                                  } else {
-                                                    ref.read(filterModalProvider.notifier).state = const FilterModalState(view: FilterView.none);
-                                                  }
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              borderRadius:
+                                  BorderRadius.circular(isModalOpen ? 24 : 32),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 20,
+                                  spreadRadius: -5,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: AnimatedSize(
+                              duration: const Duration(milliseconds: 350),
+                              curve: Curves.fastOutSlowIn,
+                              alignment: Alignment.bottomCenter,
+                              child: isModalOpen
+                                  ? Material(
+                                      color: Colors.transparent,
+                                      child: _isMoreOpen
+                                          ? MoreModalContent(
+                                              currentRoute: location,
+                                              onClose: () => setState(
+                                                  () => _isMoreOpen = false),
+                                            )
+                                          : downloadState.isOpen
+                                              ? QualitySelectorContent(
+                                                  m3u8Url:
+                                                      downloadState.m3u8Url ??
+                                                          '',
+                                                  title: downloadState.title ??
+                                                      'Download',
+                                                  onSelected: downloadState
+                                                          .onSelected ??
+                                                      (_) {},
+                                                  onCancel:
+                                                      downloadState.onCancel ??
+                                                          () {},
+                                                )
+                                              : (filterState.view ==
+                                                      FilterView.optionsList
+                                                  ? FilterSelectorContent(
+                                                      title: filterState.title,
+                                                      currentValue: filterState
+                                                          .currentValue,
+                                                      options:
+                                                          filterState.options,
+                                                      onChanged: filterState
+                                                              .onChanged ??
+                                                          (_) {},
+                                                      onCancel: () {
+                                                        if (filterState
+                                                            .isSubMenu) {
+                                                          ref
+                                                                  .read(filterModalProvider
+                                                                      .notifier)
+                                                                  .state =
+                                                              const FilterModalState(
+                                                                  view: FilterView
+                                                                      .mainPanel);
+                                                        } else {
+                                                          ref
+                                                                  .read(filterModalProvider
+                                                                      .notifier)
+                                                                  .state =
+                                                              const FilterModalState(
+                                                                  view:
+                                                                      FilterView
+                                                                          .none);
+                                                        }
+                                                      },
+                                                    )
+                                                  : const MainFilterPanelContent()),
+                                    )
+                                  : Container(
+                                      height: 64,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
+                                        children: List.generate(4, (index) {
+                                          final isSelected = index < 3 &&
+                                              _currentIndex == index;
+                                          final isMore = index == 3;
+                                          return GestureDetector(
+                                            onTap: () => _onTap(index),
+                                            behavior: HitTestBehavior.opaque,
+                                            child: Container(
+                                              key: ValueKey('tab_$index'),
+                                              width: 64,
+                                              alignment: Alignment.center,
+                                              child:
+                                                  TweenAnimationBuilder<double>(
+                                                tween: Tween(
+                                                  begin: isSelected ? 0.0 : 1.0,
+                                                  end: isSelected ? 1.0 : 0.0,
+                                                ),
+                                                duration: const Duration(
+                                                    milliseconds: 200),
+                                                builder:
+                                                    (context, value, child) {
+                                                  return Column(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Stack(
+                                                        alignment: Alignment.center,
+                                                        children: [
+                                                          Opacity(
+                                                            opacity: isMore
+                                                                ? ((_isMoreOpen ||
+                                                                        _currentIndex ==
+                                                                            3)
+                                                                    ? 1.0
+                                                                    : 0.0)
+                                                                : value,
+                                                            child: Icon(
+                                                              _activeIcons[index],
+                                                              color:
+                                                                  AppColors.primary,
+                                                              size: 24,
+                                                            ),
+                                                          ),
+                                                          Opacity(
+                                                            opacity: isMore
+                                                                ? ((_isMoreOpen ||
+                                                                        _currentIndex ==
+                                                                            3)
+                                                                    ? 0.0
+                                                                    : 1.0)
+                                                                : 1.0 - value,
+                                                            child: Icon(
+                                                              _icons[index],
+                                                              color: isMore
+                                                                  ? AppColors
+                                                                      .textPrimary
+                                                                  : AppColors
+                                                                      .textPrimary,
+                                                              size: 24,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        _labels[index],
+                                                        style: TextStyle(
+                                                          color: (isSelected || (isMore && _isMoreOpen))
+                                                              ? AppColors.primary
+                                                              : AppColors.textPrimary,
+                                                          fontSize: 10,
+                                                          fontWeight: (isSelected || (isMore && _isMoreOpen))
+                                                              ? FontWeight.w600
+                                                              : FontWeight.w400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  );
                                                 },
-                                              )
-                                            : const MainFilterPanelContent()),
-                                  )
-                                : Container(
-                                    height: 64,
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                      children: List.generate(_bottomTabs.length, (index) {
-                                        final isSelected = _currentIndex == index;
-                                        return GestureDetector(
-                                          onTap: () => _onTap(index),
-                                          behavior: HitTestBehavior.opaque,
-                                          child: Container(
-                                            width: 56,
-                                            alignment: Alignment.center,
-                                            child: TweenAnimationBuilder<double>(
-                                              tween: Tween(
-                                                begin: isSelected ? 0.0 : 1.0,
-                                                end: isSelected ? 1.0 : 0.0,
                                               ),
-                                              duration: const Duration(milliseconds: 200),
-                                              builder: (context, value, child) {
-                                                return Stack(
-                                                  alignment: Alignment.center,
-                                                  children: [
-                                                    Opacity(
-                                                      opacity: value,
-                                                      child: Icon(
-                                                        _bottomActiveIcons[index],
-                                                        color: AppColors.primary,
-                                                        size: 26,
-                                                      ),
-                                                    ),
-                                                    Opacity(
-                                                      opacity: 1.0 - value,
-                                                      child: Icon(
-                                                        _bottomIcons[index],
-                                                        color: AppColors.textPrimary,
-                                                        size: 24,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                );
-                                              },
                                             ),
-                                          ),
-                                        );
-                                      }),
+                                          );
+                                        }),
+                                      ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
                       ),
@@ -318,10 +419,9 @@ class _AppShellState extends ConsumerState<AppShell> {
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 }

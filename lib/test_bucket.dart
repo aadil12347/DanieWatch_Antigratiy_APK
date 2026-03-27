@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 Future<void> main() async {
-  final url = 'https://amrjkvvmvhqoqqkxntna.supabase.co/storage/v1/object/public/manifests/db_manifest_v1.json';
+  const url =
+      'https://amrjkvvmvhqoqqkxntna.supabase.co/storage/v1/object/public/manifests/db_manifest_v1.json';
   final res = await http.get(Uri.parse(url));
   print(res.statusCode);
   if (res.statusCode == 200) {

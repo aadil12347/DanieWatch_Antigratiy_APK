@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-import 'dart:ui' show ImageFilter, ColorFilter;
 import 'package:flutter/material.dart';
 
 Future<void> showPlayLoader({
@@ -42,7 +40,8 @@ class PlayLoaderOverlay extends StatefulWidget {
   State<PlayLoaderOverlay> createState() => _PlayLoaderOverlayState();
 }
 
-class _PlayLoaderOverlayState extends State<PlayLoaderOverlay> with TickerProviderStateMixin {
+class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
+    with TickerProviderStateMixin {
   late AnimationController _barController;
   late AnimationController _panelController;
   late Animation<double> _panelAnimation;
@@ -154,13 +153,20 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay> with TickerProvid
 
   Color _getBarColor(int index) {
     switch (index) {
-      case 0: return const Color(0xFF754FA0);
-      case 1: return const Color(0xFF09B7BF);
-      case 2: return const Color(0xFF90D36B);
-      case 3: return const Color(0xFFF2D40D);
-      case 4: return const Color(0xFFFCB12B);
-      case 5: return const Color(0xFFED1B72);
-      default: return Colors.white;
+      case 0:
+        return const Color(0xFF754FA0);
+      case 1:
+        return const Color(0xFF09B7BF);
+      case 2:
+        return const Color(0xFF90D36B);
+      case 3:
+        return const Color(0xFFF2D40D);
+      case 4:
+        return const Color(0xFFFCB12B);
+      case 5:
+        return const Color(0xFFED1B72);
+      default:
+        return Colors.white;
     }
   }
 }
@@ -189,7 +195,7 @@ class _BarItem extends StatelessWidget {
       builder: (context, child) {
         // Calculate shifted value for delay
         double t = (controller.value + (1.0 - delay)) % 1.0;
-        
+
         // CSS keyframe: 0%, 40%, 100% { scaleY(0.05) } 20% { scaleY(1.0) }
         double scale;
         if (t < 0.2) {

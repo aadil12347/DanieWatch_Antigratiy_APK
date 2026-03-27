@@ -87,13 +87,19 @@ Future<void> main() async {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Failed to Initialize App', 
-                    style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
-                  ),
+                  const Text('Failed to Initialize App',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
-                  Text(e.toString(), style: const TextStyle(color: Colors.white, fontSize: 16)),
+                  Text(e.toString(),
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 16)),
                   const SizedBox(height: 16),
-                  Text(stackTrace.toString(), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  Text(stackTrace.toString(),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12)),
                 ],
               ),
             ),

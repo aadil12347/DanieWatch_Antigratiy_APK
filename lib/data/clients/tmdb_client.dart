@@ -67,7 +67,8 @@ class TmdbClient {
   Future<Map<String, dynamic>?> getSeasonDetails(
       int tvId, int seasonNumber) async {
     try {
-      final res = await _dio.get('/tv/$tvId/season/$seasonNumber', queryParameters: {
+      final res =
+          await _dio.get('/tv/$tvId/season/$seasonNumber', queryParameters: {
         'append_to_response': 'credits,images',
       });
       return res.data as Map<String, dynamic>;
@@ -82,7 +83,8 @@ class TmdbClient {
     try {
       final res = await _dio.get('/movie/$tmdbId/similar');
       final results = res.data['results'] as List?;
-      return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ?? [];
+      return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ??
+          [];
     } on DioException catch (e) {
       dev.log('[TMDB] Similar movies $tmdbId error: ${e.message}');
       return [];
@@ -94,7 +96,8 @@ class TmdbClient {
     try {
       final res = await _dio.get('/tv/$tmdbId/similar');
       final results = res.data['results'] as List?;
-      return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ?? [];
+      return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ??
+          [];
     } on DioException catch (e) {
       dev.log('[TMDB] Similar TV $tmdbId error: ${e.message}');
       return [];

@@ -54,11 +54,13 @@ Future<DownloadSelection?> showQualitySelectorSheet({
     season: season,
     episode: episode,
     onSelected: (sel) {
-      ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+      ref.read(downloadModalProvider.notifier).state =
+          const DownloadModalState();
       if (!completer.isCompleted) completer.complete(sel);
     },
     onCancel: () {
-      ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+      ref.read(downloadModalProvider.notifier).state =
+          const DownloadModalState();
       if (!completer.isCompleted) completer.complete(null);
     },
   );
@@ -84,10 +86,12 @@ class QualitySelectorContent extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<QualitySelectorContent> createState() => _QualitySelectorContentState();
+  ConsumerState<QualitySelectorContent> createState() =>
+      _QualitySelectorContentState();
 }
 
-class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent> {
+class _QualitySelectorContentState
+    extends ConsumerState<QualitySelectorContent> {
   PlaylistInfo? _playlist;
   bool _internalLoading = true;
   String? _error;
@@ -142,7 +146,7 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
   String _getAudioDisplayName(AudioTrack track) {
     final name = track.name.toLowerCase();
     final lang = track.language.toLowerCase();
-    
+
     if (name.contains('hindi') || lang == 'hi') return '🇮🇳 Hindi';
     if (name.contains('english') || lang == 'en') return '🇺🇸 English';
     if (name.contains('japanese') || lang == 'ja') return '🇯🇵 Japanese';
@@ -151,7 +155,7 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
     if (name.contains('telugu') || lang == 'te') return '🇮🇳 Telugu';
     if (name.contains('french') || lang == 'fr') return '🇫🇷 French';
     if (name.contains('spanish') || lang == 'es') return '🇪🇸 Spanish';
-    
+
     return '🌐 ${track.name}';
   }
 
@@ -173,17 +177,20 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
+                    color: Colors.red.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.download_rounded, color: Colors.red, size: 22),
+                  child: const Icon(Icons.download_rounded,
+                      color: Colors.red, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (modalState.season != null && modalState.episode != null && modalState.season! > 0)
+                      if (modalState.season != null &&
+                          modalState.episode != null &&
+                          modalState.season! > 0)
                         Text(
                           'SEASON ${modalState.season} · EPISODE ${modalState.episode}',
                           style: const TextStyle(
@@ -207,7 +214,8 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54, size: 22),
+                  icon:
+                      const Icon(Icons.close, color: Colors.white54, size: 22),
                   onPressed: widget.onCancel,
                 ),
               ],
@@ -216,9 +224,9 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
 
           const Divider(color: Colors.white10, height: 32),
 
-          if (isLoading) 
+          if (isLoading)
             _buildSkeleton()
-          else if (_error != null) 
+          else if (_error != null)
             _buildError()
           else ...[
             _buildSelectors(),
@@ -232,33 +240,37 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
 
   Widget _buildSkeleton() {
     return Shimmer.fromColors(
-      baseColor: Colors.white.withOpacity(0.05),
-      highlightColor: Colors.white.withOpacity(0.1),
+      baseColor: Colors.white.withValues(alpha: 0.05),
+      highlightColor: Colors.white.withValues(alpha: 0.1),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
         child: Column(
           children: [
             Row(
-              children: List.generate(3, (i) => Container(
-                margin: const EdgeInsets.only(right: 12),
-                width: 80,
-                height: 45,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              )),
+              children: List.generate(
+                  3,
+                  (i) => Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        width: 80,
+                        height: 45,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      )),
             ),
             const SizedBox(height: 24),
-            ...List.generate(2, (i) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              width: double.infinity,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-            )),
+            ...List.generate(
+                2,
+                (i) => Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    )),
           ],
         ),
       ),
@@ -272,9 +284,13 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
         children: [
           const Icon(Icons.error_outline_rounded, color: Colors.red, size: 48),
           const SizedBox(height: 16),
-          const Text('Extraction failed', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          const Text('Extraction failed',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text(_error ?? 'Unknown error', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          Text(_error ?? 'Unknown error',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white38, fontSize: 12)),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -287,7 +303,8 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white10,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               child: const Text('Download Original'),
             ),
@@ -305,7 +322,12 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
         // Quality
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: Text('SELECT QUALITY', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+          child: Text('SELECT QUALITY',
+              style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1)),
         ),
         SizedBox(
           height: 48,
@@ -322,16 +344,22 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
                   margin: const EdgeInsets.only(right: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.red : Colors.white.withOpacity(0.05),
+                    color: isSelected
+                        ? Colors.red
+                        : Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: isSelected ? Colors.red : Colors.white10),
+                    border: Border.all(
+                        color: isSelected ? Colors.red : Colors.white10),
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    v.badgeLabel.replaceAll(' HD', '').replaceAll('SD', 'Original'),
+                    v.badgeLabel
+                        .replaceAll(' HD', '')
+                        .replaceAll('SD', 'Original'),
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white70,
-                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                      fontWeight:
+                          isSelected ? FontWeight.w800 : FontWeight.w500,
                       fontSize: 14,
                     ),
                   ),
@@ -345,7 +373,12 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
           const SizedBox(height: 24),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Text('AUDIO TRACK', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+            child: Text('AUDIO TRACK',
+                style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1)),
           ),
           ...playlist.audioTracks.map((track) {
             final isSelected = _selectedAudio == track;
@@ -353,17 +386,25 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
               onTap: () => setState(() => _selectedAudio = track),
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.red.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                  color: isSelected
+                      ? Colors.red.withValues(alpha: 0.1)
+                      : Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isSelected ? Colors.red : Colors.white10),
+                  border: Border.all(
+                      color: isSelected ? Colors.red : Colors.white10),
                 ),
                 child: Row(
                   children: [
-                    Text(_getAudioDisplayName(track), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    Text(_getAudioDisplayName(track),
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w600)),
                     const Spacer(),
-                    if (isSelected) const Icon(Icons.check_circle, color: Colors.red, size: 20),
+                    if (isSelected)
+                      const Icon(Icons.check_circle,
+                          color: Colors.red, size: 20),
                   ],
                 ),
               ),
@@ -396,25 +437,28 @@ class _QualitySelectorContentState extends ConsumerState<QualitySelectorContent>
         width: double.infinity,
         height: 56,
         child: ElevatedButton(
-          onPressed: _selectedVariant != null ? () {
-            widget.onSelected(DownloadSelection(
-              quality: _selectedVariant!,
-              audioTrack: _selectedAudio,
-              title: widget.title,
-            ));
-          } : null,
+          onPressed: _selectedVariant != null
+              ? () {
+                  widget.onSelected(DownloadSelection(
+                    quality: _selectedVariant!,
+                    audioTrack: _selectedAudio,
+                    title: widget.title,
+                  ));
+                }
+              : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.red,
             foregroundColor: Colors.white,
             disabledBackgroundColor: Colors.white10,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 0,
           ),
-          child: Text(buttonLabel, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          child: Text(buttonLabel,
+              style:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
         ),
       ),
     );
   }
 }
-
-
