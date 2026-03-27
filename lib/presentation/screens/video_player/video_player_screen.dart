@@ -20,6 +20,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final int? season;
   final int? episode;
   final bool isOffline;
+  final bool isDirectLink;
 
   const VideoPlayerScreen({
     super.key,
@@ -31,13 +32,15 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.season,
     this.episode,
     this.isOffline = false,
+    this.isDirectLink = false,
   });
 
   @override
   ConsumerState<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
+class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
+    with TickerProviderStateMixin {
   bool _isLoading = true;
   bool _hasError = false;
   bool _isInitialized = false;
@@ -80,6 +83,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   int _retryCount = 0;
   String? _currentExtractionUrl;
 
+  // Transition Panels
+  late AnimationController _panelController;
+  late Animation<double> _panelAnimation;
+  bool _showPanels = true;
+
   @override
   void initState() {
     super.initState();
@@ -107,15 +115,41 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       ),
     );
 
+    // Transition Animation
+    _panelController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _panelAnimation = CurvedAnimation(
+      parent: _panelController,
+      curve: Curves.easeOutQuart,
+    );
+
+    // Initial state: panels closed (1.0)
+    _panelController.value = 1.0;
+
+    // Wait for orientation and initialization to settle before opening
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      if (mounted) {
+        _panelController.reverse().then((_) {
+          if (mounted) {
+            setState(() {
+              _showPanels = false;
+            });
+          }
+        });
+      }
+    });
+
     // Start extraction sequence in background
     _webViewKey = const ValueKey('discovery_webview');
     _currentExtractionUrl = widget.url;
 
-    if (widget.isOffline) {
+    if (widget.isOffline || widget.isDirectLink) {
       _isExtracting = false;
       _isLoading = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _startPlayback(widget.url, isOffline: true);
+        _startPlayback(widget.url, isOffline: widget.isOffline);
       });
       return;
     }
@@ -676,6 +710,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   @override
   void dispose() {
     _betterPlayerController?.dispose();
+    _panelController.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -1210,305 +1245,295 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Re-enforce immersive mode every build to prevent system UI from popping back up
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: [],
-    );
-
     return Scaffold(
       backgroundColor: Colors.black,
-      body: MediaQuery.removePadding(
-        context: context,
-        removeTop: true,
-        removeBottom: true,
-        removeLeft: true,
-        removeRight: true,
-        child: Stack(
-          children: [
-            // 0. Base Screen Constraints (Forces Stack to fill screen)
-            const SizedBox.expand(child: ColoredBox(color: Colors.black)),
-
-            // 1. Player / WebView Stack (Exactly as per commit 133b287b...)
-            Positioned.fill(
-              child: Stack(
-                children: [
-                  // Sizing / Discovery layer
-                  if (!_discoveryComplete)
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height,
-                      width: MediaQuery.of(context).size.width,
-                      child: InAppWebView(
-                        key: _webViewKey,
-                        initialUrlRequest: URLRequest(
-                          url: WebUri(_currentExtractionUrl ?? widget.url),
-                        ),
-                        initialSettings: InAppWebViewSettings(
-                          javaScriptEnabled: true,
-                          allowsInlineMediaPlayback: true,
-                          mediaPlaybackRequiresUserGesture: false,
-                          useShouldOverrideUrlLoading: true,
-                          useOnLoadResource: true, // Crucial for discovery
-                          javaScriptCanOpenWindowsAutomatically: false,
-                          supportMultipleWindows: true,
-                        ),
-                        onWebViewCreated: (controller) =>
-                            _webViewController = controller,
-                        onCreateWindow: (controller, createWindowAction) async {
-                          debugPrint(
-                            '[Extraction] Ad/Popup blocked: ${createWindowAction.request.url}',
-                          );
-                          return true;
-                        },
-                        onLoadResource: (controller, resource) {
-                          if (resource.url != null) {
-                            _handleExtractedLink(resource.url.toString());
-                          }
-                        },
-                        shouldOverrideUrlLoading:
-                            (controller, navigationAction) async {
-                              final url = navigationAction.request.url
-                                  .toString();
-                              final isMainFrame =
-                                  navigationAction.isForMainFrame;
-
-                              if (!isMainFrame &&
-                                  (url.contains('google-analytics') ||
-                                      url.contains('doubleclick') ||
-                                      url.contains('ads'))) {
-                                debugPrint(
-                                  '[Extraction] Subframe Ad blocked: $url',
-                                );
-                                return NavigationActionPolicy.CANCEL;
-                              }
-
-                              return NavigationActionPolicy.ALLOW;
-                            },
+      body: Stack(
+        children: [
+          _buildMainContent(),
+          if (_showPanels)
+            AnimatedBuilder(
+              animation: _panelAnimation,
+              builder: (context, child) {
+                return Stack(
+                  children: [
+                    // Top Panel
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: MediaQuery.of(context).size.height / 2,
+                      child: FractionalTranslation(
+                        translation: Offset(0, -1 + _panelAnimation.value),
+                        child: Container(color: const Color(0xFF1C2020)),
                       ),
                     ),
-
-                  // Background Discovery (Hidden)
-                  if (_isBgExtracting && _bgExtractionUrl != null)
-                    Offstage(
-                      child: SizedBox(
-                        width: 1,
-                        height: 1,
-                        child: InAppWebView(
-                          key: _bgWebViewKey,
-                          initialUrlRequest: URLRequest(
-                            url: WebUri(_bgExtractionUrl!),
-                          ),
-                          initialSettings: InAppWebViewSettings(
-                            javaScriptEnabled: true,
-                            allowsInlineMediaPlayback: true,
-                            mediaPlaybackRequiresUserGesture: false,
-                            useOnLoadResource: true,
-                          ),
-                          onWebViewCreated: (controller) =>
-                              _bgWebViewController = controller,
-                          onLoadResource: (controller, resource) {
-                            if (resource.url != null) {
-                              _handleBgExtractedLink(resource.url.toString());
-                            }
-                          },
-                        ),
+                    // Bottom Panel
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: MediaQuery.of(context).size.height / 2,
+                      child: FractionalTranslation(
+                        translation: Offset(0, 1 - _panelAnimation.value),
+                        child: Container(color: const Color(0xFF1C2020)),
                       ),
                     ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
 
-                  // Main Content Layer with AnimatedSwitcher
-                  Positioned.fill(
-                    child: Center(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 1000),
-                        child: _isExtracting
-                            ? Container(
-                                key: const ValueKey('loader'),
-                                color: Colors.black,
-                                child: Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      if (_currentEpisode != null)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 24,
-                                          ),
-                                          child: Text(
-                                            'Episode ${_currentEpisode.toString().padLeft(2, '0')}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                          ),
-                                        ),
-                                      const _CinematicLoader(),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : _isLoading
-                            ? _buildLoadingState(key: const ValueKey('prep'))
-                            : _useWebViewEngine
-                            ? _buildWebPlayer(key: const ValueKey('web_player'))
-                            : (_betterPlayerController != null)
-                            ? AspectRatio(
-                                key: const ValueKey('native_player'),
-                                aspectRatio: 16 / 9,
-                                child: BetterPlayer(
-                                  controller: _betterPlayerController!,
-                                ),
-                              )
-                            : _buildDiscoveryProgress(
-                                key: const ValueKey('manual_retry'),
-                              ),
-                      ),
-                    ),
-                  ),
-                ],
+  Widget _buildMainContent() {
+    return Stack(
+      children: [
+        // 0. Base Layer
+        const SizedBox.expand(child: ColoredBox(color: Colors.black)),
+
+        // 1. Discovery/Extraction WebView (Hidden in background)
+        if (!_discoveryComplete)
+          SizedBox(
+            height: 1,
+            width: 1,
+            child: InAppWebView(
+              key: _webViewKey,
+              initialUrlRequest: URLRequest(
+                url: WebUri(_currentExtractionUrl ?? widget.url),
+              ),
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                allowsInlineMediaPlayback: true,
+                mediaPlaybackRequiresUserGesture: false,
+                useShouldOverrideUrlLoading: true,
+                useOnLoadResource: true,
+                javaScriptCanOpenWindowsAutomatically: false,
+                supportMultipleWindows: true,
+              ),
+              onWebViewCreated: (controller) => _webViewController = controller,
+              onCreateWindow: (controller, createWindowAction) async {
+                return true;
+              },
+              onLoadResource: (controller, resource) {
+                if (resource.url != null) {
+                  _handleExtractedLink(resource.url.toString());
+                }
+              },
+            ),
+          ),
+
+        // 2. Background Extraction for switching
+        if (_isBgExtracting && _bgExtractionUrl != null)
+          Offstage(
+            child: SizedBox(
+              width: 1,
+              height: 1,
+              child: InAppWebView(
+                key: _bgWebViewKey,
+                initialUrlRequest: URLRequest(url: WebUri(_bgExtractionUrl!)),
+                initialSettings: InAppWebViewSettings(
+                  javaScriptEnabled: true,
+                  allowsInlineMediaPlayback: true,
+                  mediaPlaybackRequiresUserGesture: false,
+                  useOnLoadResource: true,
+                ),
+                onWebViewCreated: (controller) => _bgWebViewController = controller,
+                onLoadResource: (controller, resource) {
+                  if (resource.url != null) {
+                    _handleBgExtractedLink(resource.url.toString());
+                  }
+                },
               ),
             ),
+          ),
 
-            // Back button & Episode Selector — Visible ONLY during extraction phase
-            // (The custom HTML player in player.html handles its own controls during playback)
-            // Back button & Episode Selector — Removed redundant button from loader
-            if (!_hasError && _isExtracting && !_useWebViewEngine)
-              Positioned(
-                top: 0,
-                left: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: GestureDetector(
-                      onTap: _goBack,
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                      ),
+        // 3. Main UI Layer
+        Positioned.fill(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            child: _hasError
+                ? _buildErrorOverlay()
+                : _isExtracting
+                    ? _buildDiscoveryProgress(key: const ValueKey('loader'))
+                    : _useWebViewEngine
+                        ? _buildWebPlayer(key: const ValueKey('web_player'))
+                        : (!_isInitialized || _isLoading)
+                            ? _buildLoadingState(key: const ValueKey('prep'))
+                            : _buildPlayerInterface(),
+          ),
+        ),
+
+        // 4. Back button during extraction
+        if (!_hasError && _isExtracting && !_useWebViewEngine)
+          Positioned(
+            top: 0,
+            left: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: GestureDetector(
+                  onTap: _goBack,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white,
+                      size: 26,
                     ),
                   ),
                 ),
               ),
+            ),
+          ),
+      ],
+    );
+  }
 
-            // Loading overlay (Handled by minimal UI above)
+  Widget _buildPlayerInterface() {
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              BetterPlayer(
+                key: const ValueKey('native_player'),
+                controller: _betterPlayerController!,
+              ),
+              _buildTopBar(),
+              _buildEpisodeInfoOverlay(),
+              _buildControlHints(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-            // Error overlay
-            // LDSG Error State — Dimmer + Centered Error
-            if (_hasError)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.92),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.error_outline_rounded,
-                            color: AppColors.primary.withValues(alpha: 0.7),
-                            size: 36,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Playback Failed',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 48),
-                          child: Text(
-                            _extractionError ??
-                                'Source unavailable. Try another server or check your connection.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 14,
-                              height: 1.5,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _retry,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 28,
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 0,
-                              ),
-                              icon: const Icon(Icons.refresh_rounded, size: 20),
-                              label: const Text(
-                                'Retry',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            TextButton.icon(
-                              onPressed: _goBack,
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.white60,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(
-                                Icons.arrow_back_rounded,
-                                size: 20,
-                              ),
-                              label: const Text(
-                                'Back',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+  Widget _buildTopBar() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 80,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.7),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                onPressed: _goBack,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (widget.mediaType != 'movie')
+                IconButton(
+                  icon: const Icon(Icons.grid_view_rounded, color: Colors.white),
+                  onPressed: _showEpisodeSelector,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEpisodeInfoOverlay() => const SizedBox.shrink();
+  Widget _buildControlHints() => const SizedBox.shrink();
+
+
+  Widget _buildErrorOverlay() {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.92),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                color: AppColors.primary.withValues(alpha: 0.7),
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Playback Failed',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 48),
+              child: Text(
+                _extractionError ?? 'Source unavailable. Try another server.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withAlpha(128),
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _retry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                ),
+                const SizedBox(width: 14),
+                TextButton.icon(
+                  onPressed: _goBack,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Back'),
+                  style: TextButton.styleFrom(foregroundColor: Colors.white60),
+                ),
+              ],
+            ),
           ],
         ),
       ),

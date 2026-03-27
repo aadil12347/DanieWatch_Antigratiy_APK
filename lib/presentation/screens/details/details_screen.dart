@@ -5,7 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:go_router/go_router.dart';
+
 import '../../providers/download_modal_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
@@ -19,8 +19,9 @@ import '../../../services/video_extractor_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
+import '../../widgets/play_loader_overlay.dart';
 import '../video_player/video_player_screen.dart';
-import '../downloads/downloads_screen.dart';
+
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -972,7 +973,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
       if (m3u8Url == null || m3u8Url.isEmpty) {
         // Close modal and show error
-        ref.read(downloadModalProvider.notifier).state = DownloadModalState();
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
         _showToastError('Could not find stream source.');
         return;
       }
@@ -984,7 +985,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ));
     } catch (e) {
       if (mounted) {
-        ref.read(downloadModalProvider.notifier).state = DownloadModalState();
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
         _showToastError('Extraction error. Please try again.');
       }
       return;
@@ -999,7 +1000,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     try {
       // Ensure we don't block the UI thread during initialization
       final item = await DownloadManager.instance.startSegmentDownload(
-        m3u8Url: m3u8Url!,
+        m3u8Url: m3u8Url,
         title: content.title,
         season: _selectedSeason,
         episode: episodeNumber,
@@ -1037,25 +1038,52 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       return;
     }
 
-    if (mounted) {
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
-    
-    if (mounted) {
-      Navigator.of(context, rootNavigator: true).push(
-        MaterialPageRoute(
-          builder: (_) => VideoPlayerScreen(
-            url: url,
-            title: content?.title ?? '',
-            tmdbId: widget.tmdbId,
-            mediaType: widget.mediaType,
-            seasons: content?.seasonNumbers,
-            season: season,
-            episode: episode,
+
+    // Show Loader and start background extraction
+    showPlayLoader(
+      context: context,
+      fetchLinkFuture: () async {
+        try {
+          final extractor = VideoExtractorService();
+          String? m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
+
+          // Auto-Recovery: if first attempt fails, retry once
+          if (m3u8Url == null || m3u8Url.isEmpty) {
+            debugPrint('[PlayLoader] First extraction failed, retrying...');
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.remove('extract_$url');
+            m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
+          }
+          return m3u8Url;
+        } catch (e) {
+          debugPrint('[PlayLoader] Extraction error: $e');
+          return null; // Will trigger 'Try Again' downstream
+        }
+      },
+      onSuccess: (extractedLink) {
+        if (!mounted) return;
+        Navigator.of(context, rootNavigator: true).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, __, ___) => VideoPlayerScreen(
+              url: extractedLink,
+              title: content?.title ?? '',
+              tmdbId: widget.tmdbId,
+              mediaType: widget.mediaType,
+              seasons: content?.seasonNumbers,
+              season: season,
+              episode: episode,
+              isDirectLink: true,
+            ),
           ),
-        ),
-      );
-    }
-    }
+        );
+      },
+      onError: () {
+        _showToastError('Try Again');
+      },
+    );
   }
 
   Future<void> _handleDownload(String url) async {
