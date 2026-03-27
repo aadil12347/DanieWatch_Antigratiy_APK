@@ -67,7 +67,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       body: CustomAppBar(
         showBackButton: true,
         child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             // Hero section
             SliverToBoxAdapter(child: _buildHeroSection(content)),

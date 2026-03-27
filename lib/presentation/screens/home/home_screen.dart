@@ -9,7 +9,7 @@ import '../../widgets/section_header.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
-import '../../widgets/custom_pull_to_refresh.dart';
+import '../../widgets/hero_section.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -31,13 +31,9 @@ class HomeScreen extends ConsumerWidget {
         return Scaffold(
           drawer: CustomDrawer(),
           body: CustomAppBar(
-            child: CustomPullToRefresh(
-              onRefresh: () async => ref.read(manifestProvider.notifier).refresh(),
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                slivers: [
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
                   // Content sections
                   if (trending.isNotEmpty)
                     SliverToBoxAdapter(
@@ -61,7 +57,6 @@ class HomeScreen extends ConsumerWidget {
                 ],
               ),
             ),
-          ),
         );
       },
     );
@@ -161,11 +156,6 @@ class _EmptyHome extends StatelessWidget {
             Text(
               'No content available',
               style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Pull down to refresh',
-              style: TextStyle(color: AppColors.textMuted),
             ),
           ],
         ),

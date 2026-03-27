@@ -194,7 +194,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           // Unfocus when tapping anywhere outside
           onTap: () => _searchFocus.unfocus(),
           child: CustomScrollView(
-            physics: const BouncingScrollPhysics(),
+            physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(
                 child: const Padding(

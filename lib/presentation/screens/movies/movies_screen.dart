@@ -6,7 +6,7 @@ import '../../widgets/movie_card.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
-import '../../widgets/custom_pull_to_refresh.dart';
+import '../../widgets/custom_drawer.dart';
 
 class MoviesScreen extends ConsumerWidget {
   const MoviesScreen({super.key});
@@ -22,14 +22,7 @@ class MoviesScreen extends ConsumerWidget {
         extendBehindAppBar: false,
         child: movies.isEmpty
             ? const Center(child: ShimmerGrid())
-            : CustomPullToRefresh(
-                onRefresh: () async {
-                  // Trigger a refresh of the provider here
-                  ref.invalidate(moviesProvider);
-                  // Wait briefly for UI feel
-                  await Future.delayed(const Duration(milliseconds: 800));
-                },
-                child: CustomScrollView(
+            : CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     SliverPadding(
@@ -55,7 +48,6 @@ class MoviesScreen extends ConsumerWidget {
                     const SliverToBoxAdapter(child: SizedBox(height: 80)),
                   ],
                 ),
-              ),
       ),
     );
   }

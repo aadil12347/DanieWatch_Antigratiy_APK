@@ -6,7 +6,6 @@ import '../../widgets/movie_card.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
 import '../../widgets/shimmer_loading.dart';
-import '../../widgets/custom_pull_to_refresh.dart';
 
 class AnimeScreen extends ConsumerWidget {
   const AnimeScreen({super.key});
@@ -22,12 +21,7 @@ class AnimeScreen extends ConsumerWidget {
         extendBehindAppBar: false,
         child: anime.isEmpty
             ? const Center(child: ShimmerGrid())
-            : CustomPullToRefresh(
-                onRefresh: () async {
-                  ref.invalidate(animeProvider);
-                  await Future.delayed(const Duration(milliseconds: 800));
-                },
-                child: CustomScrollView(
+            : CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     SliverPadding(
@@ -53,7 +47,6 @@ class AnimeScreen extends ConsumerWidget {
                     const SliverToBoxAdapter(child: SizedBox(height: 80)),
                   ],
                 ),
-              ),
       ),
     );
   }

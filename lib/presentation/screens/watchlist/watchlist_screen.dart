@@ -7,7 +7,6 @@ import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
 import '../../widgets/movie_card.dart';
-import '../../widgets/custom_pull_to_refresh.dart';
 
 class WatchlistScreen extends ConsumerWidget {
   const WatchlistScreen({super.key});
@@ -34,13 +33,8 @@ class WatchlistScreen extends ConsumerWidget {
               return _buildEmptyContent(context);
             }
   
-            return CustomPullToRefresh(
-              onRefresh: () async {
-                ref.invalidate(watchlistProvider);
-                await Future.delayed(const Duration(milliseconds: 800));
-              },
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
+            return CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   SliverToBoxAdapter(
                   child: Padding(
@@ -88,8 +82,7 @@ class WatchlistScreen extends ConsumerWidget {
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 80)),
               ],
-            ),
-          );
+            );
           },
         ),
       ),

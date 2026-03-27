@@ -14,7 +14,7 @@ class ContentRow extends StatelessWidget {
       height: 200,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(width: 10),

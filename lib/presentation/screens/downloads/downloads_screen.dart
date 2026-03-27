@@ -6,7 +6,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/custom_app_bar.dart';
-import '../../widgets/custom_pull_to_refresh.dart';
 import '../video_player/video_player_screen.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
@@ -51,13 +50,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         extendBehindAppBar: false,
         child: downloads.isEmpty
             ? _buildEmptyState()
-            : CustomPullToRefresh(
-                onRefresh: () async {
-                  await Future.delayed(const Duration(milliseconds: 800));
-                  if (mounted) setState(() {});
-                },
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
+            : CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     // Title header
                     SliverToBoxAdapter(
@@ -126,7 +120,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     const SliverToBoxAdapter(child: SizedBox(height: 100)),
                   ],
                 ),
-              ),
       ),
     );
   }

@@ -969,7 +969,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
                                           return ListView.builder(
                                             physics:
-                                                const BouncingScrollPhysics(),
+                                                const AlwaysScrollableScrollPhysics(),
                                             itemCount: filtered.length,
                                             padding: const EdgeInsets.only(
                                               bottom: 20,
