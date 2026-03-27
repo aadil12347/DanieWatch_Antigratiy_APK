@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/custom_app_bar.dart';
+import '../../../core/utils/toast_utils.dart';
 import '../video_player/video_player_screen.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
@@ -16,10 +18,18 @@ class DownloadsScreen extends ConsumerStatefulWidget {
 }
 
 class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
+  StreamSubscription? _updateSub;
+
   @override
   void initState() {
     super.initState();
-    DownloadManager.instance.onDownloadUpdate = _onDownloadUpdate;
+    _updateSub = DownloadManager.instance.updateStream.listen(_onDownloadUpdate);
+  }
+
+  @override
+  void dispose() {
+    _updateSub?.cancel();
+    super.dispose();
   }
 
   void _onDownloadUpdate(DownloadItem item) {
@@ -593,12 +603,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       );
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('File not found'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+        CustomToast.show(
+          context,
+          'File not found',
+          type: ToastType.error,
         );
       }
     }
@@ -854,6 +862,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                                   item.id,
                                   deleteFile: deleteFromStorage,
                                 );
+                                CustomToast.show(
+                                  context,
+                                  'Deleted "${item.displayName}"',
+                                  type: ToastType.info,
+                                  icon: Icons.delete_sweep_rounded,
+                                );
                                 setState(() {});
                               },
                               style: ElevatedButton.styleFrom(
@@ -981,6 +995,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                             for (final item in DownloadManager.instance.completedItems) {
                               DownloadManager.instance.deleteDownload(item.id);
                             }
+                            CustomToast.show(
+                              context,
+                              'All downloads cleared',
+                              type: ToastType.success,
+                              icon: Icons.done_all_rounded,
+                            );
                             setState(() {});
                           },
                           style: ElevatedButton.styleFrom(

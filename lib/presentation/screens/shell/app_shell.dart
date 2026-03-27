@@ -8,8 +8,11 @@ import '../../providers/search_provider.dart';
 import '../../providers/download_modal_provider.dart';
 import '../../providers/filter_modal_provider.dart';
 import '../../widgets/quality_selector_sheet.dart';
-import '../../widgets/filter_selector_sheet.dart';
+import '../../../core/utils/toast_utils.dart';
 import '../../widgets/main_filter_panel_sheet.dart';
+import '../../../data/local/download_manager.dart';
+import '../../widgets/filter_selector_sheet.dart';
+import 'dart:async';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -63,6 +66,49 @@ class _AppShellState extends ConsumerState<AppShell> {
       // We will try routing and handle missing gracefully, but standard go_router is what we use.
       context.go(_tabs[index]);
     }
+  }
+
+  StreamSubscription? _downloadSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _downloadSub = DownloadManager.instance.updateStream.listen(_handleDownloadUpdate);
+  }
+
+  void _handleDownloadUpdate(DownloadItem item) {
+    if (!mounted) return;
+
+    // We only show toasts for major status transitions, not progress updates
+    switch (item.status) {
+      case DownloadStatus.completed:
+        CustomToast.show(
+          context,
+          '${item.displayName} completed',
+          type: ToastType.success,
+          icon: Icons.download_done_rounded,
+        );
+        break;
+      case DownloadStatus.failed:
+        CustomToast.show(
+          context,
+          'Download failed: ${item.displayName}',
+          type: ToastType.error,
+          icon: Icons.error_outline_rounded,
+        );
+        break;
+      case DownloadStatus.paused:
+        // Only show if user manually paused? Usually status changes are user-driven
+        break;
+      default:
+        break;
+    }
+  }
+
+  @override
+  void dispose() {
+    _downloadSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -123,15 +169,11 @@ class _AppShellState extends ConsumerState<AppShell> {
         final now = DateTime.now();
         if (_lastBackPressed == null || now.difference(_lastBackPressed!) > const Duration(seconds: 3)) {
           _lastBackPressed = now;
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Press back again to close the app'),
-              duration: const Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.surfaceElevated,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
+          CustomToast.show(
+            context,
+            'Press back again to close the app',
+            type: ToastType.warning,
+            icon: Icons.exit_to_app_rounded,
           );
         } else {
           // Double back pressed within 3 seconds, close the app

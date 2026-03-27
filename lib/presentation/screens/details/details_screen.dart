@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/download_modal_provider.dart';
-import '../../widgets/custom_toast.dart';
+import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -50,18 +50,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final detailAsync = ref.watch(detailProvider(_detailParams));
+    final isInWatchlist = ref.watch(watchlistProvider).maybeWhen(
+      data: (items) => items.any((i) => i.tmdbId == widget.tmdbId && i.mediaType == widget.mediaType),
+      orElse: () => false,
+    );
 
     return detailAsync.when(
       loading: () => _buildLoadingScreen(),
       error: (e, _) => _buildErrorScreen(e.toString()),
       data: (content) {
         if (content == null) return _buildErrorScreen('Content not found');
-        return _buildDetailPage(content);
+        return _buildDetailPage(content, isInWatchlist);
       },
     );
   }
 
-  Widget _buildDetailPage(ContentDetail content) {
+  Widget _buildDetailPage(ContentDetail content, bool isInWatchlist) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomAppBar(
@@ -103,7 +107,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     const SizedBox(height: 20),
 
                     // Action Buttons
-                    _buildActionButtons(content),
+                    _buildActionButtons(content, isInWatchlist),
 
                     // Overview
                     if (content.overview != null &&
@@ -325,13 +329,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   // ─── Action Buttons ────────────────────────────────────────────────────────
-  Widget _buildActionButtons(ContentDetail content) {
+  Widget _buildActionButtons(ContentDetail content, bool isInWatchlist) {
     String? watchLink;
     String? downloadLink;
 
     if (content.isMovie) {
-      watchLink = content.watchLink ?? content.playUrl;
-      downloadLink = content.downloadLink ?? content.downloadUrl;
+      watchLink = content.primaryWatchLink;
+      downloadLink = content.primaryDownloadLink;
     } else {
       // For TV: get first episode link from current season episodes
       final episodesAsync = ref.watch(episodesProvider(_episodeParams));
@@ -343,9 +347,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     }
 
     final bool hasWatch = watchLink != null && watchLink.isNotEmpty;
-    // User wants to use watchLink for download as well
-    final bool hasDownload = hasWatch; 
-
+    final bool hasDownload = downloadLink != null && downloadLink.isNotEmpty;
     return Row(
       children: [
         // Play Button
@@ -385,11 +387,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
         // Watchlist Button
         _AnimatedActionButton(
-          icon: _isInWatchlist()
+          icon: isInWatchlist
               ? Icons.bookmark_rounded
               : Icons.bookmark_border_rounded,
-          onTap: () => _toggleWatchlist(content),
-          isActive: _isInWatchlist(),
+          onTap: () => _toggleWatchlist(content, isInWatchlist),
+          isActive: isInWatchlist,
         ),
         const SizedBox(width: 12),
 
@@ -668,7 +670,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ? () => _handlePlay(episode.playLink!,
               season: _selectedSeason, episode: epNum)
           : () =>
-              _showErrorSnackBar('No play link available for ${episode.title}'),
+              _showToastError('No play link available for ${episode.title}'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(8),
@@ -768,7 +770,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             GestureDetector(
               onTap: hasPlayLink
                   ? () => _startDownload(episode.playLink!, epNum, content)
-                  : () => _showErrorSnackBar('No play/download link available'),
+                  : () => _showToastError('No play/download link available'),
               child: Container(
                 width: 44,
                 height: 44,
@@ -910,15 +912,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
-  // ─── Watchlist Logic ───────────────────────────────────────────────────────
-  bool _isInWatchlist() {
-    final notifier = ref.read(watchlistProvider.notifier);
-    return notifier.isInWatchlist(widget.tmdbId, widget.mediaType);
-  }
-
-  void _toggleWatchlist(ContentDetail content) {
+  void _toggleWatchlist(ContentDetail content, bool currentIsInWatchlist) {
     HapticFeedback.lightImpact();
-    final wasInWatchlist = _isInWatchlist();
+    
+    // Optmistically update through the provider
     ref.read(watchlistProvider.notifier).toggle(
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
@@ -926,14 +923,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           posterPath: content.posterUrl,
           voteAverage: content.voteAverage,
         );
-    setState(() {});
+        
     if (mounted) {
       CustomToast.show(
         context,
-        message:
-            wasInWatchlist ? 'Removed from watchlist' : 'Added to watchlist',
-        type: wasInWatchlist ? ToastType.info : ToastType.success,
-        icon: wasInWatchlist
+        currentIsInWatchlist ? 'Removed from watchlist' : 'Added to watchlist',
+        type: currentIsInWatchlist ? ToastType.info : ToastType.success,
+        icon: currentIsInWatchlist
             ? Icons.bookmark_remove_rounded
             : Icons.bookmark_added_rounded,
       );
@@ -977,7 +973,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       if (m3u8Url == null || m3u8Url.isEmpty) {
         // Close modal and show error
         ref.read(downloadModalProvider.notifier).state = DownloadModalState();
-        _showErrorSnackBar('Could not find stream source.');
+        _showToastError('Could not find stream source.');
         return;
       }
 
@@ -989,7 +985,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     } catch (e) {
       if (mounted) {
         ref.read(downloadModalProvider.notifier).state = DownloadModalState();
-        _showErrorSnackBar('Extraction error. Please try again.');
+        _showToastError('Extraction error. Please try again.');
       }
       return;
     }
@@ -1016,7 +1012,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('Failed to start download: $e');
+        _showToastError('Failed to start download: $e');
       }
     }
   }
@@ -1024,30 +1020,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   void _showDownloadStartedToast(DownloadItem item) {
     if (!mounted) return;
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        content: Row(
-          children: [
-            const Icon(Icons.download_done_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Download started',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        action: SnackBarAction(
-          label: 'VIEW',
-          textColor: Colors.white,
-          onPressed: () => context.push('/downloads'),
-        ),
-      ),
+    CustomToast.show(
+      context,
+      '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Download started',
+      type: ToastType.info,
+      icon: Icons.download_done_rounded,
     );
   }
 
@@ -1056,7 +1033,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     HapticFeedback.lightImpact();
 
     if (url.isEmpty) {
-      _showErrorSnackBar('Invalid video link');
+      _showToastError('Invalid video link');
       return;
     }
 
@@ -1084,7 +1061,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   Future<void> _handleDownload(String url) async {
     HapticFeedback.mediumImpact();
     if (url.isEmpty) {
-      _showErrorSnackBar('Invalid download link');
+      _showToastError('Invalid download link');
       return;
     }
 
@@ -1095,11 +1072,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     }
   }
 
-  void _showErrorSnackBar(String message) {
+  void _showToastError(String message) {
     if (mounted) {
       CustomToast.show(
         context,
-        message: message,
+        message,
         type: ToastType.error,
       );
     }

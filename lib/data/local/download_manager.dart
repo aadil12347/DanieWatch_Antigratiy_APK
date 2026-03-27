@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
@@ -230,7 +231,15 @@ class DownloadManager {
   List<DownloadItem> get failedItems => 
       _downloads.where((d) => d.status == DownloadStatus.failed).toList();
 
+  final _updateController = StreamController<DownloadItem>.broadcast();
+  Stream<DownloadItem> get updateStream => _updateController.stream;
+
+  final _completeController = StreamController<DownloadItem>.broadcast();
+  Stream<DownloadItem> get completeStream => _completeController.stream;
+
+  @deprecated
   Function(DownloadItem)? onDownloadUpdate;
+  @deprecated
   Function(DownloadItem)? onDownloadComplete;
 
   Future<void> initialize() async {
@@ -320,6 +329,7 @@ class DownloadManager {
       item.status = DownloadStatus.paused;
     }
     
+    _updateController.add(item);
     onDownloadUpdate?.call(item);
     _saveDownloads();
   }
@@ -420,6 +430,7 @@ class DownloadManager {
 
     _downloads.insert(0, item);
     await _saveDownloads();
+    _updateController.add(item);
     onDownloadUpdate?.call(item);
 
     // Show initial notification
@@ -484,6 +495,7 @@ class DownloadManager {
         );
       }
 
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
     };
@@ -500,6 +512,7 @@ class DownloadManager {
         body: '97% · Finalizing...',
       );
       
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
     };
@@ -515,6 +528,7 @@ class DownloadManager {
         error: item.error,
       );
       
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
     };
@@ -535,7 +549,9 @@ class DownloadManager {
       }
 
       _notifService.showComplete(id: item.id.hashCode, title: item.displayName);
+      _updateController.add(item);
       onDownloadComplete?.call(item);
+      onDownloadUpdate?.call(item);
       _saveDownloads();
     };
 
@@ -571,6 +587,7 @@ class DownloadManager {
       _activeHlsDownloads[item.id]?.pause();
       item.status = DownloadStatus.paused;
       _saveDownloads();
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
       return;
     }
@@ -580,6 +597,7 @@ class DownloadManager {
       await FlutterDownloader.pause(taskId: item.taskId!);
       item.status = DownloadStatus.paused;
       _saveDownloads();
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
     }
   }
@@ -594,6 +612,7 @@ class DownloadManager {
       _activeHlsDownloads[item.id]?.resume();
       item.status = DownloadStatus.downloading;
       _saveDownloads();
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
       return;
     }
@@ -604,6 +623,7 @@ class DownloadManager {
       item.status = DownloadStatus.downloading;
       item.error = null;
       await _saveDownloads();
+      _updateController.add(item);
       onDownloadUpdate?.call(item);
 
       _notifService.showProgress(
@@ -655,7 +675,11 @@ class DownloadManager {
     }
 
     _saveDownloads();
+    _updateController.add(item);
     onDownloadUpdate?.call(item);
+    if (item.status == DownloadStatus.completed) {
+      _completeController.add(item);
+    }
   }
 
   Future<void> deleteDownload(String id, {bool deleteFile = true}) async {
