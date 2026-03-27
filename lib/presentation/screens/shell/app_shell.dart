@@ -14,6 +14,8 @@ import '../../../data/local/download_manager.dart';
 import '../../widgets/filter_selector_sheet.dart';
 import '../../widgets/more_modal_content.dart';
 import 'dart:async';
+import '../../providers/confirmation_modal_provider.dart';
+import '../../widgets/confirmation_modal_content.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -146,8 +148,9 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     final downloadState = ref.watch(downloadModalProvider);
     final filterState = ref.watch(filterModalProvider);
+    final confirmState = ref.watch(confirmationModalProvider);
     final isModalOpen =
-        downloadState.isOpen || filterState.isOpen || _isMoreOpen;
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || _isMoreOpen;
 
     return PopScope(
       canPop: false,
@@ -214,6 +217,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                         const DownloadModalState();
                     ref.read(filterModalProvider.notifier).state =
                         const FilterModalState(view: FilterView.none);
+                    ref.read(confirmationModalProvider.notifier).state =
+                        const ConfirmationModalState();
                   },
                   child: Container(color: Colors.black.withValues(alpha: 0.4)),
                 ),
@@ -285,9 +290,38 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                       downloadState.onCancel ??
                                                           () {},
                                                 )
-                                              : (filterState.view ==
-                                                      FilterView.optionsList
-                                                  ? FilterSelectorContent(
+                                              : confirmState.isOpen
+                                                  ? ConfirmationModalContent(
+                                                      title: confirmState.title,
+                                                      message:
+                                                          confirmState.message,
+                                                      confirmLabel: confirmState
+                                                          .confirmLabel,
+                                                      showDeviceDeleteToggle:
+                                                          confirmState
+                                                              .showDeviceDeleteToggle,
+                                                      onConfirm: (also) {
+                                                        confirmState.onConfirm
+                                                            ?.call(also);
+                                                        ref
+                                                            .read(
+                                                                confirmationModalProvider
+                                                                    .notifier)
+                                                            .state = const ConfirmationModalState();
+                                                      },
+                                                      onCancel: () {
+                                                        confirmState.onCancel
+                                                            ?.call();
+                                                        ref
+                                                            .read(
+                                                                confirmationModalProvider
+                                                                    .notifier)
+                                                            .state = const ConfirmationModalState();
+                                                      },
+                                                    )
+                                                  : (filterState.view ==
+                                                          FilterView.optionsList
+                                                      ? FilterSelectorContent(
                                                       title: filterState.title,
                                                       currentValue: filterState
                                                           .currentValue,

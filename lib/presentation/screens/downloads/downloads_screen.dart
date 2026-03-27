@@ -9,11 +9,12 @@ import 'package:open_file/open_file.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/local/download_manager.dart';
-import '../video_player/video_player_screen.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../providers/search_provider.dart';
 import '../../../core/utils/toast_utils.dart';
+import '../../providers/downloads_selection_provider.dart';
+import '../../providers/confirmation_modal_provider.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
@@ -101,70 +102,81 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final completed =
         downloads.where((d) => d.status == DownloadStatus.completed).toList();
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: GestureDetector(
-          onTap: () => _searchFocus.unfocus(),
-          child: Column(
-            children: [
-              CategoryHeader(
-                title: 'Downloads',
-                searchController: _searchController,
-                searchFocus: _searchFocus,
-                onSearchChanged: _onSearchChanged,
-                trailing: completed.isNotEmpty
-                    ? GestureDetector(
-                        onTap: _showClearDialog,
-                        child: Text(
-                          'Clear All',
-                          style: GoogleFonts.inter(
-                            color: AppColors.primary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              Expanded(
-                child: allDownloads.isEmpty
-                    ? _buildEmptyState()
-                    : (downloads.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters))
-                        ? const EmptyResultsView()
-                        : CustomScrollView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            slivers: [
-                              // Sections only show if filtered results have them
-                              if (downloading.isNotEmpty) ...[
-                                _buildSectionHeader(
-                                  'DOWNLOADING (${downloading.length})',
-                                ),
-                                SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) =>
-                                        _buildDownloadingItem(downloading[index]),
-                                    childCount: downloading.length,
-                                  ),
-                                ),
-                              ],
+    final selectionState = ref.watch(downloadsSelectionProvider);
+    final isSelectionMode = selectionState.isSelectionMode;
 
-                              if (completed.isNotEmpty) ...[
-                                _buildSectionHeader('DOWNLOADED (${completed.length})'),
-                                SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) =>
-                                        _buildCompletedItem(completed[index]),
-                                    childCount: completed.length,
-                                  ),
-                                ),
+    return PopScope(
+      canPop: !isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        ref.read(downloadsSelectionProvider.notifier).clear();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: GestureDetector(
+            onTap: () => _searchFocus.unfocus(),
+            child: Column(
+              children: [
+                CategoryHeader(
+                  title: 'Downloads',
+                  searchController: _searchController,
+                  searchFocus: _searchFocus,
+                  onSearchChanged: _onSearchChanged,
+                  trailing: null, // Removed close button during selection as requested
+                ),
+                Expanded(
+                  child: allDownloads.isEmpty
+                      ? _buildEmptyState()
+                      : (downloads.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters))
+                          ? const EmptyResultsView()
+                          : CustomScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              slivers: [
+                                  if (downloading.isNotEmpty) ...[
+                                    _buildSectionHeader(
+                                      'DOWNLOADING (${downloading.length})',
+                                      trailing: isSelectionMode
+                                          ? _buildBulkDeleteButton(selectionState.selectedIds)
+                                          : null,
+                                    ),
+                                    SliverList(
+                                      delegate: SliverChildBuilderDelegate(
+                                        (context, index) => _buildDownloadingItem(downloading[index]),
+                                        childCount: downloading.length,
+                                      ),
+                                    ),
+                                  ],
+                                  if (completed.isNotEmpty) ...[
+                                    _buildSectionHeader(
+                                      'DOWNLOADED (${completed.length})',
+                                      trailing: isSelectionMode
+                                          ? _buildBulkDeleteButton(selectionState.selectedIds)
+                                          : GestureDetector(
+                                              onTap: _showClearDialog,
+                                              child: Text(
+                                                'Clear All',
+                                                style: GoogleFonts.inter(
+                                                  color: AppColors.primary,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                    SliverList(
+                                      delegate: SliverChildBuilderDelegate(
+                                        (context, index) => _buildCompletedItem(completed[index]),
+                                        childCount: completed.length,
+                                      ),
+                                    ),
+                                  ],
+                                const SliverToBoxAdapter(child: SizedBox(height: 100)),
                               ],
-
-                              const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                            ],
-                          ),
-              ),
-            ],
+                            ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -180,63 +192,48 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  Widget _buildDownloadCardShape(double width, double height, Color color) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, width: 1),
-      ),
-      child: Column(
-        children: [
-          // Red accent strip at top
-          Container(
-            width: 40,
-            height: 10,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(6)),
-            ),
-            child: Center(
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.3),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary, width: 1.5),
-                ),
+  // ─── Section Header ─────────────────────────────────────────────────────
+  Widget _buildSectionHeader(String title, {Widget? trailing}) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
               ),
             ),
-          ),
-          const Spacer(),
-          Icon(
-            Icons.download_rounded,
-            size: 40,
-            color: AppColors.textMuted.withValues(alpha: 0.3),
-          ),
-          const Spacer(),
-        ],
+            if (trailing != null) trailing,
+          ],
+        ),
       ),
     );
   }
 
-  // ─── Section Header ─────────────────────────────────────────────────────
-  Widget _buildSectionHeader(String title) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-        child: Text(
-          title,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1,
+  Widget _buildBulkDeleteButton(Set<String> ids) {
+    if (ids.isEmpty) return const SizedBox.shrink();
+    return GestureDetector(
+      onTap: () => _showBulkDeleteConfirmation(ids),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            'Delete (${ids.length})',
+            style: GoogleFonts.inter(
+              color: Colors.redAccent,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -244,20 +241,54 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   // ─── Downloading Item ───────────────────────────────────────────────────
   Widget _buildDownloadingItem(DownloadItem item) {
     final pct = (item.progress * 100).toInt().clamp(0, 100);
+    final selectionState = ref.watch(downloadsSelectionProvider);
+    final isSelected = selectionState.selectedIds.contains(item.id);
+    final isSelectionMode = selectionState.isSelectionMode;
 
     return GestureDetector(
-      onLongPress: () => _showDeleteTooltip(context, item),
+      onTap: isSelectionMode
+          ? () => ref.read(downloadsSelectionProvider.notifier).toggleItem(item.id)
+          : null,
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        ref.read(downloadsSelectionProvider.notifier).activate(item.id);
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
+          color: isSelected
+              ? Colors.red.withValues(alpha: 0.1)
+              : AppColors.surfaceElevated,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border, width: 0.5),
+          border: Border.all(
+            color: isSelected
+                ? Colors.red.withValues(alpha: 0.8)
+                : AppColors.border,
+            width: 1.0,
+          ),
         ),
         child: Row(
           children: [
-            // Thumbnail
+            // Selection Indicator (Reserved Space to prevent glitch/shift)
+            SizedBox(
+              width: isSelectionMode ? 32 : 0,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: isSelectionMode
+                    ? Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_off_rounded,
+                        color: isSelected ? Colors.red : Colors.white24,
+                        size: 20,
+                        key: const ValueKey('selected'),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('empty')),
+              ),
+            ),
+            if (isSelectionMode) const SizedBox(width: 4),
+            // Thumbnail with Delete Overlay
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: item.posterUrl != null
@@ -278,41 +309,39 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Tooltip(
-                    message: item.fileName,
-                    preferBelow: false,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                      ),
+                  Text(
+                    item.displayName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
-                    textStyle:
-                        const TextStyle(color: Colors.white, fontSize: 13),
-                    child: Text(
-                      item.displayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  // Quality & Audio tag
-                  if (item.qualityTag.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      item.qualityTag,
-                      style: TextStyle(
-                        color: AppColors.textSecondary.withValues(alpha: 0.7),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
+                  // Size
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        item.formattedSize,
+                        style: TextStyle(
+                          color: AppColors.textSecondary.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
+                      if (!isSelectionMode)
+                        GestureDetector(
+                          onTap: () => _showDeleteConfirmation(item),
+                          child: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.redAccent,
+                            size: 24,
+                          ),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   // Progress bar
                   ClipRRect(
@@ -331,65 +360,20 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _getProgressText(item, pct),
-                          style: TextStyle(
-                            color: item.status == DownloadStatus.paused
-                                ? Colors.orange
-                                : item.status == DownloadStatus.failed
-                                    ? Colors.red
-                                    : AppColors.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    _getProgressText(item, pct),
+                    style: TextStyle(
+                      color: item.status == DownloadStatus.paused
+                          ? Colors.orange
+                          : item.status == DownloadStatus.failed
+                              ? Colors.red
+                              : AppColors.primary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-
-            // Actions
-            Column(
-              children: [
-                if (item.status == DownloadStatus.failed)
-                  IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.orange),
-                    tooltip: 'Retry',
-                    onPressed: () {
-                      DownloadManager.instance.resumeDownload(item.id);
-                      setState(() {});
-                    },
-                  )
-                else if (item.status == DownloadStatus.paused)
-                  IconButton(
-                    icon: const Icon(Icons.play_arrow, color: Colors.white),
-                    onPressed: () {
-                      DownloadManager.instance.resumeDownload(item.id);
-                      setState(() {});
-                    },
-                  )
-                else if (item.status == DownloadStatus.downloading ||
-                    item.status == DownloadStatus.converting)
-                  IconButton(
-                    icon: const Icon(Icons.pause, color: Colors.white),
-                    onPressed: () {
-                      DownloadManager.instance.pauseDownload(item.id);
-                      setState(() {});
-                    },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                  onPressed: () => _showDeleteConfirmation(item),
-                ),
-              ],
             ),
           ],
         ),
@@ -418,50 +402,56 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   // ─── Completed Item ─────────────────────────────────────────────────────
   Widget _buildCompletedItem(DownloadItem item) {
+    final selectionState = ref.watch(downloadsSelectionProvider);
+    final isSelected = selectionState.selectedIds.contains(item.id);
+    final isSelectionMode = selectionState.isSelectionMode;
+
     return GestureDetector(
-      onTap: () => _playDownload(item),
-      onLongPress: () => _showDeleteTooltip(context, item),
+      onTap: isSelectionMode
+          ? () => ref.read(downloadsSelectionProvider.notifier).toggleItem(item.id)
+          : () => _playDownload(item),
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        ref.read(downloadsSelectionProvider.notifier).activate(item.id);
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
+          color: isSelected
+              ? Colors.red.withValues(alpha: 0.1)
+              : AppColors.surfaceElevated,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border, width: 0.5),
+          border: Border.all(
+            color: isSelected
+                ? Colors.red.withValues(alpha: 0.8)
+                : AppColors.border,
+            width: 1.0,
+          ),
         ),
         child: Row(
           children: [
-            // Thumbnail with play overlay
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: item.posterUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: item.posterUrl!,
-                          width: 60,
-                          height: 80,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => _buildPlaceholder(),
-                          errorWidget: (_, __, ___) => _buildPlaceholder(),
-                        )
-                      : _buildPlaceholder(),
-                ),
-                // Play icon overlay
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.black.withValues(alpha: 0.3),
-                    ),
-                    child: const Icon(
-                      Icons.play_circle_outline,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                ),
-              ],
+            if (isSelectionMode) ...[
+              Icon(
+                isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
+                color: isSelected ? Colors.red : Colors.white24,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+            ],
+            // Thumbnail with Delete Overlay
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: item.posterUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: item.posterUrl!,
+                      width: 60,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => _buildPlaceholder(),
+                      errorWidget: (_, __, ___) => _buildPlaceholder(),
+                    )
+                  : _buildPlaceholder(),
             ),
             const SizedBox(width: 12),
 
@@ -482,76 +472,28 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      if (item.qualityTag.isNotEmpty)
-                        Flexible(
-                          child: Text(
-                            '${item.qualityTag} • ',
-                            style: TextStyle(
-                              color: AppColors.textMuted.withValues(alpha: 0.7),
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      Flexible(
-                        child: Text(
-                          item.formattedSize,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      Text(
+                        item.formattedSize,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
+                      if (!isSelectionMode)
+                        GestureDetector(
+                          onTap: () => _showDeleteConfirmation(item),
+                          child: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.redAccent,
+                            size: 24,
+                          ),
+                        ),
                     ],
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // Actions: Play + Delete
-            GestureDetector(
-              onTap: () => _playDownload(item),
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.5),
-                    width: 1,
-                  ),
-                ),
-                child: const Icon(
-                  Icons.play_arrow_rounded,
-                  color: AppColors.primary,
-                  size: 22,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _showDeleteConfirmation(item),
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.red.withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Icon(
-                  Icons.delete_outline,
-                  color: Colors.red.withValues(alpha: 0.8),
-                  size: 20,
-                ),
               ),
             ),
           ],
@@ -603,429 +545,71 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     }
   }
 
-  // ─── Long-press Delete Tooltip ──────────────────────────────────────────
-  void _showDeleteTooltip(BuildContext context, DownloadItem item) {
-    HapticFeedback.mediumImpact();
-
-    final RenderBox? box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-
-    final cardPosition = box.localToGlobal(Offset.zero);
-    final cardSize = box.size;
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    final overlay = Overlay.of(context);
-    late OverlayEntry entry;
-
-    // Position tooltip just above the card
-    final tooltipTop = cardPosition.dy - 56;
-
-    entry = OverlayEntry(
-      builder: (ctx) => GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () => entry.remove(),
-        child: Stack(
-          children: [
-            // Dismiss layer
-            Positioned.fill(
-              child: Container(color: Colors.transparent),
-            ),
-            // Tooltip positioned above the held card
-            Positioned(
-              top: tooltipTop < 60
-                  ? cardPosition.dy + cardSize.height + 8
-                  : tooltipTop,
-              left: 16,
-              right: 16,
-              child: Center(
-                child: Material(
-                  color: Colors.transparent,
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOutBack,
-                    builder: (context, value, child) {
-                      return Transform.scale(
-                        scale: value,
-                        child: Opacity(
-                          opacity: value.clamp(0.0, 1.0),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: Container(
-                      constraints: BoxConstraints(maxWidth: screenWidth - 64),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceElevated,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: Colors.red.withValues(alpha: 0.3)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 20,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          entry.remove();
-                          _showDeleteConfirmation(item);
-                        },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.max,
-                          children: [
-                            Icon(Icons.delete_outline,
-                                color: Colors.red.withValues(alpha: 0.9),
-                                size: 22),
-                            const SizedBox(width: 10),
-                            Flexible(
-                              child: Text(
-                                'Delete "${item.displayName}"',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    overlay.insert(entry);
-  }
-
   // ─── Delete Confirmation Modal (with smooth animation + storage toggle) ─
   void _showDeleteConfirmation(DownloadItem item) {
-    bool deleteFromStorage = true;
-
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Delete Confirmation',
-      barrierColor: Colors.black.withValues(alpha: 0.7),
-      transitionDuration: const Duration(milliseconds: 300),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-            ),
-            child: child,
-          ),
+    ref.read(confirmationModalProvider.notifier).state =
+        ConfirmationModalState(
+      isOpen: true,
+      title: 'Delete Download?',
+      message: 'Are you sure you want to delete "${item.displayName}"?',
+      showDeviceDeleteToggle: item.status == DownloadStatus.completed,
+      onConfirm: (alsoDeleteFile) {
+        DownloadManager.instance.deleteDownload(item.id, deleteFile: alsoDeleteFile);
+        CustomToast.show(
+          context,
+          'Deleted "${item.displayName}"',
+          type: ToastType.info,
+          icon: Icons.delete_sweep_rounded,
         );
-      },
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return Center(
-          child: StatefulBuilder(
-            builder: (context, setModalState) {
-              return Material(
-                color: Colors.transparent,
-                child: Container(
-                  width: MediaQuery.of(context).size.width * 0.85,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: AppColors.border, width: 1),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: Colors.red,
-                          size: 32,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Delete Download?',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Are you sure you want to delete\n"${item.displayName}"?',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.textSecondary.withValues(alpha: 0.8),
-                          fontSize: 14,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Storage toggle
-                      GestureDetector(
-                        onTap: () {
-                          setModalState(() {
-                            deleteFromStorage = !deleteFromStorage;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: deleteFromStorage
-                                  ? Colors.red.withValues(alpha: 0.4)
-                                  : AppColors.border,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                deleteFromStorage
-                                    ? Icons.check_box_rounded
-                                    : Icons.check_box_outline_blank_rounded,
-                                color: deleteFromStorage
-                                    ? Colors.red
-                                    : AppColors.textMuted,
-                                size: 22,
-                              ),
-                              const SizedBox(width: 12),
-                              const Expanded(
-                                child: Text(
-                                  'Also delete from device storage',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: TextButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side:
-                                      const BorderSide(color: AppColors.border),
-                                ),
-                              ),
-                              child: const Text(
-                                'Cancel',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                DownloadManager.instance.deleteDownload(
-                                  item.id,
-                                  deleteFile: deleteFromStorage,
-                                );
-                                CustomToast.show(
-                                  context,
-                                  'Deleted "${item.displayName}"',
-                                  type: ToastType.info,
-                                  icon: Icons.delete_sweep_rounded,
-                                );
-                                setState(() {});
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text(
-                                'Delete',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        );
+        setState(() {});
       },
     );
   }
 
-  // _showCancelDialog removed — cancel/X button now uses _showDeleteConfirmation directly
-
-  // ─── Clear All Dialog (with smooth animation) ──────────────────────────
-  void _showClearDialog() {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Clear All',
-      barrierColor: Colors.black.withValues(alpha: 0.7),
-      transitionDuration: const Duration(milliseconds: 300),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-            ),
-            child: child,
-          ),
+  void _showBulkDeleteConfirmation(Set<String> ids) {
+    ref.read(confirmationModalProvider.notifier).state =
+        ConfirmationModalState(
+      isOpen: true,
+      title: 'Delete ${ids.length} Downloads?',
+      message: 'Are you sure you want to delete these ${ids.length} items?',
+      showDeviceDeleteToggle: true,
+      onConfirm: (alsoDeleteFile) {
+        for (final id in ids) {
+          DownloadManager.instance.deleteDownload(id, deleteFile: alsoDeleteFile);
+        }
+        ref.read(downloadsSelectionProvider.notifier).clear();
+        CustomToast.show(
+          context,
+          'Deleted ${ids.length} items',
+          type: ToastType.info,
+          icon: Icons.delete_sweep_rounded,
         );
+        setState(() {});
       },
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.85,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: AppColors.border, width: 1),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.delete_sweep_rounded,
-                      color: AppColors.primary,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Clear All Downloads?',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'This will delete all completed downloads from your device. This action cannot be undone.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: const BorderSide(color: AppColors.border),
-                            ),
-                          ),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            for (final item
-                                in DownloadManager.instance.completedItems) {
-                              DownloadManager.instance.deleteDownload(item.id);
-                            }
-                            CustomToast.show(
-                              context,
-                              'All downloads cleared',
-                              type: ToastType.success,
-                              icon: Icons.done_all_rounded,
-                            );
-                            setState(() {});
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'Clear All',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+    );
+  }
+
+  void _showClearDialog() {
+    ref.read(confirmationModalProvider.notifier).state =
+        ConfirmationModalState(
+      isOpen: true,
+      title: 'Clear All Downloads?',
+      message: 'This will remove all completed downloads from your list.',
+      showDeviceDeleteToggle: true,
+      onConfirm: (alsoDeleteFile) {
+        final completed = DownloadManager.instance.downloads
+            .where((d) => d.status == DownloadStatus.completed)
+            .toList();
+        for (final item in completed) {
+          DownloadManager.instance.deleteDownload(item.id, deleteFile: alsoDeleteFile);
+        }
+        CustomToast.show(
+          context,
+          'Cleared all downloads',
+          type: ToastType.info,
+          icon: Icons.delete_sweep_rounded,
         );
+        setState(() {});
       },
     );
   }
