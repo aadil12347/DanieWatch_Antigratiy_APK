@@ -28,6 +28,7 @@ class HomeScreen extends ConsumerWidget {
         }
 
         return Scaffold(
+          backgroundColor: AppColors.background,
           drawer: const CustomDrawer(),
           body: CustomAppBar(
             child: CustomScrollView(

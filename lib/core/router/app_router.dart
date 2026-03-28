@@ -15,24 +15,46 @@ import '../../presentation/screens/korean/korean_screen.dart';
 final rootNavKey = GlobalKey<NavigatorState>();
 final _shellNavKey = GlobalKey<NavigatorState>();
 
-/// Smooth fade + scale transition for tab pages
+/// Smooth slide-up + fade + scale transition for tab pages
 CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
     child: child,
-    transitionDuration: const Duration(milliseconds: 300),
+    transitionDuration: const Duration(milliseconds: 350),
     reverseTransitionDuration: const Duration(milliseconds: 250),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      // Incoming page: slide up + fade + scale
+      final slide = Tween<Offset>(
+        begin: const Offset(0, 0.03),
+        end: Offset.zero,
+      ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
       final fade = CurveTween(curve: Curves.easeOut).animate(animation);
-      final scale = Tween<double>(begin: 0.96, end: 1.0)
+      final scale = Tween<double>(begin: 0.97, end: 1.0)
           .chain(CurveTween(curve: Curves.easeOutCubic))
           .animate(animation);
 
+      // Exiting page: subtle fade + scale down
+      final secondaryFade = Tween<double>(begin: 1.0, end: 0.92)
+          .chain(CurveTween(curve: Curves.easeIn))
+          .animate(secondaryAnimation);
+      final secondaryScale = Tween<double>(begin: 1.0, end: 0.96)
+          .chain(CurveTween(curve: Curves.easeIn))
+          .animate(secondaryAnimation);
+
       return FadeTransition(
-        opacity: fade,
+        opacity: secondaryFade,
         child: ScaleTransition(
-          scale: scale,
-          child: child,
+          scale: secondaryScale,
+          child: SlideTransition(
+            position: slide,
+            child: FadeTransition(
+              opacity: fade,
+              child: ScaleTransition(
+                scale: scale,
+                child: child,
+              ),
+            ),
+          ),
         ),
       );
     },

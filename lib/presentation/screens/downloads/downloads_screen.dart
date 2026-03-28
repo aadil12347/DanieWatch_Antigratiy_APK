@@ -116,65 +116,80 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         body: SafeArea(
           child: GestureDetector(
             onTap: () => _searchFocus.unfocus(),
-            child: Column(
-              children: [
-                CategoryHeader(
-                  title: 'Downloads',
-                  searchController: _searchController,
-                  searchFocus: _searchFocus,
-                  onSearchChanged: _onSearchChanged,
-                  trailing: null, // Removed close button during selection as requested
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                // Title scrolls with content
+                const SliverToBoxAdapter(
+                  child: CategoryTitle(title: 'Downloads'),
                 ),
-                Expanded(
-                  child: allDownloads.isEmpty
-                      ? _buildEmptyState()
-                      : (downloads.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters))
-                          ? const EmptyResultsView()
-                          : CustomScrollView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              slivers: [
-                                  if (downloading.isNotEmpty) ...[
-                                    _buildSectionHeader(
-                                      'DOWNLOADING (${downloading.length})',
-                                      trailing: isSelectionMode
-                                          ? _buildBulkDeleteButton(selectionState.selectedIds)
-                                          : null,
-                                    ),
-                                    SliverList(
-                                      delegate: SliverChildBuilderDelegate(
-                                        (context, index) => _buildDownloadingItem(downloading[index]),
-                                        childCount: downloading.length,
-                                      ),
-                                    ),
-                                  ],
-                                  if (completed.isNotEmpty) ...[
-                                    _buildSectionHeader(
-                                      'DOWNLOADED (${completed.length})',
-                                      trailing: isSelectionMode
-                                          ? _buildBulkDeleteButton(selectionState.selectedIds)
-                                          : GestureDetector(
-                                              onTap: _showClearDialog,
-                                              child: Text(
-                                                'Clear All',
-                                                style: GoogleFonts.inter(
-                                                  color: AppColors.primary,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                    ),
-                                    SliverList(
-                                      delegate: SliverChildBuilderDelegate(
-                                        (context, index) => _buildCompletedItem(completed[index]),
-                                        childCount: completed.length,
-                                      ),
-                                    ),
-                                  ],
-                                const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                              ],
+                // Search bar floats (hides on scroll down, shows on scroll up)
+                SliverPersistentHeader(
+                  floating: true,
+                  delegate: FloatingSearchBarDelegate(
+                    searchController: _searchController,
+                    searchFocus: _searchFocus,
+                    onSearchChanged: _onSearchChanged,
+                  ),
+                ),
+                // Filter chips
+                const SliverToBoxAdapter(
+                  child: CategoryFilterChips(),
+                ),
+                // Content
+                if (allDownloads.isEmpty)
+                  const SliverFillRemaining(
+                    child: EmptyResultsView(
+                      title: 'No Downloads Yet',
+                      message: 'Movies and episodes you download will appear here',
+                      icon: Icons.download_rounded,
+                    ),
+                  )
+                else if (downloads.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters))
+                  const SliverFillRemaining(
+                    child: EmptyResultsView(),
+                  )
+                else ...[
+                  if (downloading.isNotEmpty) ...[
+                    _buildSectionHeader(
+                      'DOWNLOADING (${downloading.length})',
+                      trailing: isSelectionMode
+                          ? _buildBulkDeleteButton(selectionState.selectedIds)
+                          : null,
+                    ),
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildDownloadingItem(downloading[index]),
+                        childCount: downloading.length,
+                      ),
+                    ),
+                  ],
+                  if (completed.isNotEmpty) ...[
+                    _buildSectionHeader(
+                      'DOWNLOADED (${completed.length})',
+                      trailing: isSelectionMode
+                          ? _buildBulkDeleteButton(selectionState.selectedIds)
+                          : GestureDetector(
+                              onTap: _showClearDialog,
+                              child: Text(
+                                'Clear All',
+                                style: GoogleFonts.inter(
+                                  color: AppColors.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                ),
+                    ),
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildCompletedItem(completed[index]),
+                        childCount: completed.length,
+                      ),
+                    ),
+                  ],
+                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                ],
               ],
             ),
           ),
@@ -183,14 +198,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  // ─── Empty State (matching watchlist style) ──────────────────────────────
-  Widget _buildEmptyState() {
-    return const EmptyResultsView(
-      title: 'No Downloads Yet',
-      message: 'Movies and episodes you download will appear here',
-      icon: Icons.download_rounded,
-    );
-  }
 
   // ─── Section Header ─────────────────────────────────────────────────────
   Widget _buildSectionHeader(String title, {Widget? trailing}) {

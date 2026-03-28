@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 
-/// Content for the "More" expandable modal in the bottom navbar.
-/// Shows page navigation buttons for secondary screens.
+/// Content for the "More" expandable section above the bottom navbar.
+/// Shows navigation buttons in a single row matching the navbar style exactly.
 class MoreModalContent extends StatelessWidget {
   final String currentRoute;
   final VoidCallback onClose;
@@ -24,66 +24,62 @@ class MoreModalContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 12, left: 16, right: 16),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(2),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: _pages.take(4).map((p) => _buildPageButton(context, p)).toList(),
           ),
-          const SizedBox(height: 20),
-          // Page buttons in a 4-column grid
-          GridView.count(
-            crossAxisCount: 4,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.85,
-            children: _pages.map((page) {
-              final isActive = currentRoute == page.route;
-              return GestureDetector(
-                onTap: () {
-                  onClose();
-                  context.go(page.route);
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      isActive ? page.activeIcon : page.icon,
-                      color: isActive ? AppColors.primary : Colors.white,
-                      size: 26,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      page.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: isActive 
-                            ? AppColors.primary 
-                            : Colors.white.withValues(alpha: 0.7),
-                        fontSize: 11,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                        letterSpacing: 0.1,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildPageButton(context, _pages.last),
+              const SizedBox(width: 64),
+              const SizedBox(width: 64),
+              const SizedBox(width: 64),
+            ],
           ),
-          const SizedBox(height: 4),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPageButton(BuildContext context, _MorePage page) {
+    final isActive = currentRoute == page.route;
+    return GestureDetector(
+      onTap: () {
+        onClose();
+        context.go(page.route);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isActive ? page.activeIcon : page.icon,
+              color: isActive ? AppColors.primary : AppColors.textPrimary,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              page.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isActive ? AppColors.primary : AppColors.textPrimary,
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -49,7 +49,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref.read(searchProvider.notifier).search(query);
   }
 
-  // Filtering logic extracted to FilterUtils.
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
@@ -69,20 +68,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: SafeArea(
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
-          child: Column(
-            children: [
-              CategoryHeader(
-                title: 'Explore',
-                searchController: _searchController,
-                searchFocus: _searchFocus,
-                onSearchChanged: _onSearchChanged,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              // Title scrolls with content
+              const SliverToBoxAdapter(
+                child: CategoryTitle(title: 'Explore'),
               ),
-
-              // ── Main content area ──
-              Expanded(
-                child: _buildContent(searchState, hasSearch, showResults,
-                    itemsToDisplay, allItems),
+              // Search bar floats (hides on scroll down, shows on scroll up)
+              SliverPersistentHeader(
+                floating: true,
+                delegate: FloatingSearchBarDelegate(
+                  searchController: _searchController,
+                  searchFocus: _searchFocus,
+                  onSearchChanged: _onSearchChanged,
+                ),
               ),
+              // Filter chips
+              const SliverToBoxAdapter(
+                child: CategoryFilterChips(),
+              ),
+              // Content
+              ..._buildContentSlivers(
+                  searchState, hasSearch, showResults, itemsToDisplay, allItems),
             ],
           ),
         ),
@@ -90,7 +98,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildContent(
+  List<Widget> _buildContentSlivers(
     SearchState searchState,
     bool hasSearch,
     bool showResults,
@@ -99,67 +107,75 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   ) {
     // Searching shimmer
     if (searchState.isSearching) {
-      return _buildShimmerGrid();
+      return [_buildShimmerGrid()];
     }
 
-    // User typed something but no results → "Not Found"
+    // User typed something but no results
     if (hasSearch && itemsToDisplay.isEmpty) {
-      return const EmptyResultsView();
+      return [
+        const SliverFillRemaining(
+          child: EmptyResultsView(),
+        ),
+      ];
     }
 
-    // Active search or filter with results → grid
+    // Active search or filter with results
     if (showResults && itemsToDisplay.isNotEmpty) {
-      return _buildResultsGrid(itemsToDisplay);
+      return [_buildResultsGrid(itemsToDisplay)];
     }
 
-    // No search or filter active → Default to grid of all items
-    return _buildResultsGrid(allItems);
+    // No search or filter active → grid of all items
+    return [_buildResultsGrid(allItems)];
   }
 
-
-
-  // ── Results grid (search / filter results — 2-column) ──
   Widget _buildResultsGrid(List<ManifestItem> items) {
-    return GridView.builder(
+    return SliverPadding(
       padding: EdgeInsets.fromLTRB(
           16, 4, 16, MediaQuery.paddingOf(context).bottom + 100),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 0.65,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 12,
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: 0.65,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, idx) {
+            return MovieCard(
+              key: ValueKey('result_${items[idx].id}_$idx'),
+              item: items[idx],
+              onTap: () => context
+                  .push('/search-details/${items[idx].mediaType}/${items[idx].id}'),
+            );
+          },
+          childCount: items.length,
+        ),
       ),
-      itemCount: items.length,
-      itemBuilder: (context, idx) {
-        return MovieCard(
-          key: ValueKey('result_${items[idx].id}_$idx'),
-          item: items[idx],
-          onTap: () => context
-              .push('/search-details/${items[idx].mediaType}/${items[idx].id}'),
-        );
-      },
     );
   }
 
-  // ── Shimmer grid ──
   Widget _buildShimmerGrid() {
-    return GridView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 0.65,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: 9,
-      itemBuilder: (context, index) => Shimmer.fromColors(
-        baseColor: AppColors.surface,
-        highlightColor: AppColors.surfaceElevated.withAlpha(100),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: 0.65,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Shimmer.fromColors(
+            baseColor: AppColors.surface,
+            highlightColor: AppColors.surfaceElevated.withAlpha(100),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
+          childCount: 9,
         ),
       ),
     );

@@ -61,13 +61,22 @@ class _TvScreenState extends ConsumerState<TvScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(
-                child: CategoryHeader(
-                  title: 'Hollywood',
+              // Title scrolls with content
+              const SliverToBoxAdapter(
+                child: CategoryTitle(title: 'Hollywood'),
+              ),
+              // Search bar floats
+              SliverPersistentHeader(
+                floating: true,
+                delegate: FloatingSearchBarDelegate(
                   searchController: _searchController,
                   searchFocus: _searchFocus,
                   onSearchChanged: _onSearchChanged,
                 ),
+              ),
+              // Filter chips
+              const SliverToBoxAdapter(
+                child: CategoryFilterChips(),
               ),
               if (searchState.isSearching)
                 const SliverFillRemaining(

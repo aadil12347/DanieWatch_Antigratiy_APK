@@ -149,8 +149,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     final downloadState = ref.watch(downloadModalProvider);
     final filterState = ref.watch(filterModalProvider);
     final confirmState = ref.watch(confirmationModalProvider);
-    final isModalOpen =
-        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || _isMoreOpen;
+    final isOtherModalOpen =
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen;
+    final isModalOpen = isOtherModalOpen || _isMoreOpen;
 
     return PopScope(
       canPop: false,
@@ -234,13 +235,13 @@ class _AppShellState extends ConsumerState<AppShell> {
                     duration: const Duration(milliseconds: 350),
                     curve: Curves.fastOutSlowIn,
                     constraints:
-                        BoxConstraints(maxWidth: isModalOpen ? 600 : 400),
+                        BoxConstraints(maxWidth: isOtherModalOpen ? 600 : 400),
                     child: Padding(
                       padding: EdgeInsets.symmetric(
-                          horizontal: isModalOpen ? 16 : 24),
+                          horizontal: isOtherModalOpen ? 16 : 24),
                       child: ClipRRect(
                         borderRadius:
-                            BorderRadius.circular(isModalOpen ? 24 : 32),
+                            BorderRadius.circular(isOtherModalOpen ? 24 : 32),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                           child: AnimatedContainer(
@@ -249,7 +250,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.5),
                               borderRadius:
-                                  BorderRadius.circular(isModalOpen ? 24 : 32),
+                                  BorderRadius.circular(isOtherModalOpen ? 24 : 32),
                               border: Border.all(
                                 color: Colors.white.withValues(alpha: 0.1),
                                 width: 1,
@@ -267,16 +268,10 @@ class _AppShellState extends ConsumerState<AppShell> {
                               duration: const Duration(milliseconds: 350),
                               curve: Curves.fastOutSlowIn,
                               alignment: Alignment.bottomCenter,
-                              child: isModalOpen
+                              child: isOtherModalOpen
                                   ? Material(
                                       color: Colors.transparent,
-                                      child: _isMoreOpen
-                                          ? MoreModalContent(
-                                              currentRoute: location,
-                                              onClose: () => setState(
-                                                  () => _isMoreOpen = false),
-                                            )
-                                          : downloadState.isOpen
+                                      child: downloadState.isOpen
                                               ? QualitySelectorContent(
                                                   m3u8Url:
                                                       downloadState.m3u8Url ??
@@ -354,96 +349,124 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                     )
                                                   : const MainFilterPanelContent()),
                                     )
-                                  : Container(
-                                      height: 64,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceEvenly,
-                                        children: List.generate(4, (index) {
-                                          final isSelected = index < 3 &&
-                                              _currentIndex == index;
-                                          final isMore = index == 3;
-                                          return GestureDetector(
-                                            onTap: () => _onTap(index),
-                                            behavior: HitTestBehavior.opaque,
-                                            child: Container(
-                                              key: ValueKey('tab_$index'),
-                                              width: 64,
-                                              alignment: Alignment.center,
-                                              child:
-                                                  TweenAnimationBuilder<double>(
-                                                tween: Tween(
-                                                  begin: isSelected ? 0.0 : 1.0,
-                                                  end: isSelected ? 1.0 : 0.0,
-                                                ),
-                                                duration: const Duration(
-                                                    milliseconds: 200),
-                                                builder:
-                                                    (context, value, child) {
-                                                  return Column(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Stack(
-                                                        alignment: Alignment.center,
+                                  : Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // More menu row (animated in/out)
+                                        AnimatedSize(
+                                          duration: const Duration(milliseconds: 300),
+                                          curve: Curves.fastOutSlowIn,
+                                          alignment: Alignment.bottomCenter,
+                                          child: _isMoreOpen
+                                              ? Column(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    MoreModalContent(
+                                                      currentRoute: location,
+                                                      onClose: () => setState(
+                                                          () => _isMoreOpen = false),
+                                                    ),
+                                                    Padding(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                      child: Divider(
+                                                        height: 1,
+                                                        color: Colors.white.withValues(alpha: 0.08),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                        // Main navbar row (always visible)
+                                        Container(
+                                          height: 64,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceEvenly,
+                                            children: List.generate(4, (index) {
+                                              final isSelected = index < 3 &&
+                                                  _currentIndex == index;
+                                              final isMore = index == 3;
+                                              return GestureDetector(
+                                                onTap: () => _onTap(index),
+                                                behavior: HitTestBehavior.opaque,
+                                                child: Container(
+                                                  key: ValueKey('tab_$index'),
+                                                  width: 64,
+                                                  alignment: Alignment.center,
+                                                  child:
+                                                      TweenAnimationBuilder<double>(
+                                                    tween: Tween(
+                                                      begin: isSelected ? 0.0 : 1.0,
+                                                      end: isSelected ? 1.0 : 0.0,
+                                                    ),
+                                                    duration: const Duration(
+                                                        milliseconds: 200),
+                                                    builder:
+                                                        (context, value, child) {
+                                                      return Column(
+                                                        mainAxisSize: MainAxisSize.min,
                                                         children: [
-                                                          Opacity(
-                                                            opacity: isMore
-                                                                ? ((_isMoreOpen ||
-                                                                        _currentIndex ==
-                                                                            3)
-                                                                    ? 1.0
-                                                                    : 0.0)
-                                                                : value,
-                                                            child: Icon(
-                                                              _activeIcons[index],
-                                                              color:
-                                                                  AppColors.primary,
-                                                              size: 24,
-                                                            ),
-                                                          ),
-                                                          Opacity(
-                                                            opacity: isMore
-                                                                ? ((_isMoreOpen ||
-                                                                        _currentIndex ==
-                                                                            3)
-                                                                    ? 0.0
-                                                                    : 1.0)
-                                                                : 1.0 - value,
-                                                            child: Icon(
-                                                              _icons[index],
-                                                              color: isMore
-                                                                  ? AppColors
-                                                                      .textPrimary
-                                                                  : AppColors
+                                                          Stack(
+                                                            alignment: Alignment.center,
+                                                            children: [
+                                                              Opacity(
+                                                                opacity: isMore
+                                                                    ? ((_isMoreOpen ||
+                                                                            _currentIndex ==
+                                                                                3)
+                                                                        ? 1.0
+                                                                        : 0.0)
+                                                                    : value,
+                                                                child: Icon(
+                                                                  _activeIcons[index],
+                                                                  color:
+                                                                      AppColors.primary,
+                                                                  size: 24,
+                                                                ),
+                                                              ),
+                                                              Opacity(
+                                                                opacity: isMore
+                                                                    ? ((_isMoreOpen ||
+                                                                            _currentIndex ==
+                                                                                3)
+                                                                        ? 0.0
+                                                                        : 1.0)
+                                                                    : 1.0 - value,
+                                                                child: Icon(
+                                                                  _icons[index],
+                                                                  color: AppColors
                                                                       .textPrimary,
-                                                              size: 24,
+                                                                  size: 24,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          const SizedBox(height: 2),
+                                                          Text(
+                                                            _labels[index],
+                                                            style: TextStyle(
+                                                              color: (isSelected || (isMore && _isMoreOpen))
+                                                                  ? AppColors.primary
+                                                                  : AppColors.textPrimary,
+                                                              fontSize: 10,
+                                                              fontWeight: (isSelected || (isMore && _isMoreOpen))
+                                                                  ? FontWeight.w600
+                                                                  : FontWeight.w400,
                                                             ),
                                                           ),
                                                         ],
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        _labels[index],
-                                                        style: TextStyle(
-                                                          color: (isSelected || (isMore && _isMoreOpen))
-                                                              ? AppColors.primary
-                                                              : AppColors.textPrimary,
-                                                          fontSize: 10,
-                                                          fontWeight: (isSelected || (isMore && _isMoreOpen))
-                                                              ? FontWeight.w600
-                                                              : FontWeight.w400,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                              );
+                                            }),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                             ),
                           ),

@@ -55,84 +55,121 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       body: SafeArea(
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
-          child: Column(
-            children: [
-              CategoryHeader(
-                title: 'Favourites',
-                searchController: _searchController,
-                searchFocus: _searchFocus,
-                onSearchChanged: _onSearchChanged,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              // Title scrolls with content
+              const SliverToBoxAdapter(
+                child: CategoryTitle(title: 'Favourites'),
               ),
-              Expanded(
-                child: watchlistAsync.when(
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
+              // Search bar floats (hides on scroll down, shows on scroll up)
+              SliverPersistentHeader(
+                floating: true,
+                delegate: FloatingSearchBarDelegate(
+                  searchController: _searchController,
+                  searchFocus: _searchFocus,
+                  onSearchChanged: _onSearchChanged,
+                ),
+              ),
+              // Filter chips
+              const SliverToBoxAdapter(
+                child: CategoryFilterChips(),
+              ),
+              // Content
+              ...watchlistAsync.when(
+                loading: () => [
+                  const SliverFillRemaining(
+                    child: Center(
+                      child: CircularProgressIndicator(color: AppColors.primary),
+                    ),
                   ),
-                  error: (e, _) => Center(
-                    child: Text('Error: $e',
-                        style: const TextStyle(color: AppColors.textMuted)),
+                ],
+                error: (e, _) => [
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Text('Error: $e',
+                          style: const TextStyle(color: AppColors.textMuted)),
+                    ),
                   ),
-                  data: (items) {
-                    if (items.isEmpty) {
-                      return _buildEmptyContent(context);
-                    }
+                ],
+                data: (items) {
+                  if (items.isEmpty) {
+                    return [
+                      const SliverFillRemaining(
+                        child: EmptyResultsView(
+                          title: 'Your List is Empty',
+                          message: "It seems that you haven't added any movies or shows to your list yet.",
+                          icon: Icons.bookmark_border_rounded,
+                        ),
+                      ),
+                    ];
+                  }
 
-                    // Map watchlist items to ManifestItems for filtering
-                    final manifestItems = items.map((item) => ManifestItem(
-                          id: item.tmdbId,
-                          mediaType: item.mediaType,
-                          title: item.title,
-                          posterUrl: item.posterPath,
-                          voteAverage: item.voteAverage,
-                        )).toList();
+                  // Map watchlist items to ManifestItems for filtering
+                  final manifestItems = items.map((item) => ManifestItem(
+                        id: item.tmdbId,
+                        mediaType: item.mediaType,
+                        title: item.title,
+                        posterUrl: item.posterPath,
+                        voteAverage: item.voteAverage,
+                      )).toList();
 
-                    // Apply filters
-                    final filteredItems = FilterUtils.getFilteredItems(
-                      allItems: manifestItems,
-                      searchState: searchState,
-                      index: index,
-                    );
+                  // Apply filters
+                  final filteredItems = FilterUtils.getFilteredItems(
+                    allItems: manifestItems,
+                    searchState: searchState,
+                    index: index,
+                  );
 
-                    if (filteredItems.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters)) {
-                      return const EmptyResultsView();
-                    }
+                  if (filteredItems.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters)) {
+                    return [
+                      const SliverFillRemaining(
+                        child: EmptyResultsView(),
+                      ),
+                    ];
+                  }
 
-                    if (filteredItems.isEmpty) {
-                      return _buildEmptyContent(context);
-                    }
+                  if (filteredItems.isEmpty) {
+                    return [
+                      const SliverFillRemaining(
+                        child: EmptyResultsView(
+                          title: 'Your List is Empty',
+                          message: "It seems that you haven't added any movies or shows to your list yet.",
+                          icon: Icons.bookmark_border_rounded,
+                        ),
+                      ),
+                    ];
+                  }
 
-                    return GridView.builder(
+                  return [
+                    SliverPadding(
                       padding: EdgeInsets.fromLTRB(
                           16, 4, 16, MediaQuery.paddingOf(context).bottom + 100),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 0.65,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 12,
+                      sliver: SliverGrid(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 0.65,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 12,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            return MovieCard(
+                              key: ValueKey('fav_${filteredItems[index].id}'),
+                              item: filteredItems[index],
+                            );
+                          },
+                          childCount: filteredItems.length,
+                        ),
                       ),
-                      itemCount: filteredItems.length,
-                      itemBuilder: (context, index) {
-                        return MovieCard(
-                          key: ValueKey('fav_${filteredItems[index].id}'),
-                          item: filteredItems[index],
-                        );
-                      },
-                    );
-                  },
-                ),
+                    ),
+                  ];
+                },
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildEmptyContent(BuildContext context) {
-    return const EmptyResultsView(
-      title: 'Your List is Empty',
-      message: "It seems that you haven't added any movies or shows to your list yet.",
-      icon: Icons.bookmark_border_rounded,
     );
   }
 }

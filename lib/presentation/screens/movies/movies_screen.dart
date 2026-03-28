@@ -61,13 +61,22 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(
-                child: CategoryHeader(
-                  title: 'Bollywood',
+              // Title scrolls with content
+              const SliverToBoxAdapter(
+                child: CategoryTitle(title: 'Bollywood'),
+              ),
+              // Search bar floats
+              SliverPersistentHeader(
+                floating: true,
+                delegate: FloatingSearchBarDelegate(
                   searchController: _searchController,
                   searchFocus: _searchFocus,
                   onSearchChanged: _onSearchChanged,
                 ),
+              ),
+              // Filter chips
+              const SliverToBoxAdapter(
+                child: CategoryFilterChips(),
               ),
               if (searchState.isSearching)
                 const SliverFillRemaining(
