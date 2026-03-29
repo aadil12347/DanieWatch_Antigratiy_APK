@@ -5,7 +5,7 @@ class AppColors {
   AppColors._();
 
   // Backgrounds
-  static const background = Color(0xFF0A0A0A);
+  static const background = Color(0xFF000000);
   static const surface = Color(0x80121212);
   static const surfaceElevated = Color(0xFF121212);
   static const card = Color(0xFF111111);
@@ -30,9 +30,9 @@ class AppColors {
   static const border = Color(0xFF1E293B);
 
   // Gradients
-  static const gradientStart = Color(0x000A0A0A);
-  static const gradientEnd = Color(0xFF0A0A0A);
-  static const heroDimGradient = Color(0x990A0A0A);
+  static const gradientStart = Color(0x00000000);
+  static const gradientEnd = Color(0xFF000000);
+  static const heroDimGradient = Color(0x99000000);
 }
 
 class AppTheme {

@@ -11,6 +11,7 @@ import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/korean/korean_screen.dart';
+import '../../presentation/screens/splash/splash_screen.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
 final _shellNavKey = GlobalKey<NavigatorState>();
@@ -63,8 +64,12 @@ CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
 
 final appRouter = GoRouter(
   navigatorKey: rootNavKey,
-  initialLocation: '/home',
+  initialLocation: '/splash',
   routes: [
+    GoRoute(
+      path: '/splash',
+      builder: (context, state) => const SplashScreen(),
+    ),
     // Shell route with bottom navigation
     ShellRoute(
       navigatorKey: _shellNavKey,

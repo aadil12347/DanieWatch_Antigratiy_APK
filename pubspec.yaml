@@ -80,14 +80,17 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
-  image_path: "assets/logo.png"
+  image_path: "assets/logo_padded.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/logo_padded.png"
 
 flutter_native_splash:
-  color: "#0A0A0A"
-  image: "assets/logo.png"
+  color: "#000000"
+  image: "assets/logo_padded.png"
   android_12:
-    image: "assets/logo.png"
-    icon_background_color: "#0A0A0A"
+    color: "#000000"
+    image: "assets/logo_padded.png"
+    icon_background_color: "#000000"
 
 flutter:
   uses-material-design: true
