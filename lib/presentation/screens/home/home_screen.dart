@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../providers/manifest_provider.dart';
+import '../../providers/search_provider.dart';
 import '../../widgets/content_row.dart';
-import '../../widgets/hero_section.dart';
+import '../../widgets/stacked_carousel.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
@@ -34,10 +36,54 @@ class HomeScreen extends ConsumerWidget {
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
+                // Personalized Header
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Icon(Icons.notifications_none_rounded,
+                            size: 28, color: Colors.white),
+                        Row(
+                          children: [
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('Hello',
+                                    style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        height: 1.1)),
+                                Text('Daniyal',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        height: 1.2)),
+                              ],
+                            ),
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceElevated,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.person_outline_rounded,
+                                  size: 24, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
                 // Content sections
                 if (trending.isNotEmpty)
                   SliverToBoxAdapter(
-                    child: HeroSection(items: trending),
+                    child: StackedCarousel(items: trending),
                   ),
 
                 // Content sections
@@ -45,7 +91,11 @@ class HomeScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SectionHeader(title: section.title),
+                          SectionHeader(
+                            title: section.title,
+                            onSeeAll: () =>
+                                _handleSeeAll(ref, context, section.title),
+                          ),
                           ContentRow(items: section.items),
                         ],
                       ),
@@ -60,6 +110,26 @@ class HomeScreen extends ConsumerWidget {
         );
       },
     );
+  }
+
+  void _handleSeeAll(WidgetRef ref, BuildContext context, String title) {
+    SearchFilters filters = const SearchFilters();
+
+    if (title == 'Trending Now') {
+      filters = filters.copyWith(sortBy: 'Popularity');
+    } else if (title == 'Top Rated') {
+      filters = filters.copyWith(sortBy: 'Latest Release');
+    } else if (title == 'Anime') {
+      filters = filters.copyWith(categories: {'Anime'});
+    } else if (title == 'Korean') {
+      filters = filters.copyWith(categories: {'K-Drama'});
+    } else {
+      // Possible genre
+      filters = filters.copyWith(genres: {title});
+    }
+
+    ref.read(searchProvider.notifier).updateFilters(filters);
+    context.go('/search');
   }
 }
 
