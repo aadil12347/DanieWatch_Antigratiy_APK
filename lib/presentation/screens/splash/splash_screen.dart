@@ -51,11 +51,20 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   late List<String> col1;
   late List<String> col2;
   late List<String> col3;
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
     
+    // Initialize fade-out animation
+    _fadeController = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1000));
+    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+
     // Randomize posters for each column
     var shuffled = List<String>.from(posters)..shuffle();
     col1 = shuffled.sublist(0, (posters.length / 3).floor());
@@ -66,7 +75,14 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     shuffled = List<String>.from(posters)..shuffle();
     col3 = shuffled.sublist(0, (posters.length / 3).floor());
 
-    Timer(const Duration(seconds: 5), () {
+    // Start fade out slightly before 5 seconds
+    Timer(const Duration(milliseconds: 4000), () {
+      if (mounted) {
+        _fadeController.forward();
+      }
+    });
+
+    Timer(const Duration(milliseconds: 5000), () {
       if (mounted) {
         context.go('/home');
       }
@@ -74,78 +90,144 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 
   @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // Background posters marquee
-          Row(
-            children: [
-              Expanded(child: MarqueeColumn(images: col1, speed: 45, isReverse: false)),
-              const SizedBox(width: 8),
-              Expanded(child: MarqueeColumn(images: col2, speed: 35, isReverse: true)),
-              const SizedBox(width: 8),
-              Expanded(child: MarqueeColumn(images: col3, speed: 55, isReverse: false)),
-            ],
-          ),
-          
-          // Subtle dark overlay to improve legibility
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.6),
-                  Colors.black.withValues(alpha: 0.2),
-                  Colors.black.withValues(alpha: 0.6),
-                ],
-              ),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Stack(
+          children: [
+            // Background posters marquee
+            Row(
+              children: [
+                Expanded(child: MarqueeColumn(images: col1, speed: 40, isReverse: false)),
+                const SizedBox(width: 8),
+                Expanded(child: MarqueeColumn(images: col2, speed: 30, isReverse: true)),
+                const SizedBox(width: 8),
+                Expanded(child: MarqueeColumn(images: col3, speed: 50, isReverse: false)),
+              ],
             ),
-          ),
-          
-          // Centered Branding
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'DANIEWATCH',
-                      style: GoogleFonts.outfit(
-                        fontSize: 64,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 8,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            blurRadius: 20,
-                            color: Colors.black.withValues(alpha: 0.8),
-                            offset: const Offset(0, 0),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'STREAMING REIMAGINED',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 4,
-                        color: Colors.white.withValues(alpha: 0.8),
-                      ),
-                    ),
-                  ],
+            
+            // Vignette Effects
+            // Top Vignette
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 250,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.95),
+                      Colors.black.withValues(alpha: 0.7),
+                      Colors.transparent,
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+            // Bottom Vignette
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 350,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 1.0),
+                      Colors.black.withValues(alpha: 0.8),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            // Centered Branding
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'DANIEWATCH',
+                        style: GoogleFonts.outfit(
+                          fontSize: 64,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 10,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              blurRadius: 30,
+                              color: Colors.black,
+                              offset: const Offset(0, 0),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'STREAMING REIMAGINED',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 6,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // Bottom Text & Spinner
+            Positioned(
+              bottom: 50,
+              left: 0,
+              right: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Created by Daniyal',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 2,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -182,7 +264,6 @@ class _MarqueeColumnState extends State<MarqueeColumn> with SingleTickerProvider
   }
 
   void _startScrolling() {
-    const double step = 1.0;
     const duration = Duration(milliseconds: 30);
     
     _timer = Timer.periodic(duration, (timer) {
@@ -229,10 +310,10 @@ class _MarqueeColumnState extends State<MarqueeColumn> with SingleTickerProvider
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             child: Image.asset(
               extendedImages[index],
-              height: 250,
+              height: 170, // Reduced height for denser grid
               fit: BoxFit.cover,
             ),
           ),
