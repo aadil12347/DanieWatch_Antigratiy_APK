@@ -98,6 +98,7 @@ flutter:
     - assets/logo.png
     - assets/logo.svg
     - assets/html/
+    - poster/
 
 dependency_overrides:
   objective_c:
