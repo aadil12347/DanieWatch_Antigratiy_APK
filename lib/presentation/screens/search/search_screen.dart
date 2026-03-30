@@ -34,13 +34,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _onFocusChange() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      // Sync focus state to global provider for AppShell navigation handling
+      ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
+    }
   }
 
-  @override
-  void dispose() {
+  void _dispose() {
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
+    // Ensure focus state is cleared when screen is removed
+    ref.read(searchFocusProvider.notifier).state = false;
     _searchFocus.dispose();
     super.dispose();
   }

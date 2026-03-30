@@ -330,24 +330,32 @@ class ContentRepository {
       // Step 4b: DB override when has active links
       if (hasActiveLinks && dbEntry != null) {
         if (dbEntry['title'] != null) title = dbEntry['title'].toString();
-        if (dbEntry['overview'] != null)
+        if (dbEntry['overview'] != null) {
           overview = dbEntry['overview'].toString();
-        if (dbEntry['poster_url'] != null)
+        }
+        if (dbEntry['poster_url'] != null) {
           posterUrl = dbEntry['poster_url'].toString();
-        if (dbEntry['backdrop_url'] != null)
+        }
+        if (dbEntry['backdrop_url'] != null) {
           backdropUrl = dbEntry['backdrop_url'].toString();
-        if (dbEntry['logo_url'] != null)
+        }
+        if (dbEntry['logo_url'] != null) {
           logoUrl = dbEntry['logo_url'].toString();
+        }
         if (dbEntry['tagline'] != null) tagline = dbEntry['tagline'].toString();
-        if (dbEntry['vote_average'] != null)
+        if (dbEntry['vote_average'] != null) {
           voteAverage = (dbEntry['vote_average'] as num).toDouble();
+        }
         if (dbEntry['imdb_id'] != null) imdbId = dbEntry['imdb_id'].toString();
-        if (dbEntry['runtime'] != null)
+        if (dbEntry['runtime'] != null) {
           runtime = (dbEntry['runtime'] as num).toInt();
-        if (dbEntry['number_of_seasons'] != null)
+        }
+        if (dbEntry['number_of_seasons'] != null) {
           numberOfSeasons = (dbEntry['number_of_seasons'] as num).toInt();
-        if (dbEntry['number_of_episodes'] != null)
+        }
+        if (dbEntry['number_of_episodes'] != null) {
           numberOfEpisodes = (dbEntry['number_of_episodes'] as num).toInt();
+        }
 
         // DB genres/cast override
         final dbGenres = _parseGenres(dbEntry['genres']);

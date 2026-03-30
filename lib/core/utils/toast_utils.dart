@@ -15,7 +15,7 @@ class CustomToast {
     String message, {
     ToastType type = ToastType.info,
     IconData? icon,
-    Duration duration = const Duration(seconds: 3),
+    Duration duration = const Duration(milliseconds: 1000),
   }) {
     // 1. Instantly dismiss any existing toast
     dismiss();

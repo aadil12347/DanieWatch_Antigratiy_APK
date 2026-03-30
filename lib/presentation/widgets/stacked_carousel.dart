@@ -107,7 +107,7 @@ class _StackedCarouselState extends State<StackedCarousel> {
               _step(1);
             }
           },
-          child: Container(
+          child: SizedBox(
             height: 320,
             width: double.infinity,
             child: Stack(

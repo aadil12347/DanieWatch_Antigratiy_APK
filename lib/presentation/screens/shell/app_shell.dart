@@ -141,6 +141,12 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
   }
 
+  bool _isTabSelected(int index) {
+    if (index < 3) return _currentIndex == index && !_isMoreOpen;
+    // More tab is selected if _currentIndex is 3 OR _isMoreOpen is true
+    return _currentIndex == 3 || _isMoreOpen;
+  }
+
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
@@ -161,6 +167,13 @@ class _AppShellState extends ConsumerState<AppShell> {
         // 1. If more modal is open, close it
         if (_isMoreOpen) {
           setState(() => _isMoreOpen = false);
+          return;
+        }
+
+        // 2. If search field is focused (Explore tab), unfocus it first
+        final isSearchFocused = ref.read(searchFocusProvider);
+        if (_currentIndex == 1 && isSearchFocused) {
+          FocusManager.instance.primaryFocus?.unfocus();
           return;
         }
 
@@ -315,7 +328,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                       },
                                                     )
                                                   : (filterState.view ==
-                                                          FilterView.optionsList
+                                                           FilterView.optionsList
                                                       ? FilterSelectorContent(
                                                       title: filterState.title,
                                                       currentValue: filterState
@@ -386,9 +399,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                             mainAxisAlignment:
                                                 MainAxisAlignment.spaceEvenly,
                                             children: List.generate(4, (index) {
-                                              final isSelected = index < 3 &&
-                                                  _currentIndex == index;
-                                              final isMore = index == 3;
+                                              final isSelected = _isTabSelected(index);
                                               return GestureDetector(
                                                 onTap: () => _onTap(index),
                                                 behavior: HitTestBehavior.opaque,
@@ -396,70 +407,50 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                   key: ValueKey('tab_$index'),
                                                   width: 64,
                                                   alignment: Alignment.center,
-                                                  child:
-                                                      TweenAnimationBuilder<double>(
-                                                    tween: Tween(
-                                                      begin: isSelected ? 0.0 : 1.0,
-                                                      end: isSelected ? 1.0 : 0.0,
-                                                    ),
-                                                    duration: const Duration(
-                                                        milliseconds: 200),
-                                                    builder:
-                                                        (context, value, child) {
-                                                      return Column(
-                                                        mainAxisSize: MainAxisSize.min,
+                                                  child: Column(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Stack(
+                                                        alignment: Alignment.center,
                                                         children: [
-                                                          Stack(
-                                                            alignment: Alignment.center,
-                                                            children: [
-                                                              Opacity(
-                                                                opacity: isMore
-                                                                    ? ((_isMoreOpen ||
-                                                                            _currentIndex ==
-                                                                                3)
-                                                                        ? 1.0
-                                                                        : 0.0)
-                                                                    : value,
-                                                                child: Icon(
-                                                                  _activeIcons[index],
-                                                                  color:
-                                                                      AppColors.primary,
-                                                                  size: 24,
-                                                                ),
-                                                              ),
-                                                              Opacity(
-                                                                opacity: isMore
-                                                                    ? ((_isMoreOpen ||
-                                                                            _currentIndex ==
-                                                                                3)
-                                                                        ? 0.0
-                                                                        : 1.0)
-                                                                    : 1.0 - value,
-                                                                child: Icon(
-                                                                  _icons[index],
-                                                                  color: AppColors
-                                                                      .textPrimary,
-                                                                  size: 24,
-                                                                ),
-                                                              ),
-                                                            ],
+                                                          // Active State Icon (uses implicit animation for stability)
+                                                          AnimatedOpacity(
+                                                            duration: const Duration(milliseconds: 200),
+                                                            opacity: isSelected ? 1.0 : 0.0,
+                                                            child: Icon(
+                                                              _activeIcons[index],
+                                                              color: AppColors.primary,
+                                                              size: 24,
+                                                            ),
                                                           ),
-                                                          const SizedBox(height: 2),
-                                                          Text(
-                                                            _labels[index],
-                                                            style: TextStyle(
-                                                              color: (isSelected || (isMore && _isMoreOpen))
-                                                                  ? AppColors.primary
-                                                                  : AppColors.textPrimary,
-                                                              fontSize: 10,
-                                                              fontWeight: (isSelected || (isMore && _isMoreOpen))
-                                                                  ? FontWeight.w600
-                                                                  : FontWeight.w400,
+                                                          // Inactive State Icon
+                                                          AnimatedOpacity(
+                                                            duration: const Duration(milliseconds: 200),
+                                                            opacity: isSelected ? 0.0 : 1.0,
+                                                            child: Icon(
+                                                              _icons[index],
+                                                              color: AppColors.textPrimary,
+                                                              size: 24,
                                                             ),
                                                           ),
                                                         ],
-                                                      );
-                                                    },
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      // Stable text animation
+                                                      AnimatedDefaultTextStyle(
+                                                        duration: const Duration(milliseconds: 200),
+                                                        style: TextStyle(
+                                                          color: isSelected
+                                                              ? AppColors.primary
+                                                              : AppColors.textPrimary,
+                                                          fontSize: 10,
+                                                          fontWeight: isSelected
+                                                              ? FontWeight.w600
+                                                              : FontWeight.w400,
+                                                        ),
+                                                        child: Text(_labels[index]),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                               );

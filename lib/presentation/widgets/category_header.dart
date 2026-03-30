@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../providers/search_provider.dart';
 import '../providers/filter_modal_provider.dart';
-import '../widgets/main_filter_panel_sheet.dart';
 
 /// The page title row — scrolls naturally with content.
 class CategoryTitle extends StatelessWidget {

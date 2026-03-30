@@ -134,3 +134,6 @@ final searchProvider =
 
 /// Tracks if the global header search is expanded (legacy, kept for app_shell compat)
 final searchExpandedProvider = StateProvider<bool>((ref) => false);
+
+/// Tracks if the search field in SearchScreen has active focus
+final searchFocusProvider = StateProvider<bool>((ref) => false);

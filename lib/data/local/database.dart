@@ -13,8 +13,9 @@ class AppDatabase {
   Database? _db;
 
   Database get db {
-    if (_db == null)
+    if (_db == null) {
       throw StateError('Database not initialized. Call initialize() first.');
+    }
     return _db!;
   }
 

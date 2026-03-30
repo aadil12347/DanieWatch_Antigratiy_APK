@@ -131,10 +131,12 @@ class DownloadItem {
   String get formattedSize {
     if (totalBytes == 0) return 'Unknown';
     if (totalBytes < 1024) return '$totalBytes B';
-    if (totalBytes < 1024 * 1024)
+    if (totalBytes < 1024 * 1024) {
       return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
-    if (totalBytes < 1024 * 1024 * 1024)
+    }
+    if (totalBytes < 1024 * 1024 * 1024) {
       return '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
@@ -159,8 +161,9 @@ class DownloadItem {
   String get formattedSpeed {
     if (downloadSpeed <= 0) return '';
     if (downloadSpeed < 1024) return '$downloadSpeed B/s';
-    if (downloadSpeed < 1024 * 1024)
+    if (downloadSpeed < 1024 * 1024) {
       return '${(downloadSpeed / 1024).toStringAsFixed(1)} KB/s';
+    }
     return '${(downloadSpeed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
@@ -635,14 +638,16 @@ class DownloadManager {
   }
 
   String _parseError(String error) {
-    if (error.contains('403'))
+    if (error.contains('403')) {
       return 'Access denied (403) — stream may have expired';
+    }
     if (error.contains('404')) return 'Stream not found (404)';
     if (error.contains('Connection timed')) return 'Connection timed out';
     if (error.contains('Invalid')) return 'Invalid stream format';
     if (error.contains('No segments')) return 'No segments found in stream';
-    if (error.contains('MP4 conversion'))
+    if (error.contains('MP4 conversion')) {
       return 'Conversion failed — tap retry';
+    }
     return 'Download failed — tap retry';
   }
 

@@ -128,24 +128,14 @@ class _MovieCardState extends ConsumerState<MovieCard>
       children: [
         // ── Base Poster ──
         if (posterUrl.isNotEmpty)
-          AnimatedBuilder(
-            animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-            builder: (context, _) {
-              final showHover = hoverAnimation != null &&
-                  hoverAnimation.value > 0.5 &&
-                  item.hoverImageUrl != null &&
-                  item.hoverImageUrl!.isNotEmpty;
-
-              return CachedNetworkImage(
-                imageUrl: showHover ? item.hoverImageUrl! : posterUrl,
-                fit: BoxFit.cover,
-                memCacheWidth: 300,
-                placeholder: (_, __) => _placeholder(),
-                errorWidget: (_, __, ___) => _placeholder(error: true),
-                fadeOutDuration: const Duration(milliseconds: 200),
-                fadeInDuration: const Duration(milliseconds: 200),
-              );
-            },
+          CachedNetworkImage(
+            imageUrl: posterUrl,
+            fit: BoxFit.cover,
+            memCacheWidth: 300,
+            placeholder: (_, __) => _placeholder(),
+            errorWidget: (_, __, ___) => _placeholder(error: true),
+            fadeOutDuration: const Duration(milliseconds: 200),
+            fadeInDuration: const Duration(milliseconds: 200),
           )
         else
           _placeholder(),
