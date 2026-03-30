@@ -39,16 +39,24 @@ class HomeScreen extends ConsumerWidget {
                 // Personalized Header
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                    padding: const EdgeInsets.fromLTRB(16, 44, 16, 20),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Icon(Icons.notifications_none_rounded,
-                            size: 28, color: Colors.white),
                         Row(
                           children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceElevated,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.person_outline_rounded,
+                                  size: 24, color: Colors.white),
+                            ),
+                            const SizedBox(width: 12),
                             const Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('Hello',
                                     style: TextStyle(
@@ -63,18 +71,10 @@ class HomeScreen extends ConsumerWidget {
                                         height: 1.2)),
                               ],
                             ),
-                            const SizedBox(width: 12),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.person_outline_rounded,
-                                  size: 24, color: Colors.white),
-                            ),
                           ],
                         ),
+                        const Icon(Icons.notifications_none_rounded,
+                            size: 28, color: Colors.white),
                       ],
                     ),
                   ),
