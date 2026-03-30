@@ -147,10 +147,10 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                           16, 4, 16, MediaQuery.paddingOf(context).bottom + 100),
                       sliver: SliverGrid(
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          childAspectRatio: 0.65,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 12,
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.7,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
                         ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {

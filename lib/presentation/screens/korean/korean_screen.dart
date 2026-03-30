@@ -49,7 +49,6 @@ class _KoreanScreenState extends ConsumerState<KoreanScreen> {
             allItems: allItems,
             searchState: searchState,
             index: index,
-            enforceCategory: 'Korean',
           )
         : allItems;
 
@@ -96,19 +95,14 @@ class _KoreanScreenState extends ConsumerState<KoreanScreen> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.only(
-                    top: 16,
-                    left: 12,
-                    right: 12,
-                    bottom: 80,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.65,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.7,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, idx) => MovieCard(item: itemsToDisplay[idx]),

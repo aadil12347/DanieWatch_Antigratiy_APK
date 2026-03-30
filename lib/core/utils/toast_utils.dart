@@ -7,6 +7,9 @@ import '../theme/app_theme.dart';
 enum ToastType { success, error, info, warning }
 
 class CustomToast {
+  static OverlayEntry? _currentEntry;
+  static Timer? _autoDismissTimer;
+
   static void show(
     BuildContext context,
     String message, {
@@ -14,49 +17,55 @@ class CustomToast {
     IconData? icon,
     Duration duration = const Duration(seconds: 3),
   }) {
-    final overlay = Overlay.of(context);
-    late OverlayEntry entry;
+    // 1. Instantly dismiss any existing toast
+    dismiss();
 
+    final overlay = Overlay.of(context);
+    
     IconData getIcon() {
       if (icon != null) return icon;
       switch (type) {
-        case ToastType.success:
-          return Icons.check_circle_outline;
-        case ToastType.error:
-          return Icons.error_outline;
-        case ToastType.warning:
-          return Icons.warning_amber_rounded;
-        case ToastType.info:
-          return Icons.info_outline_rounded;
+        case ToastType.success: return Icons.check_circle_outline;
+        case ToastType.error: return Icons.error_outline;
+        case ToastType.warning: return Icons.warning_amber_rounded;
+        case ToastType.info: return Icons.info_outline_rounded;
       }
     }
 
     Color getColor() {
       switch (type) {
-        case ToastType.success:
-          return Colors.green;
-        case ToastType.error:
-          return Colors.redAccent;
-        case ToastType.warning:
-          return Colors.orangeAccent;
-        case ToastType.info:
-          return AppColors.primary;
+        case ToastType.success: return Colors.green;
+        case ToastType.error: return Colors.redAccent;
+        case ToastType.warning: return Colors.orangeAccent;
+        case ToastType.info: return AppColors.primary;
       }
     }
 
-    entry = OverlayEntry(
+    _currentEntry = OverlayEntry(
       builder: (context) {
         return _ToastWidget(
           message: message,
           icon: getIcon(),
           color: getColor(),
           duration: duration,
-          onDismiss: () => entry.remove(),
+          onDismiss: () {
+            _currentEntry?.remove();
+            _currentEntry = null;
+          },
         );
       },
     );
 
-    overlay.insert(entry);
+    overlay.insert(_currentEntry!);
+  }
+
+  static void dismiss() {
+    if (_currentEntry != null) {
+      _currentEntry!.remove();
+      _currentEntry = null;
+    }
+    _autoDismissTimer?.cancel();
+    _autoDismissTimer = null;
   }
 }
 
@@ -109,12 +118,17 @@ class _ToastWidgetState extends State<_ToastWidget>
     _timer = Timer(widget.duration, () => _dismiss());
   }
 
-  void _dismiss() {
+  void _dismiss({bool fast = false}) {
     if (mounted) {
       if (_isDragging) return; // Don't auto-dismiss while dragging
+      
+      // Speed up if "fast" dismissal requested (e.g., when new toast is incoming)
+      _controller.duration = Duration(milliseconds: fast ? 150 : 300);
       _controller.reverse().then((_) {
         widget.onDismiss();
       });
+    } else {
+      widget.onDismiss();
     }
   }
 
@@ -141,7 +155,6 @@ class _ToastWidgetState extends State<_ToastWidget>
     final distance = _dragOffset.distance;
 
     // Dismiss if swiped fast or dragged far enough
-    // Only allow dismissal Up, Left, or Right (not significant Down)
     final isDismissGesture =
         (speed > 500 || distance > 100) && _dragOffset.dy < 50;
 

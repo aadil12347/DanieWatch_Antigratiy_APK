@@ -48,7 +48,6 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
       allItems: allItems,
       searchState: searchState,
       index: index,
-      enforceCategory: 'Bollywood',
     );
 
     return Scaffold(
@@ -63,7 +62,7 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
             slivers: [
               // Title scrolls with content
               const SliverToBoxAdapter(
-                child: CategoryTitle(title: 'Bollywood'),
+                child: CategoryTitle(title: 'Movies'),
               ),
               // Search bar floats
               SliverPersistentHeader(
@@ -96,17 +95,17 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
                 SliverPadding(
                   padding: const EdgeInsets.only(
                     top: 16,
-                    left: 12,
-                    right: 12,
+                    left: 20,
+                    right: 20,
                     bottom: 80,
                   ),
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.65,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.7,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, idx) => MovieCard(item: itemsToDisplay[idx]),

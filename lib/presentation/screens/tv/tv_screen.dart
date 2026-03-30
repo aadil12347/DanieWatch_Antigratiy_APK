@@ -37,7 +37,7 @@ class _TvScreenState extends ConsumerState<TvScreen> {
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
-    final allItems = ref.watch(allItemsProvider);
+    final allItems = ref.watch(tvShowsProvider);
     final index = ref.watch(manifestIndexProvider);
 
     final hasSearch = searchState.query.isNotEmpty;
@@ -48,7 +48,6 @@ class _TvScreenState extends ConsumerState<TvScreen> {
       allItems: allItems,
       searchState: searchState,
       index: index,
-      enforceCategory: 'Hollywood',
     );
 
     return Scaffold(
@@ -63,7 +62,7 @@ class _TvScreenState extends ConsumerState<TvScreen> {
             slivers: [
               // Title scrolls with content
               const SliverToBoxAdapter(
-                child: CategoryTitle(title: 'Hollywood'),
+                child: CategoryTitle(title: 'TV Shows'),
               ),
               // Search bar floats
               SliverPersistentHeader(
@@ -94,19 +93,14 @@ class _TvScreenState extends ConsumerState<TvScreen> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.only(
-                    top: 16,
-                    left: 12,
-                    right: 12,
-                    bottom: 80,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.65,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.7,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, idx) => MovieCard(item: itemsToDisplay[idx]),
