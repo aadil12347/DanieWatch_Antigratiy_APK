@@ -45,6 +45,7 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
   late AnimationController _barController;
   late AnimationController _panelController;
   late Animation<double> _panelAnimation;
+  bool _isCancelled = false;
 
   @override
   void initState() {
@@ -72,7 +73,7 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
 
   Future<void> _executeFetch() async {
     final link = await widget.fetchLinkFuture();
-    if (mounted) {
+    if (mounted && !_isCancelled) {
       if (link != null && link.isNotEmpty) {
         widget.onSuccess(link);
         // Do NOT pop here; widget.onSuccess uses pushReplacement(rootNavigator: true)
@@ -96,6 +97,14 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        _isCancelled = true;
+        // Play the exit animation (panels opening)
+        final navigator = Navigator.of(context);
+        await _panelController.reverse();
+        if (mounted) navigator.pop();
+      },
       child: AnimatedBuilder(
         animation: _panelAnimation,
         builder: (context, child) {
