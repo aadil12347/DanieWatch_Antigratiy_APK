@@ -681,7 +681,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.immersiveSticky,
+      overlays: [],
+    );
     super.dispose();
   }
 
