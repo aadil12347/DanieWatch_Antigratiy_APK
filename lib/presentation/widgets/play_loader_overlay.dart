@@ -75,9 +75,8 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
     final link = await widget.fetchLinkFuture();
     if (mounted && !_isCancelled) {
       if (link != null && link.isNotEmpty) {
-        widget.onSuccess(link);
-        // Do NOT pop here; widget.onSuccess uses pushReplacement(rootNavigator: true)
-        // which already removes this dialog. Popping would pop the player.
+        await _panelController.reverse();
+        if (mounted) widget.onSuccess(link);
       } else {
         widget.onError();
         await _panelController.reverse();

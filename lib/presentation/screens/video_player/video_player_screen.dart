@@ -82,11 +82,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   int _retryCount = 0;
   String? _currentExtractionUrl;
 
-  // Transition Panels
-  late AnimationController _panelController;
-  late Animation<double> _panelAnimation;
-  bool _showPanels = true;
-
   @override
   void initState() {
     super.initState();
@@ -113,32 +108,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         statusBarIconBrightness: Brightness.light,
       ),
     );
-
-    // Transition Animation
-    _panelController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _panelAnimation = CurvedAnimation(
-      parent: _panelController,
-      curve: Curves.easeOutQuart,
-    );
-
-    // Initial state: panels closed (1.0)
-    _panelController.value = 1.0;
-
-    // Wait for orientation and initialization to settle before opening
-    Future.delayed(const Duration(milliseconds: 1000), () {
-      if (mounted) {
-        _panelController.reverse().then((_) {
-          if (mounted) {
-            setState(() {
-              _showPanels = false;
-            });
-          }
-        });
-      }
-    });
 
     // Start extraction sequence in background
     _webViewKey = const ValueKey('discovery_webview');
@@ -708,7 +677,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   @override
   void dispose() {
     _betterPlayerController?.dispose();
-    _panelController.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -1245,38 +1213,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       body: Stack(
         children: [
           _buildMainContent(),
-          if (_showPanels)
-            AnimatedBuilder(
-              animation: _panelAnimation,
-              builder: (context, child) {
-                return Stack(
-                  children: [
-                    // Top Panel
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: MediaQuery.of(context).size.height / 2,
-                      child: FractionalTranslation(
-                        translation: Offset(0, -1 + _panelAnimation.value),
-                        child: Container(color: const Color(0xFF1C2020)),
-                      ),
-                    ),
-                    // Bottom Panel
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: MediaQuery.of(context).size.height / 2,
-                      child: FractionalTranslation(
-                        translation: Offset(0, 1 - _panelAnimation.value),
-                        child: Container(color: const Color(0xFF1C2020)),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
         ],
       ),
     );
