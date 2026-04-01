@@ -20,7 +20,7 @@ final _shellNavKey = GlobalKey<NavigatorState>();
 CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
-    child: child,
+    child: ShellPopScope(child: child),
     transitionDuration: const Duration(milliseconds: 350),
     reverseTransitionDuration: const Duration(milliseconds: 250),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -116,12 +116,15 @@ final appRouter = GoRouter(
         // Detail route INSIDE shell so bottom nav stays visible
         GoRoute(
           path: '/details/:mediaType/:id',
+          parentNavigatorKey: _shellNavKey,
           pageBuilder: (context, state) {
             final mediaType = state.pathParameters['mediaType']!;
             final id = int.parse(state.pathParameters['id']!);
             return CustomTransitionPage<void>(
               key: state.pageKey,
-              child: DetailsScreen(tmdbId: id, mediaType: mediaType),
+              child: ShellPopScope(
+                child: DetailsScreen(tmdbId: id, mediaType: mediaType),
+              ),
               transitionDuration: const Duration(milliseconds: 400),
               reverseTransitionDuration: const Duration(milliseconds: 350),
               transitionsBuilder:
@@ -138,30 +141,6 @@ final appRouter = GoRouter(
           },
         ),
       ],
-    ),
-    // Root-level details route for navigation from search (which is outside the ShellRoute)
-    GoRoute(
-      path: '/search-details/:mediaType/:id',
-      parentNavigatorKey: rootNavKey,
-      pageBuilder: (context, state) {
-        final mediaType = state.pathParameters['mediaType']!;
-        final id = int.parse(state.pathParameters['id']!);
-        return CustomTransitionPage<void>(
-          key: state.pageKey,
-          child: DetailsScreen(tmdbId: id, mediaType: mediaType),
-          transitionDuration: const Duration(milliseconds: 400),
-          reverseTransitionDuration: const Duration(milliseconds: 350),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: CurvedAnimation(
-                parent: animation,
-                curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-              ),
-              child: child,
-            );
-          },
-        );
-      },
     ),
   ],
   errorBuilder: (context, state) => PopScope(

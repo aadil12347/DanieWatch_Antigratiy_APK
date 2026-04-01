@@ -150,7 +150,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               key: ValueKey('result_${items[idx].id}_$idx'),
               item: items[idx],
               onTap: () => context
-                  .push('/search-details/${items[idx].mediaType}/${items[idx].id}'),
+                  .push('/details/${items[idx].mediaType}/${items[idx].id}'),
             );
           },
           childCount: items.length,

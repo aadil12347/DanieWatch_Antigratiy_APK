@@ -58,6 +58,19 @@ class _AppShellState extends ConsumerState<AppShell> {
     'More',
   ];
 
+  static void closeModals(WidgetRef ref) {
+    // 1. Close "More" if open (this is local state in AppShell, but we can't easily reach it from static)
+    // Actually, for consistency, we'll keep _isMoreOpen in AppShell for now,
+    // and let its own PopScope handle that if needed, or better, move it to a provider.
+    // Let's only close the providers for now.
+
+    ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+    ref.read(filterModalProvider.notifier).state =
+        const FilterModalState(view: FilterView.none);
+    ref.read(confirmationModalProvider.notifier).state =
+        const ConfirmationModalState();
+  }
+
   void _onTap(int index) {
     // 4th button (More) toggles the modal instead of navigating
     if (index == 3) {
@@ -141,6 +154,15 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
   }
 
+  void _closeAllModals() {
+    if (_isMoreOpen) setState(() => _isMoreOpen = false);
+    ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+    ref.read(filterModalProvider.notifier).state =
+        const FilterModalState(view: FilterView.none);
+    ref.read(confirmationModalProvider.notifier).state =
+        const ConfirmationModalState();
+  }
+
   bool _isTabSelected(int index) {
     if (index < 3) return _currentIndex == index && !_isMoreOpen;
     // More tab is selected if _currentIndex is 3 OR _isMoreOpen is true
@@ -170,36 +192,33 @@ class _AppShellState extends ConsumerState<AppShell> {
           return;
         }
 
-        // 2. If search field is focused (Explore tab), unfocus it first
+        // 2. If global modals are open, close them
+        if (isOtherModalOpen) {
+          // Special case for filter step-back
+          if (filterState.view == FilterView.optionsList &&
+              filterState.isSubMenu) {
+            ref.read(filterModalProvider.notifier).state =
+                const FilterModalState(view: FilterView.mainPanel);
+          } else {
+            _closeAllModals();
+          }
+          return;
+        }
+
+        // 3. If search field is focused (Explore tab), unfocus it first
         final isSearchFocused = ref.read(searchFocusProvider);
         if (_currentIndex == 1 && isSearchFocused) {
           FocusManager.instance.primaryFocus?.unfocus();
           return;
         }
 
-        // 2. If download/filter modal is open, close modal or step back
-        if (downloadState.isOpen || filterState.isOpen) {
-          if (downloadState.isOpen) {
-            ref.read(downloadModalProvider.notifier).state =
-                const DownloadModalState();
-          } else if (filterState.view == FilterView.optionsList &&
-              filterState.isSubMenu) {
-            ref.read(filterModalProvider.notifier).state =
-                const FilterModalState(view: FilterView.mainPanel);
-          } else {
-            ref.read(filterModalProvider.notifier).state =
-                const FilterModalState(view: FilterView.none);
-          }
-          return;
-        }
-
-        // 2. If not on Home Tab, route back to Home Tab
+        // 4. Navigation-level back logic (Go to Home if not there)
         if (_currentIndex != 0) {
           _onTap(0);
           return;
         }
 
-        // 3. We are on Home Tab. Handle double back to exit
+        // 5. Double back to exit (only on Home tab with no modals)
         final now = DateTime.now();
         if (_lastBackPressed == null ||
             now.difference(_lastBackPressed!) > const Duration(seconds: 3)) {
@@ -211,7 +230,6 @@ class _AppShellState extends ConsumerState<AppShell> {
             icon: Icons.exit_to_app_rounded,
           );
         } else {
-          // Double back pressed within 3 seconds, close the app
           await SystemNavigator.pop();
         }
       },
@@ -225,15 +243,7 @@ class _AppShellState extends ConsumerState<AppShell> {
               Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    setState(() => _isMoreOpen = false);
-                    ref.read(downloadModalProvider.notifier).state =
-                        const DownloadModalState();
-                    ref.read(filterModalProvider.notifier).state =
-                        const FilterModalState(view: FilterView.none);
-                    ref.read(confirmationModalProvider.notifier).state =
-                        const ConfirmationModalState();
-                  },
+                  onTap: _closeAllModals,
                   child: Container(color: Colors.black.withValues(alpha: 0.4)),
                 ),
               ),
@@ -245,8 +255,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                 right: 0,
                 child: Center(
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.fastOutSlowIn,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeInOutCubic,
                     constraints:
                         BoxConstraints(maxWidth: isOtherModalOpen ? 600 : 400),
                     child: Padding(
@@ -258,8 +268,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                           child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.fastOutSlowIn,
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeInOutCubic,
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.5),
                               borderRadius:
@@ -278,10 +288,23 @@ class _AppShellState extends ConsumerState<AppShell> {
                               ],
                             ),
                             child: AnimatedSize(
-                              duration: const Duration(milliseconds: 350),
-                              curve: Curves.fastOutSlowIn,
+                              duration: const Duration(milliseconds: 400),
+                              curve: Curves.easeInOutCubic,
                               alignment: Alignment.bottomCenter,
-                              child: isOtherModalOpen
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 300),
+                                switchInCurve: Curves.easeOut,
+                                switchOutCurve: Curves.easeIn,
+                                transitionBuilder: (child, animation) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: ScaleTransition(
+                                      scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: isOtherModalOpen
                                   ? Material(
                                       color: Colors.transparent,
                                       child: downloadState.isOpen
@@ -294,9 +317,10 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                   onSelected: downloadState
                                                           .onSelected ??
                                                       (_) {},
-                                                  onCancel:
-                                                      downloadState.onCancel ??
-                                                          () {},
+                                                  onCancel: () {
+                                                    downloadState.onCancel?.call();
+                                                    _closeAllModals();
+                                                  },
                                                 )
                                               : confirmState.isOpen
                                                   ? ConfirmationModalContent(
@@ -318,51 +342,24 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                             .state = const ConfirmationModalState();
                                                       },
                                                       onCancel: () {
-                                                        confirmState.onCancel
-                                                            ?.call();
-                                                        ref
-                                                            .read(
-                                                                confirmationModalProvider
-                                                                    .notifier)
-                                                            .state = const ConfirmationModalState();
+                                                        confirmState.onCancel?.call();
+                                                        _closeAllModals();
                                                       },
                                                     )
-                                                  : (filterState.view ==
-                                                           FilterView.optionsList
+                                                  : (filterState.view == FilterView.optionsList
                                                       ? FilterSelectorContent(
-                                                      title: filterState.title,
-                                                      currentValue: filterState
-                                                          .currentValue,
-                                                      options:
-                                                          filterState.options,
-                                                      onChanged: filterState
-                                                              .onChanged ??
-                                                          (_) {},
-                                                      onCancel: () {
-                                                        if (filterState
-                                                            .isSubMenu) {
-                                                          ref
-                                                                  .read(filterModalProvider
-                                                                      .notifier)
-                                                                  .state =
-                                                              const FilterModalState(
-                                                                  view: FilterView
-                                                                      .mainPanel);
-                                                        } else {
-                                                          ref
-                                                                  .read(filterModalProvider
-                                                                      .notifier)
-                                                                  .state =
-                                                              const FilterModalState(
-                                                                  view:
-                                                                      FilterView
-                                                                          .none);
-                                                        }
-                                                      },
-                                                    )
-                                                  : const MainFilterPanelContent()),
+                                                          title: filterState.title,
+                                                          currentValue: filterState.currentValue,
+                                                          options: filterState.options,
+                                                          onChanged: filterState.onChanged ?? (_) {},
+                                                          onCancel: _closeAllModals,
+                                                        )
+                                                      : const MainFilterPanelContent(
+                                                          key: ValueKey('filter_main'),
+                                                        )),
                                     )
                                   : Column(
+                                      key: const ValueKey('navbar_column'),
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         // More menu row (animated in/out)
@@ -459,6 +456,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                         ),
                                       ],
                                     ),
+                              ),
                             ),
                           ),
                         ),
@@ -470,6 +468,48 @@ class _AppShellState extends ConsumerState<AppShell> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A nested PopScope that intercepts system back button to close global modals
+/// when we are deeper in the navigation stack (e.g. Details page).
+/// Without this, the inner Navigator would pop the page instead of closing the modal.
+class ShellPopScope extends ConsumerWidget {
+  final Widget child;
+  const ShellPopScope({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final downloadState = ref.watch(downloadModalProvider);
+    final filterState = ref.watch(filterModalProvider);
+    final confirmState = ref.watch(confirmationModalProvider);
+    final isModalOpen =
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen;
+
+    return PopScope(
+      canPop: !isModalOpen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && isModalOpen) {
+          if (downloadState.isOpen) {
+            ref.read(downloadModalProvider.notifier).state =
+                const DownloadModalState();
+          } else if (confirmState.isOpen) {
+            ref.read(confirmationModalProvider.notifier).state =
+                const ConfirmationModalState();
+          } else if (filterState.isOpen) {
+            if (filterState.view == FilterView.optionsList &&
+                filterState.isSubMenu) {
+              ref.read(filterModalProvider.notifier).state =
+                  const FilterModalState(view: FilterView.mainPanel);
+            } else {
+              ref.read(filterModalProvider.notifier).state =
+                  const FilterModalState(view: FilterView.none);
+            }
+          }
+        }
+      },
+      child: child,
     );
   }
 }

@@ -7,6 +7,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../services/m3u8_parser.dart';
@@ -213,11 +214,7 @@ class _QualitySelectorContentState
                     ],
                   ),
                 ),
-                IconButton(
-                  icon:
-                      const Icon(Icons.close, color: Colors.white54, size: 22),
-                  onPressed: widget.onCancel,
-                ),
+                _TactileCloseButton(onTap: widget.onCancel),
               ],
             ),
           ),
@@ -457,6 +454,50 @@ class _QualitySelectorContentState
           child: Text(buttonLabel,
               style:
                   const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+        ),
+      ),
+    );
+  }
+}
+
+class _TactileCloseButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _TactileCloseButton({required this.onTap});
+
+  @override
+  State<_TactileCloseButton> createState() => _TactileCloseButtonState();
+}
+
+class _TactileCloseButtonState extends State<_TactileCloseButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        widget.onTap();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 100),
+        scale: _isPressed ? 0.85 : 1.0,
+        child: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.centerRight,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.close, color: Colors.white70, size: 18),
+          ),
         ),
       ),
     );
