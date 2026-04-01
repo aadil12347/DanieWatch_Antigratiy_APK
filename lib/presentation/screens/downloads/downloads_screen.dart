@@ -326,29 +326,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // Size
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        item.formattedSize,
-                        style: TextStyle(
-                          color: AppColors.textSecondary.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
+                  // Size (Hide if unknown)
+                  if (item.totalBytes > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.formattedSize,
+                      style: TextStyle(
+                        color: AppColors.textSecondary.withValues(alpha: 0.7),
+                        fontSize: 12,
                       ),
-                      if (!isSelectionMode)
-                        GestureDetector(
-                          onTap: () => _showDeleteConfirmation(item),
-                          child: const Icon(
-                            Icons.delete_outline_rounded,
-                            color: Colors.redAccent,
-                            size: 24,
-                          ),
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   // Progress bar
                   ClipRRect(
@@ -382,6 +370,46 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 ],
               ),
             ),
+
+            // Controls Column (at the end)
+            if (!isSelectionMode) ...[
+              const SizedBox(width: 12),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Pause/Resume (Top)
+                  GestureDetector(
+                    onTap: () {
+                      if (item.status == DownloadStatus.paused) {
+                        DownloadManager.instance.resumeDownload(item.id);
+                      } else {
+                        DownloadManager.instance.pauseDownload(item.id);
+                      }
+                      setState(() {});
+                    },
+                    child: Icon(
+                      item.status == DownloadStatus.paused
+                          ? Icons.play_circle_outline_rounded
+                          : Icons.pause_circle_outline_rounded,
+                      color: item.status == DownloadStatus.paused
+                          ? Colors.orange
+                          : AppColors.primary,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Delete (Bottom)
+                  GestureDetector(
+                    onTap: () => _showDeleteConfirmation(item),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -477,32 +505,39 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        item.formattedSize,
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  // Size (Hide if unknown)
+                  if (item.totalBytes > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.formattedSize,
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
-                      if (!isSelectionMode)
-                        GestureDetector(
-                          onTap: () => _showDeleteConfirmation(item),
-                          child: const Icon(
-                            Icons.delete_outline_rounded,
-                            color: Colors.redAccent,
-                            size: 24,
-                          ),
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
               ),
             ),
+
+            // Controls Column (at the end)
+            if (!isSelectionMode) ...[
+              const SizedBox(width: 12),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showDeleteConfirmation(item),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

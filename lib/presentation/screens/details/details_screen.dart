@@ -1025,7 +1025,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     CustomToast.show(
       context,
-      '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Download started',
+      'Download started',
       type: ToastType.info,
       icon: Icons.download_done_rounded,
     );

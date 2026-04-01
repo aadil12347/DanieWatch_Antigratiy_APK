@@ -502,8 +502,7 @@ class DownloadManager {
       id: item.id.hashCode,
       title: item.displayName,
       progress: 0,
-      body:
-          '${item.qualityTag.isNotEmpty ? "${item.qualityTag} · " : ""}Starting download…',
+      body: 'Starting download…',
       payload: item.id,
     );
 

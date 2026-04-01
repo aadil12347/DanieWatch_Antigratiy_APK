@@ -78,18 +78,6 @@ class DownloadNotificationService {
   }) async {
     if (!_initialized) return;
 
-    final actions = <AndroidNotificationAction>[
-      AndroidNotificationAction(
-        isPaused ? 'resume' : 'pause',
-        isPaused ? 'Resume' : 'Pause',
-        showsUserInterface: false,
-      ),
-      const AndroidNotificationAction(
-        'cancel',
-        'Cancel',
-        showsUserInterface: false,
-      ),
-    ];
 
     final androidDetails = AndroidNotificationDetails(
       'download_channel',
@@ -105,7 +93,6 @@ class DownloadNotificationService {
       onlyAlertOnce: true,
       icon: '@mipmap/launcher_icon',
       subText: '$progress%',
-      actions: actions,
     );
 
     await _plugin.show(
