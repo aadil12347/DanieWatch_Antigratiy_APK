@@ -25,8 +25,13 @@ class DetailParams {
 class EpisodeParams {
   final int tmdbId;
   final int seasonNumber;
+  final Map<String, List<String>>? seasonsData;
 
-  const EpisodeParams({required this.tmdbId, required this.seasonNumber});
+  const EpisodeParams({
+    required this.tmdbId,
+    required this.seasonNumber,
+    this.seasonsData,
+  });
 
   @override
   bool operator ==(Object other) =>
@@ -59,6 +64,7 @@ final episodesProvider =
     return ContentRepository.instance.fetchEpisodes(
       params.tmdbId.toString(),
       params.seasonNumber,
+      seasonsData: params.seasonsData,
     );
   },
 );

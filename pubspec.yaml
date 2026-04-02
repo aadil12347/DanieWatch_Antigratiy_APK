@@ -11,8 +11,8 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Supabase (official Flutter SDK - no WebView, native HTTP)
-  supabase_flutter: ^2.8.4
+  # Supabase removed - Migrated to GitHub
+  http: ^1.2.2
 
   # State management
   flutter_riverpod: ^2.6.1
@@ -66,7 +66,6 @@ dependencies:
   flutter_svg: ^2.2.4
   better_player_plus: ^1.1.5
 
-  http: ^1.2.1
 
 dev_dependencies:
   flutter_driver:

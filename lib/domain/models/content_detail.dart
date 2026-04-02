@@ -1,6 +1,21 @@
 import 'dart:convert';
 import '../models/entry.dart';
 
+/// Safe int parser — handles both int/num and String values from JSON
+int? _safeInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString());
+}
+
+/// Safe double parser — handles both num and String values from JSON
+double? _safeDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString());
+}
+
 class ContentDetail {
   final int id;
   final String title;
@@ -242,8 +257,8 @@ class ContentDetail {
           json['description']?.toString() ?? json['overview']?.toString(),
       overview: json['overview']?.toString(),
       mediaType: json['media_type']?.toString() ?? 'movie',
-      voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
-      voteCount: (json['vote_count'] as num?)?.toInt(),
+      voteAverage: _safeDouble(json['vote_average']) ?? 0.0,
+      voteCount: _safeInt(json['vote_count']),
       posterUrl:
           json['poster_url']?.toString() ?? json['poster_path']?.toString(),
       backdropUrl:
@@ -256,9 +271,9 @@ class ContentDetail {
       genres: genresList,
       castMembers: castMembers,
       tagline: json['tagline']?.toString(),
-      runtime: (json['runtime'] as num?)?.toInt(),
-      numberOfSeasons: (json['number_of_seasons'] as num?)?.toInt(),
-      numberOfEpisodes: (json['number_of_episodes'] as num?)?.toInt(),
+      runtime: _safeInt(json['runtime']),
+      numberOfSeasons: _safeInt(json['number_of_seasons']),
+      numberOfEpisodes: _safeInt(json['number_of_episodes']),
       status: json['status']?.toString(),
       imdbId: json['imdb_id']?.toString(),
       playUrl: json['play_url']?.toString(),
@@ -369,7 +384,7 @@ class EpisodeData {
   factory EpisodeData.fromJson(Map<String, dynamic> json) {
     return EpisodeData(
       episodeNumber:
-          (json['episode_number'] as num?)?.toInt() ?? json['episode'] as int?,
+          _safeInt(json['episode_number']) ?? _safeInt(json['episode']),
       title: json['title']?.toString() ?? json['name']?.toString(),
       description:
           json['description']?.toString() ?? json['overview']?.toString(),
@@ -380,9 +395,9 @@ class EpisodeData {
           json['download_link']?.toString() ?? json['download_url']?.toString(),
       thumbnailUrl:
           json['thumbnail_url']?.toString() ?? json['thumbnail']?.toString(),
-      runtime: (json['runtime'] as num?)?.toInt(),
+      runtime: _safeInt(json['runtime']),
       airDate: json['air_date']?.toString(),
-      voteAverage: (json['vote_average'] as num?)?.toDouble(),
+      voteAverage: _safeDouble(json['vote_average']),
     );
   }
 
@@ -407,10 +422,10 @@ class SimilarItem {
   factory SimilarItem.fromTmdbJson(
       Map<String, dynamic> json, String mediaType) {
     return SimilarItem(
-      id: json['id'] as int? ?? 0,
+      id: _safeInt(json['id']) ?? 0,
       title: json['title']?.toString() ?? json['name']?.toString() ?? '',
       posterPath: json['poster_path']?.toString(),
-      voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
+      voteAverage: _safeDouble(json['vote_average']) ?? 0.0,
       mediaType: mediaType,
     );
   }
@@ -437,12 +452,12 @@ class TmdbSeason {
 
   factory TmdbSeason.fromJson(Map<String, dynamic> json) {
     return TmdbSeason(
-      seasonNumber: json['season_number'] as int? ?? 0,
-      name: json['name'] as String?,
-      overview: json['overview'] as String?,
-      posterPath: json['poster_path'] as String?,
-      episodeCount: json['episode_count'] as int?,
-      airDate: json['air_date'] as String?,
+      seasonNumber: _safeInt(json['season_number']) ?? 0,
+      name: json['name']?.toString(),
+      overview: json['overview']?.toString(),
+      posterPath: json['poster_path']?.toString(),
+      episodeCount: _safeInt(json['episode_count']),
+      airDate: json['air_date']?.toString(),
       episodes: (json['episodes'] as List?)
           ?.map((e) => TmdbEpisode.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -471,13 +486,13 @@ class TmdbEpisode {
 
   factory TmdbEpisode.fromJson(Map<String, dynamic> json) {
     return TmdbEpisode(
-      episodeNumber: json['episode_number'] as int? ?? 0,
-      name: json['name'] as String?,
-      overview: json['overview'] as String?,
-      stillPath: json['still_path'] as String?,
-      runtime: (json['runtime'] as num?)?.toInt(),
-      voteAverage: (json['vote_average'] as num?)?.toDouble(),
-      airDate: json['air_date'] as String?,
+      episodeNumber: _safeInt(json['episode_number']) ?? 0,
+      name: json['name']?.toString(),
+      overview: json['overview']?.toString(),
+      stillPath: json['still_path']?.toString(),
+      runtime: _safeInt(json['runtime']),
+      voteAverage: _safeDouble(json['vote_average']),
+      airDate: json['air_date']?.toString(),
     );
   }
 }

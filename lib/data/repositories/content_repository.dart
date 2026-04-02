@@ -1,15 +1,28 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
 import '../../domain/models/content_detail.dart';
 import '../../domain/models/entry.dart';
+import '../../core/config/env.dart';
 import '../clients/tmdb_client.dart';
 
 class ContentRepository {
   ContentRepository._();
   static final ContentRepository instance = ContentRepository._();
 
-  SupabaseClient get _client => Supabase.instance.client;
+  // ─── Safe Parsing Helpers ──────────────────────────────────────────────────
+  static int? _safeInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  static double _safeDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
 
   // ─── Suspicious Domains Filter ─────────────────────────────────────────────
   static final List<String> _suspiciousDomains = [
@@ -223,54 +236,23 @@ class ContentRepository {
       final isTv = mediaType.toLowerCase() == 'tv' ||
           mediaType.toLowerCase() == 'series' ||
           mediaType.toLowerCase() == 'tv series';
+      final resolvedMediaType = isTv ? 'tv' : 'movie';
 
-      // Step 1+2: Parallel fetch TMDB + DB entry
+      // Step 1: Parallel fetch TMDB + GitHub entry
       final futures = await Future.wait([
         isTv
             ? TmdbClient.instance.getTvDetails(tmdbId)
             : TmdbClient.instance.getMovieDetails(tmdbId),
-        _client
-            .from('entries')
-            .select()
-            .eq('id', tmdbId.toString())
-            .maybeSingle(),
+        _fetchGitHubDetail(tmdbId, resolvedMediaType),
       ]);
 
-      final tmdbDetails = futures[0];
-      final rawDbEntry = futures[1];
-
-      Map<String, dynamic>? dbEntry;
-      if (rawDbEntry != null) {
-        dbEntry = rawDbEntry;
-        final actualType = dbEntry['type']?.toString().toLowerCase();
-        final expectedType = isTv ? 'series' : 'movie';
-
-        if (actualType != null &&
-            actualType != expectedType &&
-            actualType != 'tv') {
-          dev.log(
-              '[ContentRepo] Type mismatch: Expected $expectedType but got $actualType. Ignoring DB entry.');
-          dbEntry = null; // Ignore mismatched DB entry
-        }
-      }
+      final tmdbDetails = futures[0] as Map<String, dynamic>?;
+      final githubEntry = futures[1] as Map<String, dynamic>?;
 
       // If both are null, nothing to show
-      if (tmdbDetails == null && dbEntry == null) return null;
+      if (tmdbDetails == null && githubEntry == null) return null;
 
-      // Step 3: Detect active links from DB
-      Map<String, dynamic>? contentJson;
-      if (dbEntry != null && dbEntry['content'] != null) {
-        contentJson = dbEntry['content'] is String
-            ? jsonDecode(dbEntry['content'] as String) as Map<String, dynamic>
-            : dbEntry['content'] as Map<String, dynamic>;
-      }
-
-      final dbType =
-          dbEntry?['type']?.toString() ?? (isTv ? 'series' : 'movie');
-      final hasActiveLinks = _detectActiveLinks(contentJson, dbType);
-
-      // Step 4: Build ContentDetail with merge strategy
-      // TMDB values as base, DB overrides when hasActiveLinks and non-null
+      // Step 2: Build ContentDetail with merge strategy
       String title;
       String? overview, posterUrl, backdropUrl, logoUrl, tagline, imdbId;
       double voteAverage;
@@ -285,8 +267,7 @@ class ContentRepository {
             tmdbDetails['name']?.toString() ??
             'Unknown';
         overview = tmdbDetails['overview']?.toString();
-        posterUrl =
-            TmdbClient.posterUrl(tmdbDetails['poster_path']?.toString());
+        posterUrl = TmdbClient.posterUrl(tmdbDetails['poster_path']?.toString());
         backdropUrl =
             TmdbClient.backdropUrl(tmdbDetails['backdrop_path']?.toString());
         logoUrl = _extractTmdbLogo(tmdbDetails);
@@ -301,100 +282,65 @@ class ContentRepository {
         genres = _parseGenres(tmdbDetails['genres']);
         castMembers = _parseTmdbCredits(tmdbDetails);
 
-        // Extract year
         final dateStr = tmdbDetails['release_date']?.toString() ??
             tmdbDetails['first_air_date']?.toString();
         if (dateStr != null && dateStr.length >= 4) {
           releaseYear = int.tryParse(dateStr.substring(0, 4));
         }
       } else {
-        // Fallback: DB-only
-        title = dbEntry?['title']?.toString() ?? 'Unknown';
-        overview = dbEntry?['overview']?.toString();
-        posterUrl = dbEntry?['poster_url']?.toString();
-        backdropUrl = dbEntry?['backdrop_url']?.toString();
-        logoUrl = dbEntry?['logo_url']?.toString();
-        tagline = dbEntry?['tagline']?.toString();
-        voteAverage = (dbEntry?['vote_average'] as num?)?.toDouble() ?? 0.0;
-        voteCount = (dbEntry?['vote_count'] as num?)?.toInt();
-        runtime = (dbEntry?['runtime'] as num?)?.toInt();
-        numberOfSeasons = (dbEntry?['number_of_seasons'] as num?)?.toInt();
-        numberOfEpisodes = (dbEntry?['number_of_episodes'] as num?)?.toInt();
-        status = dbEntry?['status']?.toString();
-        imdbId = dbEntry?['imdb_id']?.toString();
-        genres = _parseGenres(dbEntry?['genres']);
-        castMembers = _parseCastData(dbEntry?['cast_data']);
-        releaseYear = dbEntry?['release_year'] as int?;
+        // Fallback: GitHub-only
+        title = githubEntry?['title']?.toString() ?? 'Unknown';
+        overview = githubEntry?['overview']?.toString();
+        posterUrl = githubEntry?['poster']?.toString();
+        backdropUrl = githubEntry?['backdrop']?.toString();
+        logoUrl = githubEntry?['logo_url']?.toString();
+        tagline = githubEntry?['tagline']?.toString();
+        voteAverage = _safeDouble(githubEntry?['vote_average']);
+        voteCount = _safeInt(githubEntry?['vote_count']);
+        runtime = _safeInt(githubEntry?['runtime']);
+        numberOfSeasons = _safeInt(githubEntry?['number_of_seasons']);
+        numberOfEpisodes = _safeInt(githubEntry?['number_of_episodes']);
+        status = githubEntry?['status']?.toString();
+        imdbId = githubEntry?['imdb_id']?.toString();
+        genres = _parseGenres(githubEntry?['genres']);
+        castMembers = _parseCastData(githubEntry?['cast_data']);
+        releaseYear = int.tryParse(githubEntry?['year']?.toString() ?? '');
       }
 
-      // Step 4b: DB override when has active links
-      if (hasActiveLinks && dbEntry != null) {
-        if (dbEntry['title'] != null) title = dbEntry['title'].toString();
-        if (dbEntry['overview'] != null) {
-          overview = dbEntry['overview'].toString();
+      // Step 3: Extract links from GitHub (Movies)
+      String? watchLink, downloadLink;
+      if (!isTv && githubEntry != null) {
+        final rawWatch = githubEntry['watch'] ??
+            githubEntry['watch_link'] ??
+            githubEntry['play_url'];
+        if (rawWatch != null) {
+          watchLink = extractValidEmbedUrl(rawWatch.toString());
         }
-        if (dbEntry['poster_url'] != null) {
-          posterUrl = dbEntry['poster_url'].toString();
+        final rawDownload =
+            githubEntry['download_link'] ?? githubEntry['download_url'];
+        if (rawDownload != null) {
+          downloadLink = extractValidDownloadUrl(rawDownload.toString());
         }
-        if (dbEntry['backdrop_url'] != null) {
-          backdropUrl = dbEntry['backdrop_url'].toString();
-        }
-        if (dbEntry['logo_url'] != null) {
-          logoUrl = dbEntry['logo_url'].toString();
-        }
-        if (dbEntry['tagline'] != null) tagline = dbEntry['tagline'].toString();
-        if (dbEntry['vote_average'] != null) {
-          voteAverage = (dbEntry['vote_average'] as num).toDouble();
-        }
-        if (dbEntry['imdb_id'] != null) imdbId = dbEntry['imdb_id'].toString();
-        if (dbEntry['runtime'] != null) {
-          runtime = (dbEntry['runtime'] as num).toInt();
-        }
-        if (dbEntry['number_of_seasons'] != null) {
-          numberOfSeasons = (dbEntry['number_of_seasons'] as num).toInt();
-        }
-        if (dbEntry['number_of_episodes'] != null) {
-          numberOfEpisodes = (dbEntry['number_of_episodes'] as num).toInt();
-        }
-
-        // DB genres/cast override
-        final dbGenres = _parseGenres(dbEntry['genres']);
-        if (dbGenres.isNotEmpty) genres = dbGenres;
-        final dbCast = _parseCastData(dbEntry['cast_data']);
-        if (dbCast.isNotEmpty) castMembers = dbCast;
+        // Fallback: use watch link as download link if no dedicated download
+        downloadLink ??= watchLink;
       }
 
-      // Step 5: TMDB seasons metadata
+      // Step 4: TMDB seasons metadata
       List<TmdbSeason>? tmdbSeasons;
       if (isTv && tmdbDetails != null) {
         final seasons = tmdbDetails['seasons'] as List?;
         if (seasons != null) {
           tmdbSeasons = seasons
-              .where((s) =>
-                  s['season_number'] != null && (s['season_number'] as int) > 0)
+              .where((s) {
+                final sn = s['season_number'];
+                if (sn == null) return false;
+                final num = sn is int ? sn : int.tryParse(sn.toString());
+                return num != null && num > 0;
+              })
               .map((s) => TmdbSeason.fromJson(s as Map<String, dynamic>))
               .toList();
         }
       }
-
-      // Extract movie watch/download links
-      String? watchLink, downloadLink;
-      if (!isTv && contentJson != null) {
-        final rawWatch = contentJson['watch_link'] ??
-            contentJson['play_url'] ??
-            contentJson['stream_url'];
-        if (rawWatch != null) {
-          watchLink = extractValidEmbedUrl(rawWatch.toString());
-        }
-        final rawDownload =
-            contentJson['download_link'] ?? contentJson['download_url'];
-        if (rawDownload != null) {
-          downloadLink = extractValidDownloadUrl(rawDownload.toString());
-        }
-      }
-
-      // Determine correct mediaType
-      final resolvedMediaType = isTv ? 'tv' : 'movie';
 
       // Fix empty TMDB image URLs
       if (posterUrl != null && posterUrl.isEmpty) posterUrl = null;
@@ -425,6 +371,8 @@ class ContentRepository {
         downloadLink: downloadLink,
         tmdbSeasons: tmdbSeasons,
         tmdbLogoUrl: logoUrl,
+        // Carry GitHub entry for episodes fetch logic
+        seasonsData: isTv ? _parseSeasonsFromGithub(githubEntry) : null,
       );
     } catch (e, stack) {
       dev.log('[ContentRepo] fetchContentDetail error: $e', stackTrace: stack);
@@ -432,148 +380,135 @@ class ContentRepository {
     }
   }
 
+  /// Internal helper to fetch from GitHub with fallback
+  Future<Map<String, dynamic>?> _fetchGitHubDetail(
+      int id, String type) async {
+    final baseUrl = '${Env.githubRawBaseUrl}/streaming_links';
+    
+    // 1. Try Admin version
+    final adminUrl = Uri.parse('$baseUrl/admin_${type}_$id.json');
+    try {
+      final res = await http.get(adminUrl);
+      if (res.statusCode == 200) return jsonDecode(res.body);
+    } catch (_) {}
+
+    // 2. Try Normal version
+    final normalUrl = Uri.parse('$baseUrl/normal_${type}_$id.json');
+    try {
+      final res = await http.get(normalUrl);
+      if (res.statusCode == 200) return jsonDecode(res.body);
+    } catch (_) {}
+
+    return null;
+  }
+
+  /// Internal helper to extract season links from GitHub TV JSON
+  Map<String, List<String>> _parseSeasonsFromGithub(Map<String, dynamic>? githubEntry) {
+    if (githubEntry == null || githubEntry['seasons'] == null) return {};
+    
+    final Map<String, List<String>> seasons = {};
+    final seasonsList = githubEntry['seasons'] as List;
+    
+    for (final s in seasonsList) {
+      final seasonNum = s['season_number'];
+      if (seasonNum == null) continue;
+      
+      final episodes = s['episodes'] as List?;
+      if (episodes == null) continue;
+      
+      final links = episodes
+          .map((e) => e['watch']?.toString() ?? '')
+          .toList();
+      
+      seasons['season_$seasonNum'] = links;
+    }
+    
+    return seasons;
+  }
+
+
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // EPISODES FETCH: entry_metadata + TMDB fallback + placeholder generation
+  // EPISODES FETCH: TMDB metadata + GitHub watch links merge
   // ═══════════════════════════════════════════════════════════════════════════
   Future<List<EpisodeData>> fetchEpisodes(
-      String entryId, int seasonNumber) async {
+      String entryId, int seasonNumber,
+      {Map<String, List<String>>? seasonsData}) async {
     try {
-      // Step 1: Parallel fetch metadata + content links + TMDB season
       final tmdbId = int.tryParse(entryId) ?? 0;
 
-      final futures = await Future.wait<dynamic>([
-        _client
-            .from('entry_metadata')
-            .select()
-            .eq('entry_id', entryId)
-            .eq('season_number', seasonNumber)
-            .order('episode_number'),
-        _client
-            .from('entries')
-            .select('content')
-            .eq('id', entryId)
-            .maybeSingle(),
-        TmdbClient.instance.getSeasonDetails(tmdbId, seasonNumber),
-      ]);
+      // 1. Get GitHub watch links for this season
+      final seasonKey = 'season_$seasonNumber';
+      final githubLinks = seasonsData?[seasonKey] ?? [];
 
-      final metadataRows = futures[0] as List<dynamic>;
-      final entryResponse = futures[1] as Map<String, dynamic>?;
-      final tmdbSeasonDetails = futures[2] as Map<String, dynamic>?;
+      // 2. Fetch TMDB season data for metadata (titles, overviews, thumbnails)
+      final tmdbSeasonDetails = await TmdbClient.instance.getSeasonDetails(tmdbId, seasonNumber);
 
-      // Parse content JSON for links
-      final seasonLinks =
-          _extractSeasonLinks(entryResponse?['content'], seasonNumber);
-
-      // Parse TMDB episodes
-      List<TmdbEpisode> tmdbEpisodes = [];
+      // 3. Parse TMDB episodes
+      List<EpisodeData> episodes = [];
       if (tmdbSeasonDetails != null) {
         final eps = tmdbSeasonDetails['episodes'] as List?;
         if (eps != null) {
-          tmdbEpisodes = eps
-              .map((e) => TmdbEpisode.fromJson(e as Map<String, dynamic>))
-              .toList();
-        }
-      }
-
-      // Step 2: Build episode list
-      List<EpisodeData> episodes;
-
-      if (metadataRows.isNotEmpty) {
-        // Use DB metadata rows
-        episodes = metadataRows.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final ep = entry.value as Map<String, dynamic>;
-
-          // Find matching TMDB episode for enrichment
-          final epNum = ep['episode_number'] as int? ?? (idx + 1);
-          final tmdbEp =
-              tmdbEpisodes.where((t) => t.episodeNumber == epNum).firstOrNull;
-
-          // DB metadata values take priority (admin_edited), then TMDB fallback
-          final adminEdited = ep['admin_edited'] == true;
-          String? thumbnailUrl = ep['still_path']?.toString();
-          if (thumbnailUrl != null && !thumbnailUrl.startsWith('http')) {
-            thumbnailUrl = TmdbClient.thumbUrl(thumbnailUrl);
-          }
-          if ((thumbnailUrl == null || thumbnailUrl.isEmpty) &&
-              tmdbEp?.stillPath != null) {
-            thumbnailUrl = TmdbClient.thumbUrl(tmdbEp!.stillPath);
-          }
-
-          return EpisodeData(
-            episodeNumber: epNum,
-            title: adminEdited
-                ? (ep['name']?.toString() ?? tmdbEp?.name)
-                : (tmdbEp?.name ?? ep['name']?.toString()),
-            description: adminEdited
-                ? (ep['overview']?.toString() ?? tmdbEp?.overview)
-                : (tmdbEp?.overview ?? ep['overview']?.toString()),
-            thumbnailUrl: thumbnailUrl,
-            runtime: adminEdited
-                ? ((ep['runtime'] as num?)?.toInt() ?? tmdbEp?.runtime)
-                : (tmdbEp?.runtime ?? (ep['runtime'] as num?)?.toInt()),
-            airDate: tmdbEp?.airDate ?? ep['air_date']?.toString(),
-            voteAverage: tmdbEp?.voteAverage,
-          );
-        }).toList();
-      } else if (tmdbEpisodes.isNotEmpty) {
-        // Use TMDB episodes
-        episodes = tmdbEpisodes.map((tmdbEp) {
-          String? thumbnailUrl;
-          if (tmdbEp.stillPath != null) {
-            thumbnailUrl = TmdbClient.thumbUrl(tmdbEp.stillPath);
-          }
-          return EpisodeData(
-            episodeNumber: tmdbEp.episodeNumber,
-            title: tmdbEp.name,
-            description: tmdbEp.overview,
-            thumbnailUrl: thumbnailUrl,
-            runtime: tmdbEp.runtime,
-            airDate: tmdbEp.airDate,
-            voteAverage: tmdbEp.voteAverage,
-          );
-        }).toList();
-      } else {
-        episodes = [];
-      }
-
-      // Step 3 & 4: Exact index-based mapping + placeholder generation
-      final finalCount = [
-        episodes.length,
-        seasonLinks.watchLinks.length,
-        seasonLinks.downloadLinks.length,
-      ].reduce((a, b) => a > b ? a : b);
-
-      final List<EpisodeData> mappedEpisodes = List.generate(finalCount, (i) {
-        final epNo = i + 1;
-        final base = episodes.where((e) => e.episodeNumber == epNo).firstOrNull;
-
-        final episode = base ??
-            EpisodeData(
-              episodeNumber: epNo,
-              title: 'Episode $epNo',
-              description: '',
+          episodes = eps.map((e) {
+            final t = TmdbEpisode.fromJson(e as Map<String, dynamic>);
+            return EpisodeData(
+              episodeNumber: t.episodeNumber,
+              title: t.name,
+              description: t.overview,
+              thumbnailUrl: t.stillPath != null ? TmdbClient.thumbUrl(t.stillPath!) : null,
+              runtime: t.runtime,
+              airDate: t.airDate,
+              voteAverage: t.voteAverage,
             );
-
-        String? playLink;
-        if (i < seasonLinks.watchLinks.length &&
-            seasonLinks.watchLinks[i].isNotEmpty) {
-          playLink = extractValidEmbedUrl(seasonLinks.watchLinks[i]);
+          }).toList();
         }
+      }
 
-        String? dlLink;
-        if (i < seasonLinks.downloadLinks.length &&
-            seasonLinks.downloadLinks[i].isNotEmpty) {
-          dlLink = extractValidDownloadUrl(seasonLinks.downloadLinks[i]);
+      // 4. Merge GitHub watch links into TMDB episodes
+      if (githubLinks.isNotEmpty) {
+        if (episodes.isEmpty) {
+          // No TMDB data — generate placeholder episodes from GitHub links
+          episodes = List.generate(githubLinks.length, (i) {
+            final rawLink = githubLinks[i];
+            final watchUrl = extractValidEmbedUrl(rawLink);
+            return EpisodeData(
+              episodeNumber: i + 1,
+              title: 'Episode ${i + 1}',
+              playLink: watchUrl,
+              downloadLink: watchUrl,
+            );
+          });
+        } else {
+          // Merge links into existing TMDB episodes
+          for (int i = 0; i < episodes.length; i++) {
+            if (i < githubLinks.length) {
+              final rawLink = githubLinks[i];
+              final watchUrl = extractValidEmbedUrl(rawLink);
+              if (watchUrl != null && watchUrl.isNotEmpty) {
+                episodes[i] = episodes[i].copyWith(
+                  playLink: watchUrl,
+                  downloadLink: watchUrl,
+                );
+              }
+            }
+          }
+          // If GitHub has more links than TMDB episodes, add extra episodes
+          if (githubLinks.length > episodes.length) {
+            for (int i = episodes.length; i < githubLinks.length; i++) {
+              final rawLink = githubLinks[i];
+              final watchUrl = extractValidEmbedUrl(rawLink);
+              episodes.add(EpisodeData(
+                episodeNumber: i + 1,
+                title: 'Episode ${i + 1}',
+                playLink: watchUrl,
+                downloadLink: watchUrl,
+              ));
+            }
+          }
         }
+      }
 
-        return episode.copyWith(
-          playLink: playLink,
-          downloadLink: dlLink,
-        );
-      });
-
-      return mappedEpisodes;
+      return episodes;
     } catch (e, stack) {
       dev.log('[ContentRepo] fetchEpisodes error: $e', stackTrace: stack);
       return [];

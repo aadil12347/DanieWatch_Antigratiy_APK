@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/local/database.dart';
 import '../../domain/models/entry.dart';
 
@@ -8,8 +7,6 @@ import '../../domain/models/entry.dart';
 class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
   @override
   Future<List<WatchlistItem>> build() async {
-    // Try to trigger a sync in the background on load
-    Future.microtask(() => syncWithSupabase());
     return _loadWatchlist();
   }
 
@@ -43,26 +40,10 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
       whereArgs: [tmdbId, mediaType],
     );
 
-    final client = Supabase.instance.client;
-    final user = client.auth.currentUser;
-
     if (existing.isNotEmpty) {
       await db.delete('watchlist',
           where: 'tmdb_id = ? AND media_type = ?',
           whereArgs: [tmdbId, mediaType]);
-
-      if (user != null) {
-        try {
-          await client
-              .from('watchlist')
-              .delete()
-              .eq('user_id', user.id)
-              .eq('tmdb_id', tmdbId)
-              .eq('media_type', mediaType);
-        } catch (e) {
-          print('Supabase delete error: $e');
-        }
-      }
     } else {
       await db.insert('watchlist', {
         'tmdb_id': tmdbId,
@@ -72,78 +53,11 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
         'vote_average': voteAverage,
         'added_at': DateTime.now().millisecondsSinceEpoch,
       });
-
-      if (user != null) {
-        try {
-          await client.from('watchlist').upsert({
-            'user_id': user.id,
-            'tmdb_id': tmdbId,
-            'media_type': mediaType,
-            'title': title,
-            'poster_path': posterPath,
-            'vote_average': voteAverage,
-          });
-        } catch (e) {
-          print('Supabase upsert error: $e');
-        }
-      }
     }
 
     state = AsyncValue.data(await _loadWatchlist());
   }
 
-  Future<void> syncWithSupabase() async {
-    final client = Supabase.instance.client;
-    final user = client.auth.currentUser;
-    if (user == null) return;
-
-    final db = AppDatabase.instance.db;
-    final localItems = await db.query('watchlist');
-
-    try {
-      final remoteItems =
-          await client.from('watchlist').select().eq('user_id', user.id);
-
-      if (localItems.isEmpty && remoteItems.isNotEmpty) {
-        // Pull down from Supabase
-        for (final r in remoteItems) {
-          final createdAtStr = r['created_at']?.toString();
-          final addedAt = createdAtStr != null
-              ? DateTime.tryParse(createdAtStr)?.millisecondsSinceEpoch ??
-                  DateTime.now().millisecondsSinceEpoch
-              : DateTime.now().millisecondsSinceEpoch;
-
-          await db.insert(
-              'watchlist',
-              {
-                'tmdb_id': r['tmdb_id'],
-                'media_type': r['media_type'],
-                'title': r['title'],
-                'poster_path': r['poster_path'],
-                'vote_average': r['vote_average'],
-                'added_at': addedAt,
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        state = AsyncValue.data(await _loadWatchlist());
-      } else if (localItems.isNotEmpty) {
-        // Push local up to Supabase
-        for (final l in localItems) {
-          await client.from('watchlist').upsert({
-            'user_id': user.id,
-            'tmdb_id': l['tmdb_id'],
-            'media_type': l['media_type'],
-            'title': l['title'],
-            'poster_path': l['poster_path'],
-            'vote_average': l['vote_average'],
-          }, onConflict: 'user_id, tmdb_id, media_type');
-        }
-        // Could do a two-way merge here, but simple upload for local items is a good start.
-      }
-    } catch (e) {
-      print('Watchlist sync error: $e');
-    }
-  }
 
   bool isInWatchlist(int tmdbId, String mediaType) {
     final items = state.valueOrNull ?? [];

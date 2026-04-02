@@ -1,0 +1,29 @@
+{
+  "id": "292392",
+  "type": "tv",
+  "title": "Kankhajura",
+  "poster": "https://image.tmdb.org/t/p/w342/iUeaGrvXb3ZzxdIHq4grKOLTl5s.jpg",
+  "backdrop": "https://image.tmdb.org/t/p/original/pnvhNSuw06rfVxAlUzWH1cFOC3k.jpg",
+  "year": "2025",
+  "result": "HD",
+  "language": [
+    "Hindi"
+  ],
+  "seasons": [
+    {
+      "season_number": 1,
+      "episodes": [
+        {
+          "episode_number": 1,
+          "name": "All Episodes Combined",
+          "overview": "After serving time behind bars for the murder of a foreign tourist, Ashu is released from prison. He leverages his manipulative skills to weave his way back into his brother Max's life, hoping to make up for lost time.",
+          "still_path": "https://image.tmdb.org/t/p/w300/psbhPY11GsJuowgB0mUijpp8cRP.jpg",
+          "air_date": "2025-05-30",
+          "runtime": 39,
+          "vote_average": null,
+          "watch": "<iframe src=\"https://bysebuho.com/e/a1fjlwqn60zp/kankhajura-2025-s01-hindi-sonyliv-web-dl-720p-daniewatch-is\" frameborder=\"0\" marginwidth=\"0\" marginheight=\"0\" scrolling=\"no\" width=\"640\" height=\"360\" allowfullscreen></iframe>"
+        }
+      ]
+    }
+  ]
+}

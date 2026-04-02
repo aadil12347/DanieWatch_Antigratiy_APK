@@ -44,8 +44,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   DetailParams get _detailParams =>
       DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType);
 
-  EpisodeParams get _episodeParams =>
-      EpisodeParams(tmdbId: widget.tmdbId, seasonNumber: _selectedSeason);
+  EpisodeParams _getEpisodeParams(ContentDetail? content) =>
+      EpisodeParams(
+        tmdbId: widget.tmdbId,
+        seasonNumber: _selectedSeason,
+        seasonsData: content?.seasonsData,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -336,14 +340,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     if (content.isMovie) {
       watchLink = content.primaryWatchLink;
-      downloadLink = content.primaryDownloadLink;
+      downloadLink = content.primaryDownloadLink ?? watchLink;
     } else {
       // For TV: get first episode link from current season episodes
-      final episodesAsync = ref.watch(episodesProvider(_episodeParams));
+      final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
       final episodes = episodesAsync.valueOrNull ?? [];
       if (episodes.isNotEmpty) {
         watchLink = episodes.first.playLink;
-        downloadLink = episodes.first.downloadLink;
+        downloadLink = episodes.first.downloadLink ?? episodes.first.playLink;
       }
     }
 
@@ -400,7 +404,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         if (content.isMovie)
           _AnimatedActionButton(
             icon: Icons.download_rounded,
-            onTap: hasDownload ? () => _handleDownload(watchLink!) : null,
+            onTap: hasWatch ? () => _handleDownload(watchLink!) : null,
             isActive: false,
           ),
       ],
@@ -507,7 +511,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
           // Episodes from provider
           Consumer(builder: (context, ref, _) {
-            final episodesAsync = ref.watch(episodesProvider(_episodeParams));
+            final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
             return episodesAsync.when(
               loading: () => const Center(
                 child: Padding(
@@ -662,8 +666,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   Widget _buildEpisodeCard(EpisodeData episode, ContentDetail content) {
     final hasPlayLink =
         episode.playLink != null && episode.playLink!.isNotEmpty;
-    final hasDownloadLink =
-        episode.downloadLink != null && episode.downloadLink!.isNotEmpty;
     final epNum = episode.episodeNumber ?? 0;
 
     return GestureDetector(
@@ -767,7 +769,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 12),
             ),
 
-            // Download button (Icon Only)
+            // Download button (Icon Only) — uses playLink as download source
             GestureDetector(
               onTap: hasPlayLink
                   ? () => _startDownload(episode.playLink!, epNum, content)
@@ -776,19 +778,19 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: hasDownloadLink
+                  color: hasPlayLink
                       ? AppColors.surfaceElevated
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: hasDownloadLink
+                      color: hasPlayLink
                           ? AppColors.primary.withValues(alpha: 0.5)
                           : Colors.transparent,
                       width: 1),
                 ),
                 child: Icon(
                   Icons.download_rounded,
-                  color: hasDownloadLink
+                  color: hasPlayLink
                       ? AppColors.primary
                       : AppColors.textMuted.withValues(alpha: 0.3),
                   size: 24,

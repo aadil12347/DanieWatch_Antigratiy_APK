@@ -10,33 +10,26 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
 
   @override
   Future<Manifest?> build() async {
-    // 1. Listen for updates BEFORE reading cache
+    // 1. Listen for updates
     _sub = ManifestSyncEngine.instance.onManifestUpdated.listen((manifest) {
       state = AsyncValue.data(manifest);
     });
     ref.onDispose(() => _sub?.cancel());
 
-    // 2. Read from SQLite immediately
+    // 2. Read from SQLite immediately to have some initial state (optional)
     final cached = await ManifestSyncEngine.instance.readCache();
-
-    // 3. Background sync
-    // If cache is empty, we must await the sync to either get data or fail!
-    // Otherwise it silently succeeds with null and we have a blank screen.
-    if (cached == null) {
-      final result = await ManifestSyncEngine.instance.sync();
-      if (result.error != null) {
-        throw Exception('Failed to load catalog: ${result.error}');
-      }
-      return ManifestSyncEngine.instance.readCache();
-    } else {
-      // Background update
-      ManifestSyncEngine.instance.sync().then((result) {
-        if (result.error != null) {
-          // We might log this, but we have cached data so no need to blow up the UI
-        }
-      });
-      return cached;
+    if (cached != null) {
+      state = AsyncValue.data(cached);
     }
+
+    // 3. Mandatory Fresh Sync from GitHub
+    final result = await ManifestSyncEngine.instance.sync();
+    if (result.error != null && cached == null) {
+      throw Exception('Failed to load catalog: ${result.error}');
+    }
+
+    // Return the latest data from DAO after sync
+    return ManifestSyncEngine.instance.readCache();
   }
 
   Future<void> refresh() async {

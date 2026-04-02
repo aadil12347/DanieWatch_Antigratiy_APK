@@ -1,16 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../providers/manifest_provider.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProviderStateMixin {
   final List<String> posters = [
     'poster/animal.webp',
     'poster/attack on titan.webp',
@@ -75,18 +77,40 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     shuffled = List<String>.from(posters)..shuffle();
     col3 = shuffled.sublist(0, (posters.length / 3).floor());
 
-    // Start fade out slightly before 5 seconds
-    Timer(const Duration(milliseconds: 4000), () {
-      if (mounted) {
-        _fadeController.forward();
-      }
-    });
+    // Transition control
+    _evaluateTransition();
+  }
 
-    Timer(const Duration(milliseconds: 5000), () {
-      if (mounted) {
-        context.go('/home');
+  void _evaluateTransition() async {
+    final startTime = DateTime.now();
+
+    // 1. Minimum 5 second delay
+    await Future.delayed(const Duration(milliseconds: 5000));
+
+    // 2. Wait until manifest is loaded and not null
+    bool isLoaded = false;
+    while (!isLoaded && mounted) {
+      final manifestAsync = ref.read(manifestProvider);
+      
+      if (!manifestAsync.isLoading) {
+        if (manifestAsync.hasValue && manifestAsync.value != null && manifestAsync.value!.items.isNotEmpty) {
+          isLoaded = true;
+        } else if (manifestAsync.hasError) {
+          // If error occurs, we still transition after the delay so app doesn't hang
+          isLoaded = true;
+        }
       }
-    });
+      
+      if (!isLoaded) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
+
+    if (mounted) {
+      _fadeController.forward().then((_) {
+        if (mounted) context.go('/home');
+      });
+    }
   }
 
   @override

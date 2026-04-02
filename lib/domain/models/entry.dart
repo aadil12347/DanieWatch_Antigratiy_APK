@@ -53,34 +53,44 @@ class EntryData {
     this.mediaUpdatedAt,
   });
 
+  /// Safe int parser — handles both int and String values from JSON
+  static int? _safeInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
   factory EntryData.fromJson(Map<String, dynamic> json) {
     return EntryData(
-      id: json['id'] as String,
-      type: json['type'] as String,
-      title: json['title'] as String,
-      posterUrl: json['poster_url'] as String?,
-      backdropUrl: json['backdrop_url'] as String?,
-      logoUrl: json['logo_url'] as String?,
-      hoverImageUrl: json['hover_image_url'] as String?,
-      voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
-      voteCount: json['vote_count'] as int? ?? 0,
-      releaseYear: json['release_year'] as int?,
-      originalLanguage: json['original_language'] as String?,
+      id: json['id']?.toString() ?? '',
+      type: json['type']?.toString() ?? 'movie',
+      title: json['title']?.toString() ?? '',
+      posterUrl: json['poster_url']?.toString(),
+      backdropUrl: json['backdrop_url']?.toString(),
+      logoUrl: json['logo_url']?.toString(),
+      hoverImageUrl: json['hover_image_url']?.toString(),
+      voteAverage: (json['vote_average'] is num)
+          ? (json['vote_average'] as num).toDouble()
+          : double.tryParse(json['vote_average']?.toString() ?? '') ?? 0.0,
+      voteCount: _safeInt(json['vote_count']) ?? 0,
+      releaseYear: _safeInt(json['release_year']),
+      originalLanguage: json['original_language']?.toString(),
       originCountry: (json['origin_country'] as List<dynamic>?)
-              ?.map((e) => e as String)
+              ?.map((e) => e.toString())
               .toList() ??
           [],
       genreIds: (json['genre_ids'] as List<dynamic>?)
-              ?.map((e) => e as int)
+              ?.map((e) => _safeInt(e) ?? 0)
               .toList() ??
           [],
-      overview: json['overview'] as String?,
-      tagline: json['tagline'] as String?,
-      runtime: json['runtime'] as int?,
-      numberOfSeasons: json['number_of_seasons'] as int?,
-      numberOfEpisodes: json['number_of_episodes'] as int?,
-      status: json['status'] as String?,
-      imdbId: json['imdb_id'] as String?,
+      overview: json['overview']?.toString(),
+      tagline: json['tagline']?.toString(),
+      runtime: _safeInt(json['runtime']),
+      numberOfSeasons: _safeInt(json['number_of_seasons']),
+      numberOfEpisodes: _safeInt(json['number_of_episodes']),
+      status: json['status']?.toString(),
+      imdbId: json['imdb_id']?.toString(),
       genres: (json['genres'] as List<dynamic>?)
               ?.map((e) => Genre.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -90,7 +100,7 @@ class EntryData {
               .toList() ??
           [],
       content: json['content'] as Map<String, dynamic>?,
-      mediaUpdatedAt: json['media_updated_at'] as String?,
+      mediaUpdatedAt: json['media_updated_at']?.toString(),
     );
   }
 
@@ -132,8 +142,10 @@ class Genre {
 
   factory Genre.fromJson(Map<String, dynamic> json) {
     return Genre(
-      id: json['id'] as int,
-      name: json['name'] as String,
+      id: (json['id'] is int)
+          ? json['id'] as int
+          : int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      name: json['name']?.toString() ?? '',
     );
   }
 
@@ -157,10 +169,12 @@ class CastMember {
 
   factory CastMember.fromJson(Map<String, dynamic> json) {
     return CastMember(
-      id: json['id'] as int,
-      name: json['name'] as String,
-      character: json['character'] as String?,
-      profilePath: json['profile_path'] as String?,
+      id: (json['id'] is int)
+          ? json['id'] as int
+          : int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      name: json['name']?.toString() ?? '',
+      character: json['character']?.toString(),
+      profilePath: json['profile_path']?.toString(),
     );
   }
 

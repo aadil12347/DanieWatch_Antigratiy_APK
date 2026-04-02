@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+// Supabase import removed - Migrated to GitHub
 
 import 'app.dart';
 import 'core/config/env.dart';
@@ -57,18 +57,7 @@ Future<void> main() async {
     // Initialize Download Manager
     await DownloadManager.instance.initialize();
 
-    // Initialize Supabase (guest mode — no auth required)
-    await Supabase.initialize(
-      url: Env.supabaseUrl,
-      anonKey: Env.supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.pkce,
-        autoRefreshToken: false,
-      ),
-      realtimeClientOptions: const RealtimeClientOptions(
-        logLevel: RealtimeLogLevel.info,
-      ),
-    );
+    // Supabase initialization removed - Migrated to GitHub Data Source
 
     runApp(
       // ProviderScope enables Riverpod state management

@@ -213,6 +213,24 @@ class _MovieCardState extends ConsumerState<MovieCard>
             child: _SaveButton(item: item),
           ),
         ),
+        
+        // ── Language Badge (top-left) ──
+        if (item.language.isNotEmpty)
+          Positioned(
+            top: 6,
+            left: 6,
+            child: AnimatedBuilder(
+              animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
+              builder: (context, child) {
+                final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
+                return Opacity(
+                  opacity: opacity,
+                  child: child,
+                );
+              },
+              child: _LanguageBadge(text: item.language.first),
+            ),
+          ),
 
         // ── Logo/Title Overlay (Top-most layer during hold) ──
         if (hoverAnimation != null)
@@ -399,6 +417,45 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
             size: 18,
             color: isInWatchlist ? Colors.red : Colors.white,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LanguageBadge extends StatelessWidget {
+  final String text;
+  const _LanguageBadge({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary,
+            AppColors.primary.withValues(alpha: 0.85),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.8,
+          height: 1.2,
         ),
       ),
     );

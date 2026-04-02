@@ -11,15 +11,10 @@
 class Env {
   Env._();
 
-  // Supabase
-  static const supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://amrjkvvmvhqoqqkxntna.supabase.co',
-  );
-  static const supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtcmprdnZtdmhxb3Fxa3hudG5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwMzUzOTksImV4cCI6MjA4MjYxMTM5OX0.CQ4VlMVG5m80JdJdvOqZ4-11Ewq3kvmplxAcXuM3tOw',
+  // GitHub Data Source
+  static const githubRawBaseUrl = String.fromEnvironment(
+    'GITHUB_RAW_BASE_URL',
+    defaultValue: 'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main',
   );
 
   // TMDB

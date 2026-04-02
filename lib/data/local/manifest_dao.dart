@@ -68,6 +68,12 @@ class ManifestDao {
     return entry?.generatedAt;
   }
 
+  /// Clear manifest cache and search index
+  Future<void> clearCache() async {
+    await _db.delete('manifest_cache');
+    await _db.execute('DELETE FROM search_fts');
+  }
+
   Future<void> _rebuildSearchIndex(List<ManifestItem> items) async {
     await _db.transaction((txn) async {
       // Clear existing index
