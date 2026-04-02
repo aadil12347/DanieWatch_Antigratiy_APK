@@ -15,6 +15,7 @@ class ManifestItem {
   final String? originalLanguage;
   final List<String> originCountry;
   final List<int> genreIds;
+  final List<String> genres;
   final String? overview;
   final String? tagline;
   final int? runtime;
@@ -43,6 +44,7 @@ class ManifestItem {
     this.originalLanguage,
     this.originCountry = const [],
     this.genreIds = const [],
+    this.genres = const [],
     this.overview,
     this.tagline,
     this.runtime,
@@ -92,12 +94,16 @@ class ManifestItem {
       voteCount: _safeInt(json['vote_count']) ?? 0,
       releaseYear: _safeInt(json['release_year'] ?? json['year']),
       originalLanguage: json['original_language']?.toString(),
-      originCountry: (json['origin_country'] as List<dynamic>?)
+      originCountry: ((json['origin_country'] ?? json['country']) as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           [],
       genreIds: (json['genre_ids'] as List<dynamic>?)
               ?.map((e) => _safeInt(e) ?? 0)
+              .toList() ??
+          [],
+      genres: (json['genres'] as List<dynamic>?)
+              ?.map((e) => e.toString())
               .toList() ??
           [],
       overview: json['overview']?.toString(),
@@ -134,6 +140,7 @@ class ManifestItem {
       'original_language': originalLanguage,
       'origin_country': originCountry,
       'genre_ids': genreIds,
+      'genres': genres,
       'overview': overview,
       'tagline': tagline,
       'runtime': runtime,
@@ -185,6 +192,7 @@ class ManifestItem {
     String? originalLanguage,
     List<String>? originCountry,
     List<int>? genreIds,
+    List<String>? genres,
     String? overview,
     bool? isTrending,
     bool? isPopular,
@@ -205,6 +213,7 @@ class ManifestItem {
       originalLanguage: originalLanguage ?? this.originalLanguage,
       originCountry: originCountry ?? this.originCountry,
       genreIds: genreIds ?? this.genreIds,
+      genres: genres ?? this.genres,
       overview: overview ?? this.overview,
       tagline: tagline,
       runtime: runtime,

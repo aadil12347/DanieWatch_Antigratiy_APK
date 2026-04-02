@@ -78,6 +78,14 @@ class ManifestSyncEngine {
       // ━━━ TMDB Enrichment: cross-reference trending/popular lists ━━━
       items = await _enrichWithTmdb(items);
 
+      // ━━━ Global Sorting: Year (Latest to Oldest) then ID (Newest first) ━━━
+      items.sort((a, b) {
+        final yearA = a.releaseYear ?? 0;
+        final yearB = b.releaseYear ?? 0;
+        if (yearB != yearA) return yearB.compareTo(yearA);
+        return b.id.compareTo(a.id); // Higher ID = newer
+      });
+
       final manifest = Manifest(
         items: items,
         generatedAt: (jsonMap['last_updated'] ?? jsonMap['generated_at'])?.toString(),

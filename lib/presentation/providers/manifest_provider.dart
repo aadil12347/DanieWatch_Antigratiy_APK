@@ -10,26 +10,32 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
 
   @override
   Future<Manifest?> build() async {
-    // 1. Listen for updates
+    // 1. Listen for updates BEFORE reading cache
     _sub = ManifestSyncEngine.instance.onManifestUpdated.listen((manifest) {
       state = AsyncValue.data(manifest);
     });
     ref.onDispose(() => _sub?.cancel());
 
-    // 2. Read from SQLite immediately to have some initial state (optional)
+    // 2. Read from SQLite immediately to have some initial state
     final cached = await ManifestSyncEngine.instance.readCache();
-    if (cached != null) {
-      state = AsyncValue.data(cached);
-    }
 
-    // 3. Mandatory Fresh Sync from GitHub
-    final result = await ManifestSyncEngine.instance.sync();
-    if (result.error != null && cached == null) {
-      throw Exception('Failed to load catalog: ${result.error}');
+    // 3. Mandatory Background Sync — do not block the UI if we have cache
+    if (cached == null) {
+      // Must wait for first sync if nothing is cached
+      final result = await ManifestSyncEngine.instance.sync();
+      if (result.error != null) {
+        throw Exception('Failed to load catalog: ${result.error}');
+      }
+      return ManifestSyncEngine.instance.readCache();
+    } else {
+      // Return cached immediately, then sync in background
+      ManifestSyncEngine.instance.sync().then((result) {
+        if (result.error != null) {
+          // Log sync background error but don't disrupt current view
+        }
+      });
+      return cached;
     }
-
-    // Return the latest data from DAO after sync
-    return ManifestSyncEngine.instance.readCache();
   }
 
   Future<void> refresh() async {
@@ -151,14 +157,14 @@ final homeSectionsProvider = Provider<List<ContentSection>>((ref) {
   final bollywood = VisibilityPolicy.filterBollywood(all);
   if (bollywood.length >= 3) {
     sections.add(ContentSection(
-        title: 'Bollywood', items: bollywood));
+        title: 'Bollywood', items: bollywood.take(20).toList()));
   }
 
   // Hollywood (English language)
   final hollywood = VisibilityPolicy.filterHollywood(all);
   if (hollywood.length >= 3) {
     sections.add(ContentSection(
-        title: 'Hollywood', items: hollywood));
+        title: 'Hollywood', items: hollywood.take(20).toList()));
   }
 
   // Top Rated
@@ -171,14 +177,14 @@ final homeSectionsProvider = Provider<List<ContentSection>>((ref) {
   final anime = VisibilityPolicy.filterAnime(all);
   if (anime.isNotEmpty) {
     sections
-        .add(ContentSection(title: 'Anime', items: anime));
+        .add(ContentSection(title: 'Anime', items: anime.take(20).toList()));
   }
 
   // Korean (needs TMDB enrichment for original_language/origin_country)
   final korean = VisibilityPolicy.filterKorean(all);
   if (korean.isNotEmpty) {
     sections
-        .add(ContentSection(title: 'Korean', items: korean));
+        .add(ContentSection(title: 'Korean', items: korean.take(20).toList()));
   }
 
   // Genre-based sections (only for TMDB-enriched items with genre_ids)

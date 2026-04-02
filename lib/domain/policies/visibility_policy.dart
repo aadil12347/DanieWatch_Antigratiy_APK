@@ -88,37 +88,43 @@ class VisibilityPolicy {
     return getTopRated(all, limit: limit);
   }
 
-  /// Filter for Anime: original_language = 'ja' AND genre 16 (Animation)
   static List<ManifestItem> filterAnime(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.originalLanguage == 'ja' && item.genreIds.contains(16))
+            item.originalLanguage == 'ja' &&
+            (item.genreIds.contains(16) ||
+                item.genres.any((g) => g.toLowerCase() == 'animation')))
         .toList();
   }
 
-  /// Filter for Korean content: ko language or KR origin
+  /// Filter for Korean content: tv type and KR origin
   static List<ManifestItem> filterKorean(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.originalLanguage == 'ko' || item.originCountry.contains('KR'))
+            (item.mediaType == 'tv' || item.mediaType == 'series') &&
+            item.originCountry.contains('KR'))
         .toList();
   }
 
-  /// Filter for Bollywood/Hindi content from the `language` field in index.json
+  /// Filter for Bollywood/Hindi content: movie type and hi language/IN origin
   static List<ManifestItem> filterBollywood(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.language.any((l) => l.toLowerCase() == 'hindi') ||
-            item.originalLanguage == 'hi')
+            item.mediaType == 'movie' &&
+            ((item.language.any((l) => l.toLowerCase() == 'hindi') ||
+                item.originalLanguage == 'hi' ||
+                item.originCountry.contains('IN'))))
         .toList();
   }
 
-  /// Filter for Hollywood/English content from language field
+  /// Filter for Hollywood content: movie type and en language/US/GB origin
   static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.language.any((l) => l.toLowerCase() == 'english') ||
-            item.originalLanguage == 'en')
+            item.mediaType == 'movie' &&
+            (item.originalLanguage == 'en' ||
+                item.originCountry.contains('US') ||
+                item.originCountry.contains('GB')))
         .toList();
   }
 
@@ -134,9 +140,18 @@ class VisibilityPolicy {
         .toList();
   }
 
-  /// Get items by genre ID
-  static List<ManifestItem> filterByGenre(List<ManifestItem> all, int genreId) {
-    return all.where((item) => item.genreIds.contains(genreId)).toList();
+  /// Get items by genre ID (integer) or name (string)
+  static List<ManifestItem> filterByGenre(List<ManifestItem> all, dynamic genre) {
+    if (genre is int) {
+      return all.where((item) => item.genreIds.contains(genre)).toList();
+    }
+    if (genre is String) {
+      final search = genre.toLowerCase();
+      return all
+          .where((item) => item.genres.any((g) => g.toLowerCase() == search))
+          .toList();
+    }
+    return [];
   }
 
   /// Get top rated items (by TMDB vote average)
