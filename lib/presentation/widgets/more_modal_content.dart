@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../providers/search_provider.dart';
 
 /// Content for the "More" expandable section above the bottom navbar.
 /// Shows navigation buttons in a single row matching the navbar style exactly.
-class MoreModalContent extends StatelessWidget {
+class MoreModalContent extends ConsumerWidget {
   final String currentRoute;
   final VoidCallback onClose;
   
@@ -17,13 +19,13 @@ class MoreModalContent extends StatelessWidget {
   static const _pages = [
     _MorePage('Anime', Icons.auto_awesome_outlined, Icons.auto_awesome_rounded, '/anime'),
     _MorePage('Korean', Icons.live_tv_outlined, Icons.live_tv_rounded, '/korean'),
-    _MorePage('Bollywood', Icons.movie_filter_outlined, Icons.movie_filter_rounded, '/movies'),
-    _MorePage('Hollywood', Icons.theaters_outlined, Icons.theaters_rounded, '/tv'),
+    _MorePage('Bollywood', Icons.movie_filter_outlined, Icons.movie_filter_rounded, '/bollywood'),
+    _MorePage('Hollywood', Icons.theaters_outlined, Icons.theaters_rounded, '/hollywood'),
     _MorePage('Downloads', Icons.download_outlined, Icons.download_rounded, '/downloads'),
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Column(
@@ -31,13 +33,13 @@ class MoreModalContent extends StatelessWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: _pages.take(4).map((p) => _buildPageButton(context, p)).toList(),
+            children: _pages.take(4).map((p) => _buildPageButton(context, ref, p)).toList(),
           ),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildPageButton(context, _pages.last),
+              _buildPageButton(context, ref, _pages.last),
               const SizedBox(width: 64),
               const SizedBox(width: 64),
               const SizedBox(width: 64),
@@ -48,10 +50,12 @@ class MoreModalContent extends StatelessWidget {
     );
   }
 
-  Widget _buildPageButton(BuildContext context, _MorePage page) {
+  Widget _buildPageButton(BuildContext context, WidgetRef ref, _MorePage page) {
     final isActive = currentRoute == page.route;
     return GestureDetector(
       onTap: () {
+        // Clear filters when navigating to prevent bleed
+        ref.read(searchProvider.notifier).clear();
         onClose();
         context.go(page.route);
       },

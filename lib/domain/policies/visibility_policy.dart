@@ -57,6 +57,37 @@ class VisibilityPolicy {
     return index['$tmdbId-$mediaType'];
   }
 
+  /// Get trending items — prefers TMDB-enriched trending, falls back to year+vote sort
+  static List<ManifestItem> getTrending(List<ManifestItem> all,
+      {int limit = 10}) {
+    // First: items marked as trending by TMDB enrichment
+    final tmdbTrending = all.where((item) => item.isTrending).toList();
+    if (tmdbTrending.length >= limit) {
+      tmdbTrending.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+      return tmdbTrending.take(limit).toList();
+    }
+
+    // Fallback: sort by year desc, then vote average desc
+    final sorted = List<ManifestItem>.from(all)
+      ..sort((a, b) {
+        final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+        if (yearCmp != 0) return yearCmp;
+        return b.voteAverage.compareTo(a.voteAverage);
+      });
+    return sorted.take(limit).toList();
+  }
+
+  /// Get popular items — prefers TMDB-enriched popular
+  static List<ManifestItem> getPopular(List<ManifestItem> all,
+      {int limit = 20}) {
+    final tmdbPopular = all.where((item) => item.isPopular).toList();
+    if (tmdbPopular.isNotEmpty) {
+      tmdbPopular.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+      return tmdbPopular.take(limit).toList();
+    }
+    return getTopRated(all, limit: limit);
+  }
+
   /// Filter for Anime: original_language = 'ja' AND genre 16 (Animation)
   static List<ManifestItem> filterAnime(List<ManifestItem> all) {
     return all
@@ -73,6 +104,24 @@ class VisibilityPolicy {
         .toList();
   }
 
+  /// Filter for Bollywood/Hindi content from the `language` field in index.json
+  static List<ManifestItem> filterBollywood(List<ManifestItem> all) {
+    return all
+        .where((item) =>
+            item.language.any((l) => l.toLowerCase() == 'hindi') ||
+            item.originalLanguage == 'hi')
+        .toList();
+  }
+
+  /// Filter for Hollywood/English content from language field
+  static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
+    return all
+        .where((item) =>
+            item.language.any((l) => l.toLowerCase() == 'english') ||
+            item.originalLanguage == 'en')
+        .toList();
+  }
+
   /// Filter for movies only
   static List<ManifestItem> filterMovies(List<ManifestItem> all) {
     return all.where((item) => item.mediaType == 'movie').toList();
@@ -85,24 +134,12 @@ class VisibilityPolicy {
         .toList();
   }
 
-  /// Get top N trending items (sorted by release year desc, then vote_average desc)
-  static List<ManifestItem> getTrending(List<ManifestItem> all,
-      {int limit = 10}) {
-    final sorted = List<ManifestItem>.from(all)
-      ..sort((a, b) {
-        final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-        if (yearCmp != 0) return yearCmp;
-        return b.voteAverage.compareTo(a.voteAverage);
-      });
-    return sorted.take(limit).toList();
-  }
-
   /// Get items by genre ID
   static List<ManifestItem> filterByGenre(List<ManifestItem> all, int genreId) {
     return all.where((item) => item.genreIds.contains(genreId)).toList();
   }
 
-  /// Get top rated items
+  /// Get top rated items (by TMDB vote average)
   static List<ManifestItem> getTopRated(List<ManifestItem> all,
       {int limit = 20}) {
     final sorted = List<ManifestItem>.from(all)
@@ -110,7 +147,7 @@ class VisibilityPolicy {
     return sorted.take(limit).toList();
   }
 
-  /// Get recently added items
+  /// Get recently added items (by year)
   static List<ManifestItem> getRecentlyAdded(List<ManifestItem> all,
       {int limit = 20}) {
     final sorted = List<ManifestItem>.from(all)

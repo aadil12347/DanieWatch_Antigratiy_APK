@@ -1,21 +1,23 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/manifest_item.dart';
+import '../providers/detail_provider.dart';
 
-class StackedCarousel extends StatefulWidget {
+class StackedCarousel extends ConsumerStatefulWidget {
   final List<ManifestItem> items;
   const StackedCarousel({super.key, required this.items});
 
   @override
-  State<StackedCarousel> createState() => _StackedCarouselState();
+  ConsumerState<StackedCarousel> createState() => _StackedCarouselState();
 }
 
-class _StackedCarouselState extends State<StackedCarousel> {
+class _StackedCarouselState extends ConsumerState<StackedCarousel> {
   late List<int> _positions;
   late List<ManifestItem> _displayItems;
   int _activeIndex = 0;
@@ -28,6 +30,26 @@ class _StackedCarouselState extends State<StackedCarousel> {
     _positions = List.generate(_displayItems.length, (index) => index - 2);
     _updateActiveIndex();
     _startAutoPlay();
+  }
+
+  @override
+  void didUpdateWidget(StackedCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only update if items actually changed to avoid unnecessary resets
+    if (widget.items != oldWidget.items) {
+      final newItems = widget.items.take(5).toList();
+      // Simple equality check for IDs to avoid flickering on reference changes
+      final oldIds = _displayItems.map((e) => e.id).join(',');
+      final newIds = newItems.map((e) => e.id).join(',');
+      
+      if (oldIds != newIds) {
+        setState(() {
+          _displayItems = newItems;
+          _positions = List.generate(_displayItems.length, (index) => index - 2);
+          _updateActiveIndex();
+        });
+      }
+    }
   }
 
   @override
@@ -61,8 +83,6 @@ class _StackedCarouselState extends State<StackedCarousel> {
         int current = _positions[i];
         int nextPos = current + direction;
         
-        // Handle wrapping logic from JS: if diff.abs() > 2 return -current
-        // This effectively means 3 becomes -2 and -3 becomes 2
         if (nextPos > 2) nextPos = -2;
         if (nextPos < -2) nextPos = 2;
         
@@ -79,10 +99,8 @@ class _StackedCarouselState extends State<StackedCarousel> {
       final item = _displayItems[index];
       context.push('/details/${item.mediaType}/${item.id}');
     } else if (pos > 0) {
-      // Right side, move everything left (decrement)
       _step(-1);
     } else if (pos < 0) {
-      // Left side, move everything right (increment)
       _step(1);
     }
   }
@@ -100,10 +118,8 @@ class _StackedCarouselState extends State<StackedCarousel> {
             _resetAutoPlay();
             if (details.primaryVelocity == null) return;
             if (details.primaryVelocity! < 0) {
-              // Swipe Left -> Rotate Right (decrement)
               _step(-1);
             } else if (details.primaryVelocity! > 0) {
-              // Swipe Right -> Rotate Left (increment)
               _step(1);
             }
           },
@@ -127,7 +143,7 @@ class _StackedCarouselState extends State<StackedCarousel> {
           ),
         ),
         const SizedBox(height: 24),
-        // Active Item Info Display
+        // Active Item Info Display — always fetch TMDB logo
         Container(
           height: 60,
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -145,7 +161,10 @@ class _StackedCarouselState extends State<StackedCarousel> {
                 ),
               );
             },
-            child: _buildActiveInfo(activeItem),
+            child: _TmdbLogoInfo(
+              key: ValueKey('active_info_${activeItem.id}'),
+              item: activeItem,
+            ),
           ),
         ),
       ],
@@ -163,43 +182,9 @@ class _StackedCarouselState extends State<StackedCarousel> {
     }
   }
 
-  Widget _buildActiveInfo(ManifestItem item) {
-    final logoUrl = item.logoUrl;
-    
-    return Container(
-      key: ValueKey('active_info_${item.id}'),
-      width: 250,
-      alignment: Alignment.topCenter,
-      child: (logoUrl != null && logoUrl.isNotEmpty)
-          ? CachedNetworkImage(
-              imageUrl: logoUrl,
-              height: 40,
-              fit: BoxFit.contain,
-              errorWidget: (_, __, ___) => _buildActiveTitle(item.title),
-            )
-          : _buildActiveTitle(item.title),
-    );
-  }
-
-  Widget _buildActiveTitle(String title) {
-    return Text(
-      title,
-      textAlign: TextAlign.center,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 22,
-        fontWeight: FontWeight.w900,
-        height: 1.2,
-      ),
-    );
-  }
-
   Widget _buildCarouselItem(int index, int pos) {
     final item = _displayItems[index];
 
-    // CSS based transformations - Slightly bigger sizes
     double scale = 1.0;
     double translateX = 0.0;
     double opacity = 1.0;
@@ -244,8 +229,8 @@ class _StackedCarouselState extends State<StackedCarousel> {
       child: Center(
         child: AnimatedTransform(
           transform: Matrix4.identity()
-            ..translate(translateX)
-            ..scale(scale),
+            ..translateByDouble(translateX, 0.0, 0.0, 0.0)
+            ..scaleByDouble(scale, scale, 1.0, 1.0),
           duration: const Duration(milliseconds: 350),
           curve: Curves.easeOutCubic,
           child: GestureDetector(
@@ -271,7 +256,7 @@ class _StackedCarouselState extends State<StackedCarousel> {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: CachedNetworkImage(
-                    imageUrl: item.posterUrl ?? '',
+                    imageUrl: item.effectivePosterUrl ?? '',
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
                     errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
@@ -281,6 +266,56 @@ class _StackedCarouselState extends State<StackedCarousel> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Fetches and displays TMDB logo for the active carousel item.
+/// Falls back to text title if no logo is available.
+class _TmdbLogoInfo extends ConsumerWidget {
+  final ManifestItem item;
+
+  const _TmdbLogoInfo({super.key, required this.item});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final logoAsync = ref.watch(tmdbLogoProvider(
+      TmdbLogoParams(tmdbId: item.id, mediaType: item.mediaType),
+    ));
+
+    return Container(
+      width: 250,
+      alignment: Alignment.topCenter,
+      child: logoAsync.when(
+        data: (logoUrl) {
+          if (logoUrl != null && logoUrl.isNotEmpty) {
+            return CachedNetworkImage(
+              imageUrl: logoUrl,
+              height: 40,
+              fit: BoxFit.contain,
+              errorWidget: (_, __, ___) => _buildActiveTitle(item.title),
+            );
+          }
+          return _buildActiveTitle(item.title);
+        },
+        loading: () => _buildActiveTitle(item.title),
+        error: (_, __) => _buildActiveTitle(item.title),
+      ),
+    );
+  }
+
+  Widget _buildActiveTitle(String title) {
+    return Text(
+      title,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 22,
+        fontWeight: FontWeight.w900,
+        height: 1.2,
       ),
     );
   }

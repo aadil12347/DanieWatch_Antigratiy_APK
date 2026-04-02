@@ -106,17 +106,27 @@ class FilterUtils {
   }
 
   static bool _matchesCategory(ManifestItem item, String cat) {
-    if (cat == 'Movie' || cat == 'Bollywood' || cat == 'Hollywood') {
-      if (item.mediaType != 'movie') return false;
-      if (cat == 'Movie') return true;
-      if (cat == 'Bollywood') return (item.originalLanguage == 'hi' || item.originCountry.contains('IN'));
-      if (cat == 'Hollywood') return (item.originalLanguage == 'en' || item.originCountry.contains('US'));
+    switch (cat) {
+      case 'Movie':
+        return item.mediaType == 'movie';
+      case 'TV Shows' || 'Season' || 'Series':
+        return item.mediaType == 'tv' || item.mediaType == 'series';
+      case 'Anime':
+        // Match VisibilityPolicy.filterAnime: Japanese language + Animation genre
+        return item.originalLanguage == 'ja' && item.genreIds.contains(16);
+      case 'K-Drama' || 'Korean':
+        // Match VisibilityPolicy.filterKorean: ko language or KR origin
+        return item.originalLanguage == 'ko' || item.originCountry.contains('KR');
+      case 'Bollywood':
+        // Match VisibilityPolicy.filterBollywood: hindi language or hi originalLanguage
+        return item.language.any((l) => l.toLowerCase() == 'hindi') ||
+            item.originalLanguage == 'hi';
+      case 'Hollywood':
+        // Match VisibilityPolicy.filterHollywood: english language or en originalLanguage
+        return item.language.any((l) => l.toLowerCase() == 'english') ||
+            item.originalLanguage == 'en';
+      default:
+        return false;
     }
-    if ((cat == 'TV Shows' || cat == 'Season' || cat == 'Series' || cat == 'K-Drama' || cat == 'Korean') && item.mediaType == 'tv') {
-      if (cat == 'TV Shows' || cat == 'Season' || cat == 'Series') return true;
-      if ((cat == 'K-Drama' || cat == 'Korean') && item.originCountry.contains('KR')) return true;
-    }
-    if (cat == 'Anime' && item.mediaType == 'anime') return true;
-    return false;
   }
 }

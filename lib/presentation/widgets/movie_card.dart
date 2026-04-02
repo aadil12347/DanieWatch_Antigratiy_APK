@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../data/clients/tmdb_client.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/active_card_provider.dart';
@@ -58,7 +59,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    final posterUrl = item.posterUrl ?? '';
+    final posterUrl = item.effectivePosterUrl ?? '';
     final logoUrl = item.logoUrl;
 
     final activeKey = ref.watch(activeCardProvider);
@@ -128,15 +129,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
       children: [
         // ── Base Poster ──
         if (posterUrl.isNotEmpty)
-          CachedNetworkImage(
-            imageUrl: posterUrl,
-            fit: BoxFit.cover,
-            memCacheWidth: 300,
-            placeholder: (_, __) => _placeholder(),
-            errorWidget: (_, __, ___) => _placeholder(error: true),
-            fadeOutDuration: const Duration(milliseconds: 200),
-            fadeInDuration: const Duration(milliseconds: 200),
-          )
+          _PosterImage(posterUrl: posterUrl, tmdbId: item.id, mediaType: item.mediaType)
         else
           _placeholder(),
 
@@ -461,3 +454,96 @@ class _LanguageBadge extends StatelessWidget {
     );
   }
 }
+
+/// Poster image with automatic TMDB fallback for unsupported formats (.avif etc).
+class _PosterImage extends StatefulWidget {
+  final String posterUrl;
+  final int tmdbId;
+  final String mediaType;
+
+  const _PosterImage({
+    required this.posterUrl,
+    required this.tmdbId,
+    required this.mediaType,
+  });
+
+  @override
+  State<_PosterImage> createState() => _PosterImageState();
+}
+
+class _PosterImageState extends State<_PosterImage> {
+  String? _fallbackUrl;
+  bool _primaryFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Proactively skip .avif URLs since Flutter can't render them well
+    if (widget.posterUrl.toLowerCase().endsWith('.avif')) {
+      _primaryFailed = true;
+      _fetchTmdbPoster();
+    }
+  }
+
+  void _onPrimaryError() {
+    if (_primaryFailed) return;
+    _primaryFailed = true;
+    _fetchTmdbPoster();
+  }
+
+  Future<void> _fetchTmdbPoster() async {
+    try {
+      final isTv = widget.mediaType == 'tv' || widget.mediaType == 'series';
+      final details = isTv
+          ? await TmdbClient.instance.getTvDetails(widget.tmdbId)
+          : await TmdbClient.instance.getMovieDetails(widget.tmdbId);
+      final posterPath = details?['poster_path']?.toString();
+      if (posterPath != null && posterPath.isNotEmpty && mounted) {
+        setState(() {
+          _fallbackUrl = TmdbClient.posterUrl(posterPath);
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _primaryFailed ? _fallbackUrl : widget.posterUrl;
+
+    if (url == null || url.isEmpty) {
+      return Container(
+        color: AppColors.surfaceElevated,
+        child: const Center(
+          child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+        ),
+      );
+    }
+
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      memCacheWidth: 300,
+      placeholder: (_, __) => Container(
+        color: AppColors.surfaceElevated,
+        child: const Center(
+          child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+        ),
+      ),
+      errorWidget: (_, __, ___) {
+        if (!_primaryFailed) {
+          // Primary URL failed → trigger TMDB fallback
+          WidgetsBinding.instance.addPostFrameCallback((_) => _onPrimaryError());
+        }
+        return Container(
+          color: AppColors.surfaceElevated,
+          child: const Center(
+            child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+          ),
+        );
+      },
+      fadeOutDuration: const Duration(milliseconds: 200),
+      fadeInDuration: const Duration(milliseconds: 200),
+    );
+  }
+}
+

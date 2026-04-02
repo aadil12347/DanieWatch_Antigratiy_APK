@@ -12,16 +12,24 @@ import '../../providers/search_provider.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 
-class TvScreen extends ConsumerStatefulWidget {
-  const TvScreen({super.key});
+class HollywoodScreen extends ConsumerStatefulWidget {
+  const HollywoodScreen({super.key});
 
   @override
-  ConsumerState<TvScreen> createState() => _TvScreenState();
+  ConsumerState<HollywoodScreen> createState() => _HollywoodScreenState();
 }
 
-class _TvScreenState extends ConsumerState<TvScreen> {
+class _HollywoodScreenState extends ConsumerState<HollywoodScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(searchProvider.notifier).clear();
+    });
+  }
 
   @override
   void dispose() {
@@ -37,18 +45,21 @@ class _TvScreenState extends ConsumerState<TvScreen> {
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
-    final allItems = ref.watch(tvShowsProvider);
+    final allItems = ref.watch(hollywoodProvider);
     final index = ref.watch(manifestIndexProvider);
 
     final hasSearch = searchState.query.isNotEmpty;
     final hasFilters = searchState.filters.hasActiveFilters;
     final showResults = hasSearch || hasFilters;
 
-    final itemsToDisplay = FilterUtils.getFilteredItems(
-      allItems: allItems,
-      searchState: searchState,
-      index: index,
-    );
+    final itemsToDisplay = showResults
+        ? FilterUtils.getFilteredItems(
+            allItems: allItems,
+            searchState: searchState,
+            index: index,
+            enforceCategory: 'Hollywood',
+          )
+        : allItems;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -60,11 +71,9 @@ class _TvScreenState extends ConsumerState<TvScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Title scrolls with content
               const SliverToBoxAdapter(
-                child: CategoryTitle(title: 'TV Shows'),
+                child: CategoryTitle(title: 'Hollywood'),
               ),
-              // Search bar floats
               SliverPersistentHeader(
                 floating: true,
                 delegate: FloatingSearchBarDelegate(
@@ -73,7 +82,6 @@ class _TvScreenState extends ConsumerState<TvScreen> {
                   onSearchChanged: _onSearchChanged,
                 ),
               ),
-              // Filter chips
               const SliverToBoxAdapter(
                 child: CategoryFilterChips(),
               ),
@@ -85,7 +93,7 @@ class _TvScreenState extends ConsumerState<TvScreen> {
                 const SliverFillRemaining(
                   child: Center(child: ShimmerGrid()),
                 )
-              else if (itemsToDisplay.isEmpty)
+              else if (showResults && itemsToDisplay.isEmpty)
                 const SliverFillRemaining(
                   child: EmptyResultsView(
                     message: 'Try adjusting your filters or search keywords to find the content you want.',
@@ -93,7 +101,7 @@ class _TvScreenState extends ConsumerState<TvScreen> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(

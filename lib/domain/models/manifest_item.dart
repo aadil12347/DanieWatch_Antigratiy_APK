@@ -24,6 +24,10 @@ class ManifestItem {
   final String? imdbId;
   final List<String> language;
   final String? result;
+  final bool isTrending;
+  final bool isPopular;
+  final String? tmdbPosterPath;
+  final String? tmdbBackdropPath;
 
   ManifestItem({
     required this.id,
@@ -48,6 +52,10 @@ class ManifestItem {
     this.imdbId,
     this.language = const [],
     this.result,
+    this.isTrending = false,
+    this.isPopular = false,
+    this.tmdbPosterPath,
+    this.tmdbBackdropPath,
   });
 
   /// Safe int parser — handles both int and String values from JSON
@@ -65,13 +73,19 @@ class ManifestItem {
     return double.tryParse(value.toString()) ?? fallback;
   }
 
+  /// Filter out empty image URLs — keep all formats, let widget handle fallbacks
+  static String? _sanitizePosterUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    return url;
+  }
+
   factory ManifestItem.fromJson(Map<String, dynamic> json) {
     return ManifestItem(
       id: _safeInt(json['id']) ?? 0,
       mediaType: (json['media_type'] ?? json['type'] ?? 'movie').toString(),
       title: (json['title'] ?? '').toString(),
-      posterUrl: (json['poster_url'] ?? json['poster'])?.toString(),
-      backdropUrl: (json['backdrop_url'] ?? json['backdrop'])?.toString(),
+      posterUrl: _sanitizePosterUrl((json['poster_url'] ?? json['poster'])?.toString()),
+      backdropUrl: _sanitizePosterUrl((json['backdrop_url'] ?? json['backdrop'])?.toString()),
       logoUrl: json['logo_url']?.toString(),
       hoverImageUrl: json['hover_image_url']?.toString(),
       voteAverage: _safeDouble(json['vote_average']),
@@ -98,6 +112,10 @@ class ManifestItem {
               .toList() ??
           [],
       result: json['result']?.toString(),
+      isTrending: json['is_trending'] == true,
+      isPopular: json['is_popular'] == true,
+      tmdbPosterPath: json['tmdb_poster_path']?.toString(),
+      tmdbBackdropPath: json['tmdb_backdrop_path']?.toString(),
     );
   }
 
@@ -125,7 +143,82 @@ class ManifestItem {
       'imdb_id': imdbId,
       'language': language,
       'result': result,
+      'is_trending': isTrending,
+      'is_popular': isPopular,
+      'tmdb_poster_path': tmdbPosterPath,
+      'tmdb_backdrop_path': tmdbBackdropPath,
     };
+  }
+
+  /// Effective poster URL: skip .avif (unsupported), prefer TMDB fallback
+  String? get effectivePosterUrl {
+    if (posterUrl != null && posterUrl!.isNotEmpty && !posterUrl!.toLowerCase().endsWith('.avif')) {
+      return posterUrl;
+    }
+    if (tmdbPosterPath != null) {
+      return 'https://image.tmdb.org/t/p/w342$tmdbPosterPath';
+    }
+    return null;
+  }
+
+  /// Effective backdrop URL: skip .avif, prefer TMDB fallback
+  String? get effectiveBackdropUrl {
+    if (backdropUrl != null && backdropUrl!.isNotEmpty && !backdropUrl!.toLowerCase().endsWith('.avif')) {
+      return backdropUrl;
+    }
+    if (tmdbBackdropPath != null) {
+      return 'https://image.tmdb.org/t/p/w780$tmdbBackdropPath';
+    }
+    return null;
+  }
+
+  ManifestItem copyWith({
+    int? id,
+    String? mediaType,
+    String? title,
+    String? posterUrl,
+    String? backdropUrl,
+    String? logoUrl,
+    double? voteAverage,
+    int? voteCount,
+    int? releaseYear,
+    String? originalLanguage,
+    List<String>? originCountry,
+    List<int>? genreIds,
+    String? overview,
+    bool? isTrending,
+    bool? isPopular,
+    String? tmdbPosterPath,
+    String? tmdbBackdropPath,
+  }) {
+    return ManifestItem(
+      id: id ?? this.id,
+      mediaType: mediaType ?? this.mediaType,
+      title: title ?? this.title,
+      posterUrl: posterUrl ?? this.posterUrl,
+      backdropUrl: backdropUrl ?? this.backdropUrl,
+      logoUrl: logoUrl ?? this.logoUrl,
+      hoverImageUrl: hoverImageUrl,
+      voteAverage: voteAverage ?? this.voteAverage,
+      voteCount: voteCount ?? this.voteCount,
+      releaseYear: releaseYear ?? this.releaseYear,
+      originalLanguage: originalLanguage ?? this.originalLanguage,
+      originCountry: originCountry ?? this.originCountry,
+      genreIds: genreIds ?? this.genreIds,
+      overview: overview ?? this.overview,
+      tagline: tagline,
+      runtime: runtime,
+      numberOfSeasons: numberOfSeasons,
+      numberOfEpisodes: numberOfEpisodes,
+      status: status,
+      imdbId: imdbId,
+      language: language,
+      result: result,
+      isTrending: isTrending ?? this.isTrending,
+      isPopular: isPopular ?? this.isPopular,
+      tmdbPosterPath: tmdbPosterPath ?? this.tmdbPosterPath,
+      tmdbBackdropPath: tmdbBackdropPath ?? this.tmdbBackdropPath,
+    );
   }
 }
 

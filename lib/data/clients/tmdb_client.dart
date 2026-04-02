@@ -103,4 +103,55 @@ class TmdbClient {
       return [];
     }
   }
+
+  /// Get trending content for this week
+  Future<List<Map<String, dynamic>>> getTrending(String mediaType, {int page = 1}) async {
+    try {
+      final res = await _dio.get('/trending/$mediaType/week', queryParameters: {'page': page});
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Trending $mediaType error: ${e.message}');
+      return [];
+    }
+  }
+
+  /// Get popular content
+  Future<List<Map<String, dynamic>>> getPopular(String mediaType, {int page = 1}) async {
+    try {
+      final res = await _dio.get('/$mediaType/popular', queryParameters: {'page': page});
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Popular $mediaType error: ${e.message}');
+      return [];
+    }
+  }
+
+  /// Lightweight: fetch only images (logos) for a given media item
+  Future<Map<String, dynamic>?> getImages(int id, String mediaType) async {
+    try {
+      final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
+      final res = await _dio.get('/$type/$id/images', queryParameters: {
+        'include_image_language': 'en,null',
+      });
+      return res.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      dev.log('[TMDB] Images $id error: ${e.message}');
+      return null;
+    }
+  }
+
+  /// Lightweight: fetch only videos (trailers) for a given media item
+  Future<List<Map<String, dynamic>>> getVideos(int id, String mediaType) async {
+    try {
+      final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
+      final res = await _dio.get('/$type/$id/videos');
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Videos $id error: ${e.message}');
+      return [];
+    }
+  }
 }

@@ -56,6 +56,9 @@ class ContentDetail {
   // Similar items
   final List<SimilarItem>? similarItems;
 
+  // Admin flag — when true, all data comes from GitHub, not TMDB
+  final bool isAdmin;
+
   ContentDetail({
     required this.id,
     required this.title,
@@ -89,6 +92,7 @@ class ContentDetail {
     this.tmdbSeasons,
     this.tmdbLogoUrl,
     this.similarItems,
+    this.isAdmin = false,
   });
 
   ContentDetail copyWith({

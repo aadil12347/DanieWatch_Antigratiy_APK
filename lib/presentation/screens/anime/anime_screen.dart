@@ -24,6 +24,15 @@ class _AnimeScreenState extends ConsumerState<AnimeScreen> {
   final FocusNode _searchFocus = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    // Clear shared search state when entering this category page
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(searchProvider.notifier).clear();
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
@@ -49,6 +58,7 @@ class _AnimeScreenState extends ConsumerState<AnimeScreen> {
             allItems: allItems,
             searchState: searchState,
             index: index,
+            enforceCategory: 'Anime',
           )
         : allItems;
 

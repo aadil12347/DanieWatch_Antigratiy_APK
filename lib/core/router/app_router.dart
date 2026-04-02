@@ -80,13 +80,14 @@ final appRouter = GoRouter(
           pageBuilder: (context, state) => _fadePage(const HomeScreen(), state),
         ),
         GoRoute(
-          path: '/movies',
+          path: '/bollywood',
           pageBuilder: (context, state) =>
-              _fadePage(const MoviesScreen(), state),
+              _fadePage(const BollywoodScreen(), state),
         ),
         GoRoute(
-          path: '/tv',
-          pageBuilder: (context, state) => _fadePage(const TvScreen(), state),
+          path: '/hollywood',
+          pageBuilder: (context, state) =>
+              _fadePage(const HollywoodScreen(), state),
         ),
         GoRoute(
           path: '/anime',

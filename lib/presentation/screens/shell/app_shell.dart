@@ -80,6 +80,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     // Close more modal if navigating
     if (_isMoreOpen) setState(() => _isMoreOpen = false);
     if (index != _currentIndex) {
+      // Clear filters when switching tabs to prevent filter bleed
+      ref.read(searchProvider.notifier).clear();
       setState(() => _currentIndex = index);
       context.go(_tabs[index]);
     }

@@ -118,14 +118,14 @@ class CustomDrawer extends StatelessWidget {
                           route: '/home',
                           currentRoute: currentRoute),
                       _NavItem(
-                          label: 'Movies',
-                          icon: Icons.movie_rounded,
-                          route: '/movies',
+                          label: 'Bollywood',
+                          icon: Icons.movie_filter_rounded,
+                          route: '/bollywood',
                           currentRoute: currentRoute),
                       _NavItem(
-                          label: 'TV Series',
-                          icon: Icons.tv_rounded,
-                          route: '/tv',
+                          label: 'Hollywood',
+                          icon: Icons.theaters_rounded,
+                          route: '/hollywood',
                           currentRoute: currentRoute),
                       _NavItem(
                           label: 'Anime',

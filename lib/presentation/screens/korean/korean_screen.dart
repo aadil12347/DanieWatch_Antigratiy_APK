@@ -24,6 +24,14 @@ class _KoreanScreenState extends ConsumerState<KoreanScreen> {
   final FocusNode _searchFocus = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(searchProvider.notifier).clear();
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
@@ -49,6 +57,7 @@ class _KoreanScreenState extends ConsumerState<KoreanScreen> {
             allItems: allItems,
             searchState: searchState,
             index: index,
+            enforceCategory: 'Korean',
           )
         : allItems;
 

@@ -49,6 +49,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         tmdbId: widget.tmdbId,
         seasonNumber: _selectedSeason,
         seasonsData: content?.seasonsData,
+        isAdmin: content?.isAdmin ?? false,
       );
 
   @override
@@ -353,6 +354,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     final bool hasWatch = watchLink != null && watchLink.isNotEmpty;
     final bool hasDownload = downloadLink != null && downloadLink.isNotEmpty;
+    final bool hasTrailer = content.trailerUrl != null && content.trailerUrl!.isNotEmpty;
     return Row(
       children: [
         // Play Button
@@ -405,6 +407,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           _AnimatedActionButton(
             icon: Icons.download_rounded,
             onTap: hasWatch ? () => _handleDownload(watchLink!) : null,
+            isActive: false,
+          ),
+        if (content.isMovie) const SizedBox(width: 12),
+
+        // Trailer Button (from TMDB)
+        if (hasTrailer)
+          _AnimatedActionButton(
+            icon: Icons.play_circle_outline_rounded,
+            onTap: () => _openTrailer(content.trailerUrl!),
             isActive: false,
           ),
       ],
@@ -913,6 +924,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         ),
       ),
     );
+  }
+
+  void _openTrailer(String trailerUrl) async {
+    HapticFeedback.lightImpact();
+    final uri = Uri.parse(trailerUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _toggleWatchlist(ContentDetail content, bool currentIsInWatchlist) {

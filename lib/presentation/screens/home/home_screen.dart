@@ -22,93 +22,99 @@ class HomeScreen extends ConsumerWidget {
     final trending = ref.watch(trendingProvider);
 
     return manifestAsync.when(
-      loading: () => const _LoadingHome(),
-      error: (e, _) => _ErrorHome(error: e.toString()),
+      loading: () => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!) : const _LoadingHome(),
+      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!) : _ErrorHome(error: e.toString()),
       data: (manifest) {
         if (manifest == null || manifest.items.isEmpty) {
           return const _EmptyHome();
         }
+        return _buildHomeContent(context, ref, manifest);
+      },
+    );
+  }
 
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          drawer: const CustomDrawer(),
-          body: CustomAppBar(
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                // Personalized Header
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 44, 16, 20),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildHomeContent(BuildContext context, WidgetRef ref, dynamic manifest) {
+    final sections = ref.watch(homeSectionsProvider);
+    final trending = ref.watch(trendingProvider);
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      drawer: const CustomDrawer(),
+      body: CustomAppBar(
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // Personalized Header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 44, 16, 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
                       children: [
-                        Row(
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.person_outline_rounded,
+                              size: 24, color: Colors.white),
+                        ),
+                        const SizedBox(width: 12),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: const BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.person_outline_rounded,
-                                  size: 24, color: Colors.white),
-                            ),
-                            const SizedBox(width: 12),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Hello',
-                                    style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 12,
-                                        height: 1.1)),
-                                Text('Daniyal',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        height: 1.2)),
-                              ],
-                            ),
+                            Text('Hello',
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    height: 1.1)),
+                            Text('Daniyal',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    height: 1.2)),
                           ],
                         ),
-                        const Icon(Icons.notifications_none_rounded,
-                            size: 28, color: Colors.white),
                       ],
                     ),
-                  ),
+                    const Icon(Icons.notifications_none_rounded,
+                        size: 28, color: Colors.white),
+                  ],
                 ),
-
-                // Content sections
-                if (trending.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: StackedCarousel(items: trending),
-                  ),
-
-                // Content sections
-                ...sections.map((section) => SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SectionHeader(
-                            title: section.title,
-                            onSeeAll: () =>
-                                _handleSeeAll(ref, context, section.title),
-                          ),
-                          ContentRow(items: section.items),
-                        ],
-                      ),
-                    )),
-
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 80),
-                ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+
+            // Content sections
+            if (trending.isNotEmpty)
+              SliverToBoxAdapter(
+                child: StackedCarousel(items: trending),
+              ),
+
+            // Content sections
+            ...sections.map((section) => SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SectionHeader(
+                        title: section.title,
+                        onSeeAll: () =>
+                            _handleSeeAll(ref, context, section.title),
+                      ),
+                      ContentRow(items: section.items),
+                    ],
+                  ),
+                )),
+
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 80),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

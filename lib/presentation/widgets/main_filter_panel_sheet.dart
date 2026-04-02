@@ -25,17 +25,7 @@ class _MainFilterPanelContentState
   }
 
   // ── Categories ──
-  static const _categories = ['Movie', 'TV Shows', 'K-Drama', 'Anime'];
-
-  // ── Regions ──
-  static const _regions = [
-    'US',
-    'South Korea',
-    'China',
-    'Japan',
-    'India',
-    'UK'
-  ];
+  static const _categories = ['Movie', 'TV Shows', 'Anime', 'K-Drama', 'Bollywood', 'Hollywood'];
 
   // ── Genres ──
   static const _genres = [
@@ -65,9 +55,9 @@ class _MainFilterPanelContentState
   ];
 
   // ── Sort ──
-  static const _sorts = ['Popularity', 'Latest Release'];
+  static const _sorts = ['Popularity', 'Latest Release', 'Top Rated'];
 
-  Widget _buildMultiSelectSection(String title, List<String> options,
+  Widget _buildHorizontalSelectSection(String title, List<String> options,
       Set<String> selectedValues, void Function(String) onToggle) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,45 +73,50 @@ class _MainFilterPanelContentState
             ),
           ),
         ),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: options.map((option) {
-            final isSelected = selectedValues.contains(option);
-            return GestureDetector(
-              onTap: () => onToggle(option),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.primary.withValues(alpha: 0.5),
-                    width: 1.5,
+        SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: options.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, idx) {
+              final option = options[idx];
+              final isSelected = selectedValues.contains(option);
+              return GestureDetector(
+                onTap: () => onToggle(option),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.primary.withValues(alpha: 0.5),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    option,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                child: Text(
-                  option,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
+              );
+            },
+          ),
         ),
         const SizedBox(height: 20),
       ],
     );
   }
 
-  Widget _buildSingleSelectSection(String title, List<String> options,
+  Widget _buildHorizontalSingleSelectSection(String title, List<String> options,
       String selectedValue, void Function(String) onTap) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,38 +132,43 @@ class _MainFilterPanelContentState
             ),
           ),
         ),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: options.map((option) {
-            final isSelected = option == selectedValue;
-            return GestureDetector(
-              onTap: () => onTap(option),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.primary.withValues(alpha: 0.5),
-                    width: 1.5,
+        SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: options.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, idx) {
+              final option = options[idx];
+              final isSelected = option == selectedValue;
+              return GestureDetector(
+                onTap: () => onTap(option),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.primary.withValues(alpha: 0.5),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    option,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                child: Text(
-                  option,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
+              );
+            },
+          ),
         ),
         const SizedBox(height: 20),
       ],
@@ -180,11 +180,8 @@ class _MainFilterPanelContentState
     final location = GoRouterState.of(context).uri.path;
     final isCategoryPage = location == '/anime' || 
                           location == '/korean' || 
-                          location == '/movies' || 
-                          location == '/tv';
-
-    final categoriesToDisplay = isCategoryPage ? ['Movie', 'Season'] : _categories;
-    final sortsToDisplay = isCategoryPage ? ['Latest', 'Top Rated', 'Popularity'] : _sorts;
+                          location == '/bollywood' || 
+                          location == '/hollywood';
 
     return Container(
       constraints:
@@ -226,44 +223,27 @@ class _MainFilterPanelContentState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Categories
-                  _buildMultiSelectSection(
-                    'Categories',
-                    categoriesToDisplay,
-                    _pendingFilters.categories,
-                    (val) => setState(() {
-                      final newSet =
-                          Set<String>.from(_pendingFilters.categories);
-                      if (newSet.contains(val)) {
-                        newSet.remove(val);
-                      } else {
-                        newSet.add(val);
-                      }
-                      _pendingFilters =
-                          _pendingFilters.copyWith(categories: newSet);
-                    }),
-                  ),
-
-                  // Regions (Only on Explore page)
+                  // Categories (only on Explore page, not category pages)
                   if (!isCategoryPage)
-                    _buildMultiSelectSection(
-                      'Regions',
-                      _regions,
-                      _pendingFilters.regions,
+                    _buildHorizontalSelectSection(
+                      'Categories',
+                      _categories,
+                      _pendingFilters.categories,
                       (val) => setState(() {
-                        final newSet = Set<String>.from(_pendingFilters.regions);
+                        final newSet =
+                            Set<String>.from(_pendingFilters.categories);
                         if (newSet.contains(val)) {
                           newSet.remove(val);
                         } else {
                           newSet.add(val);
                         }
                         _pendingFilters =
-                            _pendingFilters.copyWith(regions: newSet);
+                            _pendingFilters.copyWith(categories: newSet);
                       }),
                     ),
 
                   // Genre
-                  _buildMultiSelectSection(
+                  _buildHorizontalSelectSection(
                     'Genre',
                     _genres,
                     _pendingFilters.genres,
@@ -280,7 +260,7 @@ class _MainFilterPanelContentState
                   ),
 
                   // Time/Periods
-                  _buildMultiSelectSection(
+                  _buildHorizontalSelectSection(
                     'Time/Periods',
                     _years,
                     _pendingFilters.years,
@@ -296,9 +276,9 @@ class _MainFilterPanelContentState
                   ),
 
                   // Sort
-                  _buildSingleSelectSection(
+                  _buildHorizontalSingleSelectSection(
                     'Sort',
-                    sortsToDisplay,
+                    _sorts,
                     _pendingFilters.sortBy,
                     (val) => setState(() {
                       _pendingFilters = _pendingFilters.copyWith(sortBy: val);

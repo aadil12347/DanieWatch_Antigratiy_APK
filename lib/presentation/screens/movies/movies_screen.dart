@@ -12,16 +12,24 @@ import '../../providers/search_provider.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 
-class MoviesScreen extends ConsumerStatefulWidget {
-  const MoviesScreen({super.key});
+class BollywoodScreen extends ConsumerStatefulWidget {
+  const BollywoodScreen({super.key});
 
   @override
-  ConsumerState<MoviesScreen> createState() => _MoviesScreenState();
+  ConsumerState<BollywoodScreen> createState() => _BollywoodScreenState();
 }
 
-class _MoviesScreenState extends ConsumerState<MoviesScreen> {
+class _BollywoodScreenState extends ConsumerState<BollywoodScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(searchProvider.notifier).clear();
+    });
+  }
 
   @override
   void dispose() {
@@ -37,18 +45,21 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
-    final allItems = ref.watch(moviesProvider);
+    final allItems = ref.watch(bollywoodProvider);
     final index = ref.watch(manifestIndexProvider);
 
     final hasSearch = searchState.query.isNotEmpty;
     final hasFilters = searchState.filters.hasActiveFilters;
     final showResults = hasSearch || hasFilters;
 
-    final itemsToDisplay = FilterUtils.getFilteredItems(
-      allItems: allItems,
-      searchState: searchState,
-      index: index,
-    );
+    final itemsToDisplay = showResults
+        ? FilterUtils.getFilteredItems(
+            allItems: allItems,
+            searchState: searchState,
+            index: index,
+            enforceCategory: 'Bollywood',
+          )
+        : allItems;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -60,11 +71,9 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Title scrolls with content
               const SliverToBoxAdapter(
-                child: CategoryTitle(title: 'Movies'),
+                child: CategoryTitle(title: 'Bollywood'),
               ),
-              // Search bar floats
               SliverPersistentHeader(
                 floating: true,
                 delegate: FloatingSearchBarDelegate(
@@ -73,7 +82,6 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
                   onSearchChanged: _onSearchChanged,
                 ),
               ),
-              // Filter chips
               const SliverToBoxAdapter(
                 child: CategoryFilterChips(),
               ),
@@ -85,7 +93,7 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
                 const SliverFillRemaining(
                   child: Center(child: ShimmerGrid()),
                 )
-              else if (itemsToDisplay.isEmpty)
+              else if (showResults && itemsToDisplay.isEmpty)
                 const SliverFillRemaining(
                   child: EmptyResultsView(
                     message: 'Try adjusting your filters or search keywords to find the content you want.',
@@ -93,12 +101,7 @@ class _MoviesScreenState extends ConsumerState<MoviesScreen> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.only(
-                    top: 16,
-                    left: 20,
-                    right: 20,
-                    bottom: 80,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
