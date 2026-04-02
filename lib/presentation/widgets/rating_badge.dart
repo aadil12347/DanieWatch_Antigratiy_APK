@@ -19,8 +19,12 @@ class RatingBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _ratingColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        color: _ratingColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _ratingColor.withValues(alpha: 0.2),
+          width: 1,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -31,8 +35,9 @@ class RatingBadge extends StatelessWidget {
             rating.toStringAsFixed(1),
             style: TextStyle(
               color: _ratingColor,
-              fontSize: fontSize ?? 12,
-              fontWeight: FontWeight.w700,
+              fontSize: fontSize ?? 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.2,
             ),
           ),
         ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
@@ -68,7 +69,7 @@ class MoreModalContent extends ConsumerWidget {
           children: [
             Icon(
               isActive ? page.activeIcon : page.icon,
-              color: isActive ? AppColors.primary : AppColors.textPrimary,
+              color: isActive ? AppColors.primary : AppColors.textMuted,
               size: 24,
             ),
             const SizedBox(height: 4),
@@ -76,10 +77,11 @@ class MoreModalContent extends ConsumerWidget {
               page.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isActive ? AppColors.primary : AppColors.textPrimary,
-                fontSize: 10,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+              style: GoogleFonts.inter(
+                color: isActive ? AppColors.primary : AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                letterSpacing: -0.2,
               ),
             ),
           ],

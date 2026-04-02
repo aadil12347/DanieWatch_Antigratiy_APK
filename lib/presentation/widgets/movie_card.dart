@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -92,7 +93,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(24),
             color: AppColors.card,
             boxShadow: [
               BoxShadow(
@@ -261,14 +262,14 @@ class _MovieCardState extends ConsumerState<MovieCard>
       textAlign: TextAlign.center,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
+      style: GoogleFonts.lora(
         color: Colors.white,
-        fontSize: 16,
-        fontWeight: FontWeight.w900,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
         height: 1.1,
         letterSpacing: -0.5,
         shadows: [
-          Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 4)),
+          Shadow(color: Colors.black87, blurRadius: 12, offset: Offset(0, 4)),
         ],
       ),
     );
@@ -401,14 +402,14 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
             color: Colors.black.withValues(alpha: 0.4),
             shape: BoxShape.circle,
             border: Border.all(
-              color: isInWatchlist ? Colors.red : Colors.white24,
+              color: isInWatchlist ? AppColors.primary : Colors.white24,
               width: 1,
             ),
           ),
           child: Icon(
             isInWatchlist ? Icons.bookmark : Icons.bookmark_outline,
             size: 18,
-            color: isInWatchlist ? Colors.red : Colors.white,
+            color: isInWatchlist ? AppColors.primary : Colors.white,
           ),
         ),
       ),

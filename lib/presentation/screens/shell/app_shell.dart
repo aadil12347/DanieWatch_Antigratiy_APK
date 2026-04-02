@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
@@ -277,7 +278,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                               borderRadius:
                                   BorderRadius.circular(isOtherModalOpen ? 24 : 32),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.1),
+                              color: AppColors.surface.withValues(alpha: 0.15),
                                 width: 1,
                               ),
                               boxShadow: [
@@ -428,7 +429,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                             opacity: isSelected ? 0.0 : 1.0,
                                                             child: Icon(
                                                               _icons[index],
-                                                              color: AppColors.textPrimary,
+                                                              color: AppColors.textMuted,
                                                               size: 24,
                                                             ),
                                                           ),
@@ -438,14 +439,15 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                       // Stable text animation
                                                       AnimatedDefaultTextStyle(
                                                         duration: const Duration(milliseconds: 200),
-                                                        style: TextStyle(
+                                                        style: GoogleFonts.inter(
                                                           color: isSelected
                                                               ? AppColors.primary
-                                                              : AppColors.textPrimary,
-                                                          fontSize: 10,
+                                                              : AppColors.textMuted,
+                                                          fontSize: 11,
                                                           fontWeight: isSelected
                                                               ? FontWeight.w600
-                                                              : FontWeight.w400,
+                                                              : FontWeight.w500,
+                                                          letterSpacing: -0.2,
                                                         ),
                                                         child: Text(_labels[index]),
                                                       ),

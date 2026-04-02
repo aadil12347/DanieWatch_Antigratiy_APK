@@ -41,10 +41,10 @@ class EmptyResultsView extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: AppColors.primary,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
+              style: GoogleFonts.lora(
+                color: AppColors.textPrimary,
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
                 letterSpacing: -0.5,
               ),
             ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/app_theme.dart';
 
@@ -22,22 +23,22 @@ class SectionHeader extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: GoogleFonts.lora(
               color: AppColors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.5,
             ),
           ),
           if (onSeeAll != null ||
               true) // We enforce it here to show "See all" per design
             GestureDetector(
               onTap: onSeeAll,
-              child: const Text(
+              child: Text(
                 'See all',
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   color: AppColors.primary,
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),

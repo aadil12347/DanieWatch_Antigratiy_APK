@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -94,11 +95,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     else
                       Text(
                         content.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
+                        style: GoogleFonts.lora(
+                          color: AppColors.textPrimary,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.8,
                         ),
                       ),
                     const SizedBox(height: 12),
@@ -238,12 +239,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     items.add(Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+        Icon(Icons.star_rounded, size: 16, color: AppColors.ratingMid),
         const SizedBox(width: 3),
         Text(
           content.voteAverage.toStringAsFixed(1),
-          style: const TextStyle(
-              color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+          style: GoogleFonts.inter(
+              color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
         ),
       ],
     ));
@@ -427,11 +428,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Actors',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700)),
+        Text('Actors',
+            style: GoogleFonts.lora(
+                color: AppColors.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         SizedBox(
           height: 100,
@@ -568,10 +569,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       child: Column(
         children: [
           Text(label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : AppColors.textMuted,
-                fontSize: 16,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+              style: GoogleFonts.lora(
+                color: isSelected ? AppColors.textPrimary : AppColors.textMuted,
+                fontSize: 18,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
               )),
           const SizedBox(height: 4),
           Container(
@@ -594,8 +595,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(8),
+            color: AppColors.input,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border, width: 0.5),
           ),
           child: DropdownButtonHideUnderline(
@@ -636,8 +637,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           child: Container(
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(8),
+              color: AppColors.input,
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border, width: 0.5),
             ),
             child: Material(

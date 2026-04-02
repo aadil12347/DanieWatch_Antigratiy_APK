@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -14,7 +15,7 @@ class CustomDrawer extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
         child: Drawer(
-          backgroundColor: const Color(0xE6080808), // ~90% opaque dark
+          backgroundColor: AppColors.background.withValues(alpha: 0.95), // ~95% opaque dark Claude bg
           width: MediaQuery.sizeOf(context).width * 0.72,
           child: SafeArea(
             child: Column(
@@ -43,24 +44,24 @@ class CustomDrawer extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          const Row(
+                           Row(
                             children: [
                               Text(
                                 'Danie',
-                                style: TextStyle(
+                                style: GoogleFonts.lora(
                                   color: AppColors.textPrimary,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.8,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.5,
                                 ),
                               ),
                               Text(
                                 'Watch',
-                                style: TextStyle(
+                                style: GoogleFonts.lora(
                                   color: AppColors.primary,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.8,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.5,
                                 ),
                               ),
                             ],
@@ -217,7 +218,7 @@ class _NavItem extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 2),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: () {
             Navigator.pop(context);
@@ -229,7 +230,7 @@ class _NavItem extends StatelessWidget {
               }
             }
           },
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           splashColor: AppColors.primary.withValues(alpha: 0.12),
           highlightColor: AppColors.primary.withValues(alpha: 0.06),
           child: AnimatedContainer(
@@ -239,7 +240,7 @@ class _NavItem extends StatelessWidget {
               color: isSelected
                   ? AppColors.primary.withValues(alpha: 0.14)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
               border: isSelected
                   ? Border.all(
                       color: AppColors.primary.withValues(alpha: 0.22),

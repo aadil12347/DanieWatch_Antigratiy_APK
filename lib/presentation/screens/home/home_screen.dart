@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -63,19 +65,20 @@ class HomeScreen extends ConsumerWidget {
                               size: 24, color: Colors.white),
                         ),
                         const SizedBox(width: 12),
-                        const Column(
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Hello',
-                                style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
+                            Text('Hello,',
+                                style: GoogleFonts.inter(
+                                    color: AppColors.textMuted,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
                                     height: 1.1)),
                             Text('Daniyal',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                                style: GoogleFonts.lora(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w500,
                                     height: 1.2)),
                           ],
                         ),
@@ -200,7 +203,11 @@ class _ErrorHome extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 'Something went wrong',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: GoogleFonts.lora(
+                  color: AppColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -233,7 +240,11 @@ class _EmptyHome extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'No content available',
-              style: Theme.of(context).textTheme.titleLarge,
+              style: GoogleFonts.lora(
+                color: AppColors.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),

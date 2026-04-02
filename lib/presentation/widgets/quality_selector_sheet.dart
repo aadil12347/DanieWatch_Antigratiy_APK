@@ -7,9 +7,11 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../core/theme/app_theme.dart';
 import '../../services/m3u8_parser.dart';
 import '../providers/download_modal_provider.dart';
 
@@ -178,11 +180,11 @@ class _QualitySelectorContentState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.download_rounded,
-                      color: Colors.red, size: 22),
+                      color: AppColors.primary, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -194,8 +196,8 @@ class _QualitySelectorContentState
                           modalState.season! > 0)
                         Text(
                           'SEASON ${modalState.season} · EPISODE ${modalState.episode}',
-                          style: const TextStyle(
-                            color: Colors.red,
+                          style: GoogleFonts.inter(
+                            color: AppColors.primary,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1.2,
@@ -203,10 +205,10 @@ class _QualitySelectorContentState
                         ),
                       Text(
                         widget.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                        style: GoogleFonts.lora(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -342,11 +344,11 @@ class _QualitySelectorContentState
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? Colors.red
-                        : Colors.white.withValues(alpha: 0.05),
+                        ? AppColors.primary
+                        : AppColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: isSelected ? Colors.red : Colors.white10),
+                        color: isSelected ? AppColors.primary : AppColors.border),
                   ),
                   alignment: Alignment.center,
                   child: Text(
@@ -387,11 +389,11 @@ class _QualitySelectorContentState
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? Colors.red.withValues(alpha: 0.1)
-                      : Colors.white.withValues(alpha: 0.05),
+                      ? AppColors.primary.withValues(alpha: 0.1)
+                      : AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: isSelected ? Colors.red : Colors.white10),
+                      color: isSelected ? AppColors.primary : AppColors.border),
                 ),
                 child: Row(
                   children: [
@@ -401,7 +403,7 @@ class _QualitySelectorContentState
                     const Spacer(),
                     if (isSelected)
                       const Icon(Icons.check_circle,
-                          color: Colors.red, size: 20),
+                          color: AppColors.primary, size: 20),
                   ],
                 ),
               ),
@@ -444,9 +446,9 @@ class _QualitySelectorContentState
                 }
               : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.white10,
+            disabledBackgroundColor: AppColors.border.withValues(alpha: 0.3),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 0,

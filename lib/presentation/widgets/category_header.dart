@@ -25,10 +25,10 @@ class CategoryTitle extends StatelessWidget {
         children: [
           Text(
             title,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
+            style: GoogleFonts.lora(
+              color: AppColors.textPrimary,
+              fontSize: 32,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
             ),
           ),
@@ -66,13 +66,14 @@ class CategorySearchBar extends ConsumerWidget {
             child: Container(
               height: 48,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E),
-                borderRadius: BorderRadius.circular(16),
-                border: searchFocus.hasFocus
-                    ? Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.5),
-                        width: 1)
-                    : null,
+                color: AppColors.input,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: searchFocus.hasFocus 
+                      ? AppColors.primary.withValues(alpha: 0.5)
+                      : AppColors.border,
+                  width: 1,
+                ),
               ),
               child: TextField(
                 controller: searchController,
@@ -121,7 +122,7 @@ class CategorySearchBar extends ConsumerWidget {
               width: 48,
               decoration: BoxDecoration(
                 color: AppColors.primary,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(Icons.tune_rounded,
                   color: Colors.white, size: 22),
@@ -196,8 +197,8 @@ class CategoryFilterChips extends ConsumerWidget {
               children: [
                 Text(
                   activeFilterLabels[idx],
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: GoogleFonts.inter(
+                    color: AppColors.textPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -317,10 +318,10 @@ class CategoryHeader extends ConsumerWidget {
             children: [
               Text(
                 title,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
+                style: GoogleFonts.lora(
+                  color: AppColors.textPrimary,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -338,13 +339,14 @@ class CategoryHeader extends ConsumerWidget {
                 child: Container(
                   height: 48,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A2E),
-                    borderRadius: BorderRadius.circular(16),
-                    border: searchFocus.hasFocus
-                        ? Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.5),
-                            width: 1)
-                        : null,
+                    color: AppColors.input,
+                    borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: searchFocus.hasFocus
+                        ? AppColors.primary.withValues(alpha: 0.5)
+                        : AppColors.border,
+                    width: 1,
+                  ),
                   ),
                   child: TextField(
                     controller: searchController,
@@ -393,7 +395,7 @@ class CategoryHeader extends ConsumerWidget {
                   width: 48,
                   decoration: BoxDecoration(
                     color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.tune_rounded,
                       color: Colors.white, size: 22),
@@ -426,8 +428,8 @@ class CategoryHeader extends ConsumerWidget {
                     children: [
                       Text(
                         activeFilterLabels[idx],
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: GoogleFonts.inter(
+                          color: AppColors.textPrimary,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),

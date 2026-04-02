@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
 
 Future<void> showPlayLoader({
   required BuildContext context,
@@ -117,7 +118,7 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
                 height: MediaQuery.of(context).size.height / 2,
                 child: FractionalTranslation(
                   translation: Offset(0, -1 + _panelAnimation.value),
-                  child: Container(color: const Color(0xFF1C2020)),
+                  child: Container(color: AppColors.background),
                 ),
               ),
               // Bottom Panel
@@ -128,7 +129,7 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
                 height: MediaQuery.of(context).size.height / 2,
                 child: FractionalTranslation(
                   translation: Offset(0, 1 - _panelAnimation.value),
-                  child: Container(color: const Color(0xFF1C2020)),
+                  child: Container(color: AppColors.background),
                 ),
               ),
               // Loader Bars
@@ -162,19 +163,16 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
   Color _getBarColor(int index) {
     switch (index) {
       case 0:
-        return const Color(0xFF754FA0);
-      case 1:
-        return const Color(0xFF09B7BF);
-      case 2:
-        return const Color(0xFF90D36B);
       case 3:
-        return const Color(0xFFF2D40D);
+        return AppColors.primary;
+      case 1:
       case 4:
-        return const Color(0xFFFCB12B);
+        return AppColors.primary.withValues(alpha: 0.7);
+      case 2:
       case 5:
-        return const Color(0xFFED1B72);
+        return AppColors.primary.withValues(alpha: 0.4);
       default:
-        return Colors.white;
+        return AppColors.textPrimary;
     }
   }
 }

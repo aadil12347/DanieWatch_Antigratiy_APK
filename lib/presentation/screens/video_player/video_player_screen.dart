@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -548,11 +549,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return Container(
       key: key,
       color: Colors.black,
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
+            const SizedBox(
               width: 48,
               height: 48,
               child: CircularProgressIndicator(
@@ -560,21 +561,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             Text(
               'Loading Stream',
-              style: TextStyle(
-                color: Colors.white,
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.3,
               ),
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 6),
             Text(
               'Preparing playback...',
-              style: TextStyle(
-                color: Colors.white38,
+              style: GoogleFonts.inter(
+                color: AppColors.textMuted,
                 fontSize: 13,
                 fontWeight: FontWeight.w400,
               ),
@@ -589,11 +590,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return Container(
       key: key,
       color: Colors.black,
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
+            const SizedBox(
               width: 44,
               height: 44,
               child: CircularProgressIndicator(
@@ -601,11 +602,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text(
               'Finding sources...',
-              style: TextStyle(
-                color: Colors.white,
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.3,
