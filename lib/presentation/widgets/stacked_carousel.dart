@@ -27,7 +27,9 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
   void initState() {
     super.initState();
     _displayItems = widget.items.take(5).toList();
-    _positions = List.generate(_displayItems.length, (index) => index - 2);
+    // Center items around 0 based on count
+    final maxDist = _displayItems.length ~/ 2;
+    _positions = List.generate(_displayItems.length, (index) => index - maxDist);
     _updateActiveIndex();
     _startAutoPlay();
   }
@@ -35,17 +37,16 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
   @override
   void didUpdateWidget(StackedCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only update if items actually changed to avoid unnecessary resets
     if (widget.items != oldWidget.items) {
       final newItems = widget.items.take(5).toList();
-      // Simple equality check for IDs to avoid flickering on reference changes
       final oldIds = _displayItems.map((e) => e.id).join(',');
       final newIds = newItems.map((e) => e.id).join(',');
       
       if (oldIds != newIds) {
         setState(() {
           _displayItems = newItems;
-          _positions = List.generate(_displayItems.length, (index) => index - 2);
+          final maxDist = _displayItems.length ~/ 2;
+          _positions = List.generate(_displayItems.length, (index) => index - maxDist);
           _updateActiveIndex();
         });
       }
@@ -60,7 +61,7 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
 
   void _startAutoPlay() {
     _autoPlayTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      _step(-1);
+      _step(-1); // Shift to next (active 1 becomes active 0)
     });
   }
 
@@ -75,14 +76,41 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
 
   void _updateActiveIndex() {
     _activeIndex = _positions.indexOf(0);
+    // Safety check: if 0 is not found (shouldn't happen), use first item
+    if (_activeIndex == -1 && _displayItems.isNotEmpty) {
+      _activeIndex = 0;
+    }
+  }
+
+  /// Implements JS: getPos = (current, active) => { diff = current - active; if (abs(diff) > maxDist) return -current; return diff; }
+  void _rotate(int activePos) {
+    if (_displayItems.isEmpty) return;
+    
+    setState(() {
+      final maxDist = _displayItems.length ~/ 2;
+      for (int i = 0; i < _positions.length; i++) {
+        final current = _positions[i];
+        final diff = current - activePos;
+        
+        if (diff.abs() > maxDist) {
+          _positions[i] = -current;
+        } else {
+          _positions[i] = diff;
+        }
+      }
+      _updateActiveIndex();
+    });
   }
 
   void _step(int direction) {
+    // direction -1 = next, 1 = previous
+    // To move to "next", we act as if we clicked the item at pos 1
     setState(() {
       for (int i = 0; i < _positions.length; i++) {
         int current = _positions[i];
         int nextPos = current + direction;
         
+        // Handle wrapping logic from JS: if nextPos > 2 return -2
         if (nextPos > 2) nextPos = -2;
         if (nextPos < -2) nextPos = 2;
         
@@ -94,14 +122,14 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
 
   void _handleTap(int index) {
     _resetAutoPlay();
-    final pos = _positions[index];
-    if (pos == 0) {
+    final clickedPos = _positions[index];
+    if (clickedPos == 0) {
       final item = _displayItems[index];
       context.push('/details/${item.mediaType}/${item.id}');
-    } else if (pos > 0) {
-      _step(-1);
-    } else if (pos < 0) {
-      _step(1);
+    } else if (clickedPos > 0) {
+      _step(-1); // Always move only one step towards the right
+    } else if (clickedPos < 0) {
+      _step(1); // Always move only one step towards the left
     }
   }
 
@@ -109,7 +137,11 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
   Widget build(BuildContext context) {
     if (_displayItems.isEmpty) return const SizedBox.shrink();
 
-    final activeItem = _displayItems[_activeIndex];
+    // Safety check for activeIndex
+    final activeIndex = _activeIndex >= 0 && _activeIndex < _displayItems.length 
+        ? _activeIndex 
+        : 0;
+    final activeItem = _displayItems[activeIndex];
 
     return Column(
       children: [
@@ -118,9 +150,9 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
             _resetAutoPlay();
             if (details.primaryVelocity == null) return;
             if (details.primaryVelocity! < 0) {
-              _step(-1);
+              _step(-1); // Swipe left = next
             } else if (details.primaryVelocity! > 0) {
-              _step(1);
+              _step(1); // Swipe right = previous
             }
           },
           child: SizedBox(
@@ -133,10 +165,10 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
                 return _buildCarouselItem(index, pos);
               }).toList()
                 ..sort((a, b) {
-                  final posA = (a.key as ValueKey<int>).value;
-                  final posB = (b.key as ValueKey<int>).value;
-                  final zA = _getZIndex(_positions[posA]);
-                  final zB = _getZIndex(_positions[posB]);
+                  final idxA = (a.key as ValueKey<int>).value;
+                  final idxB = (b.key as ValueKey<int>).value;
+                  final zA = _getZIndex(_positions[idxA]);
+                  final zB = _getZIndex(_positions[idxB]);
                   return zA.compareTo(zB);
                 }),
             ),
@@ -190,8 +222,8 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     double opacity = 1.0;
     double blur = 0.0;
 
-    const double cardWidth = 170.0;
-    const double cardHeight = 280.0;
+    const double cardWidth = 170.0; // match working commit
+    const double cardHeight = 280.0; // match working commit
 
     if (pos == 0) {
       scale = 1.0;
@@ -199,19 +231,19 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
       opacity = 1.0;
       blur = 0.0;
     } else if (pos == -1) {
-      scale = 0.85;
-      translateX = -75.0; 
-      opacity = 0.7;
-      blur = 1.0;
+      scale = 0.85; // match working commit
+      translateX = -75.0; // match working commit
+      opacity = 0.7; // match working commit
+      blur = 1.0; 
     } else if (pos == 1) {
       scale = 0.85;
       translateX = 75.0;
       opacity = 0.7;
       blur = 1.0;
     } else if (pos == -2) {
-      scale = 0.75;
-      translateX = -130.0;
-      opacity = 0.4;
+      scale = 0.75; // match working commit
+      translateX = -130.0; // match working commit
+      opacity = 0.4; // match working commit
       blur = 3.0;
     } else if (pos == 2) {
       scale = 0.75;
@@ -222,15 +254,15 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
 
     return AnimatedPositioned(
       key: ValueKey<int>(index),
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 350), // match working commit
+      curve: Curves.easeOutCubic, // match working commit
       left: 0,
       right: 0,
       child: Center(
         child: AnimatedTransform(
           transform: Matrix4.identity()
-            ..translateByDouble(translateX, 0.0, 0.0, 0.0)
-            ..scaleByDouble(scale, scale, 1.0, 1.0),
+            ..translate(translateX)
+            ..scale(scale),
           duration: const Duration(milliseconds: 350),
           curve: Curves.easeOutCubic,
           child: GestureDetector(
