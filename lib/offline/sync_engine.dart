@@ -164,79 +164,107 @@ class ManifestSyncEngine {
   /// by TMDB ID to add genre_ids, vote info, language, and poster paths.
   Future<List<ManifestItem>> _enrichWithTmdb(List<ManifestItem> items) async {
     try {
-      dev.log('[SyncEngine] Starting TMDB enrichment...');
+      dev.log('[SyncEngine] Starting deep TMDB enrichment (5 pages each)...');
 
-      // Build index by ID for fast lookup
-      final itemIndex = <String, int>{};
-      for (int i = 0; i < items.length; i++) {
-        itemIndex['${items[i].id}-${items[i].mediaType}'] = i;
-      }
-
-      // Fetch TMDB trending and popular lists (2 pages each for movies + TV)
-      final tmdbResults = await Future.wait([
-        TmdbClient.instance.getTrending('movie', page: 1),
-        TmdbClient.instance.getTrending('movie', page: 2),
-        TmdbClient.instance.getTrending('tv', page: 1),
-        TmdbClient.instance.getTrending('tv', page: 2),
-        TmdbClient.instance.getPopular('movie', page: 1),
-        TmdbClient.instance.getPopular('movie', page: 2),
-        TmdbClient.instance.getPopular('tv', page: 1),
-        TmdbClient.instance.getPopular('tv', page: 2),
+      // 1. Fetch 5 pages of Trending and Popular (Movies & TV)
+      final results = await Future.wait([
+        TmdbClient.instance.getTrendingPages('movie', 5),
+        TmdbClient.instance.getTrendingPages('tv', 5),
+        TmdbClient.instance.getPopularPages('movie', 5),
+        TmdbClient.instance.getPopularPages('tv', 5),
       ]);
 
-      final trendingMovies = [...tmdbResults[0], ...tmdbResults[1]];
-      final trendingTv = [...tmdbResults[2], ...tmdbResults[3]];
-      final popularMovies = [...tmdbResults[4], ...tmdbResults[5]];
-      final popularTv = [...tmdbResults[6], ...tmdbResults[7]];
+      final trendingMovies = results[0];
+      final trendingTv = results[1];
+      final popularMovies = results[2];
+      final popularTv = results[3];
 
-      int enrichedCount = 0;
+      // 2. Build a deduplicated map of all TMDB data found, 
+      //    mapping TMDB_ID-MEDIA_TYPE -> Metadata
+      //    We use Trending first so it's "source of truth" for metadata if overlaps occur.
+      final tmdbMap = <String, Map<String, dynamic>>{};
+      
+      // Store ranking information
+      final trendingRanks = <String, int>{}; // Key -> Rank
+      final isPopularSet = <String>{};
 
-      // Process trending items
-      for (final tmdb in [...trendingMovies, ...trendingTv]) {
-        final id = tmdb['id'] as int?;
-        final mediaType = tmdb['media_type']?.toString() ?? 
-            (tmdb['first_air_date'] != null ? 'tv' : 'movie');
-        if (id == null) continue;
-
-        final key = '$id-$mediaType';
-        final idx = itemIndex[key];
-        if (idx == null) continue;
-
-        items[idx] = _enrichItem(items[idx], tmdb, isTrending: true);
-        enrichedCount++;
-      }
-
-      // Process popular items
-      for (final tmdb in popularMovies) {
-        final id = tmdb['id'] as int?;
+      // Process Trending (Preserves rank based on loop index)
+      for (int i = 0; i < trendingMovies.length; i++) {
+        final tmdb = trendingMovies[i];
+        final id = tmdb['id']?.toString();
         if (id == null) continue;
         final key = '$id-movie';
-        final idx = itemIndex[key];
-        if (idx == null) continue;
-        items[idx] = _enrichItem(items[idx], tmdb, isPopular: true);
-        enrichedCount++;
+        tmdbMap[key] = tmdb;
+        trendingRanks[key] = i + 1;
       }
-      for (final tmdb in popularTv) {
-        final id = tmdb['id'] as int?;
+      for (int i = 0; i < trendingTv.length; i++) {
+        final tmdb = trendingTv[i];
+        final id = tmdb['id']?.toString();
         if (id == null) continue;
         final key = '$id-tv';
-        final idx = itemIndex[key];
-        if (idx == null) continue;
-        items[idx] = _enrichItem(items[idx], tmdb, isPopular: true);
-        enrichedCount++;
+        // If already in movie (unlikely for same ID, but just in case), don't overwrite if it's the wrong type
+        if (!tmdbMap.containsKey(key)) {
+           tmdbMap[key] = tmdb;
+           trendingRanks[key] = i + 1;
+        }
       }
 
-      dev.log('[SyncEngine] TMDB enrichment complete: $enrichedCount items enriched');
+      // Process Popular
+      for (final tmdb in popularMovies) {
+        final id = tmdb['id']?.toString();
+        if (id == null) continue;
+        final key = '$id-movie';
+        tmdbMap.putIfAbsent(key, () => tmdb);
+        isPopularSet.add(key);
+      }
+      for (final tmdb in popularTv) {
+        final id = tmdb['id']?.toString();
+        if (id == null) continue;
+        final key = '$id-tv';
+        tmdbMap.putIfAbsent(key, () => tmdb);
+        isPopularSet.add(key);
+      }
+
+      // 3. Update ALL items in manifest if they exist in our TMDB results
+      int enrichedCount = 0;
+      for (int i = 0; i < items.length; i++) {
+        final item = items[i];
+        final key = '${item.id}-${item.mediaType}';
+        
+        if (tmdbMap.containsKey(key)) {
+          final tmdb = tmdbMap[key]!;
+          items[i] = _enrichItem(
+            item, 
+            tmdb, 
+            isTrending: trendingRanks.containsKey(key),
+            isPopular: isPopularSet.contains(key),
+            rank: trendingRanks[key],
+          );
+          enrichedCount++;
+        } else {
+          // Reset trending/popular flags if they are no longer in the top results
+          // This ensures the "updated TMDB trending" requirement
+          if (item.isTrending || item.isPopular || item.trendingRank != null) {
+            items[i] = item.copyWith(
+              isTrending: false,
+              isPopular: false,
+              trendingRank: null, // This will clear the rank
+            );
+          }
+        }
+      }
+
+      dev.log('[SyncEngine] TMDB enrichment complete: $enrichedCount items matched/updated');
       return items;
-    } catch (e) {
-      dev.log('[SyncEngine] TMDB enrichment failed (non-fatal): $e');
-      return items; // Return un-enriched items — app still works
+    } catch (e, stack) {
+      dev.log('[SyncEngine] TMDB enrichment failed: $e', error: e, stackTrace: stack);
+      return items;
     }
   }
 
   /// Enrich a single ManifestItem with TMDB data
   ManifestItem _enrichItem(ManifestItem item, Map<String, dynamic> tmdb, 
-      {bool isTrending = false, bool isPopular = false}) {
+      {bool isTrending = false, bool isPopular = false, int? rank}) {
     final genreIds = (tmdb['genre_ids'] as List<dynamic>?)
         ?.map((e) => e is int ? e : int.tryParse(e.toString()) ?? 0)
         .toList();
@@ -259,8 +287,9 @@ class ManifestSyncEngine {
       overview: (overview != null && overview.isNotEmpty) ? overview : null,
       tmdbPosterPath: posterPath,
       tmdbBackdropPath: backdropPath,
-      isTrending: isTrending || item.isTrending,
-      isPopular: isPopular || item.isPopular,
+      isTrending: isTrending,
+      isPopular: isPopular,
+      trendingRank: rank,
     );
   }
 

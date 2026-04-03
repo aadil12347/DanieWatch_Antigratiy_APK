@@ -105,19 +105,27 @@ class HomeScreen extends ConsumerWidget {
               ),
 
             // Content sections
-            ...sections.map((section) => SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SectionHeader(
-                        title: section.title,
-                        onSeeAll: () =>
-                            _handleSeeAll(ref, context, section.title),
-                      ),
-                      ContentRow(items: section.items),
-                    ],
-                  ),
-                )),
+            ...sections.map((section) {
+              final isTop10 = section.title == 'Top 10 Today';
+              
+              return SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SectionHeader(
+                      title: section.title,
+                      titleWidget: isTop10 ? const TopTenTitle() : null,
+                      showSeeAll: !isTop10,
+                      onSeeAll: () => _handleSeeAll(ref, context, section.title),
+                    ),
+                    ContentRow(
+                      items: section.items,
+                      isRanked: section.isRanked,
+                    ),
+                  ],
+                ),
+              );
+            }),
 
             const SliverToBoxAdapter(
               child: SizedBox(height: 80),
@@ -131,7 +139,7 @@ class HomeScreen extends ConsumerWidget {
   void _handleSeeAll(WidgetRef ref, BuildContext context, String title) {
     SearchFilters filters = const SearchFilters();
 
-    if (title == 'Trending Now') {
+    if (title == 'Top 10 Today' || title == 'Trending Now') {
       filters = filters.copyWith(sortBy: 'Popularity');
     } else if (title == 'Top Rated') {
       filters = filters.copyWith(sortBy: 'Latest Release');

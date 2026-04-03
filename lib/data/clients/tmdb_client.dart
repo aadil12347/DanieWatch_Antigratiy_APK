@@ -127,6 +127,26 @@ class TmdbClient {
       return [];
     }
   }
+  
+  /// Batch fetch trending content
+  Future<List<Map<String, dynamic>>> getTrendingPages(String mediaType, int pageCount) async {
+    final futures = <Future<List<Map<String, dynamic>>>>[];
+    for (int i = 1; i <= pageCount; i++) {
+      futures.add(getTrending(mediaType, page: i));
+    }
+    final results = await Future.wait(futures);
+    return results.expand((x) => x).toList();
+  }
+
+  /// Batch fetch popular content
+  Future<List<Map<String, dynamic>>> getPopularPages(String mediaType, int pageCount) async {
+    final futures = <Future<List<Map<String, dynamic>>>>[];
+    for (int i = 1; i <= pageCount; i++) {
+      futures.add(getPopular(mediaType, page: i));
+    }
+    final results = await Future.wait(futures);
+    return results.expand((x) => x).toList();
+  }
 
   /// Lightweight: fetch only images (logos) for a given media item
   Future<Map<String, dynamic>?> getImages(int id, String mediaType) async {

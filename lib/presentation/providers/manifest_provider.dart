@@ -149,7 +149,12 @@ final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
 class ContentSection {
   final String title;
   final List<ManifestItem> items;
-  const ContentSection({required this.title, required this.items});
+  final bool isRanked;
+  const ContentSection({
+    required this.title,
+    required this.items,
+    this.isRanked = false,
+  });
 }
 
 /// Provides organized content sections for the home screen
@@ -159,61 +164,58 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   final sections = <ContentSection>[];
 
-  // Trending (TMDB enriched or year-based fallback)
+  // 1. Top 10 Today (from trending)
   final trending = VisibilityPolicy.getTrending(all, limit: 10);
   if (trending.isNotEmpty) {
-    sections.add(ContentSection(title: 'Trending Now', items: trending));
-  }
-
-  // Popular (TMDB enriched)
-  final popular = VisibilityPolicy.getPopular(all, limit: 20);
-  if (popular.isNotEmpty) {
-    sections.add(ContentSection(title: 'Popular', items: popular));
-  }
-
-  // Recently Added (by year)
-  final recentlyAdded = VisibilityPolicy.getRecentlyAdded(all, limit: 20);
-  if (recentlyAdded.isNotEmpty) {
-    sections.add(ContentSection(title: 'Recently Added', items: recentlyAdded));
-  }
-
-  // Bollywood (Hindi language from index.json)
-  final bollywood = VisibilityPolicy.filterBollywood(all);
-  if (bollywood.length >= 3) {
     sections.add(ContentSection(
-        title: 'Bollywood', items: bollywood.take(20).toList()));
+      title: 'Top 10 Today',
+      items: trending,
+      isRanked: true,
+    ));
   }
 
+  // 2. Bollywood
+  final bollywood = VisibilityPolicy.filterBollywood(all);
+  if (bollywood.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Bollywood',
+      items: bollywood.take(20).toList(),
+    ));
+  }
 
-  // Top Rated
+  // 3. Korean
+  final korean = VisibilityPolicy.filterKorean(all);
+  if (korean.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Korean',
+      items: korean.take(20).toList(),
+    ));
+  }
+
+  // 4. Anime
+  final anime = VisibilityPolicy.filterAnime(all);
+  if (anime.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Anime',
+      items: anime.take(20).toList(),
+    ));
+  }
+
+  // 5. Top Rated (Popular fallback)
   final topRated = VisibilityPolicy.getTopRated(all, limit: 20);
   if (topRated.isNotEmpty) {
     sections.add(ContentSection(title: 'Top Rated', items: topRated));
   }
 
-  // Anime (needs TMDB enrichment for genre_ids + original_language)
-  final anime = VisibilityPolicy.filterAnime(all);
-  if (anime.isNotEmpty) {
-    sections
-        .add(ContentSection(title: 'Anime', items: anime.take(20).toList()));
-  }
-
-  // Korean (needs TMDB enrichment for original_language/origin_country)
-  final korean = VisibilityPolicy.filterKorean(all);
-  if (korean.isNotEmpty) {
-    sections
-        .add(ContentSection(title: 'Korean', items: korean.take(20).toList()));
-  }
-
-  // Genre-based sections (only for TMDB-enriched items with genre_ids)
+  // 6. Genres
   final genreMap = {
     28: 'Action',
-    35: 'Comedy',
-    18: 'Drama',
     27: 'Horror',
-    878: 'Sci-Fi',
+    35: 'Comedy',
     10749: 'Romance',
+    18: 'Drama',
     53: 'Thriller',
+    878: 'Sci-Fi/Fantasy',
     99: 'Documentary',
   };
 

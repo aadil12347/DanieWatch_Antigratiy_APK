@@ -27,6 +27,7 @@ class ManifestItem {
   final String? result;
   final bool isTrending;
   final bool isPopular;
+  final int? trendingRank;
   final String? tmdbPosterPath;
   final String? tmdbBackdropPath;
 
@@ -56,6 +57,7 @@ class ManifestItem {
     this.result,
     this.isTrending = false,
     this.isPopular = false,
+    this.trendingRank,
     this.tmdbPosterPath,
     this.tmdbBackdropPath,
   });
@@ -120,6 +122,7 @@ class ManifestItem {
       result: json['result']?.toString(),
       isTrending: json['is_trending'] == true,
       isPopular: json['is_popular'] == true,
+      trendingRank: _safeInt(json['trending_rank']),
       tmdbPosterPath: json['tmdb_poster_path']?.toString(),
       tmdbBackdropPath: json['tmdb_backdrop_path']?.toString(),
     );
@@ -152,6 +155,7 @@ class ManifestItem {
       'result': result,
       'is_trending': isTrending,
       'is_popular': isPopular,
+      'trending_rank': trendingRank,
       'tmdb_poster_path': tmdbPosterPath,
       'tmdb_backdrop_path': tmdbBackdropPath,
     };
@@ -196,6 +200,7 @@ class ManifestItem {
     String? overview,
     bool? isTrending,
     bool? isPopular,
+    int? trendingRank,
     String? tmdbPosterPath,
     String? tmdbBackdropPath,
   }) {
@@ -225,6 +230,7 @@ class ManifestItem {
       result: result,
       isTrending: isTrending ?? this.isTrending,
       isPopular: isPopular ?? this.isPopular,
+      trendingRank: trendingRank ?? this.trendingRank,
       tmdbPosterPath: tmdbPosterPath ?? this.tmdbPosterPath,
       tmdbBackdropPath: tmdbBackdropPath ?? this.tmdbBackdropPath,
     );

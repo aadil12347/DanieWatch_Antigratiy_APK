@@ -19,6 +19,7 @@ class MovieCard extends ConsumerStatefulWidget {
   final double? width;
   final double? height;
   final VoidCallback? onTap;
+  final int? rank;
 
   const MovieCard({
     super.key,
@@ -26,6 +27,7 @@ class MovieCard extends ConsumerStatefulWidget {
     this.width,
     this.height,
     this.onTap,
+    this.rank,
   });
 
   @override
@@ -127,131 +129,155 @@ class _MovieCardState extends ConsumerState<MovieCard>
     AnimationController? hoverAnimation,
   }) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start, // Left aligned text
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Poster Area ──
         Expanded(
-          child: AnimatedBuilder(
-            animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-            builder: (context, child) {
-              final hv = hoverAnimation?.value ?? 0.0;
-              return Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    width: 0.8,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5 + (hv * 0.2)),
-                      blurRadius: 12.0 + (hv * 12.0),
-                      offset: Offset(0, 6.0 + (hv * 6.0)),
-                      spreadRadius: hv * 2,
-                    ),
-                  ],
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // 1. Rank Number (Optional)
+              if (widget.rank != null)
+                Positioned(
+                  left: -32,
+                  bottom: -15,
+                  child: _RankNumber(rank: widget.rank!),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: child,
-              );
-            },
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // ── Base Poster ──
-                if (posterUrl.isNotEmpty)
-                  _PosterImage(posterUrl: posterUrl, tmdbId: item.id, mediaType: item.mediaType)
-                else
-                  _placeholder(),
 
-                // ── Hover Overlay (Vignette) ──
-                if (hoverAnimation != null)
-                  AnimatedBuilder(
-                    animation: hoverAnimation,
-                    builder: (context, _) {
-                      if (hoverAnimation.value == 0.0) return const SizedBox.shrink();
+              // 2. Main Poster Stack (Image + Overlays)
+              Positioned.fill(
+                child: AnimatedBuilder(
+                  animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
+                  builder: (context, child) {
+                    final hv = hoverAnimation?.value ?? 0.0;
+                    return Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          width: 0.8,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5 + (hv * 0.2)),
+                            blurRadius: 12.0 + (hv * 12.0),
+                            offset: Offset(0, 6.0 + (hv * 6.0)),
+                            spreadRadius: hv * 2,
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: child,
+                    );
+                  },
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Base Poster
+                      if (posterUrl.isNotEmpty)
+                        _PosterImage(
+                          posterUrl: posterUrl,
+                          tmdbId: item.id,
+                          mediaType: item.mediaType,
+                        )
+                      else
+                        _placeholder(),
 
-                      return Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: RadialGradient(
-                              center: Alignment.center,
-                              radius: 0.8,
-                              colors: [
-                                Colors.black.withValues(alpha: 0.2 * hoverAnimation.value),
-                                Colors.black.withValues(alpha: 0.85 * hoverAnimation.value),
-                              ],
-                              stops: const [0.2, 1.0],
-                            ),
+                      // Hover Overlay (Vignette)
+                      if (hoverAnimation != null)
+                        AnimatedBuilder(
+                          animation: hoverAnimation,
+                          builder: (context, _) {
+                            if (hoverAnimation.value == 0.0) {
+                              return const SizedBox.shrink();
+                            }
+                            return Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: RadialGradient(
+                                    center: Alignment.center,
+                                    radius: 0.8,
+                                    colors: [
+                                      Colors.black.withValues(alpha: 0.2 * hoverAnimation.value),
+                                      Colors.black.withValues(alpha: 0.85 * hoverAnimation.value),
+                                    ],
+                                    stops: const [0.2, 1.0],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                      // Save Button (top-right)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: AnimatedBuilder(
+                          animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
+                          builder: (context, child) {
+                            final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
+                            return Opacity(
+                              opacity: opacity,
+                              child: child,
+                            );
+                          },
+                          child: _SaveButton(item: item),
+                        ),
+                      ),
+
+                      // Language Badge (top-left)
+                      if (item.language.isNotEmpty)
+                        Positioned(
+                          top: 6,
+                          left: 6,
+                          child: AnimatedBuilder(
+                            animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
+                            builder: (context, child) {
+                              final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
+                              return Opacity(
+                                opacity: opacity,
+                                child: child,
+                              );
+                            },
+                            child: _LanguageBadge(text: item.language.first),
                           ),
                         ),
-                      );
-                    },
-                  ),
 
-                // ── Save Button (top-right) ──
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: AnimatedBuilder(
-                    animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-                    builder: (context, child) {
-                      final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-                      return Opacity(
-                        opacity: opacity,
-                        child: child,
-                      );
-                    },
-                    child: _SaveButton(item: item),
+                      // Logo/Title Overlay
+                      if (hoverAnimation != null)
+                        AnimatedBuilder(
+                          animation: hoverAnimation,
+                          builder: (context, _) {
+                            if (hoverAnimation.value == 0.0) {
+                              return const SizedBox.shrink();
+                            }
+                            final slideOff = (1.0 - hoverAnimation.value) * 120;
+
+                            return Positioned(
+                              bottom: -slideOff + 24,
+                              left: 12,
+                              right: 12,
+                              child: Opacity(
+                                opacity: hoverAnimation.value,
+                                child: (logoUrl != null && logoUrl.isNotEmpty)
+                                    ? CachedNetworkImage(
+                                        imageUrl: logoUrl,
+                                        height: 50,
+                                        fit: BoxFit.contain,
+                                        errorWidget: (_, __, ___) =>
+                                            _titleOverlayText(item.title),
+                                      )
+                                    : _titleOverlayText(item.title),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
                   ),
                 ),
-                
-                // ── Language Badge (top-left) ──
-                if (item.language.isNotEmpty)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: AnimatedBuilder(
-                      animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-                      builder: (context, child) {
-                        final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-                        return Opacity(
-                          opacity: opacity,
-                          child: child,
-                        );
-                      },
-                      child: _LanguageBadge(text: item.language.first),
-                    ),
-                  ),
-
-                // ── Logo/Title Overlay (Top-most layer during hold) ──
-                if (hoverAnimation != null)
-                  AnimatedBuilder(
-                    animation: hoverAnimation,
-                    builder: (context, _) {
-                      if (hoverAnimation.value == 0.0) return const SizedBox.shrink();
-                      final slideOff = (1.0 - hoverAnimation.value) * 120;
-
-                      return Positioned(
-                        bottom: -slideOff + 24,
-                        left: 12,
-                        right: 12,
-                        child: Opacity(
-                          opacity: hoverAnimation.value,
-                          child: (logoUrl != null && logoUrl.isNotEmpty)
-                              ? CachedNetworkImage(
-                                  imageUrl: logoUrl,
-                                  height: 50,
-                                  fit: BoxFit.contain,
-                                  errorWidget: (_, __, ___) => _titleOverlayText(item.title),
-                                )
-                              : _titleOverlayText(item.title),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
 
@@ -287,7 +313,9 @@ class _MovieCardState extends ConsumerState<MovieCard>
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Text('•', style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
+                    child: Text('•',
+                        style: TextStyle(
+                            color: AppColors.textMuted, fontSize: 10)),
                   ),
                   Text(
                     item.mediaType == 'tv' ? 'Series' : 'Movie',
@@ -561,6 +589,44 @@ class _PosterImageState extends State<_PosterImage> {
       },
       fadeOutDuration: const Duration(milliseconds: 200),
       fadeInDuration: const Duration(milliseconds: 200),
+    );
+  }
+}
+
+class _RankNumber extends StatelessWidget {
+  final int rank;
+  const _RankNumber({required this.rank});
+
+  @override
+  Widget build(BuildContext context) {
+    // Premium font for the rank number
+    final textStyle = GoogleFonts.inter(
+      fontSize: 90,
+      fontWeight: FontWeight.w900,
+      letterSpacing: -4,
+      height: 1,
+    );
+
+    return Stack(
+      children: [
+        // Outline
+        Text(
+          rank.toString(),
+          style: textStyle.copyWith(
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 3.0
+              ..color = AppColors.primary.withValues(alpha: 0.9),
+          ),
+        ),
+        // Darkened fill
+        Text(
+          rank.toString(),
+          style: textStyle.copyWith(
+            color: Colors.black.withValues(alpha: 0.15),
+          ),
+        ),
+      ],
     );
   }
 }

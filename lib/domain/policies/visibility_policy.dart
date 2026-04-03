@@ -62,8 +62,9 @@ class VisibilityPolicy {
       {int limit = 10}) {
     // First: items marked as trending by TMDB enrichment
     final tmdbTrending = all.where((item) => item.isTrending).toList();
-    if (tmdbTrending.length >= limit) {
-      tmdbTrending.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+    if (tmdbTrending.isNotEmpty) {
+      // Sort by rank ascending (1 is best)
+      tmdbTrending.sort((a, b) => (a.trendingRank ?? 999).compareTo(b.trendingRank ?? 999));
       return tmdbTrending.take(limit).toList();
     }
 

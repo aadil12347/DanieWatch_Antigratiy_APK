@@ -5,8 +5,13 @@ import 'movie_card.dart';
 /// Horizontal scrolling content row used on home screen.
 class ContentRow extends StatelessWidget {
   final List<ManifestItem> items;
+  final bool isRanked;
 
-  const ContentRow({super.key, required this.items});
+  const ContentRow({
+    super.key,
+    required this.items,
+    this.isRanked = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -15,14 +20,20 @@ class ContentRow extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        // Extra left padding to make room for the first item's rank number
+        padding: EdgeInsets.only(
+          left: isRanked ? 48.0 : 16.0,
+          right: 16.0,
+        ),
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        // Increased spacing between ranked items for better clarity
+        separatorBuilder: (_, __) => SizedBox(width: isRanked ? 42.0 : 12.0),
         itemBuilder: (context, index) {
           return MovieCard(
             item: items[index],
             width: 145,
             height: 265,
+            rank: isRanked ? index + 1 : null,
           );
         },
       ),
