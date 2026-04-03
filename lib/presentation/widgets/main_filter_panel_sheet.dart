@@ -57,6 +57,28 @@ class _MainFilterPanelContentState
   // ── Sort ──
   static const _sorts = ['Popularity', 'Latest Release', 'Top Rated'];
 
+  // ── Countries ──
+  static const _countries = [
+    'US',
+    'UK',
+    'India',
+    'South Korea',
+    'Japan',
+    'China',
+    'Turkey'
+  ];
+
+  // ── Original Languages ──
+  static const _originalLanguages = [
+    'English',
+    'Hindi',
+    'Punjabi',
+    'Korean',
+    'Japanese',
+    'Chinese',
+    'Turkish'
+  ];
+
   Widget _buildHorizontalSelectSection(String title, List<String> options,
       Set<String> selectedValues, void Function(String) onToggle) {
     return Column(
@@ -282,6 +304,41 @@ class _MainFilterPanelContentState
                     _pendingFilters.sortBy,
                     (val) => setState(() {
                       _pendingFilters = _pendingFilters.copyWith(sortBy: val);
+                    }),
+                  ),
+
+                  // Country
+                  _buildHorizontalSelectSection(
+                    'Country',
+                    _countries,
+                    _pendingFilters.regions,
+                    (val) => setState(() {
+                      final newSet = Set<String>.from(_pendingFilters.regions);
+                      if (newSet.contains(val)) {
+                        newSet.remove(val);
+                      } else {
+                        newSet.add(val);
+                      }
+                      _pendingFilters =
+                          _pendingFilters.copyWith(regions: newSet);
+                    }),
+                  ),
+
+                  // Original Language
+                  _buildHorizontalSelectSection(
+                    'Original Language',
+                    _originalLanguages,
+                    _pendingFilters.originalLanguages,
+                    (val) => setState(() {
+                      final newSet =
+                          Set<String>.from(_pendingFilters.originalLanguages);
+                      if (newSet.contains(val)) {
+                        newSet.remove(val);
+                      } else {
+                        newSet.add(val);
+                      }
+                      _pendingFilters =
+                          _pendingFilters.copyWith(originalLanguages: newSet);
                     }),
                   ),
 

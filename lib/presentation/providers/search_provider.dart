@@ -6,6 +6,7 @@ import '../../data/local/manifest_dao.dart';
 class SearchFilters {
   final Set<String> categories;
   final Set<String> regions;
+  final Set<String> originalLanguages;
   final Set<String> genres;
   final Set<String> years;
   final String sortBy;
@@ -13,6 +14,7 @@ class SearchFilters {
   const SearchFilters({
     this.categories = const {},
     this.regions = const {},
+    this.originalLanguages = const {},
     this.genres = const {},
     this.years = const {},
     this.sortBy = 'Popularity',
@@ -21,6 +23,7 @@ class SearchFilters {
   bool get hasActiveFilters =>
       categories.isNotEmpty ||
       regions.isNotEmpty ||
+      originalLanguages.isNotEmpty ||
       genres.isNotEmpty ||
       years.isNotEmpty ||
       sortBy != 'Popularity';
@@ -28,6 +31,7 @@ class SearchFilters {
   SearchFilters copyWith({
     Set<String>? categories,
     Set<String>? regions,
+    Set<String>? originalLanguages,
     Set<String>? genres,
     Set<String>? years,
     String? sortBy,
@@ -35,6 +39,7 @@ class SearchFilters {
     return SearchFilters(
       categories: categories ?? this.categories,
       regions: regions ?? this.regions,
+      originalLanguages: originalLanguages ?? this.originalLanguages,
       genres: genres ?? this.genres,
       years: years ?? this.years,
       sortBy: sortBy ?? this.sortBy,

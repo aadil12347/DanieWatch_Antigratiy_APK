@@ -93,9 +93,9 @@ class ManifestItem {
       voteAverage: _safeDouble(json['vote_average']),
       voteCount: _safeInt(json['vote_count']) ?? 0,
       releaseYear: _safeInt(json['release_year'] ?? json['year']),
-      originalLanguage: json['original_language']?.toString(),
+      originalLanguage: json['original_language']?.toString().trim().toLowerCase(),
       originCountry: ((json['origin_country'] ?? json['country']) as List<dynamic>?)
-              ?.map((e) => e.toString())
+              ?.map((e) => e.toString().trim().toUpperCase())
               .toList() ??
           [],
       genreIds: (json['genre_ids'] as List<dynamic>?)

@@ -88,71 +88,89 @@ class VisibilityPolicy {
     return getTopRated(all, limit: limit);
   }
 
+  /// Global check for metadata presence. 
+  /// Items with NEITHER original language NOR origin country should only show on the Explore page.
+  static bool _hasMetadata(ManifestItem item) {
+    final hasLang = item.originalLanguage != null && item.originalLanguage!.isNotEmpty;
+    final hasCountry = item.originCountry.isNotEmpty;
+    return hasLang || hasCountry;
+  }
+
   static List<ManifestItem> filterAnime(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.genreIds.contains(16) ||
-            item.genres.any((g) => g.toLowerCase() == 'animation'))
+            _hasMetadata(item) &&
+            (item.genreIds.contains(16) ||
+                item.genres.any((g) => g.toLowerCase() == 'animation')))
         .toList();
   }
 
-  /// Filter for Korean/Asian/Turkish content: KR, CN, JP, TR origin (both movies and series)
+  /// Filter for Korean/Asian/Turkish content: KR, CN, JP, TR origin
   static List<ManifestItem> filterKorean(List<ManifestItem> all) {
-    final targetCountries = {'KR', 'CN', 'JP', 'TR'};
-    return all
-        .where((item) => item.originCountry.any((c) => targetCountries.contains(c)))
-        .toList();
+    final targetCountries = {'KR', 'CN', 'JP', 'TR', 'TH'};
+    final targetLangs = {'ko', 'zh', 'ja', 'tr', 'th'};
+
+    return all.where((item) {
+      if (!_hasMetadata(item)) return false;
+
+      final matchesCountry =
+          item.originCountry.any((c) => targetCountries.contains(c));
+      final matchesLang = targetLangs.contains(item.originalLanguage);
+
+      return matchesCountry || matchesLang;
+    }).toList();
   }
 
-  /// Filter for Bollywood content: Indian or Pakistani origin (both movies and series)
+  /// Filter for Bollywood content: Indian or Pakistani origin
   static List<ManifestItem> filterBollywood(List<ManifestItem> all) {
-    final targetCountries = {'IN', 'PK'};
-    return all
-        .where((item) => item.originCountry.any((c) => targetCountries.contains(c)))
-        .toList();
-  }
-
-  /// Filter for Hollywood content: everything except specific regional content and anime
-  static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
-    final excludedCountries = {'KR', 'TR', 'JP', 'CN', 'IN', 'TH', 'PK'};
-    final excludedLanguages = {
-      'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or', // Indian
-      'ko', 'zh', 'ja', 'tr', // Asian & Turkish
+    final targetCountries = {
+      'IN', 'PK', 'BD', 'NP', 'LK', 'BT', 'MV'
+    };
+    final targetLangs = {
+      'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or',
+      'ne', 'sd', 'sa', 'ks', 'bh', 'kok', 'mni', 'sat', 'brx', 'doi', 'mai'
     };
 
     return all.where((item) {
+      if (!_hasMetadata(item)) return false;
+
+      final matchesCountry =
+          item.originCountry.any((c) => targetCountries.contains(c));
+      final matchesLang = targetLangs.contains(item.originalLanguage);
+
+      return matchesCountry || matchesLang;
+    }).toList();
+  }
+
+  /// Filter for Hollywood content: strictly US-originated content, excluding Anime
+  static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
+    return all.where((item) {
+      // 0. Enforce metadata presence for category pages
+      if (!_hasMetadata(item)) return false;
+
       // 1. Exclude Anime specifically
       final isAnime = item.genreIds.contains(16) ||
           item.genres.any((g) => g.toLowerCase() == 'animation');
       if (isAnime) return false;
 
-      // 2. Filter by excluded regions (countries)
-      final hasExcludedCountry =
-          item.originCountry.any((c) => excludedCountries.contains(c));
-      if (hasExcludedCountry) return false;
-
-      // 3. Safeguard: exclude regional languages even if country is missing
-      final hasExcludedLang = excludedLanguages.contains(item.originalLanguage);
-      if (hasExcludedLang) return false;
-
-      // 4. Final check for regional strings in languages list (fallback for missing or incorrect metadata)
-      final regionalStrings = {'hindi', 'urdu', 'punjabi', 'telugu', 'tamil', 'malayalam', 'kannada', 'bengali', 'marathi', 'gujarati', 'japanese', 'turkish', 'korean', 'chinese'};
-      final hasRegionalString = item.language.any((l) => regionalStrings.contains(l.toLowerCase()));
-      if (hasRegionalString) return false;
-
-      return true;
+      // 2. Strict US Origin
+      return item.originCountry.contains('US');
     }).toList();
   }
 
   /// Filter for movies only
   static List<ManifestItem> filterMovies(List<ManifestItem> all) {
-    return all.where((item) => item.mediaType == 'movie').toList();
+    return all
+        .where((item) => _hasMetadata(item) && item.mediaType == 'movie')
+        .toList();
   }
 
   /// Filter for TV/series only
   static List<ManifestItem> filterTv(List<ManifestItem> all) {
     return all
-        .where((item) => item.mediaType == 'tv' || item.mediaType == 'series')
+        .where((item) =>
+            _hasMetadata(item) &&
+            (item.mediaType == 'tv' || item.mediaType == 'series'))
         .toList();
   }
 

@@ -21,7 +21,14 @@ class FilterUtils {
       // IF a category is enforced (e.g. we are on the Bollywood page),
       // we MUST re-filter the global search results to ensure they belong to this category.
       if (enforceCategory != null) {
-        baseList = baseList.where((item) => _matchesCategory(item, enforceCategory)).toList();
+        baseList = baseList.where((item) {
+          // Hide items with NO original metadata from category pages
+          final hasMetadata = (item.originalLanguage != null &&
+                  item.originalLanguage!.isNotEmpty) ||
+              item.originCountry.isNotEmpty;
+          if (!hasMetadata) return false;
+          return _matchesCategory(item, enforceCategory);
+        }).toList();
       }
     } else {
       // Not searching: use the items provided by the screen (which are usually already category-filtered)
@@ -29,7 +36,14 @@ class FilterUtils {
       
       // Safety check: if an enforceCategory was passed, ensure everything on the list matches it.
       if (enforceCategory != null) {
-        baseList = baseList.where((item) => _matchesCategory(item, enforceCategory)).toList();
+        baseList = baseList.where((item) {
+          // Hide items with NO original metadata from category pages
+          final hasMetadata = (item.originalLanguage != null &&
+                  item.originalLanguage!.isNotEmpty) ||
+              item.originCountry.isNotEmpty;
+          if (!hasMetadata) return false;
+          return _matchesCategory(item, enforceCategory);
+        }).toList();
       }
     }
 
@@ -57,21 +71,46 @@ class FilterUtils {
       }).toList();
     }
 
-    // 3. Filter by Region
+    // 3. Filter by Region (Country)
     if (f.regions.isNotEmpty) {
       final regionMap = {
         'US': ['US'],
+        'UK': ['GB', 'UK'],
         'South Korea': ['KR'],
         'China': ['CN'],
         'Japan': ['JP'],
         'India': ['IN'],
-        'UK': ['GB'],
+        'Turkey': ['TR'],
       };
       baseList = baseList.where((item) {
         return f.regions.any((regionName) {
           final codes = regionMap[regionName];
-          return codes != null &&
-              item.originCountry.any((c) => codes.contains(c));
+          if (codes != null) {
+            return item.originCountry.any((c) => codes.contains(c));
+          }
+          return item.originCountry.contains(regionName);
+        });
+      }).toList();
+    }
+
+    // 3.1. Filter by Original Language
+    if (f.originalLanguages.isNotEmpty) {
+      final langMap = {
+        'English': ['en'],
+        'Hindi': ['hi'],
+        'Korean': ['ko'],
+        'Japanese': ['ja'],
+        'Chinese': ['zh', 'cn'],
+        'Turkish': ['tr'],
+        'Punjabi': ['pa'],
+      };
+      baseList = baseList.where((item) {
+        return f.originalLanguages.any((langName) {
+          final codes = langMap[langName];
+          if (codes != null) {
+            return codes.contains(item.originalLanguage);
+          }
+          return item.originalLanguage == langName;
         });
       }).toList();
     }
@@ -134,41 +173,29 @@ class FilterUtils {
       case 'TV Shows' || 'Season' || 'Series':
         return item.mediaType == 'tv' || item.mediaType == 'series';
       case 'Anime':
-        // Consistent with VisibilityPolicy.filterAnime: any animation from any country
         return item.genreIds.contains(16) ||
             item.genres.any((g) => g.toLowerCase() == 'animation');
       case 'K-Drama' || 'Korean':
-        // Consistent with VisibilityPolicy.filterKorean: KR, CN, JP, TR
-        final targetCountries = {'KR', 'CN', 'JP', 'TR'};
-        return item.originCountry.any((c) => targetCountries.contains(c));
+        final targetCountries = {'KR', 'CN', 'JP', 'TR', 'TH'};
+        final targetLangs = {'ko', 'zh', 'ja', 'tr', 'th'};
+        return item.originCountry.any((c) => targetCountries.contains(c)) ||
+            targetLangs.contains(item.originalLanguage);
       case 'Bollywood':
-        // Consistent with VisibilityPolicy.filterBollywood: IN, PK
-        final targetCountries = {'IN', 'PK'};
-        return item.originCountry.any((c) => targetCountries.contains(c));
-      case 'Hollywood':
-        // Consistent with VisibilityPolicy.filterHollywood: everything else
-        final excludedCountries = {'KR', 'TR', 'JP', 'CN', 'IN', 'TH', 'PK'};
-        final excludedLanguages = {
-          'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or', // Indian
-          'ko', 'zh', 'ja', 'tr', // Asian & Turkish
+        final targetCountries = {
+          'IN', 'PK', 'BD', 'NP', 'LK', 'BT', 'MV'
         };
-
+        final targetLangs = {
+          'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or',
+          'ne', 'sd', 'sa', 'ks', 'bh', 'kok', 'mni', 'sat', 'brx', 'doi', 'mai'
+        };
+        return item.originCountry.any((c) => targetCountries.contains(c)) ||
+            targetLangs.contains(item.originalLanguage);
+      case 'Hollywood':
         final isAnime = item.genreIds.contains(16) ||
             item.genres.any((g) => g.toLowerCase() == 'animation');
         if (isAnime) return false;
 
-        final hasExcludedCountry =
-            item.originCountry.any((c) => excludedCountries.contains(c));
-        if (hasExcludedCountry) return false;
-
-        final hasExcludedLang = excludedLanguages.contains(item.originalLanguage);
-        if (hasExcludedLang) return false;
-
-        final regionalStrings = {'hindi', 'urdu', 'punjabi', 'telugu', 'tamil', 'malayalam', 'kannada', 'bengali', 'marathi', 'gujarati', 'japanese', 'turkish', 'korean', 'chinese'};
-        final hasRegionalString = item.language.any((l) => regionalStrings.contains(l.toLowerCase()));
-        if (hasRegionalString) return false;
-
-        return true;
+        return item.originCountry.contains('US');
       default:
         return false;
     }
