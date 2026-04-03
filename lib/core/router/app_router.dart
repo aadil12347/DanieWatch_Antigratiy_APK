@@ -10,7 +10,6 @@ import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
-final _shellNavKey = GlobalKey<NavigatorState>();
 
 /// Smooth slide-up + fade + scale transition for tab pages
 CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
@@ -66,56 +65,50 @@ final appRouter = GoRouter(
       path: '/splash',
       builder: (context, state) => const SplashScreen(),
     ),
-    // Shell route with bottom navigation
-    ShellRoute(
-      navigatorKey: _shellNavKey,
-      builder: (context, state, child) => AppShell(child: child),
-      routes: [
-        GoRoute(
-          path: '/home',
-          pageBuilder: (context, state) => _fadePage(const HomeScreen(), state),
+    // Stateful Shell Route for multi-branch navigation state preservation
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) => 
+          AppShell(navigationShell: navigationShell),
+      branches: [
+        // Home Branch
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/home',
+              pageBuilder: (context, state) => _fadePage(const HomeScreen(), state),
+            ),
+            _detailsRoute(),
+          ],
         ),
-        GoRoute(
-          path: '/search',
-          pageBuilder: (context, state) =>
-              _fadePage(const SearchScreen(), state),
+        // Search Branch
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/search',
+              pageBuilder: (context, state) => _fadePage(const SearchScreen(), state),
+            ),
+            _detailsRoute(),
+          ],
         ),
-        GoRoute(
-          path: '/watchlist',
-          pageBuilder: (context, state) =>
-              _fadePage(const WatchlistScreen(), state),
+        // Watchlist Branch
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/watchlist',
+              pageBuilder: (context, state) => _fadePage(const WatchlistScreen(), state),
+            ),
+            _detailsRoute(),
+          ],
         ),
-        GoRoute(
-          path: '/downloads',
-          pageBuilder: (context, state) =>
-              _fadePage(const DownloadsScreen(), state),
-        ),
-        // Detail route INSIDE shell so bottom nav stays visible
-        GoRoute(
-          path: '/details/:mediaType/:id',
-          parentNavigatorKey: _shellNavKey,
-          pageBuilder: (context, state) {
-            final mediaType = state.pathParameters['mediaType']!;
-            final id = int.parse(state.pathParameters['id']!);
-            return CustomTransitionPage<void>(
-              key: state.pageKey,
-              child: ShellPopScope(
-                child: DetailsScreen(tmdbId: id, mediaType: mediaType),
-              ),
-              transitionDuration: const Duration(milliseconds: 400),
-              reverseTransitionDuration: const Duration(milliseconds: 350),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: CurvedAnimation(
-                    parent: animation,
-                    curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-                  ),
-                  child: child,
-                );
-              },
-            );
-          },
+        // Downloads Branch
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/downloads',
+              pageBuilder: (context, state) => _fadePage(const DownloadsScreen(), state),
+            ),
+            _detailsRoute(),
+          ],
         ),
       ],
     ),
@@ -161,3 +154,31 @@ final appRouter = GoRouter(
     ),
   ),
 );
+
+// Helper to keep details route definition DRY across branches
+GoRoute _detailsRoute() {
+  return GoRoute(
+    path: '/details/:mediaType/:id',
+    pageBuilder: (context, state) {
+      final mediaType = state.pathParameters['mediaType']!;
+      final id = int.parse(state.pathParameters['id']!);
+      return CustomTransitionPage<void>(
+        key: state.pageKey,
+        child: ShellPopScope(
+          child: DetailsScreen(tmdbId: id, mediaType: mediaType),
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+        reverseTransitionDuration: const Duration(milliseconds: 350),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+            ),
+            child: child,
+          );
+        },
+      );
+    },
+  );
+}

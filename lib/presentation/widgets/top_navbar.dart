@@ -108,11 +108,8 @@ class TopNavbar extends ConsumerWidget {
     final notifier = ref.read(searchProvider.notifier);
     
     if (label == 'Explore') {
-      // Clear specific category/genre filters
-      notifier.updateFilters(currentFilters.copyWith(
-        categories: {},
-        genres: {},
-      ));
+      // Clear all filters to return to fresh Explore state
+      notifier.updateFilters(const SearchFilters());
       return;
     }
 
@@ -121,15 +118,11 @@ class TopNavbar extends ConsumerWidget {
     const genres = {'Action', 'Comedy', 'Thriller'};
 
     if (categories.contains(label)) {
-      notifier.updateFilters(currentFilters.copyWith(
-        categories: {label},
-        genres: {}, // Selection in navbar clears genres
-      ));
+      // Reset filters and apply the new category
+      notifier.updateFilters(SearchFilters(categories: {label}));
     } else if (genres.contains(label)) {
-      notifier.updateFilters(currentFilters.copyWith(
-        categories: {}, // Selection in navbar clears categories
-        genres: {label},
-      ));
+      // Reset filters and apply the new genre
+      notifier.updateFilters(SearchFilters(genres: {label}));
     }
   }
 }

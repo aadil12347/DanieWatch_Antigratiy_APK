@@ -19,23 +19,15 @@ import '../../widgets/confirmation_modal_content.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
-  final Widget child;
-  const AppShell({super.key, required this.child});
+  final StatefulNavigationShell navigationShell;
+  const AppShell({super.key, required this.navigationShell});
 
   @override
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
-  int _currentIndex = 0;
   DateTime? _lastBackPressed;
-
-  static const _tabs = [
-    '/home',
-    '/search',
-    '/watchlist',
-    '/downloads',
-  ];
 
   static const _icons = [
     Icons.home_outlined,
@@ -72,13 +64,12 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _onTap(int index) {
-    if (index != _currentIndex) {
-      // CLEAR ALL filters and search results when switching tabs
-      ref.read(searchProvider.notifier).clearAll();
-      
-      setState(() => _currentIndex = index);
-      context.go(_tabs[index]);
-    }
+    widget.navigationShell.goBranch(
+      index,
+      // A common pattern when using branches is to support navigating to the 
+      // initial location when tapping the item that is already active.
+      initialLocation: index == widget.navigationShell.currentIndex,
+    );
   }
 
   StreamSubscription? _downloadSub;
@@ -125,29 +116,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     super.dispose();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _updateIndex();
-  }
-
-  void _updateIndex() {
-    final location = GoRouterState.of(context).uri.toString();
-    
-    // Check main tabs first
-    for (int i = 0; i < 3; i++) {
-      if (location == _tabs[i]) {
-        if (_currentIndex != i) {
-          setState(() => _currentIndex = i);
-        }
-        return;
-      }
-    }
-
-    // If it's any other route (anime, korean, bollywood, tv, downloads), it belongs to "More" (index 3)
-    if (_currentIndex != 3) {
-      setState(() => _currentIndex = 3);
-    }
+  // Navigation state is now managed by StatefulNavigationShell
+  bool _isTabSelected(int index) {
+    return widget.navigationShell.currentIndex == index;
   }
 
   void _closeAllModals() {
@@ -156,10 +127,6 @@ class _AppShellState extends ConsumerState<AppShell> {
         const FilterModalState(view: FilterView.none);
     ref.read(confirmationModalProvider.notifier).state =
         const ConfirmationModalState();
-  }
-
-  bool _isTabSelected(int index) {
-    return _currentIndex == index;
   }
 
   @override
@@ -201,7 +168,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         }
 
         // 4. Navigation-level back logic (Go to Home if not there)
-        if (_currentIndex != 0) {
+        if (widget.navigationShell.currentIndex != 0) {
           _onTap(0);
           return;
         }
@@ -225,7 +192,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         extendBody: true,
         body: Stack(
           children: [
-            widget.child,
+            widget.navigationShell,
             // Barrier to dismiss modal when tapping outside
             if (isModalOpen)
               Positioned.fill(

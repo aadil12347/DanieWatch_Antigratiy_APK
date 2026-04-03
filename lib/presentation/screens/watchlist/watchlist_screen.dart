@@ -25,11 +25,19 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   @override
   void initState() {
     super.initState();
+    final currentQuery = ref.read(searchProvider).query;
+    if (currentQuery.isNotEmpty) {
+      _searchController.text = currentQuery;
+    }
     _searchFocus.addListener(_onFocusChange);
   }
 
   void _onFocusChange() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      // Sync focus state to global provider
+      ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
+    }
   }
 
   @override

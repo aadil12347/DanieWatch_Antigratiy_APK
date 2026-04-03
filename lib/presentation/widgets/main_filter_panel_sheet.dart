@@ -199,10 +199,11 @@ class _MainFilterPanelContentState
 
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.path;
-    final isCategoryPage = location == '/anime' || 
-                          location == '/korean' || 
-                          location == '/bollywood';
+    final filters = ref.watch(searchProvider).filters;
+    final activeCategory = filters.categories.isNotEmpty ? filters.categories.first : null;
+    final isRegionalPage = activeCategory == 'Korean' || 
+                          activeCategory == 'Anime' || 
+                          activeCategory == 'Bollywood';
 
     return Container(
       constraints:
@@ -244,24 +245,23 @@ class _MainFilterPanelContentState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Categories (only on Explore page, not category pages)
-                  if (!isCategoryPage)
-                    _buildHorizontalSelectSection(
-                      'Categories',
-                      _categories,
-                      _pendingFilters.categories,
-                      (val) => setState(() {
-                        final newSet =
-                            Set<String>.from(_pendingFilters.categories);
-                        if (newSet.contains(val)) {
-                          newSet.remove(val);
-                        } else {
-                          newSet.add(val);
-                        }
-                        _pendingFilters =
-                            _pendingFilters.copyWith(categories: newSet);
-                      }),
-                    ),
+                  // Categories/Type
+                  _buildHorizontalSelectSection(
+                    isRegionalPage ? 'Type' : 'Categories',
+                    isRegionalPage ? ['Movie', 'TV Shows'] : _categories,
+                    _pendingFilters.categories,
+                    (val) => setState(() {
+                      final newSet =
+                          Set<String>.from(_pendingFilters.categories);
+                      if (newSet.contains(val)) {
+                        newSet.remove(val);
+                      } else {
+                        newSet.add(val);
+                      }
+                      _pendingFilters =
+                          _pendingFilters.copyWith(categories: newSet);
+                    }),
+                  ),
 
                   // Genre
                   _buildHorizontalSelectSection(
@@ -306,40 +306,42 @@ class _MainFilterPanelContentState
                     }),
                   ),
 
-                  // Country
-                  _buildHorizontalSelectSection(
-                    'Country',
-                    _countries,
-                    _pendingFilters.regions,
-                    (val) => setState(() {
-                      final newSet = Set<String>.from(_pendingFilters.regions);
-                      if (newSet.contains(val)) {
-                        newSet.remove(val);
-                      } else {
-                        newSet.add(val);
-                      }
-                      _pendingFilters =
-                          _pendingFilters.copyWith(regions: newSet);
-                    }),
-                  ),
+                  // Country (Only on Explore)
+                  if (!isRegionalPage)
+                    _buildHorizontalSelectSection(
+                      'Country',
+                      _countries,
+                      _pendingFilters.regions,
+                      (val) => setState(() {
+                        final newSet = Set<String>.from(_pendingFilters.regions);
+                        if (newSet.contains(val)) {
+                          newSet.remove(val);
+                        } else {
+                          newSet.add(val);
+                        }
+                        _pendingFilters =
+                            _pendingFilters.copyWith(regions: newSet);
+                      }),
+                    ),
 
-                  // Original Language
-                  _buildHorizontalSelectSection(
-                    'Original Language',
-                    _originalLanguages,
-                    _pendingFilters.originalLanguages,
-                    (val) => setState(() {
-                      final newSet =
-                          Set<String>.from(_pendingFilters.originalLanguages);
-                      if (newSet.contains(val)) {
-                        newSet.remove(val);
-                      } else {
-                        newSet.add(val);
-                      }
-                      _pendingFilters =
-                          _pendingFilters.copyWith(originalLanguages: newSet);
-                    }),
-                  ),
+                  // Original Language (Only on Explore)
+                  if (!isRegionalPage)
+                    _buildHorizontalSelectSection(
+                      'Original Language',
+                      _originalLanguages,
+                      _pendingFilters.originalLanguages,
+                      (val) => setState(() {
+                        final newSet =
+                            Set<String>.from(_pendingFilters.originalLanguages);
+                        if (newSet.contains(val)) {
+                          newSet.remove(val);
+                        } else {
+                          newSet.add(val);
+                        }
+                        _pendingFilters =
+                            _pendingFilters.copyWith(originalLanguages: newSet);
+                      }),
+                    ),
 
                   const SizedBox(height: 8),
                 ],
