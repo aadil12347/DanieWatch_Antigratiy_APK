@@ -8,6 +8,7 @@ import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
+import '../../presentation/providers/auth_provider.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
 
@@ -60,10 +61,26 @@ CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
 final appRouter = GoRouter(
   navigatorKey: rootNavKey,
   initialLocation: '/splash',
+  redirect: (context, state) {
+    // We handle the initial landing on Splash 
+    // Sub-redirection will be handled by auth state triggers
+    return null;
+  },
   routes: [
     GoRoute(
       path: '/splash',
       builder: (context, state) => const SplashScreen(),
+    ),
+    // Silent callback route for Supabase OAuth redirects
+    GoRoute(
+      path: '/login-callback',
+      builder: (context, state) {
+        // This is a landing spot for redirects. 
+        // Supabase package will capture the session from the URL automatically.
+        // We just redirect to Home.
+        return const SizedBox.shrink(); 
+      },
+      redirect: (context, state) => '/home',
     ),
     // Stateful Shell Route for multi-branch navigation state preservation
     StatefulShellRoute.indexedStack(

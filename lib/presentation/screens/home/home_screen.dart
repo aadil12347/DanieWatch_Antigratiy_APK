@@ -14,6 +14,8 @@ import '../../widgets/section_header.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
+import '../../widgets/user_avatar.dart';
+import '../../providers/auth_provider.dart';
 
 import '../../providers/scroll_provider.dart';
 
@@ -86,16 +88,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            color: AppColors.surfaceElevated,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.person_outline_rounded,
-                              size: 24, color: Colors.white),
-                        ),
-                        const SizedBox(width: 12),
+                        const UserAvatar(size: 60, canEdit: true),
+                        const SizedBox(width: 16),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -105,12 +99,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
                                     height: 1.1)),
-                            Text('Daniyal',
+                            ref.watch(profileProvider).when(
+                              data: (profile) => Text(
+                                profile?.username ?? 'User',
                                 style: GoogleFonts.lora(
                                     color: AppColors.textPrimary,
                                     fontSize: 24,
                                     fontWeight: FontWeight.w500,
-                                    height: 1.2)),
+                                    height: 1.2),
+                              ),
+                              loading: () => const SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              error: (_, __) => Text(
+                                'User',
+                                style: GoogleFonts.lora(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.2),
+                              ),
+                            ),
                           ],
                         ),
                       ],

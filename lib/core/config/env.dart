@@ -10,6 +10,16 @@
 ///     --dart-define=MANIFEST_PATH=db_manifest_v1.json
 class Env {
   Env._();
+  
+  // Supabase
+  static const supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: '', // Provide your Supabase URL
+  );
+  static const supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '', // Provide your Supabase Anon Key
+  );
 
   // GitHub Data Source
   static const githubRawBaseUrl = String.fromEnvironment(
@@ -20,7 +30,7 @@ class Env {
   // TMDB
   static const tmdbApiKey = String.fromEnvironment(
     'TMDB_API_KEY',
-    defaultValue: 'fc6d85b3839330e3458701b975195487',
+    defaultValue: '', // Provide your TMDB API Key
   );
   static const tmdbBaseUrl = String.fromEnvironment(
     'TMDB_BASE_URL',
@@ -45,5 +55,16 @@ class Env {
   static const appVersion = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '1.0.0',
+  );
+  
+  // Google Sign-In
+  static const googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue: '', // Provide your Google Web Client ID
+  );
+  
+  static const googleClientSecret = String.fromEnvironment(
+    'GOOGLE_CLIENT_SECRET',
+    defaultValue: '', // Provide your Google Client Secret
   );
 }

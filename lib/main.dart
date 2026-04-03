@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-// Supabase import removed - Migrated to GitHub
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/config/env.dart';
@@ -57,7 +57,11 @@ Future<void> main() async {
     // Initialize Download Manager
     await DownloadManager.instance.initialize();
 
-    // Supabase initialization removed - Migrated to GitHub Data Source
+    // Initialize Supabase
+    await Supabase.initialize(
+      url: Env.supabaseUrl,
+      anonKey: Env.supabaseAnonKey,
+    );
 
     runApp(
       // ProviderScope enables Riverpod state management

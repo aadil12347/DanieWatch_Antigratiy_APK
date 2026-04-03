@@ -35,3 +35,19 @@ pubspec.lock
 nul
 deps.txt
 deps_list.txt
+
+# Agents & Antigravity
+.agents/
+.agent/
+.claude/
+.continue/
+skills-lock.json
+
+# Temporary/Local Docs
+AUDIO_CAPTURE_EXPLANATION.md
+ONLINE_PLAY_DOWNLOAD_DOCUMENTATION.md
+TODO.md
+analysis.md
+video_player_ui_design.md
+carousel_v.txt
+carousel_v.dart

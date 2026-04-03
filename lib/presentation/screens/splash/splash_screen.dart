@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../providers/manifest_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../auth/auth_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -55,6 +58,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   late List<String> col3;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+  bool _showAuthModal = false;
+  bool _isLogin = false;
 
   @override
   void initState() {
@@ -107,9 +112,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     }
 
     if (mounted) {
-      _fadeController.forward().then((_) {
-        if (mounted) context.go('/home');
-      });
+      // 3. Check Auth Status
+      final user = ref.read(authStateProvider).valueOrNull;
+      
+      if (user == null) {
+        // Show Auth Modal
+        setState(() => _showAuthModal = true);
+      } else {
+        // Transition to Home
+        _fadeController.forward().then((_) {
+          if (mounted) context.go('/home');
+        });
+      }
     }
   }
 
@@ -121,6 +135,26 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
   @override
   Widget build(BuildContext context) {
+    // Listen for auth state changes to trigger redirection
+    ref.listen<AsyncValue<User?>>(authStateProvider, (previous, next) {
+      final user = next.valueOrNull;
+      if (user != null && mounted) {
+        // Hide modal and trigger fade transition
+        if (_showAuthModal) {
+          setState(() => _showAuthModal = false);
+        }
+        
+        // Ensure we only transition once
+        // Only if we are currently not transitioning
+        if (_fadeController.status != AnimationStatus.forward && 
+            _fadeController.status != AnimationStatus.completed) {
+          _fadeController.forward().then((_) {
+            if (mounted) context.go('/home');
+          });
+        }
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: FadeTransition(
@@ -250,6 +284,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                 ],
               ),
             ),
+            
+            // Auth Modal Overlay
+            if (_showAuthModal)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: AuthScreen(
+                      isLogin: _isLogin,
+                      onToggle: () => setState(() => _isLogin = !_isLogin),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
