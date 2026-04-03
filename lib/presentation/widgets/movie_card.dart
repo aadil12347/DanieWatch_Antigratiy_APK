@@ -93,13 +93,13 @@ class _MovieCardState extends ConsumerState<MovieCard>
           width: widget.width,
           height: widget.height,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(16), // Slightly reduced for better fit
             color: AppColors.card,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 10,
-                offset: const Offset(4, 4),
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -125,133 +125,137 @@ class _MovieCardState extends ConsumerState<MovieCard>
     required bool isHovering,
     AnimationController? hoverAnimation,
   }) {
-    return Stack(
-      fit: StackFit.expand,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Base Poster ──
-        if (posterUrl.isNotEmpty)
-          _PosterImage(posterUrl: posterUrl, tmdbId: item.id, mediaType: item.mediaType)
-        else
-          _placeholder(),
+        // ── Poster Area ──
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ── Base Poster ──
+              if (posterUrl.isNotEmpty)
+                _PosterImage(posterUrl: posterUrl, tmdbId: item.id, mediaType: item.mediaType)
+              else
+                _placeholder(),
 
-        // ── Hover Overlay (Vignette) ──
-        if (hoverAnimation != null)
-          AnimatedBuilder(
-            animation: hoverAnimation,
-            builder: (context, _) {
-              if (hoverAnimation.value == 0.0) return const SizedBox.shrink();
+              // ── Hover Overlay (Vignette) ──
+              if (hoverAnimation != null)
+                AnimatedBuilder(
+                  animation: hoverAnimation,
+                  builder: (context, _) {
+                    if (hoverAnimation.value == 0.0) return const SizedBox.shrink();
 
-              return Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.center,
-                      radius: 0.8,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.2 * hoverAnimation.value),
-                        Colors.black.withValues(alpha: 0.85 * hoverAnimation.value),
-                      ],
-                      stops: const [0.2, 1.0],
-                    ),
+                    return Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            center: Alignment.center,
+                            radius: 0.8,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.2 * hoverAnimation.value),
+                              Colors.black.withValues(alpha: 0.85 * hoverAnimation.value),
+                            ],
+                            stops: const [0.2, 1.0],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+              // ── Save Button (top-right) ──
+              Positioned(
+                top: 6,
+                right: 6,
+                child: AnimatedBuilder(
+                  animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
+                  builder: (context, child) {
+                    final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
+                    return Opacity(
+                      opacity: opacity,
+                      child: child,
+                    );
+                  },
+                  child: _SaveButton(item: item),
+                ),
+              ),
+              
+              // ── Language Badge (top-left) ──
+              if (item.language.isNotEmpty)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: AnimatedBuilder(
+                    animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
+                    builder: (context, child) {
+                      final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
+                      return Opacity(
+                        opacity: opacity,
+                        child: child,
+                      );
+                    },
+                    child: _LanguageBadge(text: item.language.first),
                   ),
                 ),
-              );
-            },
+
+              // ── Logo/Title Overlay (Top-most layer during hold) ──
+              if (hoverAnimation != null)
+                AnimatedBuilder(
+                  animation: hoverAnimation,
+                  builder: (context, _) {
+                    if (hoverAnimation.value == 0.0) return const SizedBox.shrink();
+                    final slideOff = (1.0 - hoverAnimation.value) * 120;
+
+                    return Positioned(
+                      bottom: -slideOff + 24,
+                      left: 12,
+                      right: 12,
+                      child: Opacity(
+                        opacity: hoverAnimation.value,
+                        child: (logoUrl != null && logoUrl.isNotEmpty)
+                            ? CachedNetworkImage(
+                                imageUrl: logoUrl,
+                                height: 50,
+                                fit: BoxFit.contain,
+                                errorWidget: (_, __, ___) => _titleText(item.title),
+                              )
+                            : _titleText(item.title),
+                      ),
+                    );
+                  },
+                ),
+            ],
           ),
-
-        // ── Bottom Tags (Dimmed during hold) ──
-        AnimatedBuilder(
-          animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-          builder: (context, _) {
-            final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-            return Stack(
-              children: [
-                Positioned(
-                  bottom: 8,
-                  left: 8,
-                  child: Opacity(
-                    opacity: opacity,
-                    child: _GlassTag(
-                      text: item.mediaType == 'tv' ? 'Series' : 'Movie',
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 8,
-                  right: 8,
-                  child: Opacity(
-                    opacity: opacity,
-                    child: _GlassTag(
-                      text: item.releaseYear?.toString() ?? '',
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
         ),
 
-        // ── Save Button (top-right - Also dimmed during hold) ──
-        Positioned(
-          top: 6,
-          right: 6,
-          child: AnimatedBuilder(
-            animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-            builder: (context, child) {
-              final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-              return Opacity(
-                opacity: opacity,
-                child: child,
-              );
-            },
-            child: _SaveButton(item: item),
+        // ── Metadata Bar ──
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          color: AppColors.card,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                item.mediaType == 'tv' ? 'Series' : 'Movie',
+                style: GoogleFonts.inter(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              Text(
+                item.releaseYear?.toString() ?? '',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
-        
-        // ── Language Badge (top-left) ──
-        if (item.language.isNotEmpty)
-          Positioned(
-            top: 6,
-            left: 6,
-            child: AnimatedBuilder(
-              animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-              builder: (context, child) {
-                final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-                return Opacity(
-                  opacity: opacity,
-                  child: child,
-                );
-              },
-              child: _LanguageBadge(text: item.language.first),
-            ),
-          ),
-
-        // ── Logo/Title Overlay (Top-most layer during hold) ──
-        if (hoverAnimation != null)
-          AnimatedBuilder(
-            animation: hoverAnimation,
-            builder: (context, _) {
-              if (hoverAnimation.value == 0.0) return const SizedBox.shrink();
-              final slideOff = (1.0 - hoverAnimation.value) * 120;
-
-              return Positioned(
-                bottom: -slideOff + 24,
-                left: 12,
-                right: 12,
-                child: Opacity(
-                  opacity: hoverAnimation.value,
-                  child: (logoUrl != null && logoUrl.isNotEmpty)
-                      ? CachedNetworkImage(
-                          imageUrl: logoUrl,
-                          height: 50,
-                          fit: BoxFit.contain,
-                          errorWidget: (_, __, ___) => _titleText(item.title),
-                        )
-                      : _titleText(item.title),
-                ),
-              );
-            },
-          ),
       ],
     );
   }

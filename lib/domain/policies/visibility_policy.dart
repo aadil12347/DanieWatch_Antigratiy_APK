@@ -91,41 +91,57 @@ class VisibilityPolicy {
   static List<ManifestItem> filterAnime(List<ManifestItem> all) {
     return all
         .where((item) =>
-            item.originalLanguage == 'ja' &&
-            (item.genreIds.contains(16) ||
-                item.genres.any((g) => g.toLowerCase() == 'animation')))
+            item.genreIds.contains(16) ||
+            item.genres.any((g) => g.toLowerCase() == 'animation'))
         .toList();
   }
 
-  /// Filter for Korean content: tv type and KR origin
+  /// Filter for Korean/Asian/Turkish content: KR, CN, JP, TR origin (both movies and series)
   static List<ManifestItem> filterKorean(List<ManifestItem> all) {
+    final targetCountries = {'KR', 'CN', 'JP', 'TR'};
     return all
-        .where((item) =>
-            (item.mediaType == 'tv' || item.mediaType == 'series') &&
-            item.originCountry.contains('KR'))
+        .where((item) => item.originCountry.any((c) => targetCountries.contains(c)))
         .toList();
   }
 
-  /// Filter for Bollywood/Hindi content: movie type and hi language/IN origin
+  /// Filter for Bollywood content: Indian or Pakistani origin (both movies and series)
   static List<ManifestItem> filterBollywood(List<ManifestItem> all) {
+    final targetCountries = {'IN', 'PK'};
     return all
-        .where((item) =>
-            item.mediaType == 'movie' &&
-            ((item.language.any((l) => l.toLowerCase() == 'hindi') ||
-                item.originalLanguage == 'hi' ||
-                item.originCountry.contains('IN'))))
+        .where((item) => item.originCountry.any((c) => targetCountries.contains(c)))
         .toList();
   }
 
-  /// Filter for Hollywood content: movie type and en language/US/GB origin
+  /// Filter for Hollywood content: everything except specific regional content and anime
   static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
-    return all
-        .where((item) =>
-            item.mediaType == 'movie' &&
-            (item.originalLanguage == 'en' ||
-                item.originCountry.contains('US') ||
-                item.originCountry.contains('GB')))
-        .toList();
+    final excludedCountries = {'KR', 'TR', 'JP', 'CN', 'IN', 'TH', 'PK'};
+    final excludedLanguages = {
+      'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or', // Indian
+      'ko', 'zh', 'ja', 'tr', // Asian & Turkish
+    };
+
+    return all.where((item) {
+      // 1. Exclude Anime specifically
+      final isAnime = item.genreIds.contains(16) ||
+          item.genres.any((g) => g.toLowerCase() == 'animation');
+      if (isAnime) return false;
+
+      // 2. Filter by excluded regions (countries)
+      final hasExcludedCountry =
+          item.originCountry.any((c) => excludedCountries.contains(c));
+      if (hasExcludedCountry) return false;
+
+      // 3. Safeguard: exclude regional languages even if country is missing
+      final hasExcludedLang = excludedLanguages.contains(item.originalLanguage);
+      if (hasExcludedLang) return false;
+
+      // 4. Final check for regional strings in languages list (fallback for missing or incorrect metadata)
+      final regionalStrings = {'hindi', 'urdu', 'punjabi', 'telugu', 'tamil', 'malayalam', 'kannada', 'bengali', 'marathi', 'gujarati', 'japanese', 'turkish', 'korean', 'chinese'};
+      final hasRegionalString = item.language.any((l) => regionalStrings.contains(l.toLowerCase()));
+      if (hasRegionalString) return false;
+
+      return true;
+    }).toList();
   }
 
   /// Filter for movies only

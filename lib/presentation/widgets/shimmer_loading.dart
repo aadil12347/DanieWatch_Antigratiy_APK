@@ -45,7 +45,7 @@ class ShimmerGrid extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
-          childAspectRatio: 0.65,
+          childAspectRatio: 0.55,
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
         ),

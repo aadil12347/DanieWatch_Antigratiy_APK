@@ -81,8 +81,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     // Close more modal if navigating
     if (_isMoreOpen) setState(() => _isMoreOpen = false);
     if (index != _currentIndex) {
-      // Clear filters when switching tabs to prevent filter bleed
-      ref.read(searchProvider.notifier).clear();
+      // CLEAR ALL filters and search results when switching tabs
+      ref.read(searchProvider.notifier).clearAll();
+      
       setState(() => _currentIndex = index);
       context.go(_tabs[index]);
     }
@@ -208,9 +209,9 @@ class _AppShellState extends ConsumerState<AppShell> {
           return;
         }
 
-        // 3. If search field is focused (Explore tab), unfocus it first
+        // 3. If any search field is focused, unfocus it first (Universal check)
         final isSearchFocused = ref.read(searchFocusProvider);
-        if (_currentIndex == 1 && isSearchFocused) {
+        if (isSearchFocused) {
           FocusManager.instance.primaryFocus?.unfocus();
           return;
         }

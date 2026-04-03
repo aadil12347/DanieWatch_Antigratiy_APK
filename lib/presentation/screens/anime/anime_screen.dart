@@ -28,13 +28,23 @@ class _AnimeScreenState extends ConsumerState<AnimeScreen> {
     super.initState();
     // Clear shared search state when entering this category page
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(searchProvider.notifier).clear();
+      ref.read(searchProvider.notifier).clearAll();
     });
+    _searchFocus.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.removeListener(_onFocusChange);
+    // Ensure focus state is cleared when screen is removed
+    ref.read(searchFocusProvider.notifier).state = false;
     _searchFocus.dispose();
     super.dispose();
   }
@@ -110,7 +120,7 @@ class _AnimeScreenState extends ConsumerState<AnimeScreen> {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      childAspectRatio: 0.7,
+                      childAspectRatio: 0.6,
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 16,
                     ),

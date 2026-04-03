@@ -148,7 +148,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                       sliver: SliverGrid(
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
-                          childAspectRatio: 0.7,
+                          childAspectRatio: 0.6,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
                         ),

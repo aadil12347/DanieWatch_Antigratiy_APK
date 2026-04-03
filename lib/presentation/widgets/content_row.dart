@@ -11,7 +11,7 @@ class ContentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 185,
+      height: 225,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -22,7 +22,7 @@ class ContentRow extends StatelessWidget {
           return MovieCard(
             item: items[index],
             width: 120,
-            height: 185,
+            height: 225,
           );
         },
       ),

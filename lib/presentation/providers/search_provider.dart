@@ -88,13 +88,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
   void search(String query) {
     _debounce?.cancel();
 
-    state = state.copyWith(query: query);
-
+    // Instant clear for empty/whitespace query
     if (query.trim().isEmpty) {
       _unfilteredResults = [];
-      state = state.copyWith(results: [], isSearching: false);
+      state = state.copyWith(
+        query: '',
+        results: [],
+        isSearching: false,
+      );
       return;
     }
+
+    state = state.copyWith(query: query);
 
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
@@ -102,8 +107,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
       state = state.copyWith(isSearching: true);
 
       try {
-        _unfilteredResults = await _dao.searchFts(query);
-        state = state.copyWith(results: _unfilteredResults, isSearching: false);
+        final results = await _dao.searchFts(query);
+        if (mounted) {
+          _unfilteredResults = results;
+          state = state.copyWith(results: _unfilteredResults, isSearching: false);
+        }
       } catch (e) {
         if (mounted) {
           state = state.copyWith(results: [], isSearching: false);
@@ -124,6 +132,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
     _debounce?.cancel();
     _unfilteredResults = [];
     state = const SearchState();
+  }
+
+  /// Resets everything: query, results, AND filters
+  void clearAll() {
+    _debounce?.cancel();
+    _unfilteredResults = [];
+    state = const SearchState(
+      query: '',
+      results: [],
+      isSearching: false,
+      filters: SearchFilters(),
+    );
   }
 }
 

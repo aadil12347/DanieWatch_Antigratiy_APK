@@ -87,12 +87,14 @@ class CategorySearchBar extends ConsumerWidget {
                   prefixIcon: Icon(Icons.search,
                       color: Colors.white.withValues(alpha: 0.4), size: 22),
                   suffixIcon: hasSearch
-                      ? GestureDetector(
-                          onTap: () {
+                      ? IconButton(
+                          onPressed: () {
                             searchController.clear();
                             onSearchChanged('');
+                            // Keep focus but reset the logic
+                            searchFocus.requestFocus();
                           },
-                          child: Icon(Icons.close,
+                          icon: Icon(Icons.close,
                               color: Colors.white.withValues(alpha: 0.4),
                               size: 20),
                         )
@@ -100,7 +102,12 @@ class CategorySearchBar extends ConsumerWidget {
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                onChanged: onSearchChanged,
+                onChanged: (val) {
+                  onSearchChanged(val);
+                },
+                onSubmitted: (val) {
+                  searchFocus.unfocus();
+                },
               ),
             ),
           ),
@@ -176,11 +183,13 @@ class CategoryFilterChips extends ConsumerWidget {
 
     if (activeFilterLabels.isEmpty) return const SizedBox.shrink();
 
-    return SizedBox(
-      height: 44,
+    return Container(
+      height: 48,
+      margin: const EdgeInsets.only(bottom: 4),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: activeFilterLabels.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, idx) {
@@ -203,12 +212,13 @@ class CategoryFilterChips extends ConsumerWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 GestureDetector(
                   onTap: () => _removeFilter(
                       activeFilterLabels[idx], searchState, ref),
-                  child: const Icon(Icons.close,
-                      color: Colors.white54, size: 14),
+                  child: Icon(Icons.close_rounded,
+                      color: AppColors.textPrimary.withValues(alpha: 0.5), 
+                      size: 14),
                 ),
               ],
             ),

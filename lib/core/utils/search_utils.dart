@@ -134,24 +134,41 @@ class FilterUtils {
       case 'TV Shows' || 'Season' || 'Series':
         return item.mediaType == 'tv' || item.mediaType == 'series';
       case 'Anime':
-        // Consistent with VisibilityPolicy.filterAnime
-        return item.originalLanguage == 'ja' && item.genreIds.contains(16);
+        // Consistent with VisibilityPolicy.filterAnime: any animation from any country
+        return item.genreIds.contains(16) ||
+            item.genres.any((g) => g.toLowerCase() == 'animation');
       case 'K-Drama' || 'Korean':
-        // Consistent with VisibilityPolicy.filterKorean
-        return (item.mediaType == 'tv' || item.mediaType == 'series') &&
-            item.originCountry.contains('KR');
+        // Consistent with VisibilityPolicy.filterKorean: KR, CN, JP, TR
+        final targetCountries = {'KR', 'CN', 'JP', 'TR'};
+        return item.originCountry.any((c) => targetCountries.contains(c));
       case 'Bollywood':
-        // Consistent with VisibilityPolicy.filterBollywood
-        return item.mediaType == 'movie' &&
-            (item.language.any((l) => l.toLowerCase() == 'hindi') ||
-                item.originalLanguage == 'hi' ||
-                item.originCountry.contains('IN'));
+        // Consistent with VisibilityPolicy.filterBollywood: IN, PK
+        final targetCountries = {'IN', 'PK'};
+        return item.originCountry.any((c) => targetCountries.contains(c));
       case 'Hollywood':
-        // Consistent with VisibilityPolicy.filterHollywood
-        return item.mediaType == 'movie' &&
-            (item.originalLanguage == 'en' ||
-                item.originCountry.contains('US') ||
-                item.originCountry.contains('GB'));
+        // Consistent with VisibilityPolicy.filterHollywood: everything else
+        final excludedCountries = {'KR', 'TR', 'JP', 'CN', 'IN', 'TH', 'PK'};
+        final excludedLanguages = {
+          'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or', // Indian
+          'ko', 'zh', 'ja', 'tr', // Asian & Turkish
+        };
+
+        final isAnime = item.genreIds.contains(16) ||
+            item.genres.any((g) => g.toLowerCase() == 'animation');
+        if (isAnime) return false;
+
+        final hasExcludedCountry =
+            item.originCountry.any((c) => excludedCountries.contains(c));
+        if (hasExcludedCountry) return false;
+
+        final hasExcludedLang = excludedLanguages.contains(item.originalLanguage);
+        if (hasExcludedLang) return false;
+
+        final regionalStrings = {'hindi', 'urdu', 'punjabi', 'telugu', 'tamil', 'malayalam', 'kannada', 'bengali', 'marathi', 'gujarati', 'japanese', 'turkish', 'korean', 'chinese'};
+        final hasRegionalString = item.language.any((l) => regionalStrings.contains(l.toLowerCase()));
+        if (hasRegionalString) return false;
+
+        return true;
       default:
         return false;
     }

@@ -60,12 +60,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final allItems = ref.watch(allItemsProvider);
     final index = ref.watch(manifestIndexProvider);
 
-    final hasSearch = searchState.query.isNotEmpty;
+    final hasSearch = searchState.query.trim().isNotEmpty;
     final hasFilters = searchState.filters.hasActiveFilters;
     final showResults = hasSearch || hasFilters;
+    
     final itemsToDisplay = showResults
         ? FilterUtils.getFilteredItems(
-            allItems: allItems, searchState: searchState, index: index)
+            allItems: allItems, 
+            searchState: searchState, 
+            index: index,
+          )
         : <ManifestItem>[];
 
     return Scaffold(
@@ -140,7 +144,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.7,
+          childAspectRatio: 0.6,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
@@ -165,7 +169,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.7,
+          childAspectRatio: 0.6,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
