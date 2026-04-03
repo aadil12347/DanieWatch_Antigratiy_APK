@@ -12,6 +12,7 @@ import '../../widgets/movie_card.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../widgets/top_navbar.dart';
+import '../../providers/scroll_provider.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -23,6 +24,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -32,6 +34,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _searchController.text = currentQuery;
     }
     _searchFocus.addListener(_onFocusChange);
+
+    // Register the controller for Explore tab (index 1)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(scrollProvider).register(1, _scrollController);
+    });
   }
 
   void _onFocusChange() {
@@ -44,6 +51,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    ref.read(scrollProvider).unregister(1);
+    _scrollController.dispose();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
     // Ensure focus state is cleared when screen is removed
@@ -136,6 +145,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
           child: CustomScrollView(
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               const SliverToBoxAdapter(child: TopNavbar()),

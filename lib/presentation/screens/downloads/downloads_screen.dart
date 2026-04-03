@@ -15,6 +15,7 @@ import '../../providers/search_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../providers/downloads_selection_provider.dart';
 import '../../providers/confirmation_modal_provider.dart';
+import '../../providers/scroll_provider.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
@@ -27,6 +28,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   StreamSubscription? _updateSub;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -34,6 +36,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     _updateSub =
         DownloadManager.instance.updateStream.listen(_onDownloadUpdate);
     _searchFocus.addListener(_onFocusChange);
+
+    // Register the controller for Downloads tab (index 3)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(scrollProvider).register(3, _scrollController);
+    });
   }
 
   void _onFocusChange() {
@@ -42,6 +49,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   @override
   void dispose() {
+    ref.read(scrollProvider).unregister(3);
+    _scrollController.dispose();
     _updateSub?.cancel();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
@@ -117,6 +126,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           child: GestureDetector(
             onTap: () => _searchFocus.unfocus(),
             child: CustomScrollView(
+              controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 // Title scrolls with content

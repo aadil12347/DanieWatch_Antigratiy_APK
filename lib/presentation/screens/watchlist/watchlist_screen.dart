@@ -10,6 +10,7 @@ import '../../widgets/movie_card.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../widgets/category_header.dart';
 import '../../../core/utils/search_utils.dart';
+import '../../providers/scroll_provider.dart';
 
 class WatchlistScreen extends ConsumerStatefulWidget {
   const WatchlistScreen({super.key});
@@ -21,6 +22,7 @@ class WatchlistScreen extends ConsumerStatefulWidget {
 class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -30,6 +32,11 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       _searchController.text = currentQuery;
     }
     _searchFocus.addListener(_onFocusChange);
+
+    // Register the controller for Favorites tab (index 2)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(scrollProvider).register(2, _scrollController);
+    });
   }
 
   void _onFocusChange() {
@@ -42,6 +49,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
   @override
   void dispose() {
+    ref.read(scrollProvider).unregister(2);
+    _scrollController.dispose();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
     _searchFocus.dispose();
@@ -64,6 +73,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
           child: CustomScrollView(
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               // Title scrolls with content

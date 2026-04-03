@@ -15,30 +15,53 @@ import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
 
-class HomeScreen extends ConsumerWidget {
+import '../../providers/scroll_provider.dart';
+
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Register the controller with the global manager
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(scrollProvider).register(0, _scrollController);
+    });
+  }
+
+  @override
+  void dispose() {
+    ref.read(scrollProvider).unregister(0);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final manifestAsync = ref.watch(manifestProvider);
     final sectionsAsync = ref.watch(homeSectionsProvider);
     final trendingAsync = ref.watch(trendingProvider);
 
     return manifestAsync.when(
-      loading: () => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!, sectionsAsync, trendingAsync) : const _LoadingHome(),
-      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!, sectionsAsync, trendingAsync) : _ErrorHome(error: e.toString()),
+      loading: () => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, trendingAsync) : const _LoadingHome(),
+      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, trendingAsync) : _ErrorHome(error: e.toString()),
       data: (manifest) {
         if (manifest == null || manifest.items.isEmpty) {
           return const _EmptyHome();
         }
-        return _buildHomeContent(context, ref, manifest, sectionsAsync, trendingAsync);
+        return _buildHomeContent(manifest, sectionsAsync, trendingAsync);
       },
     );
   }
 
   Widget _buildHomeContent(
-    BuildContext context, 
-    WidgetRef ref, 
     dynamic manifest,
     AsyncValue<List<ContentSection>> sectionsAsync,
     AsyncValue<List<ManifestItem>> trendingAsync
@@ -51,6 +74,7 @@ class HomeScreen extends ConsumerWidget {
       drawer: const CustomDrawer(),
       body: CustomAppBar(
         child: CustomScrollView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             // Personalized Header
@@ -116,7 +140,7 @@ class HomeScreen extends ConsumerWidget {
                       title: section.title,
                       titleWidget: isTop10 ? const TopTenTitle() : null,
                       showSeeAll: !isTop10,
-                      onSeeAll: () => _handleSeeAll(ref, context, section.title),
+                      onSeeAll: () => _handleSeeAll(section.title),
                     ),
                     ContentRow(
                       items: section.items,
@@ -136,7 +160,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  void _handleSeeAll(WidgetRef ref, BuildContext context, String title) {
+  void _handleSeeAll(String title) {
     SearchFilters filters = const SearchFilters();
 
     if (title == 'Top 10 Today' || title == 'Trending Now') {

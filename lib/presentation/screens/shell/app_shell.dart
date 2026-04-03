@@ -16,6 +16,7 @@ import '../../widgets/filter_selector_sheet.dart';
 import 'dart:async';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../widgets/confirmation_modal_content.dart';
+import '../../providers/scroll_provider.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -64,12 +65,27 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _onTap(int index) {
-    widget.navigationShell.goBranch(
-      index,
-      // A common pattern when using branches is to support navigating to the 
-      // initial location when tapping the item that is already active.
-      initialLocation: index == widget.navigationShell.currentIndex,
-    );
+    final isCurrent = index == widget.navigationShell.currentIndex;
+    if (isCurrent) {
+      // Check if we are at the root of the branch
+      final location = GoRouterState.of(context).uri.toString();
+      final rootLocations = ['/home', '/search', '/watchlist', '/downloads'];
+      
+      // If the current location is not one of the roots, it means we are in a detail page
+      // or a sub-page. In this case, we navigate to the initial location (pop to root).
+      if (!rootLocations.contains(location)) {
+        widget.navigationShell.goBranch(
+          index,
+          initialLocation: true,
+        );
+      } else {
+        // We are already at the root, so we trigger scroll to top
+        ref.read(scrollProvider).scrollToTop(index);
+      }
+    } else {
+      // Different tab, just switch
+      widget.navigationShell.goBranch(index);
+    }
   }
 
   StreamSubscription? _downloadSub;
