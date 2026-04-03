@@ -23,18 +23,32 @@ class TopNavbar extends ConsumerWidget {
     final filters = searchState.filters;
 
     // Determine which item is currently active
+    // Determine which item is currently active
     int selectedIndex = 0; // Default to 'Explore'
-    
-    if (filters.categories.contains('Korean')) selectedIndex = 1;
-    else if (filters.categories.contains('Anime')) selectedIndex = 2;
-    else if (filters.categories.contains('Bollywood')) selectedIndex = 3;
-    else if (filters.genres.contains('Action')) selectedIndex = 4;
-    else if (filters.genres.contains('Comedy')) selectedIndex = 5;
-    else if (filters.genres.contains('Thriller')) selectedIndex = 6;
-    else if (filters.categories.isEmpty && filters.genres.isEmpty) selectedIndex = 0;
-    else {
-      // If some other filter is active that's not in our list, we might still be "Explore" or none
-      selectedIndex = filters.hasActiveFilters ? -1 : 0;
+
+    if (filters.categories.contains('Korean')) {
+      selectedIndex = 1;
+    } else if (filters.categories.contains('Anime')) {
+      selectedIndex = 2;
+    } else if (filters.categories.contains('Bollywood')) {
+      selectedIndex = 3;
+    } else if (filters.genres.isNotEmpty) {
+      // Check if any selected genre is present in our navbar list
+      final activeGenre = filters.genres.firstWhere(
+        (g) => items.contains(g),
+        orElse: () => '',
+      );
+      if (activeGenre.isNotEmpty) {
+        selectedIndex = items.indexOf(activeGenre);
+      } else {
+        // Genre selected but not in navbar
+        selectedIndex = -1;
+      }
+    } else if (filters.hasActiveFilters) {
+      // Other filters (Year, Language, etc.) but no category/genre
+      selectedIndex = -1;
+    } else {
+      selectedIndex = 0; // Clear state -> Explore
     }
 
     return Container(

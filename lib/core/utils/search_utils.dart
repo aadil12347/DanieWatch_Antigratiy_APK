@@ -118,29 +118,45 @@ class FilterUtils {
     // 4. Filter by Genre
     if (f.genres.isNotEmpty) {
       final genreMap = {
-        'Action': 28,
-        'Animation': 16,
-        'Comedy': 35,
-        'Crime': 80,
-        'Documentary': 99,
-        'Drama': 18,
-        'Family': 10751,
-        'Fantasy': 14,
-        'History': 36,
-        'Horror': 27,
-        'Music': 10402,
-        'Mystery': 9648,
-        'Romance': 10749,
-        'Science Fiction': 878,
-        'Sci-Fi': 878,
-        'Thriller': 53,
-        'War': 10752,
-        'Western': 37,
+        'Action': [28, 10759], // Movie: Action, TV: Action & Adventure
+        'Animation': [16],
+        'Comedy': [35],
+        'Crime': [80],
+        'Documentary': [99],
+        'Drama': [18],
+        'Family': [10751],
+        'Fantasy': [14, 10765], // Movie: Fantasy, TV: Sci-Fi & Fantasy
+        'History': [36],
+        'Horror': [27],
+        'Music': [10402],
+        'Mystery': [9648],
+        'Romance': [10749],
+        'Science Fiction': [878, 10765], // Movie: Sci-Fi, TV: Sci-Fi & Fantasy
+        'Sci-Fi': [878, 10765],
+        'Thriller': [53],
+        'War': [10752, 10768], // Movie: War, TV: War & Politics
+        'Western': [37],
+        'Adventure': [12, 10759],
       };
       baseList = baseList.where((item) {
         return f.genres.any((genreName) {
-          final genreId = genreMap[genreName];
-          return genreId != null && item.genreIds.contains(genreId);
+          // 1. Check by ID (Handling both Movie and TV variants)
+          final ids = genreMap[genreName];
+          final matchesId =
+              ids != null && ids.any((id) => item.genreIds.contains(id));
+
+          if (matchesId) return true;
+
+          // 2. Check by String label (Fallback if IDs are missing or mismatched)
+          final searchLabel = genreName.toLowerCase();
+          return item.genres.any((g) {
+            final normalized = g.toLowerCase();
+            return normalized.contains(searchLabel) ||
+                (searchLabel == 'sci-fi' &&
+                    normalized.contains('science fiction')) ||
+                (searchLabel == 'science fiction' &&
+                    normalized.contains('sci-fi'));
+          });
         });
       }).toList();
     }

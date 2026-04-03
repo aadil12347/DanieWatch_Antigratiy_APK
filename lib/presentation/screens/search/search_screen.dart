@@ -86,10 +86,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     return categoryItems.when(
-      loading: () => _buildScaffoldWithContent([_buildShimmerGrid()], [], filterCat),
+      loading: () => _buildScaffoldWithContent([_buildShimmerGrid()], [], searchState),
       error: (err, _) => _buildScaffoldWithContent([
         SliverToBoxAdapter(child: Center(child: Text('Error: $err')))
-      ], [], filterCat),
+      ], [], searchState),
       data: (items) {
         // When searching, manually trigger the in-memory search on the subset
         // We do this to ensure search is isolated to the "file" being viewed.
@@ -117,7 +117,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             items
           ),
           items,
-          filterCat,
+          searchState,
         );
       },
     );
@@ -126,8 +126,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildScaffoldWithContent(
     List<Widget> slivers, 
     List<ManifestItem> currentCategoryItems,
-    Set<String> activeCategories,
+    SearchState searchState,
   ) {
+    final activeCategories = searchState.filters.categories;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -137,7 +139,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               const SliverToBoxAdapter(child: TopNavbar()),
-              const SliverToBoxAdapter(child: CategoryTitle(title: 'Explore')),
+              SliverToBoxAdapter(
+                child: CategoryTitle(
+                  title: activeCategories.contains('Korean')
+                      ? 'Korean'
+                      : activeCategories.contains('Anime')
+                          ? 'Anime'
+                          : activeCategories.contains('Bollywood')
+                              ? 'Bollywood'
+                              : searchState.filters.genres.isNotEmpty
+                                  ? searchState.filters.genres.first
+                                  : 'Explore',
+                ),
+              ),
               SliverPersistentHeader(
                 floating: true,
                 delegate: FloatingSearchBarDelegate(
