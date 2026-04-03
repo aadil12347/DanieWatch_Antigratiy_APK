@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/models/manifest_item.dart';
 import '../../data/local/manifest_dao.dart';
 
 /// Comprehensive filter state
@@ -149,6 +150,36 @@ class SearchNotifier extends StateNotifier<SearchState> {
       isSearching: false,
       filters: SearchFilters(),
     );
+  }
+
+  /// Search within a specific list of items (for category-isolated search)
+  void searchInList(String query, List<ManifestItem> items) {
+    _debounce?.cancel();
+    state = state.copyWith(query: query);
+
+    if (query.trim().isEmpty) {
+      state = state.copyWith(results: [], isSearching: false);
+      return;
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      state = state.copyWith(isSearching: true);
+
+      final search = query.toLowerCase();
+      final List<ManifestSearchResult> results = items
+          .where((item) =>
+              item.title.toLowerCase().contains(search) ||
+              (item.overview?.toLowerCase().contains(search) ?? false))
+          .map((item) => ManifestSearchResult(
+                itemId: item.id,
+                mediaType: item.mediaType,
+                title: item.title,
+              ))
+          .toList();
+
+      state = state.copyWith(results: results, isSearching: false);
+    });
   }
 }
 

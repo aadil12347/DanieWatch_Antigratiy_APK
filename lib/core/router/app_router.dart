@@ -3,14 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../presentation/screens/shell/app_shell.dart';
 import '../../presentation/screens/home/home_screen.dart';
-import '../../presentation/screens/movies/movies_screen.dart';
-import '../../presentation/screens/tv/tv_screen.dart';
-import '../../presentation/screens/anime/anime_screen.dart';
 import '../../presentation/screens/search/search_screen.dart';
 import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
-import '../../presentation/screens/korean/korean_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
@@ -78,26 +74,6 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/home',
           pageBuilder: (context, state) => _fadePage(const HomeScreen(), state),
-        ),
-        GoRoute(
-          path: '/bollywood',
-          pageBuilder: (context, state) =>
-              _fadePage(const BollywoodScreen(), state),
-        ),
-        GoRoute(
-          path: '/hollywood',
-          pageBuilder: (context, state) =>
-              _fadePage(const HollywoodScreen(), state),
-        ),
-        GoRoute(
-          path: '/anime',
-          pageBuilder: (context, state) =>
-              _fadePage(const AnimeScreen(), state),
-        ),
-        GoRoute(
-          path: '/korean',
-          pageBuilder: (context, state) =>
-              _fadePage(const KoreanScreen(), state),
         ),
         GoRoute(
           path: '/search',

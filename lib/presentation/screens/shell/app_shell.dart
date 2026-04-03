@@ -13,7 +13,6 @@ import '../../../core/utils/toast_utils.dart';
 import '../../widgets/main_filter_panel_sheet.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/filter_selector_sheet.dart';
-import '../../widgets/more_modal_content.dart';
 import 'dart:async';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../widgets/confirmation_modal_content.dart';
@@ -29,34 +28,34 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _currentIndex = 0;
-  bool _isMoreOpen = false;
   DateTime? _lastBackPressed;
 
   static const _tabs = [
     '/home',
     '/search',
     '/watchlist',
+    '/downloads',
   ];
 
   static const _icons = [
     Icons.home_outlined,
     Icons.search_outlined,
     Icons.bookmark_outline_rounded,
-    Icons.more_horiz_rounded,
+    Icons.download_outlined,
   ];
 
   static const _activeIcons = [
     Icons.home_rounded,
     Icons.search_rounded,
     Icons.bookmark_rounded,
-    Icons.more_horiz_rounded,
+    Icons.download_rounded,
   ];
 
   static const _labels = [
     'Home',
     'Explore',
     'Favourite',
-    'More',
+    'Downloads',
   ];
 
   static void closeModals(WidgetRef ref) {
@@ -73,13 +72,6 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _onTap(int index) {
-    // 4th button (More) toggles the modal instead of navigating
-    if (index == 3) {
-      setState(() => _isMoreOpen = !_isMoreOpen);
-      return;
-    }
-    // Close more modal if navigating
-    if (_isMoreOpen) setState(() => _isMoreOpen = false);
     if (index != _currentIndex) {
       // CLEAR ALL filters and search results when switching tabs
       ref.read(searchProvider.notifier).clearAll();
@@ -159,7 +151,6 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _closeAllModals() {
-    if (_isMoreOpen) setState(() => _isMoreOpen = false);
     ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
     ref.read(filterModalProvider.notifier).state =
         const FilterModalState(view: FilterView.none);
@@ -168,9 +159,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   bool _isTabSelected(int index) {
-    if (index < 3) return _currentIndex == index && !_isMoreOpen;
-    // More tab is selected if _currentIndex is 3 OR _isMoreOpen is true
-    return _currentIndex == 3 || _isMoreOpen;
+    return _currentIndex == index;
   }
 
   @override
@@ -183,18 +172,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     final confirmState = ref.watch(confirmationModalProvider);
     final isOtherModalOpen =
         downloadState.isOpen || filterState.isOpen || confirmState.isOpen;
-    final isModalOpen = isOtherModalOpen || _isMoreOpen;
+    final isModalOpen = isOtherModalOpen;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
 
-        // 1. If more modal is open, close it
-        if (_isMoreOpen) {
-          setState(() => _isMoreOpen = false);
-          return;
-        }
 
         // 2. If global modals are open, close them
         if (isOtherModalOpen) {
@@ -366,31 +350,6 @@ class _AppShellState extends ConsumerState<AppShell> {
                                       key: const ValueKey('navbar_column'),
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        // More menu row (animated in/out)
-                                        AnimatedSize(
-                                          duration: const Duration(milliseconds: 300),
-                                          curve: Curves.fastOutSlowIn,
-                                          alignment: Alignment.bottomCenter,
-                                          child: _isMoreOpen
-                                              ? Column(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    MoreModalContent(
-                                                      currentRoute: location,
-                                                      onClose: () => setState(
-                                                          () => _isMoreOpen = false),
-                                                    ),
-                                                    Padding(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                      child: Divider(
-                                                        height: 1,
-                                                        color: Colors.white.withValues(alpha: 0.08),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                )
-                                              : const SizedBox.shrink(),
-                                        ),
                                         // Main navbar row (always visible)
                                         Container(
                                           height: 64,

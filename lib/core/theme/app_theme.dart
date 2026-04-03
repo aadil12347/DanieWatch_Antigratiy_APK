@@ -11,9 +11,9 @@ class AppColors {
   static const card = Color(0xFF27272A); // Zinc 800
   static const input = Color(0xFF18181B); // Zinc 900
 
-  // Brand / Accent (Claude Rust)
-  static const primary = Color(0xFFD97757); // Peach/Rust
-  static const primaryHover = Color(0xFFC26547);
+  // Brand / Accent (Vibrant Red)
+  static const primary = Color(0xFFB81D24); // Brand Red
+  static const primaryHover = Color(0xFF91171D); // Darker Red
   static const secondary = Color(0xFF6A9BCC); // Claude Blue accent
 
   // Text

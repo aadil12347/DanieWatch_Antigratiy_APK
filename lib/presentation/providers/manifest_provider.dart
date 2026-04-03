@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../domain/policies/visibility_policy.dart';
 import '../../offline/sync_engine.dart';
+import '../../data/local/category_storage.dart';
 
 /// Provides the Manifest from local cache + background sync.
 class ManifestNotifier extends AsyncNotifier<Manifest?> {
@@ -56,26 +57,33 @@ final manifestIndexProvider = Provider<Map<String, ManifestItem>>((ref) {
   return VisibilityPolicy.buildIndex(manifest.items);
 });
 
-/// Provides all manifest items
-final allItemsProvider = Provider<List<ManifestItem>>((ref) {
-  return ref.watch(manifestProvider).valueOrNull?.items ?? [];
+/// Provides all manifest items from index.json (for Explore page)
+final globalItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  // Watch manifest provider to trigger reload after sync
+  ref.watch(manifestProvider);
+  return CategoryStorage.instance.loadCategory(CategoryStorage.indexFile);
 });
 
-/// Provides trending items
-final trendingProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
+/// Synonym for globalItemsProvider for backward compatibility
+final allItemsProvider = Provider<List<ManifestItem>>((ref) {
+  return ref.watch(globalItemsProvider).valueOrNull ?? [];
+});
+
+/// Provides trending items (from index.json)
+final trendingProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final items = await ref.watch(globalItemsProvider.future);
   return VisibilityPolicy.getTrending(items, limit: 10);
 });
 
-/// Provides popular items (TMDB enriched)
-final popularProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
+/// Provides popular items (from index.json)
+final popularProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final items = await ref.watch(globalItemsProvider.future);
   return VisibilityPolicy.getPopular(items, limit: 20);
 });
 
-/// Provides top rated items
-final topRatedProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
+/// Provides top rated items (from index.json)
+final topRatedProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final items = await ref.watch(globalItemsProvider.future);
   return VisibilityPolicy.getTopRated(items, limit: 20);
 });
 
@@ -97,29 +105,45 @@ final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
   return VisibilityPolicy.filterTv(items);
 });
 
-/// Provides anime only
-final animeProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.filterAnime(items);
+/// Provides anime only (loads from anime.json)
+final animeProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(manifestProvider);
+  final items =
+      await CategoryStorage.instance.loadCategory(CategoryStorage.animeFile);
+  return items
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
 });
 
-/// Provides Korean content only
-final koreanProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.filterKorean(items);
+/// Provides Korean content only (loads from korean.json)
+final koreanProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(manifestProvider);
+  final items =
+      await CategoryStorage.instance.loadCategory(CategoryStorage.koreanFile);
+  return items
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
 });
 
-/// Provides Bollywood/Hindi content
-final bollywoodProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.filterBollywood(items);
+/// Provides Bollywood/Hindi content (loads from bollywood.json)
+final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(manifestProvider);
+  final items =
+      await CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
+  return items
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
 });
 
-/// Provides Hollywood/English content
-final hollywoodProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.filterHollywood(items);
-});
 
 /// Genre-based section data for home screen
 class ContentSection {
@@ -129,8 +153,8 @@ class ContentSection {
 }
 
 /// Provides organized content sections for the home screen
-final homeSectionsProvider = Provider<List<ContentSection>>((ref) {
-  final all = ref.watch(allItemsProvider);
+final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
+  final all = await ref.watch(globalItemsProvider.future);
   if (all.isEmpty) return [];
 
   final sections = <ContentSection>[];
@@ -160,12 +184,6 @@ final homeSectionsProvider = Provider<List<ContentSection>>((ref) {
         title: 'Bollywood', items: bollywood.take(20).toList()));
   }
 
-  // Hollywood (English language)
-  final hollywood = VisibilityPolicy.filterHollywood(all);
-  if (hollywood.length >= 3) {
-    sections.add(ContentSection(
-        title: 'Hollywood', items: hollywood.take(20).toList()));
-  }
 
   // Top Rated
   final topRated = VisibilityPolicy.getTopRated(all, limit: 20);

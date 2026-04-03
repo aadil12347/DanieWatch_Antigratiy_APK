@@ -25,7 +25,7 @@ class _MainFilterPanelContentState
   }
 
   // ── Categories ──
-  static const _categories = ['Movie', 'TV Shows', 'Anime', 'K-Drama', 'Bollywood', 'Hollywood'];
+  static const _categories = ['Movie', 'TV Shows', 'Anime', 'K-Drama', 'Bollywood'];
 
   // ── Genres ──
   static const _genres = [
@@ -202,8 +202,7 @@ class _MainFilterPanelContentState
     final location = GoRouterState.of(context).uri.path;
     final isCategoryPage = location == '/anime' || 
                           location == '/korean' || 
-                          location == '/bollywood' || 
-                          location == '/hollywood';
+                          location == '/bollywood';
 
     return Container(
       constraints:

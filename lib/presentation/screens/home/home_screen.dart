@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/models/manifest_item.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/search_provider.dart';
 import '../../widgets/content_row.dart';
@@ -20,24 +21,30 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final manifestAsync = ref.watch(manifestProvider);
-    final sections = ref.watch(homeSectionsProvider);
-    final trending = ref.watch(trendingProvider);
+    final sectionsAsync = ref.watch(homeSectionsProvider);
+    final trendingAsync = ref.watch(trendingProvider);
 
     return manifestAsync.when(
-      loading: () => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!) : const _LoadingHome(),
-      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!) : _ErrorHome(error: e.toString()),
+      loading: () => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!, sectionsAsync, trendingAsync) : const _LoadingHome(),
+      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(context, ref, manifestAsync.value!, sectionsAsync, trendingAsync) : _ErrorHome(error: e.toString()),
       data: (manifest) {
         if (manifest == null || manifest.items.isEmpty) {
           return const _EmptyHome();
         }
-        return _buildHomeContent(context, ref, manifest);
+        return _buildHomeContent(context, ref, manifest, sectionsAsync, trendingAsync);
       },
     );
   }
 
-  Widget _buildHomeContent(BuildContext context, WidgetRef ref, dynamic manifest) {
-    final sections = ref.watch(homeSectionsProvider);
-    final trending = ref.watch(trendingProvider);
+  Widget _buildHomeContent(
+    BuildContext context, 
+    WidgetRef ref, 
+    dynamic manifest,
+    AsyncValue<List<ContentSection>> sectionsAsync,
+    AsyncValue<List<ManifestItem>> trendingAsync
+  ) {
+    final trending = trendingAsync.valueOrNull ?? [];
+    final sections = sectionsAsync.valueOrNull ?? [];
 
     return Scaffold(
       backgroundColor: AppColors.background,

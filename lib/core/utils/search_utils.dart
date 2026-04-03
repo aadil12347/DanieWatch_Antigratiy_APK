@@ -153,14 +153,22 @@ class FilterUtils {
       }).toList();
     }
 
-    // 6. Sort By
-    if (f.sortBy == 'Popularity') {
-      baseList.sort((a, b) => b.voteCount.compareTo(a.voteCount));
-    } else if (f.sortBy == 'Latest' || f.sortBy == 'Latest Release') {
+    // 6. Sort By (Default to Latest Release if none specified)
+    final sortBy = f.sortBy;
+    if (sortBy == 'Latest' || sortBy == 'Latest Release') {
       baseList
           .sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
-    } else if (f.sortBy == 'Top Rated' || f.sortBy == 'Rating (High to Low)') {
+    } else if (sortBy == 'Popularity') {
+      baseList.sort((a, b) => b.voteCount.compareTo(a.voteCount));
+    } else if (sortBy == 'Top Rated' || sortBy == 'Rating (High to Low)') {
       baseList.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+    } else {
+      // "Perfect" default sorting: Year desc, then Vote Average desc
+      baseList.sort((a, b) {
+        final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+        if (yearCmp != 0) return yearCmp;
+        return b.voteAverage.compareTo(a.voteAverage);
+      });
     }
 
     return baseList;
@@ -173,29 +181,20 @@ class FilterUtils {
       case 'TV Shows' || 'Season' || 'Series':
         return item.mediaType == 'tv' || item.mediaType == 'series';
       case 'Anime':
-        return item.genreIds.contains(16) ||
-            item.genres.any((g) => g.toLowerCase() == 'animation');
+        // Strict Anime: Japanese original language
+        return (item.genreIds.contains(16) ||
+                item.genres.any((g) => g.toLowerCase() == 'animation')) &&
+            item.originalLanguage == 'ja';
       case 'K-Drama' || 'Korean':
-        final targetCountries = {'KR', 'CN', 'JP', 'TR', 'TH'};
-        final targetLangs = {'ko', 'zh', 'ja', 'tr', 'th'};
-        return item.originCountry.any((c) => targetCountries.contains(c)) ||
-            targetLangs.contains(item.originalLanguage);
+        // Strict Korean: KR origin or ko language
+        return item.originCountry.contains('KR') ||
+            item.originalLanguage == 'ko';
       case 'Bollywood':
-        final targetCountries = {
-          'IN', 'PK', 'BD', 'NP', 'LK', 'BT', 'MV'
-        };
-        final targetLangs = {
-          'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or',
-          'ne', 'sd', 'sa', 'ks', 'bh', 'kok', 'mni', 'sat', 'brx', 'doi', 'mai'
-        };
-        return item.originCountry.any((c) => targetCountries.contains(c)) ||
-            targetLangs.contains(item.originalLanguage);
-      case 'Hollywood':
-        final isAnime = item.genreIds.contains(16) ||
-            item.genres.any((g) => g.toLowerCase() == 'animation');
-        if (isAnime) return false;
-
-        return item.originCountry.contains('US');
+        // Strict Bollywood: IN origin or hi language
+        return item.originCountry.contains('IN') ||
+            item.originalLanguage == 'hi' ||
+            item.originalLanguage == 'ur' ||
+            item.originalLanguage == 'pa';
       default:
         return false;
     }

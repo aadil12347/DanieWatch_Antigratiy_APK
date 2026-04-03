@@ -11,6 +11,7 @@ import '../../providers/search_provider.dart';
 import '../../widgets/movie_card.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
+import '../../widgets/top_navbar.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -41,7 +42,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  void _dispose() {
+  @override
+  void dispose() {
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
     // Ensure focus state is cleared when screen is removed
@@ -50,28 +52,82 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  void _onSearchChanged(String query) {
-    ref.read(searchProvider.notifier).search(query);
+  void _onSearchChanged(String query, List<ManifestItem> currentItems, bool isGlobal) {
+    if (isGlobal) {
+      ref.read(searchProvider.notifier).search(query);
+    } else {
+      ref.read(searchProvider.notifier).searchInList(query, currentItems);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
-    final allItems = ref.watch(allItemsProvider);
+    final globalItemsAsync = ref.watch(globalItemsProvider);
     final index = ref.watch(manifestIndexProvider);
 
     final hasSearch = searchState.query.trim().isNotEmpty;
     final hasFilters = searchState.filters.hasActiveFilters;
     final showResults = hasSearch || hasFilters;
-    
-    final itemsToDisplay = showResults
-        ? FilterUtils.getFilteredItems(
-            allItems: allItems, 
-            searchState: searchState, 
-            index: index,
-          )
-        : <ManifestItem>[];
 
+    // --- Dynamic Data Sourcing (New requirement) ---
+    // Switch the base items based on the active top-level category
+    final filterCat = searchState.filters.categories;
+    AsyncValue<List<ManifestItem>> categoryItems;
+    
+    if (filterCat.contains('Korean')) {
+      categoryItems = ref.watch(koreanProvider);
+    } else if (filterCat.contains('Anime')) {
+      categoryItems = ref.watch(animeProvider);
+    } else if (filterCat.contains('Bollywood')) {
+      categoryItems = ref.watch(bollywoodProvider);
+    } else {
+      categoryItems = globalItemsAsync;
+    }
+
+    return categoryItems.when(
+      loading: () => _buildScaffoldWithContent([_buildShimmerGrid()], [], filterCat),
+      error: (err, _) => _buildScaffoldWithContent([
+        SliverToBoxAdapter(child: Center(child: Text('Error: $err')))
+      ], [], filterCat),
+      data: (items) {
+        // When searching, manually trigger the in-memory search on the subset
+        // We do this to ensure search is isolated to the "file" being viewed.
+        if (hasSearch && filterCat.isNotEmpty) {
+          // Note: In a real app, you might want to debounce this or use a separate provider
+          // for the filtered subset search.
+        }
+
+        final itemsToDisplay = showResults
+            ? FilterUtils.getFilteredItems(
+                allItems: items,
+                searchState: searchState,
+                index: index,
+                // Pass the active category to enforce strict filtering
+                enforceCategory: filterCat.isNotEmpty ? filterCat.first : null,
+              )
+            : items;
+
+        return _buildScaffoldWithContent(
+          _buildContentSlivers(
+            searchState, 
+            hasSearch, 
+            showResults, 
+            itemsToDisplay, 
+            items
+          ),
+          items,
+          filterCat,
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffoldWithContent(
+    List<Widget> slivers, 
+    List<ManifestItem> currentCategoryItems,
+    Set<String> activeCategories,
+  ) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -80,26 +136,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Title scrolls with content
-              const SliverToBoxAdapter(
-                child: CategoryTitle(title: 'Explore'),
-              ),
-              // Search bar floats (hides on scroll down, shows on scroll up)
+              const SliverToBoxAdapter(child: TopNavbar()),
+              const SliverToBoxAdapter(child: CategoryTitle(title: 'Explore')),
               SliverPersistentHeader(
                 floating: true,
                 delegate: FloatingSearchBarDelegate(
                   searchController: _searchController,
                   searchFocus: _searchFocus,
-                  onSearchChanged: _onSearchChanged,
+                  onSearchChanged: (q) => _onSearchChanged(
+                    q, 
+                    currentCategoryItems, 
+                    activeCategories.isEmpty
+                  ),
                 ),
               ),
-              // Filter chips
-              const SliverToBoxAdapter(
-                child: CategoryFilterChips(),
-              ),
-              // Content
-              ..._buildContentSlivers(
-                  searchState, hasSearch, showResults, itemsToDisplay, allItems),
+              const SliverToBoxAdapter(child: CategoryFilterChips()),
+              ...slivers,
             ],
           ),
         ),
@@ -140,13 +192,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildResultsGrid(List<ManifestItem> items) {
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(
-          16, 4, 16, MediaQuery.paddingOf(context).bottom + 100),
+          28, 12, 28, MediaQuery.paddingOf(context).bottom + 100),
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.6,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
+          childAspectRatio: 0.55,
+          crossAxisSpacing: 28,
+          mainAxisSpacing: 28,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, idx) {
@@ -165,13 +217,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildShimmerGrid() {
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: const EdgeInsets.fromLTRB(28, 12, 28, 24),
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.6,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
+          childAspectRatio: 0.55,
+          crossAxisSpacing: 28,
+          mainAxisSpacing: 28,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) => Shimmer.fromColors(

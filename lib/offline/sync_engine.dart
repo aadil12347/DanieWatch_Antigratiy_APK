@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import '../core/config/env.dart';
 import '../domain/models/manifest_item.dart';
 import '../data/local/manifest_dao.dart';
+import '../data/local/category_storage.dart';
+import '../domain/policies/visibility_policy.dart';
 import '../data/clients/tmdb_client.dart';
 
 /// Result of a sync operation
@@ -95,6 +97,10 @@ class ManifestSyncEngine {
 
       dev.log('[SyncEngine] Manifest sync complete: ${items.length} items');
       await _dao.saveManifest(manifest, Env.appVersion);
+
+      // ━━━ Category File Generation (New requirement) ━━━
+      await _generateCategoryFiles(items);
+
       _updateController.add(manifest);
 
       return SyncResult(
@@ -107,10 +113,49 @@ class ManifestSyncEngine {
       
       try {
         await _dao.clearCache();
-        dev.log('[SyncEngine] Cleared stale cache, will retry on next sync');
+        await CategoryStorage.instance.clearAll();
+        dev.log('[SyncEngine] Cleared stale cache and category files');
       } catch (_) {}
       
       return SyncResult(updated: false, itemCount: 0, error: e.toString());
+    }
+  }
+
+  /// Partitions items into categories and saves them as JSON files
+  Future<void> _generateCategoryFiles(List<ManifestItem> allItems) async {
+    try {
+      dev.log('[SyncEngine] Generating category files...');
+      
+      // 1. Global index (everything)
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.indexFile, 
+        allItems
+      );
+
+      // 2. Bollywood (Indian)
+      final bollywood = VisibilityPolicy.filterBollywood(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.bollywoodFile, 
+        bollywood
+      );
+
+      // 4. Korean (KR, JP, CN, etc)
+      final korean = VisibilityPolicy.filterKorean(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.koreanFile, 
+        korean
+      );
+
+      // 5. Anime (Animation genre)
+      final anime = VisibilityPolicy.filterAnime(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.animeFile, 
+        anime
+      );
+
+      dev.log('[SyncEngine] Category files generated successfully');
+    } catch (e) {
+      dev.log('[SyncEngine] Failed to generate category files: $e', error: e);
     }
   }
 

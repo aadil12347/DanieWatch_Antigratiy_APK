@@ -100,63 +100,31 @@ class VisibilityPolicy {
     return all
         .where((item) =>
             _hasMetadata(item) &&
+            item.originalLanguage == 'ja' &&
             (item.genreIds.contains(16) ||
                 item.genres.any((g) => g.toLowerCase() == 'animation')))
         .toList();
   }
 
-  /// Filter for Korean/Asian/Turkish content: KR, CN, JP, TR origin
+  /// Filter for Korean content: strictly KR origin / ko language
   static List<ManifestItem> filterKorean(List<ManifestItem> all) {
-    final targetCountries = {'KR', 'CN', 'JP', 'TR', 'TH'};
-    final targetLangs = {'ko', 'zh', 'ja', 'tr', 'th'};
-
     return all.where((item) {
       if (!_hasMetadata(item)) return false;
-
-      final matchesCountry =
-          item.originCountry.any((c) => targetCountries.contains(c));
-      final matchesLang = targetLangs.contains(item.originalLanguage);
-
-      return matchesCountry || matchesLang;
+      return item.originCountry.contains('KR') || item.originalLanguage == 'ko';
     }).toList();
   }
 
-  /// Filter for Bollywood content: Indian or Pakistani origin
+  /// Filter for Bollywood content: strictly Indian origin or Hindi/Urdu/Punjabi
   static List<ManifestItem> filterBollywood(List<ManifestItem> all) {
-    final targetCountries = {
-      'IN', 'PK', 'BD', 'NP', 'LK', 'BT', 'MV'
-    };
-    final targetLangs = {
-      'hi', 'ur', 'pa', 'te', 'ta', 'ml', 'kn', 'bn', 'mr', 'gu', 'as', 'or',
-      'ne', 'sd', 'sa', 'ks', 'bh', 'kok', 'mni', 'sat', 'brx', 'doi', 'mai'
-    };
+    final targetLangs = {'hi', 'ur', 'pa'};
 
     return all.where((item) {
       if (!_hasMetadata(item)) return false;
-
-      final matchesCountry =
-          item.originCountry.any((c) => targetCountries.contains(c));
-      final matchesLang = targetLangs.contains(item.originalLanguage);
-
-      return matchesCountry || matchesLang;
+      return item.originCountry.contains('IN') ||
+          targetLangs.contains(item.originalLanguage);
     }).toList();
   }
 
-  /// Filter for Hollywood content: strictly US-originated content, excluding Anime
-  static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
-    return all.where((item) {
-      // 0. Enforce metadata presence for category pages
-      if (!_hasMetadata(item)) return false;
-
-      // 1. Exclude Anime specifically
-      final isAnime = item.genreIds.contains(16) ||
-          item.genres.any((g) => g.toLowerCase() == 'animation');
-      if (isAnime) return false;
-
-      // 2. Strict US Origin
-      return item.originCountry.contains('US');
-    }).toList();
-  }
 
   /// Filter for movies only
   static List<ManifestItem> filterMovies(List<ManifestItem> all) {
