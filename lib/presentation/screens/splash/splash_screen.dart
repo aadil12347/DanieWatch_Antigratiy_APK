@@ -151,7 +151,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
   @override
   Widget build(BuildContext context) {
-    // Listen for auth state changes to trigger redirection
+    // Listen for auth state changes (e.g., successful login)
     ref.listen<AsyncValue<User?>>(authStateProvider, (previous, next) {
       final user = next.valueOrNull;
       if (user != null && mounted) {
@@ -160,17 +160,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
           setState(() => _showAuthModal = false);
         }
         
-        // 2. Ensure we only transition once
+        // 2. Start the transition to Home if not already transitioning
         if (_fadeController.status != AnimationStatus.forward && 
             _fadeController.status != AnimationStatus.completed) {
           
-          // 3. Wait for 5 seconds as requested BEFORE starting transition
-          Future.delayed(const Duration(seconds: 5), () {
-            if (mounted) {
-              _fadeController.forward().then((_) {
-                if (mounted) context.go('/home');
-              });
-            }
+          _fadeController.forward().then((_) {
+            if (mounted) context.go('/home');
           });
         }
       }

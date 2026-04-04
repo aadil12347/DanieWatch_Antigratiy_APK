@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/providers/auth_provider.dart';
 
 import '../../presentation/screens/shell/app_shell.dart';
 import '../../presentation/screens/home/home_screen.dart';
@@ -58,15 +60,44 @@ CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
   );
 }
 
-final appRouter = GoRouter(
-  navigatorKey: rootNavKey,
-  initialLocation: '/splash',
-  redirect: (context, state) {
-    // We handle the initial landing on Splash 
-    // Sub-redirection will be handled by auth state triggers
-    return null;
-  },
-  routes: [
+/// Notifier that bridges Riverpod's Auth State with GoRouter's Listenable
+class RouterNotifier extends ChangeNotifier {
+  final Ref _ref;
+
+  RouterNotifier(this._ref) {
+    _ref.listen(authStateProvider, (previous, next) {
+      // Use microtask to avoid notifying during a build phase
+      Future.microtask(() => notifyListeners());
+    });
+  }
+}
+
+final routerNotifierProvider = Provider<RouterNotifier>((ref) => RouterNotifier(ref));
+
+final routerProvider = Provider<GoRouter>((ref) {
+  final notifier = ref.watch(routerNotifierProvider);
+
+  return GoRouter(
+    navigatorKey: rootNavKey,
+    initialLocation: '/splash',
+    refreshListenable: notifier,
+    redirect: (context, state) {
+      // Use ref.read to get the current state without triggering a provider rebuild
+      final authState = ref.read(authStateProvider);
+      final user = authState.valueOrNull;
+      final isSplash = state.matchedLocation == '/splash';
+      
+      // If NOT logged in and not on splash, force to splash
+      if (user == null && !isSplash) {
+        return '/splash';
+      }
+
+      // If logged in and on splash, we handle transition inside Splash or redirect here
+      // But we let Splash handle its own initialization first.
+      
+      return null;
+    },
+    routes: [
     GoRoute(
       path: '/splash',
       builder: (context, state) => const SplashScreen(),
@@ -134,47 +165,48 @@ final appRouter = GoRouter(
       builder: (context, state) => const ProfileScreen(),
     ),
   ],
-  errorBuilder: (context, state) => PopScope(
-    canPop: false,
-    onPopInvokedWithResult: (didPop, result) {
-      if (didPop) return;
-      context.go('/home');
-    },
-    child: Scaffold(
-      backgroundColor: const Color(0xFF0F0F1E),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 64),
-            const SizedBox(height: 16),
-            const Text(
-              'Page Not Found',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              state.error.toString(),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () => context.go('/home'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE91E63),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    errorBuilder: (context, state) => PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        context.go('/home');
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F0F1E),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.redAccent, size: 64),
+              const SizedBox(height: 16),
+              const Text(
+                'Page Not Found',
+                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
               ),
-              child: const Text('Go to Home'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                state.error.toString(),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () => context.go('/home'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE91E63),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Go to Home'),
+              ),
+            ],
+          ),
         ),
       ),
     ),
-  ),
-);
+  );
+});
 
 // Helper to keep details route definition DRY across branches
 GoRoute _detailsRoute() {

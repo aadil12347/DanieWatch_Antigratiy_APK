@@ -15,11 +15,13 @@ class DanieWatchApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+    
     return MaterialApp.router(
       title: 'DanieWatch',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      routerConfig: appRouter,
+      routerConfig: router,
       builder: (context, child) {
         return child ?? const SizedBox();
       },
