@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -139,7 +140,15 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
 
   /// Reset Password
   Future<void> resetPassword(String email) async {
-    await supabaseClient.auth.resetPasswordForEmail(email);
+    await supabaseClient.auth.resetPasswordForEmail(email, redirectTo: kIsWeb ? null : 'io.supabase.daniewatch://login-callback/');
+  }
+
+  /// Update Password (specifically for recovery)
+  Future<void> updatePassword(String newPassword) async {
+    await supabaseClient.auth.updateUser(
+      UserAttributes(password: newPassword),
+    );
+    ref.invalidateSelf();
   }
 
   /// Update Username
