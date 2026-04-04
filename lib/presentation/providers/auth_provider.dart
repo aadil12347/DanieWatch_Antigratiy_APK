@@ -56,10 +56,6 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     required String password,
     required String username,
   }) async {
-    if (!email.toLowerCase().endsWith('@gmail.com')) {
-      throw Exception('Only Gmail addresses are allowed.');
-    }
-
     final unique = await isUsernameUnique(username);
     if (!unique) {
       throw Exception('Username already taken.');

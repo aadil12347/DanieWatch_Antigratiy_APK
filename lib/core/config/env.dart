@@ -14,11 +14,11 @@ class Env {
   // Supabase
   static const supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: '', // Provide your Supabase URL
+    defaultValue: 'https://jeotfdtmfdyywktktikz.supabase.co',
   );
   static const supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '', // Provide your Supabase Anon Key
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Implb3RmZHRtZmR5eXdrdGt0aWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMDA2MzIsImV4cCI6MjA5MDc3NjYzMn0.Zpr13uqaKmwp46Qg7QZJ85A3VoyGpjPFmNSMpIkJeK0',
   );
 
   // GitHub Data Source
@@ -30,7 +30,7 @@ class Env {
   // TMDB
   static const tmdbApiKey = String.fromEnvironment(
     'TMDB_API_KEY',
-    defaultValue: '', // Provide your TMDB API Key
+    defaultValue: 'fc6d85b3839330e3458701b975195487', // Provide your TMDB API Key
   );
   static const tmdbBaseUrl = String.fromEnvironment(
     'TMDB_BASE_URL',
@@ -60,7 +60,7 @@ class Env {
   // Google Sign-In
   static const googleWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '', // Provide your Google Web Client ID
+    defaultValue: '896428292637-0vuh07psg3otfkeehjg9v5merlnngjr5.apps.googleusercontent.com', // Provide your Google Web Client ID
   );
   
   static const googleClientSecret = String.fromEnvironment(

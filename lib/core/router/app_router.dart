@@ -8,7 +8,7 @@ import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
-import '../../presentation/providers/auth_provider.dart';
+import '../../presentation/screens/profile/profile_screen.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
 
@@ -128,6 +128,10 @@ final appRouter = GoRouter(
           ],
         ),
       ],
+    ),
+    GoRoute(
+      path: '/profile',
+      builder: (context, state) => const ProfileScreen(),
     ),
   ],
   errorBuilder: (context, state) => PopScope(

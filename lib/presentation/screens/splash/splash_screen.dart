@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/auth_screen.dart';
@@ -79,16 +80,31 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     shuffled = List<String>.from(posters)..shuffle();
     col2 = shuffled.sublist(0, (posters.length / 3).floor());
     
-    shuffled = List<String>.from(posters)..shuffle();
     col3 = shuffled.sublist(0, (posters.length / 3).floor());
-
+    
+    // Check for first run to decide between Sign Up / Sign In default
+    _checkFirstRun();
+    
     // Transition control
     _evaluateTransition();
   }
 
-  void _evaluateTransition() async {
-    final startTime = DateTime.now();
+  Future<void> _checkFirstRun() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isFirstRun = prefs.getBool('is_first_run') ?? true;
+    
+    if (mounted) {
+      setState(() {
+        _isLogin = !isFirstRun;
+      });
+    }
+    
+    if (isFirstRun) {
+      await prefs.setBool('is_first_run', false);
+    }
+  }
 
+  void _evaluateTransition() async {
     // 1. Minimum 5 second delay
     await Future.delayed(const Duration(milliseconds: 5000));
 
@@ -139,17 +155,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     ref.listen<AsyncValue<User?>>(authStateProvider, (previous, next) {
       final user = next.valueOrNull;
       if (user != null && mounted) {
-        // Hide modal and trigger fade transition
+        // 1. Hide modal immediately
         if (_showAuthModal) {
           setState(() => _showAuthModal = false);
         }
         
-        // Ensure we only transition once
-        // Only if we are currently not transitioning
+        // 2. Ensure we only transition once
         if (_fadeController.status != AnimationStatus.forward && 
             _fadeController.status != AnimationStatus.completed) {
-          _fadeController.forward().then((_) {
-            if (mounted) context.go('/home');
+          
+          // 3. Wait for 5 seconds as requested BEFORE starting transition
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted) {
+              _fadeController.forward().then((_) {
+                if (mounted) context.go('/home');
+              });
+            }
           });
         }
       }

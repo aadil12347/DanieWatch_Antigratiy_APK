@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -86,45 +85,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        const UserAvatar(size: 60, canEdit: true),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Hello,',
-                                style: GoogleFonts.inter(
-                                    color: AppColors.textMuted,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.1)),
-                            ref.watch(profileProvider).when(
-                              data: (profile) => Text(
-                                profile?.username ?? 'User',
-                                style: GoogleFonts.lora(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.2),
-                              ),
-                              loading: () => const SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                              error: (_, __) => Text(
-                                'User',
-                                style: GoogleFonts.lora(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.2),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                    GestureDetector(
+                      onTap: () => context.push('/profile'),
+                      child: Row(
+                        children: [
+                          const Hero(
+                            tag: 'profile-avatar',
+                            child: UserAvatar(size: 60, canEdit: false),
+                          ),
+                          const SizedBox(width: 16),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Hello,',
+                                  style: GoogleFonts.inter(
+                                      color: AppColors.textMuted,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.1)),
+                              ref.watch(profileProvider).when(
+                                    data: (profile) => Text(
+                                      profile?.username ?? 'User',
+                                      style: GoogleFonts.lora(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w500,
+                                          height: 1.2),
+                                    ),
+                                    loading: () => const SizedBox(
+                                      height: 24,
+                                      width: 24,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    ),
+                                    error: (_, __) => Text(
+                                      'User',
+                                      style: GoogleFonts.lora(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w500,
+                                          height: 1.2),
+                                    ),
+                                  ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     const Icon(Icons.notifications_none_rounded,
                         size: 28, color: Colors.white),

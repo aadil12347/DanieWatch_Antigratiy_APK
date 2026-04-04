@@ -173,15 +173,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 TextFormField(
                   controller: _emailController,
                   decoration: const InputDecoration(
-                    hintText: 'Gmail Address',
+                    hintText: 'Email Address',
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
                   style: const TextStyle(color: Colors.white),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Please enter your email';
-                    if (!v.toLowerCase().endsWith('@gmail.com')) {
-                      return 'Only Gmail addresses are allowed';
+                    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                    if (!emailRegex.hasMatch(v)) {
+                      return 'Please enter a valid email address';
                     }
                     return null;
                   },
