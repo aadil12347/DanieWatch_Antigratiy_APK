@@ -79,8 +79,10 @@ class RouterNotifier extends ChangeNotifier {
 
   RouterNotifier(this._ref) {
     _ref.listen(authStateProvider, (previous, next) {
-      // Use microtask to avoid notifying during a build phase
-      Future.microtask(() => notifyListeners());
+      if (previous?.valueOrNull?.id != next.valueOrNull?.id) {
+        debugPrint('RouterNotifier: Auth state changed. Notifying GoRouter.');
+        Future.microtask(() => notifyListeners());
+      }
     });
   }
 }

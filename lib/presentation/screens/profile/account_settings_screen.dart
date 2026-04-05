@@ -25,41 +25,35 @@ class AccountSettingsScreen extends ConsumerWidget {
         children: [
           _buildSectionHeader('Profile Information'),
           const SizedBox(height: 12),
-          SettingsTile(
-            icon: Icons.email_rounded,
-            title: 'Email Address',
-            subtitle: profile?.email ?? 'Not set',
-            onTap: () => _showUpdateEmailSheet(context, ref, profile?.email ?? ''),
+          Opacity(
+            opacity: 0.4,
+            child: SettingsTile(
+              icon: Icons.email_rounded,
+              title: 'Email Address',
+              subtitle: profile?.email ?? 'Not set',
+              onTap: () => CustomToast.show(context, 'Account management is handled via Google', type: ToastType.info),
+            ),
           ),
           const SizedBox(height: 32),
           _buildSectionHeader('Security & Credentials'),
           const SizedBox(height: 12),
-          SettingsTile(
-            icon: Icons.lock_reset_rounded,
-            title: 'Change Password',
-            subtitle: 'Update your login credentials',
-            onTap: () => _showPasswordOptionsSheet(context, ref),
+          Opacity(
+            opacity: 0.4,
+            child: SettingsTile(
+              icon: Icons.lock_reset_rounded,
+              title: 'Change Password',
+              subtitle: 'Update your login credentials',
+              onTap: () => CustomToast.show(context, 'Feature not available right now', type: ToastType.info),
+            ),
           ),
-          SettingsTile(
-            icon: Icons.send_to_mobile_rounded,
-            title: 'Password Reset Link',
-            subtitle: 'Send a secure link to your email',
-            onTap: () async {
-              if (profile?.email != null) {
-                try {
-                  await ref.read(profileProvider.notifier).resetPassword(profile!.email!);
-                  if (context.mounted) {
-                    CustomToast.show(
-                      context, 
-                      'Reset link sent to ${profile.email}', 
-                      type: ToastType.success,
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) CustomToast.show(context, 'Failed to send reset link', type: ToastType.error);
-                }
-              }
-            },
+          Opacity(
+            opacity: 0.4,
+            child: SettingsTile(
+              icon: Icons.send_to_mobile_rounded,
+              title: 'Password Reset Link',
+              subtitle: 'Send a secure link to your email',
+              onTap: () => CustomToast.show(context, 'Feature not available right now', type: ToastType.info),
+            ),
           ),
         ],
       ),

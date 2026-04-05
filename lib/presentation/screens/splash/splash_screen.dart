@@ -9,7 +9,6 @@ import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
 import '../auth/auth_screen.dart';
-import '../auth/auth_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -27,6 +26,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   bool _showAuthModal = false;
   bool _isLogin = false;
   late DateTime _startTime;
+  bool _isTransitioning = false;
 
   @override
   void initState() {
@@ -44,8 +44,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     // Check for first run to decide between Sign Up / Sign In default
     _checkFirstRun();
     
-    // Transition control
-    _evaluateTransition();
+    // Initial evaluation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _evaluateTransition();
+    });
   }
   
   void _initializePosters(List<String> allPosters) {
@@ -54,11 +56,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     final shuffled = List<String>.from(allPosters)..shuffle();
     final count = (shuffled.length / 3).floor();
     
-    setState(() {
-      col1 = shuffled.sublist(0, count);
-      col2 = shuffled.sublist(count, count * 2);
-      col3 = shuffled.sublist(count * 2);
-    });
+    if (mounted) {
+      setState(() {
+        col1 = shuffled.sublist(0, count);
+        col2 = shuffled.sublist(count, count * 2);
+        col3 = shuffled.sublist(count * 2);
+      });
+    }
   }
 
   Future<void> _checkFirstRun() async {
@@ -77,43 +81,60 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   }
 
   void _evaluateTransition() async {
-    // 1. Ensure at least 5 seconds have passed since start
-    final elapsed = DateTime.now().difference(_startTime);
-    if (elapsed < const Duration(milliseconds: 5000)) {
-      await Future.delayed(const Duration(milliseconds: 5000) - elapsed);
+    if (_isTransitioning) {
+      return;
     }
+    
+    final authState = ref.read(authStateProvider);
+    final user = authState.valueOrNull;
+    final manifestAsync = ref.read(manifestProvider);
+    final manifest = manifestAsync.valueOrNull;
 
-    // 2. Wait until manifest is loaded with a safety timeout
-    bool isLoaded = false;
-    int retryCount = 0;
-    while (!isLoaded && mounted && retryCount < 10) { 
-      final manifestAsync = ref.read(manifestProvider);
-      if (!manifestAsync.isLoading) {
-        isLoaded = true;
-      }
-      
-      if (!isLoaded) {
-        await Future.delayed(const Duration(milliseconds: 500));
-        retryCount++;
-      }
-    }
+    // 1. Logged in case (Wait for manifest)
+    if (user != null) {
+      if (manifest == null) return; 
 
-    if (mounted) {
-      // 3. Mark splash as "ready" and transition
-      final user = ref.read(authStateProvider).valueOrNull;
+      _isTransitioning = true;
       
-      if (user == null) {
-        // Show Auth Modal if not logged in
-        if (!_showAuthModal) {
-          setState(() => _showAuthModal = true);
+      final elapsed = DateTime.now().difference(_startTime);
+      final minDuration = const Duration(milliseconds: 5000);
+      
+      if (elapsed < minDuration) {
+        await Future.delayed(minDuration - elapsed);
+      }
+
+      if (!mounted) return;
+
+      debugPrint('SplashScreen: Starting exit animation...');
+      _fadeController.forward().then((_) {
+        if (mounted) {
+          // Final safety: ensure we are on the current frame and still mounted
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+               debugPrint('SplashScreen: Navigating to HOME via GoRouter.');
+               context.go('/home');
+            }
+          });
         }
-      } else {
-        // Transition to Home if logged in
-        setState(() => _showAuthModal = false);
-        _fadeController.forward().then((_) {
-          if (mounted) context.go('/home');
-        });
+      });
+    } 
+    // 2. Logged out case (Show Auth Modal)
+    else if (!authState.isLoading && user == null) {
+      _isTransitioning = true;
+
+      final elapsed = DateTime.now().difference(_startTime);
+      const minDuration = Duration(milliseconds: 5000);
+
+      if (elapsed < minDuration) {
+        await Future.delayed(minDuration - elapsed);
       }
+
+      if (!mounted) return;
+
+      setState(() {
+        _showAuthModal = true;
+      });
+      _isTransitioning = false;
     }
   }
 
@@ -125,24 +146,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
   @override
   Widget build(BuildContext context) {
-    // Listen for auth state changes (e.g., successful login)
-    ref.listen<AsyncValue<User?>>(authStateProvider, (previous, next) {
-      final user = next.valueOrNull;
-      if (user != null && mounted) {
-        // 1. Hide modal immediately
-        if (_showAuthModal) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _showAuthModal = false;
-              });
-              
-              // Re-evaluate transition to handle final navigation
-              _evaluateTransition();
-            }
-          });
-        }
-      }
+    // Watch auth state to trigger transitions
+    ref.listen(authStateProvider, (previous, next) {
+      debugPrint('SplashScreen: authStateProvider changed. Authenticated: ${next.valueOrNull != null}');
+      _evaluateTransition();
+    });
+
+    // Also watch manifest to trigger transitions when it becomes available
+    ref.listen(manifestProvider, (previous, next) {
+      debugPrint('SplashScreen: manifestProvider changed. Available: ${next.valueOrNull != null}');
+      _evaluateTransition();
     });
 
     // Listen for posters to initialize columns safely
@@ -153,9 +166,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     });
 
     // Initial check if data is already available
-    final postersAsync = ref.read(trendingPostersProvider);
+    final postersAsync = ref.watch(trendingPostersProvider);
     if (postersAsync.hasValue && col1.isEmpty) {
-      // Use microtask to avoid setState during build
       Future.microtask(() => _initializePosters(postersAsync.value!));
     }
 
@@ -178,40 +190,32 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
               ),
             
             // Vignette Effects
-            // Top Vignette
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 250,
+              top: 0, left: 0, right: 0, height: 250,
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.95),
-                      Colors.black.withValues(alpha: 0.7),
+                      Colors.black.withOpacity(0.95),
+                      Colors.black.withOpacity(0.7),
                       Colors.transparent,
                     ],
                   ),
                 ),
               ),
             ),
-            // Bottom Vignette
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: 350,
+              bottom: 0, left: 0, right: 0, height: 350,
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 1.0),
-                      Colors.black.withValues(alpha: 0.8),
+                      Colors.black.withOpacity(1.0),
+                      Colors.black.withOpacity(0.8),
                       Colors.transparent,
                     ],
                   ),
@@ -219,25 +223,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
               ),
             ),
             
-            // Branding Removed as per request
-            // const Center(...) was here
-
             // Bottom Text & Spinner
             Positioned(
-              bottom: 50,
-              left: 0,
-              right: 0,
+              bottom: 50, left: 0, right: 0,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                  if (!_showAuthModal)
+                    const SizedBox(
+                      width: 24, height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 20),
                   Text(
                     'Created by Daniyal',
@@ -245,7 +244,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 2,
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: Colors.white.withOpacity(0.6),
                     ),
                   ),
                 ],
@@ -256,7 +255,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
             if (_showAuthModal)
               Positioned.fill(
                 child: Container(
-                  color: Colors.black.withValues(alpha: 0.6),
+                  color: Colors.black.withOpacity(0.6),
                   child: Center(
                     child: AuthScreen(
                       isLogin: _isLogin,
@@ -265,7 +264,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                   ),
                 ),
               ),
-
           ],
         ),
       ),
@@ -289,7 +287,7 @@ class MarqueeColumn extends StatefulWidget {
   State<MarqueeColumn> createState() => _MarqueeColumnState();
 }
 
-class _MarqueeColumnState extends State<MarqueeColumn> with SingleTickerProviderStateMixin {
+class _MarqueeColumnState extends State<MarqueeColumn> {
   late ScrollController _scrollController;
   late Timer _timer;
 
@@ -307,39 +305,46 @@ class _MarqueeColumnState extends State<MarqueeColumn> with SingleTickerProvider
     const duration = Duration(milliseconds: 30);
     
     _timer = Timer.periodic(duration, (timer) {
-      if (!_scrollController.hasClients) return;
+      if (!mounted || _scrollController == null || !_scrollController.hasClients) {
+        timer.cancel();
+        return;
+      }
       
-      double maxScroll = _scrollController.position.maxScrollExtent;
-      double currentScroll = _scrollController.offset;
-      
-      if (widget.isReverse) {
-        double nextScroll = currentScroll - (widget.speed / 100);
-        if (nextScroll <= 0) {
-          _scrollController.jumpTo(maxScroll / 2);
+      try {
+        double maxScroll = _scrollController.position.maxScrollExtent;
+        double currentScroll = _scrollController.offset;
+        
+        if (widget.isReverse) {
+          double nextScroll = currentScroll - (widget.speed / 100);
+          if (nextScroll <= 0) {
+            _scrollController.jumpTo(maxScroll / 2);
+          } else {
+            _scrollController.jumpTo(nextScroll);
+          }
         } else {
-          _scrollController.jumpTo(nextScroll);
+          double nextScroll = currentScroll + (widget.speed / 100);
+          if (nextScroll >= maxScroll) {
+            _scrollController.jumpTo(maxScroll / 2);
+          } else {
+            _scrollController.jumpTo(nextScroll);
+          }
         }
-      } else {
-        double nextScroll = currentScroll + (widget.speed / 100);
-        if (nextScroll >= maxScroll) {
-          _scrollController.jumpTo(maxScroll / 2);
-        } else {
-          _scrollController.jumpTo(nextScroll);
-        }
+      } catch (e) {
+        // Safe catch for controller disposal issues during transition
+        timer.cancel();
       }
     });
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    if (_timer.isActive) _timer.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // We duplicate the list to make it look infinite
     final extendedImages = [...widget.images, ...widget.images, ...widget.images, ...widget.images];
     
     return ListView.builder(
@@ -353,7 +358,7 @@ class _MarqueeColumnState extends State<MarqueeColumn> with SingleTickerProvider
             borderRadius: BorderRadius.circular(12),
             child: Image.network(
               extendedImages[index],
-              height: 170, // Reduced height for denser grid
+              height: 170,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => Container(
                 height: 170,

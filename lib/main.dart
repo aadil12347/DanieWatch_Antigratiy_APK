@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app.dart';
 import 'core/config/env.dart';
@@ -14,16 +15,33 @@ Future<void> main() async {
   try {
     // Override the default release-mode blank screen error behavior
     ErrorWidget.builder = (FlutterErrorDetails details) {
-      return MaterialApp(
-        home: Scaffold(
-          backgroundColor: Colors.white,
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'UI Build Error:\n\n${details.exceptionAsString()}\n\n${details.stack.toString()}',
-                style: const TextStyle(color: Colors.red, fontSize: 12),
-              ),
+      debugPrint('----------------------------------------');
+      debugPrint('CRITICAL UI BUILD ERROR DETECTED');
+      debugPrint('Exception: ${details.exception}');
+      debugPrint('Stack Trace: \n${details.stack}');
+      debugPrint('----------------------------------------');
+
+      return Material(
+        color: const Color(0xFF0F0F0F),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Color(0xFFFF3B30), size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'UI Build Error',
+                  style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  details.exception.toString(),
+                  style: GoogleFonts.inter(fontSize: 14, color: Colors.white60),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
         ),
@@ -64,7 +82,6 @@ Future<void> main() async {
     );
 
     runApp(
-      // ProviderScope enables Riverpod state management
       const ProviderScope(
         child: DanieWatchApp(),
       ),

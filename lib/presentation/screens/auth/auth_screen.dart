@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../providers/auth_provider.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/utils/toast_utils.dart';
 
 enum AuthMode { select, login, signup, forgot, checkEmail, resetPassword }
 
@@ -363,12 +364,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
         
         const SizedBox(height: 16),
         
-        // Email Button
-        _buildSocialButton(
-          label: 'Continue with Email',
-          icon: const Icon(Icons.email_outlined, color: Colors.white, size: 20),
-          onPressed: () => _switchMode(AuthMode.login),
-          isPrimary: false,
+        // Email Button (Disabled/Dull)
+        Opacity(
+          opacity: 0.4,
+          child: _buildSocialButton(
+            label: 'Continue with Email',
+            icon: const Icon(Icons.email_outlined, color: Colors.white, size: 20),
+            onPressed: () => CustomToast.show(context, 'Not available right now. Please use Google.', type: ToastType.info),
+            isPrimary: false,
+          ),
         ),
       ],
     );
