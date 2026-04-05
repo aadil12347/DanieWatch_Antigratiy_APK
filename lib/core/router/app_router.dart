@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/providers/auth_provider.dart';
 
 import '../../presentation/screens/shell/app_shell.dart';
 import '../../presentation/screens/home/home_screen.dart';
@@ -14,8 +13,11 @@ import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/profile/account_settings_screen.dart';
 import '../../presentation/screens/profile/placeholder_screen.dart';
 import '../../presentation/providers/auth_provider.dart';
+import '../../presentation/providers/manifest_provider.dart';
 
-final rootNavKey = GlobalKey<NavigatorState>();
+class AppRouter {
+  static GlobalKey<NavigatorState> rootNavKey = GlobalKey<NavigatorState>();
+}
 
 /// Smooth slide-up + fade + scale transition for tab pages
 CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
@@ -73,17 +75,20 @@ CustomTransitionPage<void> _shutterPage(Widget child, GoRouterState state) {
   );
 }
 
-/// Notifier that bridges Riverpod's Auth State with GoRouter's Listenable
 class RouterNotifier extends ChangeNotifier {
   final Ref _ref;
 
   RouterNotifier(this._ref) {
+    // Listen to auth state. Only notify GoRouter when the user identity
+    // actually changes (login or logout), not on every AsyncValue emission.
     _ref.listen(authStateProvider, (previous, next) {
       if (previous?.valueOrNull?.id != next.valueOrNull?.id) {
-        debugPrint('RouterNotifier: Auth state changed. Notifying GoRouter.');
-        Future.microtask(() => notifyListeners());
+        notifyListeners();
       }
     });
+
+    // We DO NOT listen to manifestProvider here. The splash screen manually
+    // listens to it to execute the cinematic context.go('/home') transition.
   }
 }
 
@@ -93,41 +98,36 @@ final routerProvider = Provider<GoRouter>((ref) {
   final notifier = ref.watch(routerNotifierProvider);
 
   return GoRouter(
-    navigatorKey: rootNavKey,
+    navigatorKey: AppRouter.rootNavKey,
     initialLocation: '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
-      // Use ref.read to get the current state without triggering a provider rebuild
       final authState = ref.read(authStateProvider);
       final user = authState.valueOrNull;
-      final isSplash = state.matchedLocation == '/splash';
       
-      // If NOT logged in and not on splash, force to splash
-      if (user == null && !isSplash) {
+      final bool isLoggedIn = user != null;
+      final bool onSplash = state.matchedLocation == '/splash';
+      final bool onCallback = state.matchedLocation == '/login-callback';
+
+      // Protection: if not logged in and trying to access an internal route
+      if (!isLoggedIn && !onSplash && !onCallback) {
         return '/splash';
       }
 
-      // If logged in and on splash, we handle transition inside Splash or redirect here
-      // But we let Splash handle its own initialization first.
-      
       return null;
     },
     routes: [
-    GoRoute(
-      path: '/splash',
-      builder: (context, state) => const SplashScreen(),
-    ),
-    // Silent callback route for Supabase OAuth redirects
-    GoRoute(
-      path: '/login-callback',
-      builder: (context, state) {
-        // This is a landing spot for redirects. 
-        // Supabase package will capture the session from the URL automatically.
-        // We redirect to Splash to handle potential recovery events or initial state.
-        return const SizedBox.shrink(); 
-      },
-      redirect: (context, state) => '/splash',
-    ),
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
+      // Silent callback route for Supabase OAuth redirects
+      GoRoute(
+        path: '/login-callback',
+        builder: (context, state) {
+          return const SizedBox.shrink(); 
+        },
+      ),
     // Stateful Shell Route for multi-branch navigation state preservation
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) => 

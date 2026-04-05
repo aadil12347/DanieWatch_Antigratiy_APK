@@ -10,6 +10,7 @@ import '../../widgets/settings_tile.dart';
 import '../../../domain/models/user_profile.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
+import '../../../core/utils/restart_widget.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -421,8 +422,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       // Final Delay for cinematic effect
       await Future.delayed(const Duration(milliseconds: 2000));
 
-      // Close the app
-      await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+      // Restart the app from scratch using RestartWidget (will show the splash screen)
+      if (context.mounted) {
+        RestartWidget.restartApp(context);
+      }
     }
   }
 }

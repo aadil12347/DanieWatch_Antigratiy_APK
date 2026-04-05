@@ -919,7 +919,7 @@ class DownloadManager {
 
   // ─── Delete Confirmation Modal (trigger from Notification) ────────────────
   void _showDeleteConfirmationGlobal(DownloadItem item) {
-    final context = rootNavKey.currentContext;
+    final context = AppRouter.rootNavKey.currentContext;
     if (context == null) {
       // App is killed or no context; just cancel fallback
       cancelDownload(item.id);

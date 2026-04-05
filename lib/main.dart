@@ -8,6 +8,7 @@ import 'app.dart';
 import 'core/config/env.dart';
 import 'data/local/database.dart';
 import 'data/local/download_manager.dart';
+import 'core/utils/restart_widget.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,8 +83,10 @@ Future<void> main() async {
     );
 
     runApp(
-      const ProviderScope(
-        child: DanieWatchApp(),
+      const RestartWidget(
+        child: ProviderScope(
+          child: DanieWatchApp(),
+        ),
       ),
     );
   } catch (e, stackTrace) {

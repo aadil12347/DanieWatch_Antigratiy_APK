@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
 import '../auth/auth_screen.dart';
+import '../../../core/router/app_router.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -26,13 +26,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   bool _showAuthModal = false;
   bool _isLogin = false;
   late DateTime _startTime;
+
+  ProviderSubscription<AsyncValue<dynamic>>? _authSub;
+  ProviderSubscription<AsyncValue<dynamic>>? _manifestSub;
+  ProviderSubscription<AsyncValue<List<String>>>? _postersSub;
+
+  // TWO-LOCK navigation system:
+  // _isTransitioning: temporary lock that prevents concurrent async executions
+  // _hasNavigated: permanent one-way latch — once true, context.go() is NEVER called again
+  // Both must be checked SYNCHRONOUSLY before any await
   bool _isTransitioning = false;
+  bool _hasNavigated = false;
 
   @override
   void initState() {
     super.initState();
-    
-    // Initialize fade-out animation
+
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1000));
     _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
@@ -40,22 +49,37 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     );
 
     _startTime = DateTime.now();
-
-    // Check for first run to decide between Sign Up / Sign In default
     _checkFirstRun();
-    
-    // Initial evaluation
+
+    // CRITICAL FIX: To listen outside of build, we must use ref.listenManual
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      // Evaluate immediately on first frame
       _evaluateTransition();
+
+      _authSub = ref.listenManual(authStateProvider, (previous, next) {
+        debugPrint('SplashScreen: auth changed. User: ${next.valueOrNull?.id}');
+        _evaluateTransition();
+      });
+
+      _manifestSub = ref.listenManual(manifestProvider, (previous, next) {
+        debugPrint('SplashScreen: manifest changed. Available: ${next.valueOrNull != null}');
+        _evaluateTransition();
+      });
+
+      _postersSub = ref.listenManual<AsyncValue<List<String>>>(trendingPostersProvider, (previous, next) {
+        if (next.hasValue && next.value != null) {
+          _initializePosters(next.value!);
+        }
+      });
     });
   }
-  
+
   void _initializePosters(List<String> allPosters) {
     if (allPosters.isEmpty || col1.isNotEmpty) return;
-    
     final shuffled = List<String>.from(allPosters)..shuffle();
     final count = (shuffled.length / 3).floor();
-    
     if (mounted) {
       setState(() {
         col1 = shuffled.sublist(0, count);
@@ -68,104 +92,102 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   Future<void> _checkFirstRun() async {
     final prefs = await SharedPreferences.getInstance();
     final isFirstRun = prefs.getBool('is_first_run') ?? true;
-    
     if (mounted) {
-      setState(() {
-        _isLogin = !isFirstRun;
-      });
+      setState(() => _isLogin = !isFirstRun);
     }
-    
     if (isFirstRun) {
       await prefs.setBool('is_first_run', false);
     }
   }
 
   void _evaluateTransition() async {
-    if (_isTransitioning) {
-      return;
-    }
-    
+    // SYNCHRONOUS GUARD — checked before ANY await so there is zero race window.
+    if (_hasNavigated || _isTransitioning) return;
+
+    _isTransitioning = true;
+
     final authState = ref.read(authStateProvider);
     final user = authState.valueOrNull;
     final manifestAsync = ref.read(manifestProvider);
     final manifest = manifestAsync.valueOrNull;
 
-    // 1. Logged in case (Wait for manifest)
-    if (user != null) {
-      if (manifest == null) return; 
+    // ── CASE 1: Auth is still resolving ──────────────────────────────────────
+    if (authState.isLoading) {
+      _isTransitioning = false; // Release lock — wait for listener to call us again
+      return;
+    }
 
-      _isTransitioning = true;
-      
-      final elapsed = DateTime.now().difference(_startTime);
-      final minDuration = const Duration(milliseconds: 5000);
-      
-      if (elapsed < minDuration) {
-        await Future.delayed(minDuration - elapsed);
+    // ── CASE 2: User IS logged in ─────────────────────────────────────────────
+    if (user != null) {
+      if (manifest == null) {
+        // Manifest not ready yet. Release lock and wait for manifest listener.
+        _isTransitioning = false;
+        return;
       }
 
-      if (!mounted) return;
-
-      debugPrint('SplashScreen: Starting exit animation...');
-      _fadeController.forward().then((_) {
-        if (mounted) {
-          // Final safety: ensure we are on the current frame and still mounted
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-               debugPrint('SplashScreen: Navigating to HOME via GoRouter.');
-               context.go('/home');
-            }
-          });
-        }
-      });
-    } 
-    // 2. Logged out case (Show Auth Modal)
-    else if (!authState.isLoading && user == null) {
-      _isTransitioning = true;
-
+      // Both user and manifest confirmed. Enforce minimum splash display time.
       final elapsed = DateTime.now().difference(_startTime);
       const minDuration = Duration(milliseconds: 5000);
-
       if (elapsed < minDuration) {
         await Future.delayed(minDuration - elapsed);
       }
 
-      if (!mounted) return;
+      // After every await: check mounted and _hasNavigated before continuing.
+      if (!mounted || _hasNavigated) return;
 
-      setState(() {
-        _showAuthModal = true;
-      });
-      _isTransitioning = false;
+      // Play the exit animation
+      await _fadeController.forward();
+
+      // Check again after animation completes
+      if (!mounted || _hasNavigated) return;
+
+      // SET THE PERMANENT LATCH synchronously — this guarantees context.go()
+      // is called EXACTLY once, no matter how many listeners fire.
+      _hasNavigated = true;
+      try {
+        if (AppRouter.rootNavKey.currentContext != null) {
+          AppRouter.rootNavKey.currentContext!.go('/home');
+        } else if (context.mounted) {
+          context.go('/home');
+        }
+      } catch (e) {
+        debugPrint('SplashScreen: Exception during context.go: $e');
+      }
+      return;
     }
+
+    // ── CASE 3: User is NOT logged in — show auth modal ──────────────────────
+    final elapsed = DateTime.now().difference(_startTime);
+    const minDuration = Duration(milliseconds: 5000);
+    if (elapsed < minDuration) {
+      await Future.delayed(minDuration - elapsed);
+    }
+
+    if (!mounted) return;
+
+    setState(() => _showAuthModal = true);
+
+    // Release the lock here — NOT _hasNavigated — because the user still needs
+    // to log in, and when they do, _evaluateTransition must run again (Case 2).
+    _isTransitioning = false;
   }
 
   @override
   void dispose() {
+    debugPrint('SplashScreen: DISPOSED.');
+    _authSub?.close();
+    _manifestSub?.close();
+    _postersSub?.close();
     _fadeController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Watch auth state to trigger transitions
-    ref.listen(authStateProvider, (previous, next) {
-      debugPrint('SplashScreen: authStateProvider changed. Authenticated: ${next.valueOrNull != null}');
-      _evaluateTransition();
-    });
+    // build() is for UI ONLY. Zero ref.listen calls here — they are all in initState.
 
-    // Also watch manifest to trigger transitions when it becomes available
-    ref.listen(manifestProvider, (previous, next) {
-      debugPrint('SplashScreen: manifestProvider changed. Available: ${next.valueOrNull != null}');
-      _evaluateTransition();
-    });
-
-    // Listen for posters to initialize columns safely
-    ref.listen<AsyncValue<List<String>>>(trendingPostersProvider, (previous, next) {
-      if (next.hasValue && next.value != null) {
-        _initializePosters(next.value!);
-      }
-    });
-
-    // Initial check if data is already available
+    // ref.watch is safe in build() because it does not register a navigation callback.
+    // It only causes a rebuild, which is harmless since build() has no side effects.
     final postersAsync = ref.watch(trendingPostersProvider);
     if (postersAsync.hasValue && col1.isEmpty) {
       Future.microtask(() => _initializePosters(postersAsync.value!));
@@ -177,7 +199,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         opacity: _fadeAnimation,
         child: Stack(
           children: [
-            // Background posters marquee
             if (col1.isNotEmpty)
               Row(
                 children: [
@@ -188,8 +209,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                   Expanded(child: MarqueeColumn(images: col3, speed: 50, isReverse: false)),
                 ],
               ),
-            
-            // Vignette Effects
+
             Positioned(
               top: 0, left: 0, right: 0, height: 250,
               child: Container(
@@ -222,8 +242,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                 ),
               ),
             ),
-            
-            // Bottom Text & Spinner
+
             Positioned(
               bottom: 50, left: 0, right: 0,
               child: Column(
@@ -250,8 +269,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                 ],
               ),
             ),
-            
-            // Auth Modal Overlay
+
             if (_showAuthModal)
               Positioned.fill(
                 child: Container(
@@ -305,7 +323,7 @@ class _MarqueeColumnState extends State<MarqueeColumn> {
     const duration = Duration(milliseconds: 30);
     
     _timer = Timer.periodic(duration, (timer) {
-      if (!mounted || _scrollController == null || !_scrollController.hasClients) {
+      if (!mounted || !_scrollController.hasClients) {
         timer.cancel();
         return;
       }

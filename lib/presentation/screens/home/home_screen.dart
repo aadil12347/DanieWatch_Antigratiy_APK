@@ -27,19 +27,21 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
+  late final ScrollControllerManager _scrollManager;
 
   @override
   void initState() {
     super.initState();
+    _scrollManager = ref.read(scrollProvider);
     // Register the controller with the global manager
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(scrollProvider).register(0, _scrollController);
+      _scrollManager.register(0, _scrollController);
     });
   }
 
   @override
   void dispose() {
-    ref.read(scrollProvider).unregister(0);
+    _scrollManager.unregister(0);
     _scrollController.dispose();
     super.dispose();
   }
