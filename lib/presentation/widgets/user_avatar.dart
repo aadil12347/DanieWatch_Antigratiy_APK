@@ -98,6 +98,8 @@ class UserAvatar extends ConsumerWidget {
     final username = profile?.username ?? 'U';
     final avatarUrl = profile?.avatarUrl;
 
+    final baseColor = _getVibrantColor(username);
+
     Widget avatarContent;
     if (avatarUrl != null && avatarUrl.isNotEmpty) {
       avatarContent = CachedNetworkImage(
@@ -119,12 +121,28 @@ class UserAvatar extends ConsumerWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
               boxShadow: [
+                // Vibrant colored glow
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+                  color: baseColor.withValues(alpha: 0.4),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 8),
+                ),
+                // Deep background 3D shadow drop
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 25,
+                  spreadRadius: 5,
+                  offset: const Offset(0, 15),
+                ),
+                // Soft top rim light
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  blurRadius: 5,
+                  spreadRadius: -2,
+                  offset: const Offset(0, -2),
                 ),
               ],
             ),

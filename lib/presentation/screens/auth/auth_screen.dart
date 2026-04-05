@@ -77,6 +77,23 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
     });
   }
 
+  String _getFriendlyErrorMessage(Object error) {
+    final errStr = error.toString().toLowerCase();
+    if (errStr.contains('invalid login credentials') || errStr.contains('400')) {
+      return 'Incorrect email or password. Please try again.';
+    }
+    if (errStr.contains('user_already_exists') || errStr.contains('422')) {
+      return 'An account with this email already exists.';
+    }
+    if (errStr.contains('network') || errStr.contains('connection')) {
+      return 'Network error. Please check your internet connection.';
+    }
+    if (errStr.contains('weak-password')) {
+      return 'Password is too weak. Use a stronger password.';
+    }
+    return 'Authentication failed. Please try again.';
+  }
+
   Future<void> _handleEmailAuth() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -116,7 +133,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
+        setState(() => _errorMessage = _getFriendlyErrorMessage(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -133,7 +150,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
       await ref.read(profileProvider.notifier).signInWithGoogle();
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
+        setState(() => _errorMessage = _getFriendlyErrorMessage(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -302,7 +319,25 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
         // Google Button
         _buildSocialButton(
           label: 'Continue with Google',
-          icon: Image.asset('assets/google_logo.png', height: 20, errorBuilder: (c, e, s) => const Icon(Icons.g_mobiledata, color: Colors.white)),
+          icon: Container(
+            width: 24,
+            height: 24,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: Text(
+                'G',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  fontFamily: 'Roboto', // Standard Google font look
+                ),
+              ),
+            ),
+          ),
           onPressed: _handleGoogleSignIn,
           isPrimary: true,
         ),

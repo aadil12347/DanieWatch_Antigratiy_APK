@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -109,6 +110,9 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
         serverClientId: Env.googleWebClientId,
       );
       
+      // Always sign out of Google first to force account picker
+      await googleSignIn.signOut();
+      
       final googleUser = await googleSignIn.signIn();
       if (googleUser == null) return; // User canceled
 
@@ -134,8 +138,22 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
 
   /// Sign Out
   Future<void> signOut() async {
-    await supabaseClient.auth.signOut();
-    ref.invalidateSelf();
+    try {
+      // 1. Sign out of Supabase
+      await supabaseClient.auth.signOut();
+      
+      // 2. Sign out of Google to ensure account selection next time
+      final googleSignIn = GoogleSignIn();
+      await googleSignIn.signOut();
+      
+      // 3. Close the app to prevent session residue and lifecycle crashes
+      // This is a "Fresh Start" workaround requested by the user
+      await SystemNavigator.pop();
+    } catch (e) {
+      print('Sign out error: $e');
+      // If closing fails, we still want to ensure state is invalidated
+      ref.invalidateSelf();
+    }
   }
 
   /// Reset Password

@@ -105,37 +105,33 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   }
 
   void _evaluateTransition() async {
-    // 1. Minimum 5 second delay
+    // 1. Mandatory 5 second cinematic delay
     await Future.delayed(const Duration(milliseconds: 5000));
 
-    // 2. Wait until manifest is loaded and not null
+    // 2. Wait until manifest is loaded with a 3-second safety timeout
     bool isLoaded = false;
-    while (!isLoaded && mounted) {
+    int retryCount = 0;
+    while (!isLoaded && mounted && retryCount < 6) { // 6 * 500ms = 3 seconds
       final manifestAsync = ref.read(manifestProvider);
-      
       if (!manifestAsync.isLoading) {
-        if (manifestAsync.hasValue && manifestAsync.value != null && manifestAsync.value!.items.isNotEmpty) {
-          isLoaded = true;
-        } else if (manifestAsync.hasError) {
-          // If error occurs, we still transition after the delay so app doesn't hang
-          isLoaded = true;
-        }
+        isLoaded = true;
       }
       
       if (!isLoaded) {
         await Future.delayed(const Duration(milliseconds: 500));
+        retryCount++;
       }
     }
 
     if (mounted) {
-      // 3. Check Auth Status
+      // 3. Mark splash as "ready" and transition
       final user = ref.read(authStateProvider).valueOrNull;
       
       if (user == null) {
-        // Show Auth Modal
+        // Show Auth Modal if not logged in
         setState(() => _showAuthModal = true);
       } else {
-        // Transition to Home
+        // Transition to Home if already logged in
         _fadeController.forward().then((_) {
           if (mounted) context.go('/home');
         });
