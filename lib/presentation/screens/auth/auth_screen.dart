@@ -40,6 +40,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
   String? _errorMessage;
   bool _showPassword = false;
   String _sentEmail = '';
+  final List<TextEditingController> _otpControllers = List.generate(6, (index) => TextEditingController());
+  final List<FocusNode> _otpFocusNodes = List.generate(6, (index) => FocusNode());
 
   late StreamSubscription<AuthState> _authSubscription;
 
@@ -66,6 +68,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
     _usernameController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
+    for (var controller in _otpControllers) {
+      controller.dispose();
+    }
+    for (var node in _otpFocusNodes) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -146,6 +154,40 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = _getFriendlyErrorMessage(e));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleVerifyOtp() async {
+    final otp = _otpControllers.map((c) => c.text).join();
+    if (otp.length < 6) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ref.read(profileProvider.notifier).verifyOtp(
+        email: _sentEmail,
+        token: otp,
+        // If we are in 'forgot' flow, it might be recovery. 
+        // But usually signup is the main use case for OTP here.
+        type: _mode == AuthMode.checkEmail ? OtpType.signup : OtpType.recovery,
+      );
+      
+      // If successful, the authStateProvider will emit a user,
+      // and SplashScreen will transition us to Home.
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = 'Invalid or expired code. Please try again.');
+        // Clear OTP on error
+        for (var c in _otpControllers) {
+          c.clear();
+        }
+        _otpFocusNodes[0].requestFocus();
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -352,14 +394,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
         ),
         const SizedBox(height: 24),
         Text(
-          isSignupMode ? 'Verify your email' : 'Check your email',
+          'Verification Code',
           style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         const SizedBox(height: 8),
         Text(
-          isSignupMode 
-            ? 'We\'ve sent a verification link to:' 
-            : 'We\'ve sent a recovery link to:',
+          'Enter the 6-digit code sent to:',
           style: GoogleFonts.inter(fontSize: 14, color: Colors.white60),
         ),
         const SizedBox(height: 4),
@@ -368,28 +408,100 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
           style: GoogleFonts.inter(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 32),
-        
-        if (isSignupMode) ...[
-          ElevatedButton(
-            onPressed: _isLoading ? null : () => _handleEmailAuth(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white10,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Resend Verification Email'),
+
+        // 6-Digit OTP Input
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(6, (index) => _buildOtpBox(index)),
+        ),
+
+        const SizedBox(height: 32),
+
+        if (_errorMessage != null) ...[
+          Text(
+            _errorMessage!,
+            style: const TextStyle(color: Color(0xFFFF3B30), fontSize: 13),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
         ],
 
+        ElevatedButton(
+          onPressed: _isLoading ? null : _handleVerifyOtp,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFF3B30),
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(52),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          child: _isLoading
+              ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('Verify & Continue', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+
+        const SizedBox(height: 16),
+
+        TextButton(
+          onPressed: _isLoading ? null : () => _handleEmailAuth(),
+          child: Text(
+            'Resend Code',
+            style: GoogleFonts.inter(color: Colors.white60, fontSize: 13, decoration: TextDecoration.underline),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
         TextButton.icon(
           onPressed: () => _switchMode(AuthMode.login),
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, size: 16),
           label: const Text('Back to Sign In'),
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFFFF3B30)),
+          style: TextButton.styleFrom(foregroundColor: Colors.white38),
         ),
       ],
+    );
+  }
+
+  Widget _buildOtpBox(int index) {
+    return SizedBox(
+      width: 45,
+      height: 55,
+      child: TextFormField(
+        controller: _otpControllers[index],
+        focusNode: _otpFocusNodes[index],
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        maxLength: 1,
+        style: GoogleFonts.outfit(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        decoration: InputDecoration(
+          counterText: "",
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.05),
+          contentPadding: EdgeInsets.zero,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFFF3B30)),
+          ),
+        ),
+        onChanged: (value) {
+          if (value.length == 1 && index < 5) {
+            _otpFocusNodes[index + 1].requestFocus();
+          }
+          if (value.isEmpty && index > 0) {
+            _otpFocusNodes[index - 1].requestFocus();
+          }
+          if (_otpControllers.every((c) => c.text.isNotEmpty)) {
+            _handleVerifyOtp();
+          }
+        },
+      ),
     );
   }
 

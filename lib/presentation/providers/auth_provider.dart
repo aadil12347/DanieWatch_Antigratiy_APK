@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/env.dart';
 import '../../domain/models/user_profile.dart';
 import '../../data/local/database.dart';
-import '../../core/services/security_service.dart';
 
 final supabaseClient = Supabase.instance.client;
 
@@ -141,14 +141,30 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     }
   }
 
+  /// Verify OTP for signup or login
+  Future<void> verifyOtp({
+    required String email,
+    required String token,
+    OtpType type = OtpType.signup,
+  }) async {
+    try {
+      await supabaseClient.auth.verifyOTP(
+        email: email,
+        token: token,
+        type: type,
+      );
+      ref.invalidateSelf();
+    } catch (e) {
+      print('OTP Verification Error: $e');
+      rethrow;
+    }
+  }
+
   /// Sign Out with full data wipe (Fresh Start)
   Future<void> signOut() async {
     try {
-      // 1. Wipe all data first
+      // Wipe all data
       await clearAllAppData();
-      
-      // 2. Close the app to ensure lifecycle reset
-      await SystemNavigator.pop();
     } catch (e) {
       print('Sign out error: $e');
       ref.invalidateSelf();
@@ -173,9 +189,6 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
       // 4. Shared Preferences Wipe
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
-
-      // 5. Secure Storage / PIN Wipe
-      await SecurityService().clearAll();
       
       ref.invalidateSelf();
     } catch (e) {

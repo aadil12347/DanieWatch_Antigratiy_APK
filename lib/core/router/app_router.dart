@@ -12,10 +12,8 @@ import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/profile/account_settings_screen.dart';
-import '../../presentation/screens/profile/security_settings_screen.dart';
 import '../../presentation/screens/profile/placeholder_screen.dart';
-import '../../presentation/screens/auth/security_setup_screen.dart';
-import '../../presentation/screens/auth/pin_screen.dart';
+import '../../presentation/providers/auth_provider.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
 
@@ -123,10 +121,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       builder: (context, state) {
         // This is a landing spot for redirects. 
         // Supabase package will capture the session from the URL automatically.
-        // We just redirect to Home.
+        // We redirect to Splash to handle potential recovery events or initial state.
         return const SizedBox.shrink(); 
       },
-      redirect: (context, state) => '/home',
+      redirect: (context, state) => '/splash',
     ),
     // Stateful Shell Route for multi-branch navigation state preservation
     StatefulShellRoute.indexedStack(
@@ -184,12 +182,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       builder: (context, state) => const AccountSettingsScreen(),
     ),
     GoRoute(
-      path: '/security-setup',
-      builder: (context, state) => const SecuritySetupScreen(),
-    ),
-    GoRoute(
       path: '/security-settings',
-      builder: (context, state) => const SecuritySettingsScreen(),
+      builder: (context, state) => const PlaceholderScreen(title: 'Security Settings'),
     ),
     GoRoute(
       path: '/placeholder/:title',
@@ -197,10 +191,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         final title = state.pathParameters['title'] ?? 'Coming Soon';
         return PlaceholderScreen(title: title);
       },
-    ),
-    GoRoute(
-      path: '/pin-lock',
-      builder: (context, state) => const PinScreen(),
     ),
   ],
     errorBuilder: (context, state) => PopScope(

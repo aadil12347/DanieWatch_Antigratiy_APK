@@ -9,9 +9,7 @@ import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
 import '../auth/auth_screen.dart';
-import '../auth/pin_screen.dart';
-import '../auth/security_setup_screen.dart';
-import '../../providers/security_provider.dart';
+import '../auth/auth_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -27,8 +25,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   bool _showAuthModal = false;
-  bool _showPinModal = false;
-  bool _showSecuritySetup = false;
   bool _isLogin = false;
   late DateTime _startTime;
 
@@ -112,33 +108,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
           setState(() => _showAuthModal = true);
         }
       } else {
-        // Check for App Lock
-        final securityState = ref.read(securityProvider).valueOrNull;
-        
-        // Check if we need to show security setup (post-signup)
-        final prefs = await SharedPreferences.getInstance();
-        final needsSecuritySetup = prefs.getBool('needs_security_setup') ?? false;
-
-        if (needsSecuritySetup) {
-           setState(() {
-             _showAuthModal = false;
-             _showSecuritySetup = true;
-           });
-           return;
-        }
-
-        if (securityState?.isLockEnabled ?? false) {
-          setState(() {
-            _showAuthModal = false;
-            _showPinModal = true;
-          });
-        } else {
-          // Transition to Home if no lock
-          setState(() => _showAuthModal = false);
-          _fadeController.forward().then((_) {
-            if (mounted) context.go('/home');
-          });
-        }
+        // Transition to Home if logged in
+        setState(() => _showAuthModal = false);
+        _fadeController.forward().then((_) {
+          if (mounted) context.go('/home');
+        });
       }
     }
   }
@@ -157,22 +131,33 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       if (user != null && mounted) {
         // 1. Hide modal immediately
         if (_showAuthModal) {
-          setState(() {
-            _showAuthModal = false;
-            // If it was a signup, we might want to show security setup
-            // This is handled via SharedPreferences set in AuthProvider/AuthScreen
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _showAuthModal = false;
+              });
+              
+              // Re-evaluate transition to handle final navigation
+              _evaluateTransition();
+            }
           });
-          
-          // Re-evaluate transition to handle Lock/Setup
-          _evaluateTransition();
         }
       }
     });
 
-    final postersAsync = ref.watch(trendingPostersProvider);
-    
-    // Initialize posters only once when data arrives
-    postersAsync.whenData((posters) => _initializePosters(posters));
+    // Listen for posters to initialize columns safely
+    ref.listen<AsyncValue<List<String>>>(trendingPostersProvider, (previous, next) {
+      if (next.hasValue && next.value != null) {
+        _initializePosters(next.value!);
+      }
+    });
+
+    // Initial check if data is already available
+    final postersAsync = ref.read(trendingPostersProvider);
+    if (postersAsync.hasValue && col1.isEmpty) {
+      // Use microtask to avoid setState during build
+      Future.microtask(() => _initializePosters(postersAsync.value!));
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -281,27 +266,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                 ),
               ),
 
-            // PIN Modal Overlay
-            if (_showPinModal)
-              Positioned.fill(
-                child: PinScreen(
-                  onComplete: (pin) async {
-                    final isValid = await ref.read(securityProvider.notifier).verifyPin(pin);
-                    if (isValid) {
-                      setState(() => _showPinModal = false);
-                      _fadeController.forward().then((_) {
-                        if (mounted) context.go('/home');
-                      });
-                    }
-                  },
-                ),
-              ),
-
-            // Security Setup Overlay
-            if (_showSecuritySetup)
-              Positioned.fill(
-                child: SecuritySetupScreen(),
-              ),
           ],
         ),
       ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
@@ -248,18 +249,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionTitle('Account Security'),
+          _buildSectionTitle('Account'),
           SettingsTile(
             icon: Icons.person_outline_rounded,
             title: 'Account Settings',
             subtitle: 'Email, Password & Credentials',
             onTap: () => context.push('/account-settings'),
-          ),
-          SettingsTile(
-            icon: Icons.shield_outlined,
-            title: 'Security',
-            subtitle: 'App Lock, PIN & Biometrics',
-            onTap: () => context.push('/security-settings'),
           ),
         ],
       ),
@@ -375,7 +370,59 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
 
     if (confirm == true) {
+      if (!mounted) return;
+
+      // Start Logout Process with Cinematic Overlay
+      showGeneralDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black, // Initial black overlay
+        transitionDuration: const Duration(milliseconds: 1500), // Slow cinematic fade
+        pageBuilder: (context, anim1, anim2) {
+          return PopScope(
+            canPop: false,
+            child: Scaffold(
+              backgroundColor: Colors.black,
+              body: FadeTransition(
+                opacity: anim1,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                        strokeWidth: 2,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'RESETTING SESSION...',
+                        style: GoogleFonts.inter(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+
+      // Give time for animation to start
+      await Future.delayed(const Duration(milliseconds: 1000));
+
+      // NUCLEAR RESET
       await ref.read(profileProvider.notifier).signOut();
+
+      // Final Delay for cinematic effect
+      await Future.delayed(const Duration(milliseconds: 2000));
+
+      // Close the app
+      await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
     }
   }
 }

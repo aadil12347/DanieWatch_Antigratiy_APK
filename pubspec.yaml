@@ -69,8 +69,6 @@ dependencies:
   uuid: ^4.5.1
   flutter_svg: ^2.2.4
   better_player_plus: ^1.1.5
-  local_auth: ^3.0.1
-  flutter_secure_storage: ^10.0.0
 
 
 dev_dependencies:
