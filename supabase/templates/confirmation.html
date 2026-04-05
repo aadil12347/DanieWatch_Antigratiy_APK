@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #141413; color: #E4E4E7; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 40px auto; background-color: #1A1A19; border-radius: 24px; padding: 40px; border: 1px solid #3F3F46; }
+        .header { text-align: center; margin-bottom: 32px; }
+        .logo { color: #B81D24; font-size: 32px; font-weight: bold; letter-spacing: 2px; text-decoration: none; }
+        .content { line-height: 1.6; font-size: 16px; margin-bottom: 32px; }
+        .button-container { text-align: center; }
+        .button { background-color: #B81D24; color: white; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: bold; display: inline-block; }
+        .footer { text-align: center; font-size: 12px; color: #71717A; margin-top: 40px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="{{ .SiteURL }}" class="logo">DANIEWATCH</a>
+        </div>
+        <div class="content">
+            <h2>Welcome to the Cinema, {{ .Data.username }}!</h2>
+            <p>You're one step away from starting your premium streaming experience. Please confirm your email address by clicking the button below.</p>
+        </div>
+        <div class="button-container">
+            <a href="{{ .ConfirmationURL }}" class="button">Confirm My Account</a>
+        </div>
+        <p class="content">If the button above doesn't work, copy and paste this link into your browser:</p>
+        <p style="word-break: break-all; color: #6A9BCC;">{{ .ConfirmationURL }}</p>
+        <div class="footer">
+            &copy; 2026 DanieWatch. All rights reserved.<br>
+            Sit back, relax, and enjoy the show.
+        </div>
+    </div>
+</body>
+</html>

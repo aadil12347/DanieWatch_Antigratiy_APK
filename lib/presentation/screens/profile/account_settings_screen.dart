@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/security_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
+import '../../widgets/settings_tile.dart';
 
 class AccountSettingsScreen extends ConsumerWidget {
   const AccountSettingsScreen({super.key});
@@ -13,239 +12,71 @@ class AccountSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider).valueOrNull;
-    final securityState = ref.watch(securityProvider).valueOrNull;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        title: const Text('Account Settings'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          'Account Settings',
-          style: GoogleFonts.outfit(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionHeader('Authentication'),
-            const SizedBox(height: 16),
-            _buildSettingTile(
-              context,
-              icon: Icons.email_outlined,
-              title: 'Email Address',
-              subtitle: profile?.email ?? 'Loading...',
-              onTap: () => _showUpdateEmailSheet(context, ref, profile?.email ?? ''),
-            ),
-            const SizedBox(height: 12),
-            _buildSettingTile(
-              context,
-              icon: Icons.lock_outline_rounded,
-              title: 'Change Password',
-              subtitle: 'Last changed: Recently',
-              onTap: () => _showUpdatePasswordSheet(context, ref),
-            ),
-            
-            const SizedBox(height: 32),
-            _buildSectionHeader('Security'),
-            const SizedBox(height: 16),
-            
-            // App Lock Toggle
-            _buildSwitchTile(
-              context,
-              icon: Icons.phonelink_lock_rounded,
-              title: 'App Lock PIN',
-              subtitle: 'Require PIN to open the app',
-              value: securityState?.isLockEnabled ?? false,
-              onChanged: (val) async {
-                if (val && !(securityState?.hasPin ?? false)) {
-                  _showSetPinSheet(context, ref);
-                } else {
-                  await ref.read(securityProvider.notifier).toggleAppLock(val);
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _buildSectionHeader('Profile Information'),
+          const SizedBox(height: 12),
+          SettingsTile(
+            icon: Icons.email_rounded,
+            title: 'Email Address',
+            subtitle: profile?.email ?? 'Not set',
+            onTap: () => _showUpdateEmailSheet(context, ref, profile?.email ?? ''),
+          ),
+          const SizedBox(height: 32),
+          _buildSectionHeader('Security & Credentials'),
+          const SizedBox(height: 12),
+          SettingsTile(
+            icon: Icons.lock_reset_rounded,
+            title: 'Change Password',
+            subtitle: 'Update your login credentials',
+            onTap: () => _showPasswordOptionsSheet(context, ref),
+          ),
+          SettingsTile(
+            icon: Icons.send_to_mobile_rounded,
+            title: 'Password Reset Link',
+            subtitle: 'Send a secure link to your email',
+            onTap: () async {
+              if (profile?.email != null) {
+                try {
+                  await ref.read(profileProvider.notifier).resetPassword(profile!.email!);
                   if (context.mounted) {
                     CustomToast.show(
                       context, 
-                      val ? 'App Lock Enabled' : 'App Lock Disabled',
-                      type: val ? ToastType.success : ToastType.info,
+                      'Reset link sent to ${profile.email}', 
+                      type: ToastType.success,
                     );
                   }
+                } catch (e) {
+                  if (context.mounted) CustomToast.show(context, 'Failed to send reset link', type: ToastType.error);
                 }
-              },
-            ),
-            
-            if (securityState?.isLockEnabled ?? false) ...[
-              const SizedBox(height: 12),
-              _buildSettingTile(
-                context,
-                icon: Icons.pin_rounded,
-                title: 'Change PIN',
-                subtitle: 'Update your security code',
-                onTap: () => _showSetPinSheet(context, ref, isChange: true),
-              ),
-              
-              if (securityState?.canUseBiometrics ?? false) ...[
-                const SizedBox(height: 12),
-                _buildSwitchTile(
-                  context,
-                  icon: Icons.fingerprint_rounded,
-                  title: 'Biometric Unlock',
-                  subtitle: 'Use fingerprint or face recognition',
-                  value: securityState?.isBiometricEnabled ?? false,
-                  onChanged: (val) async {
-                    await ref.read(securityProvider.notifier).toggleBiometrics(val);
-                    if (context.mounted) {
-                      CustomToast.show(
-                        context, 
-                        val ? 'Biometrics Enabled' : 'Biometrics Disabled',
-                        type: val ? ToastType.success : ToastType.info,
-                      );
-                    }
-                  },
-                ),
-              ],
-            ],
-          ],
-        ),
+              }
+            },
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildSectionHeader(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: GoogleFonts.inter(
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-        color: AppColors.primary,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-
-  Widget _buildSettingTile(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: AppColors.textMuted,
+          letterSpacing: 1.2,
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: Colors.white70, size: 22),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.outfit(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: Colors.white24),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSwitchTile(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: Colors.white70, size: 22),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.outfit(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeTrackColor: AppColors.primary.withValues(alpha: 0.5),
-            activeThumbColor: AppColors.primary,
-          ),
-        ],
       ),
     );
   }
@@ -255,10 +86,10 @@ class AccountSettingsScreen extends ConsumerWidget {
     _showCustomBottomSheet(
       context,
       title: 'Update Email',
-      description: 'A confirmation link will be sent to your new email.',
+      description: 'Enter your new email address. You will need to confirm the change via email.',
       controller: controller,
       hint: 'New Email Address',
-      icon: Icons.email_outlined,
+      icon: Icons.email_rounded,
       buttonText: 'Update Email',
       onConfirm: () async {
         final email = controller.text.trim();
@@ -270,7 +101,7 @@ class AccountSettingsScreen extends ConsumerWidget {
           await ref.read(profileProvider.notifier).updateEmail(email);
           if (context.mounted) {
             Navigator.pop(context);
-            CustomToast.show(context, 'Recovery link sent to $email', type: ToastType.success);
+            CustomToast.show(context, 'Confirmation email sent!', type: ToastType.success);
           }
         } catch (e) {
           if (context.mounted) CustomToast.show(context, 'Failed to update email', type: ToastType.error);
@@ -279,62 +110,165 @@ class AccountSettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _showUpdatePasswordSheet(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
-    _showCustomBottomSheet(
-      context,
-      title: 'Update Password',
-      description: 'Enter a strong new password (min 6 characters).',
-      controller: controller,
-      hint: 'New Password',
-      isPassword: true,
-      icon: Icons.lock_outline_rounded,
-      buttonText: 'Update Password',
-      onConfirm: () async {
-        final password = controller.text.trim();
-        if (password.length < 6) {
-          CustomToast.show(context, 'Password too short', type: ToastType.warning);
-          return;
-        }
-        try {
-          await ref.read(profileProvider.notifier).updatePassword(password);
-          if (context.mounted) {
-            Navigator.pop(context);
-            CustomToast.show(context, 'Password updated successfully!', type: ToastType.success);
-          }
-        } catch (e) {
-          if (context.mounted) CustomToast.show(context, 'Failed to update password', type: ToastType.error);
-        }
-      },
+  void _showPasswordOptionsSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Change Password',
+              style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 24),
+            SettingsTile(
+              icon: Icons.edit_note_rounded,
+              title: 'Update Manually',
+              subtitle: 'Requires your current password',
+              onTap: () {
+                Navigator.pop(context);
+                _showManualPasswordUpdateSheet(context, ref);
+              },
+            ),
+            SettingsTile(
+              icon: Icons.alternate_email_rounded,
+              title: 'Use Reset Link',
+              subtitle: 'Send a link to your registered email',
+              onTap: () async {
+                Navigator.pop(context);
+                final profile = ref.read(profileProvider).valueOrNull;
+                if (profile?.email != null) {
+                  await ref.read(profileProvider.notifier).resetPassword(profile!.email!);
+                  if (context.mounted) {
+                    CustomToast.show(context, 'Reset link sent!', type: ToastType.success);
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
     );
   }
 
-  void _showSetPinSheet(BuildContext context, WidgetRef ref, {bool isChange = false}) {
-    final controller = TextEditingController();
-    _showCustomBottomSheet(
-      context,
-      title: isChange ? 'Change App PIN' : 'Set App PIN',
-      description: 'Enter 4 digits to secure your application.',
+  void _showManualPasswordUpdateSheet(BuildContext context, WidgetRef ref) {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Update Password',
+              style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 24),
+            _buildPasswordField(currentPasswordController, 'Current Password', Icons.lock_outline_rounded),
+            const SizedBox(height: 16),
+            _buildPasswordField(newPasswordController, 'New Password', Icons.lock_clock_rounded),
+            const SizedBox(height: 16),
+            _buildPasswordField(confirmPasswordController, 'Confirm New Password', Icons.lock_reset_rounded),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: () async {
+                final current = currentPasswordController.text;
+                final next = newPasswordController.text;
+                final confirm = confirmPasswordController.text;
+
+                if (current.isEmpty || next.isEmpty) {
+                  CustomToast.show(context, 'Please fill all fields', type: ToastType.warning);
+                  return;
+                }
+                if (next != confirm) {
+                  CustomToast.show(context, 'Passwords do not match', type: ToastType.warning);
+                  return;
+                }
+                if (next.length < 6) {
+                  CustomToast.show(context, 'Password must be at least 6 characters', type: ToastType.warning);
+                  return;
+                }
+
+                try {
+                  // Verify current password by attempting a silent sign-in
+                  final profile = ref.read(profileProvider).valueOrNull;
+                  if (profile?.email != null) {
+                    await ref.read(profileProvider.notifier).signIn(
+                      email: profile!.email!,
+                      password: current,
+                    );
+                    
+                    // If successful, update the password
+                    await ref.read(profileProvider.notifier).updatePassword(next);
+                    
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      CustomToast.show(context, 'Password updated!', type: ToastType.success);
+                    }
+                  }
+                } catch (e) {
+                  if (context.mounted) CustomToast.show(context, 'Invalid current password', type: ToastType.error);
+                }
+              },
+              child: const Text('Update Password'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField(TextEditingController controller, String hint, IconData icon) {
+    return TextField(
       controller: controller,
-      hint: '4-Digit PIN',
-      isPin: true,
-      icon: Icons.pin_rounded,
-      buttonText: isChange ? 'Update PIN' : 'Enable Pin Lock',
-      onConfirm: () async {
-        final pin = controller.text.trim();
-        if (pin.length != 4 || int.tryParse(pin) == null) {
-          CustomToast.show(context, 'Enter exactly 4 digits', type: ToastType.warning);
-          return;
-        }
-        await ref.read(securityProvider.notifier).updatePin(pin);
-        if (!isChange) {
-          await ref.read(securityProvider.notifier).toggleAppLock(true);
-        }
-        if (context.mounted) {
-          Navigator.pop(context);
-          CustomToast.show(context, isChange ? 'PIN updated' : 'App Lock enabled', type: ToastType.success);
-        }
-      },
+      obscureText: true,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: Icon(icon, color: Colors.white24, size: 20),
+      ),
     );
   }
 
@@ -347,8 +281,6 @@ class AccountSettingsScreen extends ConsumerWidget {
     required IconData icon,
     required String buttonText,
     required VoidCallback onConfirm,
-    bool isPassword = false,
-    bool isPin = false,
   }) {
     showModalBottomSheet(
       context: context,
@@ -387,15 +319,11 @@ class AccountSettingsScreen extends ConsumerWidget {
             const SizedBox(height: 32),
             TextField(
               controller: controller,
-              obscureText: isPassword || isPin,
-              keyboardType: isPin ? TextInputType.number : TextInputType.emailAddress,
-              maxLength: isPin ? 4 : null,
               autofocus: true,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 hintText: hint,
                 prefixIcon: Icon(icon, color: Colors.white24, size: 20),
-                counterText: '',
               ),
             ),
             const SizedBox(height: 32),

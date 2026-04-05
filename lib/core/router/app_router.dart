@@ -12,6 +12,8 @@ import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/profile/account_settings_screen.dart';
+import '../../presentation/screens/profile/security_settings_screen.dart';
+import '../../presentation/screens/profile/placeholder_screen.dart';
 import '../../presentation/screens/auth/security_setup_screen.dart';
 import '../../presentation/screens/auth/pin_screen.dart';
 
@@ -184,6 +186,17 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/security-setup',
       builder: (context, state) => const SecuritySetupScreen(),
+    ),
+    GoRoute(
+      path: '/security-settings',
+      builder: (context, state) => const SecuritySettingsScreen(),
+    ),
+    GoRoute(
+      path: '/placeholder/:title',
+      builder: (context, state) {
+        final title = state.pathParameters['title'] ?? 'Coming Soon';
+        return PlaceholderScreen(title: title);
+      },
     ),
     GoRoute(
       path: '/pin-lock',
