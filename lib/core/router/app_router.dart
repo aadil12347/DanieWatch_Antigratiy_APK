@@ -11,6 +11,9 @@ import '../../presentation/screens/watchlist/watchlist_screen.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
+import '../../presentation/screens/profile/account_settings_screen.dart';
+import '../../presentation/screens/auth/security_setup_screen.dart';
+import '../../presentation/screens/auth/pin_screen.dart';
 
 final rootNavKey = GlobalKey<NavigatorState>();
 
@@ -173,6 +176,18 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/profile',
       builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/account-settings',
+      builder: (context, state) => const AccountSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/security-setup',
+      builder: (context, state) => const SecuritySetupScreen(),
+    ),
+    GoRoute(
+      path: '/pin-lock',
+      builder: (context, state) => const PinScreen(),
     ),
   ],
     errorBuilder: (context, state) => PopScope(

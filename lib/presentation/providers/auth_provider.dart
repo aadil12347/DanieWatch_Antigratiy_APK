@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/env.dart';
 import '../../domain/models/user_profile.dart';
 
@@ -76,6 +77,10 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     if (response.user != null && response.session == null) {
       try {
         await signIn(email: email, password: password);
+        
+        // 3. Set flag for security setup (requested by user for post-signup flow)
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('needs_security_setup', true);
       } catch (e) {
         // If it fails here, it's likely due to email confirmation being required.
         // We don't rethrow because the signup itself succeeded.
@@ -161,10 +166,18 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     await supabaseClient.auth.resetPasswordForEmail(email, redirectTo: kIsWeb ? null : 'io.supabase.daniewatch://login-callback/');
   }
 
-  /// Update Password (specifically for recovery)
+  /// Update Password (specifically for recovery or manual change)
   Future<void> updatePassword(String newPassword) async {
     await supabaseClient.auth.updateUser(
       UserAttributes(password: newPassword),
+    );
+    ref.invalidateSelf();
+  }
+
+  /// Update Email
+  Future<void> updateEmail(String newEmail) async {
+    await supabaseClient.auth.updateUser(
+      UserAttributes(email: newEmail),
     );
     ref.invalidateSelf();
   }

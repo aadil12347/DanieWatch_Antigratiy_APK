@@ -205,6 +205,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             
             const SizedBox(height: 10),
+            
+            // Account Settings Button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _buildActionTile(
+                context,
+                icon: Icons.manage_accounts_outlined,
+                title: 'Account Settings',
+                onTap: () => context.push('/account-settings'),
+              ),
+            ),
           ],
         ),
       ),
@@ -294,6 +305,42 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildActionTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 24),
+            const SizedBox(width: 16),
+            Text(
+              title,
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const Spacer(),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white24),
+          ],
+        ),
+      ),
     );
   }
 
