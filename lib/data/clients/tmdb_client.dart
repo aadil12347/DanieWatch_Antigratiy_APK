@@ -104,14 +104,14 @@ class TmdbClient {
     }
   }
 
-  /// Get trending content for this week
-  Future<List<Map<String, dynamic>>> getTrending(String mediaType, {int page = 1}) async {
+  /// Get trending content for today or this week
+  Future<List<Map<String, dynamic>>> getTrending(String mediaType, {String timeWindow = 'day', int page = 1}) async {
     try {
-      final res = await _dio.get('/trending/$mediaType/week', queryParameters: {'page': page});
+      final res = await _dio.get('/trending/$mediaType/$timeWindow', queryParameters: {'page': page});
       final results = res.data['results'] as List?;
       return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
     } on DioException catch (e) {
-      dev.log('[TMDB] Trending $mediaType error: ${e.message}');
+      dev.log('[TMDB] Trending $mediaType $timeWindow error: ${e.message}');
       return [];
     }
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../../core/theme/app_theme.dart';
@@ -57,38 +58,53 @@ class UserAvatar extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: Colors.white),
-              title: const Text('Change Profile Picture', style: TextStyle(color: Colors.white)),
+              leading: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
+              title: const Text('Update Avatar', style: TextStyle(color: Colors.white)),
               onTap: () async {
                 Navigator.pop(context);
                 final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
                 if (image != null) {
-                  await ref.read(profileProvider.notifier).uploadAvatar(image.path);
+                  final croppedFile = await _cropImage(image.path);
+                  if (croppedFile != null) {
+                    await ref.read(profileProvider.notifier).uploadAvatar(croppedFile.path);
+                  }
                 }
               },
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Remove Profile Picture', style: TextStyle(color: Colors.redAccent)),
+              title: const Text('Remove Avatar', style: TextStyle(color: Colors.redAccent)),
               onTap: () async {
                 Navigator.pop(context);
                 await ref.read(profileProvider.notifier).deleteAvatar();
-              },
-            ),
-            const Divider(color: Colors.white10),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.white70),
-              title: const Text('Logout', style: TextStyle(color: Colors.white70)),
-              onTap: () async {
-                Navigator.pop(context);
-                await ref.read(profileProvider.notifier).signOut();
-                // Note: The router redirect will handle navigation back to splash
               },
             ),
             const SizedBox(height: 8),
           ],
         ),
       ),
+    );
+  }
+
+  Future<CroppedFile?> _cropImage(String filePath) async {
+    return await ImageCropper().cropImage(
+      sourcePath: filePath,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1), // Square for avatar
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Avatar',
+          toolbarColor: Colors.black,
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+          activeControlsWidgetColor: AppColors.primary,
+          backgroundColor: Colors.black,
+        ),
+        IOSUiSettings(
+          title: 'Crop Avatar',
+          aspectRatioLockEnabled: true,
+        ),
+      ],
     );
   }
 
@@ -121,28 +137,21 @@ class UserAvatar extends ConsumerWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 2),
               boxShadow: [
-                // Vibrant colored glow
+                // Premium Red Glow
                 BoxShadow(
-                  color: baseColor.withValues(alpha: 0.4),
-                  blurRadius: 20,
+                  color: const Color(0xFFFF3B30).withValues(alpha: 0.6),
+                  blurRadius: 25,
                   spreadRadius: 2,
-                  offset: const Offset(0, 8),
+                  offset: const Offset(0, 4),
                 ),
                 // Deep background 3D shadow drop
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  blurRadius: 25,
-                  spreadRadius: 5,
-                  offset: const Offset(0, 15),
-                ),
-                // Soft top rim light
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  blurRadius: 5,
-                  spreadRadius: -2,
-                  offset: const Offset(0, -2),
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),

@@ -173,11 +173,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Logo / Branding
-                  _buildLogo(),
-                  const SizedBox(height: 32),
-                  
-                  // Auth Card
+                  // Auth Card (Branding removed)
                   _buildAuthCard(),
                 ],
               ),
@@ -188,51 +184,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildLogo() {
-    return Column(
-      children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFF3B30), Color(0xFFFF2D55)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFFF3B30).withValues(alpha: 0.5),
-                blurRadius: 20,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const Center(
-            child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
-          ),
-        ),
-        const SizedBox(height: 16),
-        RichText(
-          text: TextSpan(
-            style: GoogleFonts.outfit(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-            children: const [
-              TextSpan(text: 'Danie'),
-              TextSpan(
-                text: 'Watch',
-                style: TextStyle(color: Color(0xFFFF3B30)),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+
 
   Widget _buildAuthCard() {
     return ClipRRect(
