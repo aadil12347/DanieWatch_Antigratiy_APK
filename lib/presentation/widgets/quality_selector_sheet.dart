@@ -11,7 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../services/m3u8_parser.dart';
 import '../providers/download_modal_provider.dart';
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/security_provider.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/settings_tile.dart';
 

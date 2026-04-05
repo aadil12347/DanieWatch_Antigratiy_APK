@@ -149,10 +149,25 @@ class AppDatabase {
 
   /// Nuke all caches (called on version change / force refresh)
   Future<void> invalidateAll() async {
-    await db.transaction((txn) async {
+    final database = db;
+    await database.transaction((txn) async {
       await txn.delete('manifest_cache');
       await txn.delete('entry_cache');
       await txn.execute('DELETE FROM search_fts');
+      await txn.delete('enrichment_queue');
+    });
+  }
+
+  /// Full data wipe for a Fresh Start (called on logout)
+  Future<void> clearAll() async {
+    if (_db == null) return;
+    await _db!.transaction((txn) async {
+      await txn.delete('manifest_cache');
+      await txn.delete('entry_cache');
+      await txn.execute('DELETE FROM search_fts');
+      await txn.delete('watchlist');
+      await txn.delete('continue_watching');
+      await txn.delete('sync_meta');
       await txn.delete('enrichment_queue');
     });
   }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../domain/models/manifest_item.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/search_provider.dart';

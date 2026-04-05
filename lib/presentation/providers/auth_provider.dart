@@ -7,6 +7,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/env.dart';
 import '../../domain/models/user_profile.dart';
+import '../../data/local/database.dart';
+import '../../core/services/security_service.dart';
 
 final supabaseClient = Supabase.instance.client;
 
@@ -71,20 +73,18 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
       data: {'username': username},
     );
 
-    // 2. If signup is successful and we have a user but no session (confirm email might be on),
-    // or even if we have a session, we'll try to sign in explicitly to be sure.
-    // NOTE: This will fail if "Confirm Email" is enabled in Supabase, but it's what the user requested.
-    if (response.user != null && response.session == null) {
-      try {
-        await signIn(email: email, password: password);
-        
-        // 3. Set flag for security setup (requested by user for post-signup flow)
+    // 2. If signup is successful and we have a session, it means email confirmation is OFF.
+    // If we have a user but NO session, it means "Confirm Email" is ON.
+    if (response.user != null) {
+      if (response.session != null) {
+        // Confirmation OFF: User is already logged in. 
+        // Set flag for security setup (requested by user for post-signup flow)
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('needs_security_setup', true);
-      } catch (e) {
-        // If it fails here, it's likely due to email confirmation being required.
-        // We don't rethrow because the signup itself succeeded.
-        print('Auto-login after signup failed: $e');
+      } else {
+        // Confirmation ON: User needs to check email. 
+        // We do NOT attempt auto-login here because it would fail.
+        print('Signup successful, but session is null - email confirmation required.');
       }
     }
 
@@ -141,23 +141,45 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     }
   }
 
-  /// Sign Out
+  /// Sign Out with full data wipe (Fresh Start)
   Future<void> signOut() async {
     try {
-      // 1. Sign out of Supabase
-      await supabaseClient.auth.signOut();
+      // 1. Wipe all data first
+      await clearAllAppData();
       
-      // 2. Sign out of Google to ensure account selection next time
-      final googleSignIn = GoogleSignIn();
-      await googleSignIn.signOut();
-      
-      // 3. Close the app to prevent session residue and lifecycle crashes
-      // This is a "Fresh Start" workaround requested by the user
+      // 2. Close the app to ensure lifecycle reset
       await SystemNavigator.pop();
     } catch (e) {
       print('Sign out error: $e');
-      // If closing fails, we still want to ensure state is invalidated
       ref.invalidateSelf();
+    }
+  }
+
+  /// Full app data wipe (DB, Prefs, Security, Auth)
+  Future<void> clearAllAppData() async {
+    try {
+      // 1. Supabase Sign Out
+      await supabaseClient.auth.signOut();
+
+      // 2. Google Sign Out
+      final googleSignIn = GoogleSignIn();
+      if (await googleSignIn.isSignedIn()) {
+        await googleSignIn.signOut();
+      }
+
+      // 3. SQLite Wipe
+      await AppDatabase.instance.clearAll();
+
+      // 4. Shared Preferences Wipe
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // 5. Secure Storage / PIN Wipe
+      await SecurityService().clearAll();
+      
+      ref.invalidateSelf();
+    } catch (e) {
+      print('Error during clearAllAppData: $e');
     }
   }
 

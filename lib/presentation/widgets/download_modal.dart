@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../data/local/download_manager.dart';
 import '../../domain/models/content_detail.dart';
 

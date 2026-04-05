@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 
 /// Rating badge showing star icon and vote average with color coding.
 class RatingBadge extends StatelessWidget {

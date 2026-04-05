@@ -7,7 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../providers/detail_provider.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {

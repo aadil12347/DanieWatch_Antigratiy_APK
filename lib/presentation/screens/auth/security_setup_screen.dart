@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/security_provider.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
 import './pin_screen.dart';
 import './auth_screen.dart'; // For FloatingParticles

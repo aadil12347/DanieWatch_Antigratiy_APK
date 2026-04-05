@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../auth/auth_screen.dart'; // For FloatingParticles
 import '../../providers/security_provider.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
 
 class PinScreen extends ConsumerStatefulWidget {

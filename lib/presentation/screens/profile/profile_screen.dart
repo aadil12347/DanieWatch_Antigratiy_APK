@@ -7,7 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/settings_tile.dart';
 import '../../../domain/models/user_profile.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {

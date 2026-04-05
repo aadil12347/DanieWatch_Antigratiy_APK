@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 
 class UserAvatar extends ConsumerWidget {
   final double size;

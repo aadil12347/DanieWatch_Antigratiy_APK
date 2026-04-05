@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 
 Future<void> showPlayLoader({
   required BuildContext context,

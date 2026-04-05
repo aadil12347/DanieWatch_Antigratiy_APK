@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../providers/auth_provider.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 
 enum AuthMode { select, login, signup, forgot, checkEmail, resetPassword }
 
@@ -79,6 +79,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
 
   String _getFriendlyErrorMessage(Object error) {
     final errStr = error.toString().toLowerCase();
+    if (errStr.contains('email not confirmed')) {
+      return 'Please confirm your email address before signing in. Check your inbox!';
+    }
     if (errStr.contains('invalid login credentials') || errStr.contains('400')) {
       return 'Incorrect email or password. Please try again.';
     }
@@ -116,6 +119,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
           password: _passwordController.text.trim(),
           username: _usernameController.text.trim(),
         );
+        
+        // After signup, if we are still here (no auto-redirect), 
+        // it means email confirmation is required.
+        if (supabaseClient.auth.currentSession == null) {
+          setState(() {
+            _sentEmail = _emailController.text.trim();
+            _mode = AuthMode.checkEmail;
+          });
+        }
       } else if (_mode == AuthMode.forgot) {
         await authNotifier.resetPassword(_emailController.text.trim());
         setState(() {
@@ -321,6 +333,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
   }
 
   Widget _buildCheckEmailView() {
+    final isSignupMode = _emailController.text.isNotEmpty && _mode == AuthMode.checkEmail && _usernameController.text.isNotEmpty;
+    
     return Column(
       key: const ValueKey('checkEmail'),
       children: [
@@ -330,16 +344,22 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
             shape: BoxShape.circle,
             color: const Color(0xFFFF3B30).withValues(alpha: 0.1),
           ),
-          child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFFFF3B30), size: 48),
+          child: Icon(
+            isSignupMode ? Icons.mark_email_unread_rounded : Icons.mark_email_read_rounded, 
+            color: const Color(0xFFFF3B30), 
+            size: 48
+          ),
         ),
         const SizedBox(height: 24),
         Text(
-          'Check your email',
+          isSignupMode ? 'Verify your email' : 'Check your email',
           style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         const SizedBox(height: 8),
         Text(
-          'We\'ve sent a recovery link to:',
+          isSignupMode 
+            ? 'We\'ve sent a verification link to:' 
+            : 'We\'ve sent a recovery link to:',
           style: GoogleFonts.inter(fontSize: 14, color: Colors.white60),
         ),
         const SizedBox(height: 4),
@@ -348,6 +368,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
           style: GoogleFonts.inter(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 32),
+        
+        if (isSignupMode) ...[
+          ElevatedButton(
+            onPressed: _isLoading ? null : () => _handleEmailAuth(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white10,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Resend Verification Email'),
+          ),
+          const SizedBox(height: 16),
+        ],
+
         TextButton.icon(
           onPressed: () => _switchMode(AuthMode.login),
           icon: const Icon(Icons.arrow_back),

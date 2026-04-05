@@ -30,6 +30,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   bool _showPinModal = false;
   bool _showSecuritySetup = false;
   bool _isLogin = false;
+  late DateTime _startTime;
 
   @override
   void initState() {
@@ -41,6 +42,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
+
+    _startTime = DateTime.now();
 
     // Check for first run to decide between Sign Up / Sign In default
     _checkFirstRun();
@@ -78,13 +81,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   }
 
   void _evaluateTransition() async {
-    // 1. Mandatory 5 second cinematic delay
-    await Future.delayed(const Duration(milliseconds: 5000));
+    // 1. Ensure at least 5 seconds have passed since start
+    final elapsed = DateTime.now().difference(_startTime);
+    if (elapsed < const Duration(milliseconds: 5000)) {
+      await Future.delayed(const Duration(milliseconds: 5000) - elapsed);
+    }
 
-    // 2. Wait until manifest is loaded with a 3-second safety timeout
+    // 2. Wait until manifest is loaded with a safety timeout
     bool isLoaded = false;
     int retryCount = 0;
-    while (!isLoaded && mounted && retryCount < 6) { // 6 * 500ms = 3 seconds
+    while (!isLoaded && mounted && retryCount < 10) { 
       final manifestAsync = ref.read(manifestProvider);
       if (!manifestAsync.isLoading) {
         isLoaded = true;
@@ -102,7 +108,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       
       if (user == null) {
         // Show Auth Modal if not logged in
-        setState(() => _showAuthModal = true);
+        if (!_showAuthModal) {
+          setState(() => _showAuthModal = true);
+        }
       } else {
         // Check for App Lock
         final securityState = ref.read(securityProvider).valueOrNull;
@@ -112,14 +120,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         final needsSecuritySetup = prefs.getBool('needs_security_setup') ?? false;
 
         if (needsSecuritySetup) {
-           setState(() => _showSecuritySetup = true);
+           setState(() {
+             _showAuthModal = false;
+             _showSecuritySetup = true;
+           });
            return;
         }
 
         if (securityState?.isLockEnabled ?? false) {
-          setState(() => _showPinModal = true);
+          setState(() {
+            _showAuthModal = false;
+            _showPinModal = true;
+          });
         } else {
           // Transition to Home if no lock
+          setState(() => _showAuthModal = false);
           _fadeController.forward().then((_) {
             if (mounted) context.go('/home');
           });

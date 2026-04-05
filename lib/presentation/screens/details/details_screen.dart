@@ -11,7 +11,7 @@ import '../../providers/download_modal_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
 
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../data/clients/tmdb_client.dart';
 import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';

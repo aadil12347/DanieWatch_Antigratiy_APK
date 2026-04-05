@@ -7,7 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:open_file/open_file.dart';
 
-import '../../../core/theme/app_theme.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
