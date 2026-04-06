@@ -494,6 +494,15 @@ class ContentRepository {
       if (logoUrl != null && logoUrl.isEmpty) logoUrl = null;
       if (trailerUrl != null && trailerUrl.isEmpty) trailerUrl = null;
 
+      // Extract fallback metadata
+      final result = githubEntry?['result']?.toString();
+      final languageRaw = githubEntry?['language'];
+      final language = languageRaw != null
+          ? (languageRaw is List
+              ? (languageRaw as List).join(', ')
+              : languageRaw.toString())
+          : null;
+
       return ContentDetail(
         id: tmdbId,
         title: title,
@@ -521,6 +530,8 @@ class ContentRepository {
         tmdbLogoUrl: logoUrl,
         isAdmin: isAdmin,
         seasonsData: isTv ? _parseSeasonsFromGithub(githubEntry) : null,
+        result: result,
+        language: language,
       );
     } catch (e, stack) {
       dev.log('[ContentRepo] fetchContentDetail error: $e', stackTrace: stack);

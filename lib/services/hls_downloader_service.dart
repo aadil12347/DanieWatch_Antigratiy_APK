@@ -474,7 +474,8 @@ class HlsDownloaderService {
 
     // Construct final command
     // -c:s mov_text is essential for subtitles in MP4 container
-    final String command = '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy -c:s mov_text -y "$outputMp4Path"';
+    final String codecArgs = subSegments.isNotEmpty ? '-c:s mov_text' : '';
+    final String command = '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy $codecArgs -y "$outputMp4Path"';
 
     debugPrint('▶ FFmpeg: $command');
     final session = await FFmpegKit.execute(command);

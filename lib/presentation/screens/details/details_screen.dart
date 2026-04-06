@@ -973,8 +973,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       m3u8Url: '', // To be updated
       title: content.title,
       isLoading: true,
-      season: _selectedSeason,
-      episode: episodeNumber,
+      season: content.isMovie ? null : _selectedSeason,
+      episode: content.isMovie ? null : episodeNumber,
+      isMovie: content.isMovie,
+      fallbackQuality: content.result,
+      fallbackLanguage: content.language,
     );
 
     String? m3u8Url;

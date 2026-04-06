@@ -38,6 +38,9 @@ Future<DownloadSelection?> showQualitySelectorSheet({
   bool isLoading = false,
   int? season,
   int? episode,
+  bool isMovie = false,
+  String? fallbackQuality,
+  String? fallbackLanguage,
 }) async {
   final currentState = ref.read(downloadModalProvider);
   if (currentState.isOpen) {
@@ -55,6 +58,9 @@ Future<DownloadSelection?> showQualitySelectorSheet({
     title: title,
     season: season,
     episode: episode,
+    isMovie: isMovie,
+    fallbackQuality: fallbackQuality,
+    fallbackLanguage: fallbackLanguage,
     onSelected: (sel) {
       ref.read(downloadModalProvider.notifier).state =
           const DownloadModalState();
@@ -98,6 +104,7 @@ class _QualitySelectorContentState
   StreamVariant? _selectedVariant;
   AudioTrack? _selectedAudio;
   SubtitleTrack? _selectedSubtitle;
+  bool _downloadSubtitles = false;
 
   @override
   void initState() {
@@ -180,8 +187,9 @@ class _QualitySelectorContentState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Fix: Only show S0 E0 if season/episode > 0
-                      if (modalState.season != null &&
+                      // Fix: Only show S0 E0 for non-movies and if season/episode > 0
+                      if (!modalState.isMovie && 
+                          modalState.season != null && 
                           modalState.episode != null &&
                           modalState.season! > 0)
                         Text(
@@ -328,6 +336,19 @@ class _QualitySelectorContentState
             itemBuilder: (_, i) {
               final v = playlist.variants[i];
               final isSelected = _selectedVariant == v;
+              
+              // Fallback logic for quality
+              String displayLabel = v.badgeLabel
+                  .replaceAll(' HD', '')
+                  .replaceAll('SD', 'Original');
+              
+              if (playlist.variants.length == 1 && ref.read(downloadModalProvider).fallbackQuality != null) {
+                final fbq = ref.read(downloadModalProvider).fallbackQuality!;
+                if (fbq.toUpperCase() == 'FHD') displayLabel = '1080p';
+                if (fbq.toUpperCase() == 'HD') displayLabel = '720p';
+                if (fbq.toUpperCase() == 'SD') displayLabel = '480p';
+              }
+
               return GestureDetector(
                 onTap: () => setState(() => _selectedVariant = v),
                 child: Container(
@@ -343,9 +364,7 @@ class _QualitySelectorContentState
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    v.badgeLabel
-                        .replaceAll(' HD', '')
-                        .replaceAll('SD', 'Original'),
+                    displayLabel,
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white70,
                       fontWeight:
@@ -372,6 +391,13 @@ class _QualitySelectorContentState
           ),
           ...playlist.audioTracks.map((track) {
             final isSelected = _selectedAudio == track;
+            
+            // Fallback logic for language
+            String displayLabel = _getAudioDisplayName(track);
+            if (playlist.audioTracks.length == 1 && ref.read(downloadModalProvider).fallbackLanguage != null) {
+              displayLabel = ref.read(downloadModalProvider).fallbackLanguage!;
+            }
+
             return GestureDetector(
               onTap: () => setState(() => _selectedAudio = track),
               child: Container(
@@ -388,7 +414,7 @@ class _QualitySelectorContentState
                 ),
                 child: Row(
                   children: [
-                    Text(_getAudioDisplayName(track),
+                    Text(displayLabel,
                         style: const TextStyle(
                             color: Colors.white, fontWeight: FontWeight.w600)),
                     const Spacer(),
@@ -404,76 +430,37 @@ class _QualitySelectorContentState
 
         if (playlist.subtitles.isNotEmpty) ...[
           const SizedBox(height: 24),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Text('SUBTITLES',
-                style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1)),
-          ),
-          
-          // "None" option for subtitles
-          GestureDetector(
-            onTap: () => setState(() => _selectedSubtitle = null),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: _selectedSubtitle == null
-                    ? AppColors.primary.withValues(alpha: 0.1)
-                    : AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: _selectedSubtitle == null ? AppColors.primary : AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  const Text('🚫 None', style: TextStyle(color: Colors.white70)),
-                  const Spacer(),
-                  if (_selectedSubtitle == null)
-                    const Icon(Icons.check_circle, color: AppColors.primary, size: 18),
-                ],
-              ),
-            ),
-          ),
-
-          // Subtitle Tracks
-          SizedBox(
-            height: 44,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: playlist.subtitles.length,
-              itemBuilder: (_, i) {
-                final sub = playlist.subtitles[i];
-                final isSelected = _selectedSubtitle == sub;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedSubtitle = sub),
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.primary.withValues(alpha: 0.2)
-                          : AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.border),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      sub.name,
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.white60,
-                        fontSize: 13,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('SUBTITLES',
+                          style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1)),
+                      SizedBox(height: 4),
+                      Text('Include subtitles in download',
+                          style: TextStyle(color: Colors.white54, fontSize: 13)),
+                    ],
                   ),
-                );
-              },
+                ),
+                Switch(
+                  value: _downloadSubtitles,
+                  activeThumbColor: AppColors.primary,
+                  onChanged: (val) {
+                    setState(() {
+                      _downloadSubtitles = val;
+                      _selectedSubtitle = val ? playlist.subtitles.first : null;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
         ],

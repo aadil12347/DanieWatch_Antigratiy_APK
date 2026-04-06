@@ -8,6 +8,9 @@ class DownloadModalState {
   final String? title;
   final int? season;
   final int? episode;
+  final bool isMovie;
+  final String? fallbackQuality;
+  final String? fallbackLanguage;
   final void Function(DownloadSelection)? onSelected;
   final void Function()? onCancel;
 
@@ -18,6 +21,9 @@ class DownloadModalState {
     this.title,
     this.season,
     this.episode,
+    this.isMovie = false,
+    this.fallbackQuality,
+    this.fallbackLanguage,
     this.onSelected,
     this.onCancel,
   });
@@ -29,6 +35,9 @@ class DownloadModalState {
     String? title,
     int? season,
     int? episode,
+    bool? isMovie,
+    String? fallbackQuality,
+    String? fallbackLanguage,
     void Function(DownloadSelection)? onSelected,
     void Function()? onCancel,
   }) {
@@ -39,6 +48,9 @@ class DownloadModalState {
       title: title ?? this.title,
       season: season ?? this.season,
       episode: episode ?? this.episode,
+      isMovie: isMovie ?? this.isMovie,
+      fallbackQuality: fallbackQuality ?? this.fallbackQuality,
+      fallbackLanguage: fallbackLanguage ?? this.fallbackLanguage,
       onSelected: onSelected ?? this.onSelected,
       onCancel: onCancel ?? this.onCancel,
     );

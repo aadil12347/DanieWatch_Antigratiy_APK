@@ -42,6 +42,8 @@ class ContentDetail {
   final String? downloadUrl;
   final String? trailerUrl;
   final List<EpisodeData>? episodesData;
+  final String? result;
+  final String? language;
 
   // Supabase entries table fields
   final String? watchLink;
@@ -92,6 +94,8 @@ class ContentDetail {
     this.tmdbSeasons,
     this.tmdbLogoUrl,
     this.similarItems,
+    this.result,
+    this.language,
     this.isAdmin = false,
   });
 
@@ -128,6 +132,8 @@ class ContentDetail {
     List<TmdbSeason>? tmdbSeasons,
     String? tmdbLogoUrl,
     List<SimilarItem>? similarItems,
+    String? result,
+    String? language,
   }) {
     return ContentDetail(
       id: id ?? this.id,
@@ -162,6 +168,8 @@ class ContentDetail {
       tmdbSeasons: tmdbSeasons ?? this.tmdbSeasons,
       tmdbLogoUrl: tmdbLogoUrl ?? this.tmdbLogoUrl,
       similarItems: similarItems ?? this.similarItems,
+      result: result ?? this.result,
+      language: language ?? this.language,
     );
   }
 
@@ -284,6 +292,13 @@ class ContentDetail {
       downloadUrl: json['download_url']?.toString(),
       trailerUrl: json['trailer_url']?.toString(),
       episodesData: episodes,
+      result: json['result']?.toString(),
+      language: json['language'] != null
+          ? (json['language'] is List
+              ? (json['language'] as List).join(', ')
+              : json['language'].toString())
+          : null,
+      isAdmin: json['is_admin'] == true,
     );
   }
 
