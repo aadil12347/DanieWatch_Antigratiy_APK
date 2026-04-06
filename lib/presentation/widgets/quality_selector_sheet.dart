@@ -288,6 +288,18 @@ class _QualitySelectorContentState
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (_selectedVariant != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Estimated Size: ${_selectedVariant!.estimatedSize}',
+                            style: GoogleFonts.inter(
+                              color: AppColors.primary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

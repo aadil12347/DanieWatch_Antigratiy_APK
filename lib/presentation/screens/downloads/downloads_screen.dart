@@ -336,17 +336,16 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // Size (Hide if unknown)
-                  if (item.totalBytes > 0) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      item.formattedSize,
-                      style: TextStyle(
-                        color: AppColors.textSecondary.withValues(alpha: 0.7),
-                        fontSize: 12,
-                      ),
+                  // Size (Show estimate if real size is unknown)
+                  const SizedBox(height: 4),
+                  Text(
+                    item.formattedSize,
+                    style: GoogleFonts.inter(
+                      color: AppColors.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 8),
                   // Progress bar
                   ClipRRect(

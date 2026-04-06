@@ -134,15 +134,47 @@ class DownloadItem {
   }
 
   String get formattedSize {
-    if (totalBytes == 0) return 'Unknown';
-    if (totalBytes < 1024) return '$totalBytes B';
-    if (totalBytes < 1024 * 1024) {
-      return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
+    int bytesToFormat = totalBytes;
+    bool isEstimate = false;
+    if (bytesToFormat == 0 && (videoStreamUrl != null || qualityLabel != null)) {
+      // Use bandwidth-based estimate (Assuming 45 min for now, as in parser)
+      // We can improve this if we have a real duration later.
+      // But for now, we'll use a standard estimate to satisfy the UI.
+      // Note: We'll calculate it on the fly if not provided.
+      bytesToFormat = _calculateEstimatedBytes();
+      isEstimate = true;
     }
-    if (totalBytes < 1024 * 1024 * 1024) {
-      return '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+
+    if (bytesToFormat == 0) return 'Unknown';
+    
+    final String prefix = isEstimate ? '~' : '';
+    if (bytesToFormat < 1024) return '$prefix$bytesToFormat B';
+    if (bytesToFormat < 1024 * 1024) {
+      return '$prefix${(bytesToFormat / 1024).toStringAsFixed(1)} KB';
     }
-    return '${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+    if (bytesToFormat < 1024 * 1024 * 1024) {
+      return '$prefix${(bytesToFormat / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '$prefix${(bytesToFormat / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  int _calculateEstimatedBytes() {
+    // If we have a bandwidth (from qualityLabel or similar), use it.
+    // However, DownloadItem doesn't store bandwidth directly.
+    // Let's assume some defaults for common labels if not available.
+    if (qualityLabel != null) {
+      final q = qualityLabel!.toLowerCase();
+      int? bandwidth; // bits per second
+      if (q.contains('1080')) bandwidth = 5000000;
+      else if (q.contains('720')) bandwidth = 2500000;
+      else if (q.contains('480')) bandwidth = 1500000;
+      else if (q.contains('360')) bandwidth = 800000;
+      
+      if (bandwidth != null) {
+        return (bandwidth / 8 * 45 * 60).toInt();
+      }
+    }
+    return 0;
   }
 
   String get formattedProgress {
@@ -504,6 +536,7 @@ class DownloadManager {
       subtitleLabel: subLbl,
       localPath: outputPath,
       segmentDirectory: segmentDir,
+      totalBytes: variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0,
     );
 
     _downloads.insert(0, item);
