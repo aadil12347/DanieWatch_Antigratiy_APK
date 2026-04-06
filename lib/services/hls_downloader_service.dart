@@ -111,6 +111,7 @@ class HlsDownloaderService {
   Future<void> startDownload({
     required String videoM3u8Url,
     String? audioM3u8Url,
+    String? subtitleM3u8Url,
     required String saveDirectory,
     required String outputMp4Path,
   }) async {
@@ -139,7 +140,18 @@ class HlsDownloaderService {
             await _parseMediaPlaylist(audioM3u8Url, saveDirectory, 'a');
       }
 
-      final allSegments = [...videoSegments, ...audioSegments];
+      List<_SegmentTask> subtitleSegments = [];
+      if (subtitleM3u8Url != null && subtitleM3u8Url.isNotEmpty) {
+        debugPrint('📦 Parsing subtitle playlist: $subtitleM3u8Url');
+        subtitleSegments =
+            await _parseMediaPlaylist(subtitleM3u8Url, saveDirectory, 's');
+      }
+
+      final allSegments = [
+        ...videoSegments,
+        ...audioSegments,
+        ...subtitleSegments
+      ];
       _totalSegments = allSegments.length;
 
       if (_totalSegments == 0) {
@@ -147,7 +159,7 @@ class HlsDownloaderService {
       }
 
       debugPrint(
-          '📦 HLS: ${videoSegments.length} video + ${audioSegments.length} audio = $_totalSegments total segments');
+          '📦 HLS: ${videoSegments.length} video + ${audioSegments.length} audio + ${subtitleSegments.length} sub = $_totalSegments total segments');
 
       // ── Phase 2: Download all segments (3 parallel) ────
       await _downloadAllSegments(allSegments);
@@ -158,7 +170,7 @@ class HlsDownloaderService {
       onConversionStarted?.call();
       debugPrint('🔧 Converting to MP4...');
       await _muxToMp4(
-          videoSegments, audioSegments, saveDirectory, outputMp4Path);
+          videoSegments, audioSegments, subtitleSegments, saveDirectory, outputMp4Path);
 
       if (_isCancelled) throw Exception('Download cancelled');
 
@@ -405,6 +417,7 @@ class HlsDownloaderService {
   Future<void> _muxToMp4(
     List<_SegmentTask> videoSegments,
     List<_SegmentTask> audioSegments,
+    List<_SegmentTask> subtitleSegments,
     String saveDir,
     String outputMp4Path,
   ) async {
@@ -421,10 +434,17 @@ class HlsDownloaderService {
     );
 
     final audioTs = audioSegments.where((s) => s.isTsSegment).toList();
-    String command;
+    final subSegments = subtitleSegments.where((s) => s.isTsSegment).toList();
+    
+    final List<String> inputs = [];
+    final List<String> maps = [];
+    
+    // 1. Video
+    inputs.add('-f concat -safe 0 -i "$videoListPath"');
+    maps.add('-map 0:v');
 
+    // 2. Audio (Optional)
     if (audioTs.isNotEmpty) {
-      // Build audio concat file
       final audioListPath = p.join(saveDir, 'audio_list.txt');
       await File(audioListPath).writeAsString(
         audioTs
@@ -432,17 +452,29 @@ class HlsDownloaderService {
                 "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
             .join('\n'),
       );
-
-      // Concat video, concat audio, then mux both into MP4
-      // Using a single FFmpeg command with two concat inputs
-      command = '-f concat -safe 0 -i "$videoListPath" '
-          '-f concat -safe 0 -i "$audioListPath" '
-          '-map 0:v -map 1:a -c copy -y "$outputMp4Path"';
+      inputs.add('-f concat -safe 0 -i "$audioListPath"');
+      maps.add('-map ${inputs.length - 1}:a');
     } else {
-      // No separate audio — just concat video (audio is muxed in .ts)
-      command =
-          '-f concat -safe 0 -i "$videoListPath" -c copy -y "$outputMp4Path"';
+      // If no separate audio, use audio from video stream
+      maps.add('-map 0:a?');
     }
+
+    // 3. Subtitles (Optional)
+    if (subSegments.isNotEmpty) {
+       final subListPath = p.join(saveDir, 'sub_list.txt');
+       await File(subListPath).writeAsString(
+        subSegments
+            .map((s) =>
+                "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
+            .join('\n'),
+      );
+      inputs.add('-f concat -safe 0 -i "$subListPath"');
+      maps.add('-map ${inputs.length - 1}:s');
+    }
+
+    // Construct final command
+    // -c:s mov_text is essential for subtitles in MP4 container
+    final String command = '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy -c:s mov_text -y "$outputMp4Path"';
 
     debugPrint('▶ FFmpeg: $command');
     final session = await FFmpegKit.execute(command);

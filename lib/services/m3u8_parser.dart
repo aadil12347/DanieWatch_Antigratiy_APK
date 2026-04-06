@@ -1,7 +1,7 @@
 // lib/services/m3u8_parser.dart
 // ─────────────────────────────────────────────────────────
 // Fetches and parses an HLS master playlist (.m3u8)
-// Extracts ALL quality variants and ALL audio tracks.
+// Extracts ALL quality variants, audio tracks, and subtitles.
 // ─────────────────────────────────────────────────────────
 
 import 'package:dio/dio.dart';
@@ -42,15 +42,19 @@ class StreamVariant {
   }
 
   String get badgeLabel {
-    if (resolution == null) return qualityLabel;
+    if (resolution == null) return '720p HD'; // Primary default if unknown
     final parts = resolution!.split('x');
     final h = int.tryParse(parts.length == 2 ? parts[1] : '0') ?? 0;
+    
+    // Explicit branding for 720p and 1080p
     if (h >= 2160) return '4K';
     if (h >= 1080) return '1080p HD';
     if (h >= 720) return '720p HD';
     if (h >= 480) return '480p';
     if (h >= 360) return '360p';
-    return qualityLabel;
+    
+    // If it's the only one and resolution is weird, still call it 720p HD in badge
+    return '720p HD';
   }
 
   @override
@@ -109,26 +113,76 @@ class AudioTrack {
   String toString() => 'AudioTrack($name, $language, hasUri: ${url != null})';
 }
 
+// ── Subtitle track ────────────────────────────────────────
+class SubtitleTrack {
+  final String language;
+  final String name;
+  final String url;
+  final bool isDefault;
+
+  SubtitleTrack({
+    required this.language,
+    required this.name,
+    required this.url,
+    this.isDefault = false,
+  });
+
+  String get displayName {
+    return 'Subtitle ($name)';
+  }
+}
+
 // ── Parsed playlist result ────────────────────────────────
 class PlaylistInfo {
   final List<StreamVariant> variants; // sorted best → worst quality
   final List<AudioTrack> audioTracks; // all available audio tracks
+  final List<SubtitleTrack> subtitles; // available subtiles
   final bool isMasterPlaylist; // false = already a media playlist
 
   PlaylistInfo({
     required this.variants,
     required this.audioTracks,
+    required this.subtitles,
     required this.isMasterPlaylist,
   });
 
   bool get hasMultipleQualities => variants.length > 1;
   bool get hasMultipleAudioTracks => audioTracks.length > 1;
+  bool get hasSubtitles => subtitles.isNotEmpty;
 
   StreamVariant? get bestVariant => variants.isNotEmpty ? variants.first : null;
-  AudioTrack? get defaultAudio => audioTracks.firstWhere((a) => a.isDefault,
-      orElse: () => audioTracks.isNotEmpty
-          ? audioTracks.first
-          : AudioTrack(groupId: '', language: 'en', name: 'Default'));
+
+  /// Find variant closest to 720p for default selection
+  StreamVariant? get defaultVariant {
+    if (variants.isEmpty) return null;
+    if (variants.length == 1) return variants.first;
+    
+    // Look for 720p or closest
+    try {
+      return variants.firstWhere((v) {
+        final res = v.resolution ?? '';
+        return res.contains('720') || res.contains('1280');
+      });
+    } catch (_) {
+      return variants.first;
+    }
+  }
+
+  AudioTrack? get defaultAudio {
+    if (audioTracks.isEmpty) return null;
+    
+    // 1. Prefer Hindi if explicitly labeled
+    try {
+      return audioTracks.firstWhere((a) => a.language == 'hi' || a.name.toLowerCase().contains('hindi'));
+    } catch (_) {}
+
+    // 2. Fallback to DEFAULT=YES
+    try {
+      return audioTracks.firstWhere((a) => a.isDefault);
+    } catch (_) {
+      return audioTracks.first;
+    }
+  }
 }
 
 // ── Parser ────────────────────────────────────────────────
@@ -180,12 +234,14 @@ class M3u8Parser {
           )
         ],
         audioTracks: [],
+        subtitles: [],
         isMasterPlaylist: false,
       );
     }
 
     final audioTracks = <AudioTrack>[];
     final variants = <StreamVariant>[];
+    final subtitles = <SubtitleTrack>[];
 
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
@@ -194,6 +250,12 @@ class M3u8Parser {
       if (line.startsWith('#EXT-X-MEDIA:') && line.contains('TYPE=AUDIO')) {
         final track = _parseAudioTag(line, baseUrl);
         if (track != null) audioTracks.add(track);
+      }
+
+      // ── Parse subtitle tracks ────────────────────────
+      if (line.startsWith('#EXT-X-MEDIA:') && line.contains('TYPE=SUBTITLES')) {
+        final sub = _parseSubtitleTag(line, baseUrl);
+        if (sub != null) subtitles.add(sub);
       }
 
       // ── Parse stream variants ────────────────────────
@@ -211,30 +273,50 @@ class M3u8Parser {
     variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
 
     // Deduplicate audio tracks by name+language
-    final seen = <String>{};
+    final seenAudio = <String>{};
     final uniqueAudio = audioTracks.where((t) {
       final key = '${t.language}_${t.name}';
-      return seen.add(key);
+      return seenAudio.add(key);
+    }).toList();
+
+    // Deduplicate subtitles
+    final seenSubs = <String>{};
+    final uniqueSubs = subtitles.where((t) {
+      final key = '${t.language}_${t.name}';
+      return seenSubs.add(key);
     }).toList();
 
     return PlaylistInfo(
       variants: variants,
       audioTracks: uniqueAudio,
+      subtitles: uniqueSubs,
       isMasterPlaylist: true,
     );
   }
 
-  // ── Parse #EXT-X-MEDIA tag ─────────────────────────────
+  // ── Parse #EXT-X-MEDIA tag (Audio) ───────────────────────
   AudioTrack? _parseAudioTag(String line, String baseUrl) {
     try {
       final groupId = _attr(line, 'GROUP-ID') ?? 'audio';
-      final language = _attr(line, 'LANGUAGE') ?? 'und';
-      final name = _attr(line, 'NAME') ?? language;
       final uriRaw = _attr(line, 'URI');
+      var language = _attr(line, 'LANGUAGE') ?? 'und';
+      var name = _attr(line, 'NAME') ?? language;
+      
       final isDefault = line.contains('DEFAULT=YES');
       final isForced = line.contains('FORCED=YES');
 
       final uri = uriRaw != null ? _resolveUrl(uriRaw, baseUrl) : null;
+
+      // ── Robust Hindi Detection ──────────────────────────
+      // Some providers mislabel Hindi as English or und but put it in the Name/URI
+      final lowerName = name.toLowerCase();
+      final lowerUri = uriRaw?.toLowerCase() ?? '';
+      if (lowerName.contains('hindi') || lowerUri.contains('hindi') || lowerUri.contains('hin')) {
+        if (language == 'und' || language == 'en') {
+          language = 'hi';
+          if (!name.toLowerCase().contains('hindi')) name = 'Hindi';
+        }
+      }
 
       return AudioTrack(
         groupId: groupId,
@@ -243,6 +325,29 @@ class M3u8Parser {
         url: uri,
         isDefault: isDefault,
         isForced: isForced,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Parse #EXT-X-MEDIA tag (Subtitles) ───────────────────
+  SubtitleTrack? _parseSubtitleTag(String line, String baseUrl) {
+    try {
+      final uriRaw = _attr(line, 'URI');
+      if (uriRaw == null) return null;
+
+      final language = _attr(line, 'LANGUAGE') ?? 'und';
+      final name = _attr(line, 'NAME') ?? language;
+      final isDefault = line.contains('DEFAULT=YES');
+
+      final uri = _resolveUrl(uriRaw, baseUrl);
+
+      return SubtitleTrack(
+        language: language,
+        name: name,
+        url: uri,
+        isDefault: isDefault,
       );
     } catch (_) {
       return null;

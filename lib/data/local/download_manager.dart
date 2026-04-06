@@ -62,11 +62,13 @@ class DownloadItem {
   DateTime? completedAt;
   String? error;
 
-  // ── Quality/audio fields ──
+  // ── Quality/audio/subtitle fields ──
   final String? videoStreamUrl;
   final String? audioStreamUrl;
+  final String? subtitleStreamUrl;
   final String? qualityLabel;
   final String? audioLabel;
+  final String? subtitleLabel;
 
   // ── Segment download tracking ──
   int totalSegments;
@@ -93,8 +95,10 @@ class DownloadItem {
     this.error,
     this.videoStreamUrl,
     this.audioStreamUrl,
+    this.subtitleStreamUrl,
     this.qualityLabel,
     this.audioLabel,
+    this.subtitleLabel,
     this.totalSegments = 0,
     this.completedSegments = 0,
     this.segmentDirectory,
@@ -125,6 +129,7 @@ class DownloadItem {
     final parts = <String>[];
     if (qualityLabel != null) parts.add(qualityLabel!);
     if (audioLabel != null) parts.add(audioLabel!);
+    if (subtitleLabel != null) parts.add('Subtitles');
     return parts.join(' · ');
   }
 
@@ -205,8 +210,10 @@ class DownloadItem {
         'error': error,
         'videoStreamUrl': videoStreamUrl,
         'audioStreamUrl': audioStreamUrl,
+        'subtitleStreamUrl': subtitleStreamUrl,
         'qualityLabel': qualityLabel,
         'audioLabel': audioLabel,
+        'subtitleLabel': subtitleLabel,
         'totalSegments': totalSegments,
         'completedSegments': completedSegments,
         'segmentDirectory': segmentDirectory,
@@ -235,8 +242,10 @@ class DownloadItem {
         error: json['error'],
         videoStreamUrl: json['videoStreamUrl'],
         audioStreamUrl: json['audioStreamUrl'],
+        subtitleStreamUrl: json['subtitleStreamUrl'],
         qualityLabel: json['qualityLabel'],
         audioLabel: json['audioLabel'],
+        subtitleLabel: json['subtitleLabel'],
         totalSegments: json['totalSegments'] ?? 0,
         completedSegments: json['completedSegments'] ?? 0,
         segmentDirectory: json['segmentDirectory'],
@@ -460,14 +469,17 @@ class DownloadManager {
     String? posterUrl,
     StreamVariant? variant,
     AudioTrack? audioTrack,
+    SubtitleTrack? subtitleTrack,
   }) async {
     final hasPermission = await requestPermissions();
     if (!hasPermission) return null;
 
     final qualityLbl = variant?.badgeLabel;
     final audioLbl = audioTrack?.displayName;
+    final subLbl = subtitleTrack?.name;
     final videoUrl = variant?.url ?? m3u8Url;
     final audioUrl = audioTrack?.url;
+    final subtitleUrl = subtitleTrack?.url;
 
     final dir = await getDownloadDirectory();
     final safeTitle = _buildSafeTitle(title, season, episode, qualityLbl);
@@ -486,8 +498,10 @@ class DownloadManager {
       status: DownloadStatus.downloading,
       videoStreamUrl: videoUrl,
       audioStreamUrl: audioUrl,
+      subtitleStreamUrl: subtitleUrl,
       qualityLabel: qualityLbl,
       audioLabel: audioLbl,
+      subtitleLabel: subLbl,
       localPath: outputPath,
       segmentDirectory: segmentDir,
     );
@@ -631,6 +645,7 @@ class DownloadManager {
     service.startDownload(
       videoM3u8Url: item.videoStreamUrl ?? item.url,
       audioM3u8Url: item.audioStreamUrl,
+      subtitleM3u8Url: item.subtitleStreamUrl,
       saveDirectory: item.segmentDirectory!,
       outputMp4Path: item.localPath!,
     );

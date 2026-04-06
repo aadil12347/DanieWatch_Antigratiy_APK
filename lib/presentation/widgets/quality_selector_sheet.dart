@@ -1,8 +1,7 @@
 // lib/presentation/widgets/quality_selector_sheet.dart
 // ─────────────────────────────────────────────────────────
-// Bottom sheet that shows all available qualities
-// and audio tracks. User picks one combination,
-// taps Download — returns their selection.
+// Bottom sheet that shows all available qualities,
+// audio tracks, and subtitles.
 // ─────────────────────────────────────────────────────────
 
 import 'dart:async';
@@ -19,11 +18,13 @@ import '../providers/download_modal_provider.dart';
 class DownloadSelection {
   final StreamVariant quality;
   final AudioTrack? audioTrack;
+  final SubtitleTrack? subtitleTrack;
   final String title;
 
   DownloadSelection({
     required this.quality,
-    required this.audioTrack,
+    this.audioTrack,
+    this.subtitleTrack,
     required this.title,
   });
 }
@@ -40,9 +41,7 @@ Future<DownloadSelection?> showQualitySelectorSheet({
 }) async {
   final currentState = ref.read(downloadModalProvider);
   if (currentState.isOpen) {
-    // Cancel any previous pending selection to prevent memory leaks
     currentState.onCancel?.call();
-    // Force the modal to close briefly to trigger a fresh opening animation
     ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
     await Future.delayed(const Duration(milliseconds: 150));
   }
@@ -71,9 +70,6 @@ Future<DownloadSelection?> showQualitySelectorSheet({
   return completer.future;
 }
 
-// ══════════════════════════════════════════════════════════
-//  QUALITY SELECTOR CONTENT
-// ══════════════════════════════════════════════════════════
 class QualitySelectorContent extends ConsumerStatefulWidget {
   final String m3u8Url;
   final String title;
@@ -101,6 +97,7 @@ class _QualitySelectorContentState
 
   StreamVariant? _selectedVariant;
   AudioTrack? _selectedAudio;
+  SubtitleTrack? _selectedSubtitle;
 
   @override
   void initState() {
@@ -131,8 +128,10 @@ class _QualitySelectorContentState
       if (mounted) {
         setState(() {
           _playlist = info;
-          _selectedVariant = info.bestVariant;
+          // Apply defaulting logic from PlaylistInfo
+          _selectedVariant = info.defaultVariant;
           _selectedAudio = info.defaultAudio;
+          _selectedSubtitle = null; // Subtitles off by default
           _internalLoading = false;
         });
       }
@@ -147,19 +146,9 @@ class _QualitySelectorContentState
   }
 
   String _getAudioDisplayName(AudioTrack track) {
-    final name = track.name.toLowerCase();
-    final lang = track.language.toLowerCase();
-
-    if (name.contains('hindi') || lang == 'hi') return '🇮🇳 Hindi';
-    if (name.contains('english') || lang == 'en') return '🇺🇸 English';
-    if (name.contains('japanese') || lang == 'ja') return '🇯🇵 Japanese';
-    if (name.contains('korean') || lang == 'ko') return '🇰🇷 Korean';
-    if (name.contains('tamil') || lang == 'ta') return '🇮🇳 Tamil';
-    if (name.contains('telugu') || lang == 'te') return '🇮🇳 Telugu';
-    if (name.contains('french') || lang == 'fr') return '🇫🇷 French';
-    if (name.contains('spanish') || lang == 'es') return '🇪🇸 Spanish';
-
-    return '🌐 ${track.name}';
+    // Parser now handles common mislabeling, so we can trust its displayName
+    // but we can still apply more specific logic if needed.
+    return track.displayName;
   }
 
   @override
@@ -191,6 +180,7 @@ class _QualitySelectorContentState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Fix: Only show S0 E0 if season/episode > 0
                       if (modalState.season != null &&
                           modalState.episode != null &&
                           modalState.season! > 0)
@@ -298,6 +288,7 @@ class _QualitySelectorContentState
                 quality: StreamVariant(url: widget.m3u8Url, bandwidth: 0),
                 audioTrack: null,
                 title: widget.title,
+                subtitleTrack: null,
               )),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white10,
@@ -410,23 +401,102 @@ class _QualitySelectorContentState
             );
           }),
         ],
+
+        if (playlist.subtitles.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Text('SUBTITLES',
+                style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1)),
+          ),
+          
+          // "None" option for subtitles
+          GestureDetector(
+            onTap: () => setState(() => _selectedSubtitle = null),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: _selectedSubtitle == null
+                    ? AppColors.primary.withValues(alpha: 0.1)
+                    : AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: _selectedSubtitle == null ? AppColors.primary : AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Text('🚫 None', style: TextStyle(color: Colors.white70)),
+                  const Spacer(),
+                  if (_selectedSubtitle == null)
+                    const Icon(Icons.check_circle, color: AppColors.primary, size: 18),
+                ],
+              ),
+            ),
+          ),
+
+          // Subtitle Tracks
+          SizedBox(
+            height: 44,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: playlist.subtitles.length,
+              itemBuilder: (_, i) {
+                final sub = playlist.subtitles[i];
+                final isSelected = _selectedSubtitle == sub;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedSubtitle = sub),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary.withValues(alpha: 0.2)
+                          : AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.border),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      sub.name,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.white60,
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildDownloadButton() {
-    // Build button label with quality + audio info
     String buttonLabel = 'Start Download';
     if (_selectedVariant != null) {
       final parts = <String>[];
       if (_selectedAudio != null) {
         final audioName = _getAudioDisplayName(_selectedAudio!);
-        // Strip emoji flag for button label
         final cleanName = audioName.replaceAll(RegExp(r'[^\w\s]'), '').trim();
         if (cleanName.isNotEmpty) parts.add(cleanName);
       }
       final quality = _selectedVariant!.badgeLabel.replaceAll(' HD', '');
       parts.add(quality);
+      
+      if (_selectedSubtitle != null) {
+        parts.add('+ Sub');
+      }
+      
       buttonLabel = 'Download · ${parts.join(" ")}';
     }
 
@@ -441,6 +511,7 @@ class _QualitySelectorContentState
                   widget.onSelected(DownloadSelection(
                     quality: _selectedVariant!,
                     audioTrack: _selectedAudio,
+                    subtitleTrack: _selectedSubtitle,
                     title: widget.title,
                   ));
                 }

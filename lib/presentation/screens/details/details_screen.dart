@@ -1031,6 +1031,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         posterUrl: content.posterUrl,
         variant: selection.quality,
         audioTrack: selection.audioTrack,
+        subtitleTrack: selection.subtitleTrack,
       );
       if (item != null && mounted) {
         _showDownloadStartedToast(item);
