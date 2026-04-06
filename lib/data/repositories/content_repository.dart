@@ -495,7 +495,7 @@ class ContentRepository {
       if (trailerUrl != null && trailerUrl.isEmpty) trailerUrl = null;
 
       // Extract fallback metadata
-      final result = githubEntry?['result']?.toString();
+      final result = (githubEntry?['result'] ?? githubEntry?['quality'])?.toString();
       final languageRaw = githubEntry?['language'];
       final language = languageRaw != null
           ? (languageRaw is List

@@ -152,10 +152,87 @@ class _QualitySelectorContentState
     }
   }
 
+  String _mapNativeToEnglish(String? input) {
+    if (input == null) return '';
+    final mapping = {
+      // ISO Codes
+      'hi': 'Hindi',
+      'hin': 'Hindi',
+      'en': 'English',
+      'eng': 'English',
+      'ko': 'Korean',
+      'kor': 'Korean',
+      'ja': 'Japanese',
+      'jpn': 'Japanese',
+      'es': 'Spanish',
+      'spa': 'Spanish',
+      'fr': 'French',
+      'fra': 'French',
+      'ar': 'Arabic',
+      'ara': 'Arabic',
+      'it': 'Italian',
+      'ita': 'Italian',
+      'de': 'German',
+      'deu': 'German',
+      'pt': 'Portuguese',
+      'por': 'Portuguese',
+      'ru': 'Russian',
+      'rus': 'Russian',
+      'zh': 'Chinese',
+      'zho': 'Chinese',
+      'ta': 'Tamil',
+      'tam': 'Tamil',
+      'te': 'Telugu',
+      'tel': 'Telugu',
+      'ml': 'Malayalam',
+      'mal': 'Malayalam',
+      'kn': 'Kannada',
+      'kan': 'Kannada',
+      // Native Names
+      'हिन्दी': 'Hindi',
+      'हिंदी': 'Hindi',
+      '한국어': 'Korean',
+      '日本語': 'Japanese',
+      'español': 'Spanish',
+      'français': 'French',
+      'العربية': 'Arabic',
+      'தமிழ்': 'Tamil',
+      'తెలుగు': 'Telugu',
+      'മലയാളം': 'Malayalam',
+      'ಕನ್ನಡ': 'Kannada',
+    };
+
+    final trimmed = input.trim();
+    if (mapping.containsKey(trimmed)) return mapping[trimmed]!;
+    
+    final lower = trimmed.toLowerCase();
+    if (mapping.containsKey(lower)) return mapping[lower]!;
+    
+    return trimmed;
+  }
+
   String _getAudioDisplayName(AudioTrack track) {
-    // Parser now handles common mislabeling, so we can trust its displayName
-    // but we can still apply more specific logic if needed.
-    return track.displayName;
+    // Parser's displayName is like "🇮🇳 हिन्दी"
+    // We want "🇮🇳 Hindi"
+    
+    // 1. Try to map the ISO code (e.g. 'hi')
+    String englishName = _mapNativeToEnglish(track.language);
+    
+    // 2. If mapping didn't change anything (or it was already English), 
+    // and name is a native name, try mapping the name
+    if (englishName == track.language || englishName == 'English') {
+       final nameMapped = _mapNativeToEnglish(track.name);
+       if (nameMapped != track.name) {
+         englishName = nameMapped;
+       } else {
+         englishName = track.name; // Fallback to raw name
+       }
+    }
+    
+    // 3. Re-attach the flag using the track's logic if possible, 
+    // or just use the parser's logic for flags
+    final flag = track.displayName.split(' ').first;
+    return '$flag $englishName';
   }
 
   @override
@@ -312,8 +389,50 @@ class _QualitySelectorContentState
     );
   }
 
+  String _getVariantDisplayLabel(StreamVariant v) {
+    final playlist = _playlist;
+    if (playlist == null) return v.badgeLabel;
+
+    final sortedVariants = List<StreamVariant>.from(playlist.variants)
+      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+
+    final uniqueResolutions = sortedVariants.map((sv) => sv.qualityLabel).toSet();
+    final isSingleResolution = uniqueResolutions.length <= 1;
+    final fbq = ref.read(downloadModalProvider).fallbackQuality;
+    final index = sortedVariants.indexWhere((sv) => sv.url == v.url);
+
+    if (isSingleResolution) {
+      String label;
+      if (index == 0) {
+        label = '720p';
+      } else if (index == 1) {
+        label = '480p';
+      } else if (index == 2) {
+        label = '360p';
+      } else {
+        label = v.qualityLabel;
+      }
+
+      if (sortedVariants.length == 1 && fbq != null) {
+        final upperFbq = fbq.toUpperCase();
+        if (upperFbq == 'FHD') return '1080p';
+        if (upperFbq == 'HD') return '720p';
+        if (upperFbq == 'SD') return '480p';
+        if (fbq.contains('p')) return fbq;
+      }
+      return label;
+    } else {
+      return v.badgeLabel.replaceAll(' HD', '').replaceAll('SD', 'Original');
+    }
+  }
+
   Widget _buildSelectors() {
     final playlist = _playlist!;
+
+    // Sort variants for consistent display
+    final sortedVariants = List<StreamVariant>.from(playlist.variants)
+      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -332,22 +451,11 @@ class _QualitySelectorContentState
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: playlist.variants.length,
+            itemCount: sortedVariants.length,
             itemBuilder: (_, i) {
-              final v = playlist.variants[i];
+              final v = sortedVariants[i];
               final isSelected = _selectedVariant == v;
-              
-              // Fallback logic for quality
-              String displayLabel = v.badgeLabel
-                  .replaceAll(' HD', '')
-                  .replaceAll('SD', 'Original');
-              
-              if (playlist.variants.length == 1 && ref.read(downloadModalProvider).fallbackQuality != null) {
-                final fbq = ref.read(downloadModalProvider).fallbackQuality!;
-                if (fbq.toUpperCase() == 'FHD') displayLabel = '1080p';
-                if (fbq.toUpperCase() == 'HD') displayLabel = '720p';
-                if (fbq.toUpperCase() == 'SD') displayLabel = '480p';
-              }
+              final displayLabel = _getVariantDisplayLabel(v);
 
               return GestureDetector(
                 onTap: () => setState(() => _selectedVariant = v),
@@ -395,7 +503,7 @@ class _QualitySelectorContentState
             // Fallback logic for language
             String displayLabel = _getAudioDisplayName(track);
             if (playlist.audioTracks.length == 1 && ref.read(downloadModalProvider).fallbackLanguage != null) {
-              displayLabel = ref.read(downloadModalProvider).fallbackLanguage!;
+              displayLabel = _mapNativeToEnglish(ref.read(downloadModalProvider).fallbackLanguage!);
             }
 
             return GestureDetector(
@@ -477,7 +585,7 @@ class _QualitySelectorContentState
         final cleanName = audioName.replaceAll(RegExp(r'[^\w\s]'), '').trim();
         if (cleanName.isNotEmpty) parts.add(cleanName);
       }
-      final quality = _selectedVariant!.badgeLabel.replaceAll(' HD', '');
+      final quality = _getVariantDisplayLabel(_selectedVariant!);
       parts.add(quality);
       
       if (_selectedSubtitle != null) {

@@ -292,7 +292,7 @@ class ContentDetail {
       downloadUrl: json['download_url']?.toString(),
       trailerUrl: json['trailer_url']?.toString(),
       episodesData: episodes,
-      result: json['result']?.toString(),
+      result: (json['result'] ?? json['quality'])?.toString(),
       language: json['language'] != null
           ? (json['language'] is List
               ? (json['language'] as List).join(', ')
