@@ -681,25 +681,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-            const SizedBox(height: 20),
-            Text(
-              'Please wait',
-              style: GoogleFonts.inter(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Loading $epLabel',
-              style: GoogleFonts.inter(
-                color: AppColors.textMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
+
           ],
         ),
       ),
@@ -725,25 +707,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Please wait',
-              style: GoogleFonts.inter(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Loading $epLabel',
-              style: GoogleFonts.inter(
-                color: AppColors.textMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
+
           ],
         ),
       ),

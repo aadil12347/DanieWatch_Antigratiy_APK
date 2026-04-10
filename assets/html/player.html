@@ -1878,6 +1878,10 @@
                 }
                 gestureStartY = touch.clientY;
             } else if (gestureType === 'seek') {
+                isScrubbing = true;
+                showControls();
+                seekBarContainer.classList.add('scrubbing');
+
                 const rect = videoContainer.getBoundingClientRect();
                 const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
                 const seekDelta = dx * seekSensitivity;
@@ -1892,6 +1896,17 @@
                 deltaEl.textContent = deltaSign + formatTime(absDelta);
                 deltaEl.style.color = seekDelta >= 0 ? '#E11D48' : '#60a5fa';
                 previewEl.textContent = formatTime(newTime);
+
+                const percent = (newTime / video.duration) * 100;
+                seekProgress.style.width = percent + '%';
+                seekThumb.style.left = percent + '%';
+                timeDisplay.textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
+                
+                const tooltipAreaWidth = seekBar.getBoundingClientRect().width;
+                const tooltipPosX = (percent / 100) * tooltipAreaWidth;
+                seekTooltip.textContent = formatTime(newTime);
+                seekTooltip.style.left = percent + '%';
+                seekTooltip.classList.add('visible');
             }
         }
 
@@ -1935,7 +1950,12 @@
                 const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
                 const seekDelta = dx * seekSensitivity;
                 video.currentTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
+                
                 document.getElementById('seekIndicator').classList.remove('visible');
+                isScrubbing = false;
+                seekBarContainer.classList.remove('scrubbing');
+                seekTooltip.classList.remove('visible');
+                
                 gestureActive = false;
                 gestureType = null;
                 return;
@@ -2477,7 +2497,7 @@
         function startHideTimer() {
             clearTimeout(controlsTimeout);
             controlsTimeout = setTimeout(() => {
-                if (!video.paused && !isMenuOpen && !isSubPanelOpen) {
+                if (!video.paused && !isMenuOpen && !isSubPanelOpen && !isScrubbing) {
                     hideUI();
                 }
             }, 3000);
