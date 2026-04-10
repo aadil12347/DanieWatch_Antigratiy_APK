@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import 'package:daniewatch_app/services/bysebuho_extractor.dart';
 import '../../data/local/download_manager.dart';
 import '../../domain/models/content_detail.dart';
 
@@ -63,6 +64,8 @@ class _DownloadModalState extends State<DownloadModal> {
   InAppWebViewController? _controller;
   bool _captured = false;
   String? _capturedUrl;
+  bool _isTryingDirect = true;
+  String? _directError;
 
   // Block ads & gambling popups but NOT captcha/recaptcha
   bool _isAd(String url) {
@@ -128,9 +131,82 @@ class _DownloadModalState extends State<DownloadModal> {
       posterUrl: widget.posterUrl,
     );
 
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(seconds: 1), () {
       if (mounted) Navigator.pop(context);
     });
+  }
+
+  /// Try direct Bysebuho API extraction to get download links instantly
+  Future<void> _tryDirectExtraction() async {
+    final bysebuho = BysebuhoExtractor.instance;
+    if (!bysebuho.isBysebuhoUrl(widget.initialUrl)) {
+      if (mounted) setState(() { _isTryingDirect = false; });
+      return;
+    }
+
+    try {
+      // Try the downloads API first (direct MP4 links)
+      final downloadLinks = await bysebuho.fetchDownloadLinks(widget.initialUrl);
+      if (downloadLinks != null && downloadLinks.isNotEmpty) {
+        debugPrint('[DownloadModal] Direct download links found: ${downloadLinks.length}');
+        if (mounted) {
+          setState(() {
+            _captured = true;
+            _capturedUrl = downloadLinks.first;
+            _isTryingDirect = false;
+          });
+          DownloadManager.instance.startDownload(
+            url: downloadLinks.first,
+            title: widget.content.title,
+            season: widget.season,
+            episode: widget.episode,
+            posterUrl: widget.posterUrl,
+          );
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) Navigator.pop(context);
+          });
+        }
+        return;
+      }
+
+      // Fallback: try the playback API (m3u8 master URL)
+      final result = await bysebuho.extract(widget.initialUrl);
+      if (result != null) {
+        debugPrint('[DownloadModal] Direct playback URL found: ${result.masterUrl}');
+        if (mounted) {
+          setState(() {
+            _captured = true;
+            _capturedUrl = result.masterUrl;
+            _isTryingDirect = false;
+          });
+          DownloadManager.instance.startDownload(
+            url: result.masterUrl,
+            title: widget.content.title,
+            season: widget.season,
+            episode: widget.episode,
+            posterUrl: widget.posterUrl,
+          );
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) Navigator.pop(context);
+          });
+        }
+        return;
+      }
+    } catch (e) {
+      debugPrint('[DownloadModal] Direct extraction error: $e');
+    }
+
+    // Direct extraction failed, fall back to WebView
+    if (mounted) {
+      setState(() { _isTryingDirect = false; });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Start direct extraction immediately
+    _tryDirectExtraction();
   }
 
   @override
@@ -201,12 +277,51 @@ class _DownloadModalState extends State<DownloadModal> {
               ),
             ),
 
-            // ── WebView or Captured State ──
+            // ── Loading / WebView or Captured State ──
             Expanded(
-              child: _captured ? _buildCaptured() : _buildWebView(),
+              child: _captured
+                  ? _buildCaptured()
+                  : _isTryingDirect
+                      ? _buildDirectLoading()
+                      : _buildWebView(),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDirectLoading() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Extracting download link...',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Using direct API — this should be fast!',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 13,
+            ),
+          ),
+        ],
       ),
     );
   }

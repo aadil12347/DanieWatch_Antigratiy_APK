@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer' as developer;
+import 'bysebuho_extractor.dart';
 
 /// Extracts streaming URLs using the same InAppWebView-based approach
 /// as the video player screen: intercept all loaded resources via
@@ -31,6 +32,23 @@ class VideoExtractorService {
             name: 'Extractor');
         return cachedUrl;
       }
+    }
+
+    // 2. Try direct Bysebuho API extraction first (much faster ~1-2s)
+    final bysebuho = BysebuhoExtractor.instance;
+    if (bysebuho.isBysebuhoUrl(embedUrl)) {
+      developer.log('[Extractor] Trying direct Bysebuho API extraction...',
+          name: 'Extractor');
+      final result = await bysebuho.extract(embedUrl, bypassCache: bypassCache);
+      if (result != null) {
+        developer.log('[Extractor] ✅ Direct extraction succeeded! Master: ${result.masterUrl}',
+            name: 'Extractor');
+        // Cache under the embed URL key too for compatibility
+        await prefs.setString('extract_$embedUrl', result.masterUrl);
+        return result.masterUrl;
+      }
+      developer.log('[Extractor] Direct extraction failed, falling back to WebView...',
+          name: 'Extractor');
     }
 
     developer.log('[Extractor] Starting WebView extraction for: $embedUrl',
@@ -116,10 +134,10 @@ class VideoExtractorService {
           completeDiscovery();
         });
       } else if (masterWaitTimer == null) {
-        // Found a fallback; wait 3s to see if master appears
+        // Found a fallback; wait 1.5s to see if master appears
         developer.log('[Extractor] Fallback found, waiting for master...',
             name: 'Extractor');
-        masterWaitTimer = Timer(const Duration(seconds: 3), () {
+        masterWaitTimer = Timer(const Duration(milliseconds: 1500), () {
           completeDiscovery();
         });
       }
@@ -179,7 +197,7 @@ class VideoExtractorService {
           }
 
           // Wait between clicks to allow for popups to trigger and be handled
-          await Future.delayed(const Duration(milliseconds: 1200));
+          await Future.delayed(const Duration(milliseconds: 800));
         }
       },
       onCreateWindow: (controller, createWindowAction) async {
@@ -232,8 +250,8 @@ class VideoExtractorService {
 
     headlessWebView.run();
 
-    // Absolute timeout: 20 seconds (give it enough time)
-    absoluteTimer = Timer(const Duration(seconds: 20), () {
+    // Absolute timeout: 12 seconds (reduced since direct extraction handles most cases)
+    absoluteTimer = Timer(const Duration(seconds: 12), () {
       if (!discoveryComplete) {
         developer.log('[Extractor] Absolute timeout reached.',
             name: 'Extractor');

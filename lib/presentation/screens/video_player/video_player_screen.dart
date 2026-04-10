@@ -8,6 +8,7 @@ import 'package:better_player_plus/better_player_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import 'package:daniewatch_app/services/bysebuho_extractor.dart';
 import '../../providers/detail_provider.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -126,7 +127,36 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _isExtracting = true;
     _isLoading = false;
 
-    _startExtractionProcess(timeout: const Duration(seconds: 10));
+    // Try direct Bysebuho API extraction first (much faster ~1-2s)
+    _tryDirectExtraction(widget.url);
+  }
+
+  /// Try direct Bysebuho API extraction first (much faster ~1-2s vs 10-20s WebView)
+  Future<void> _tryDirectExtraction(String url) async {
+    final bysebuho = BysebuhoExtractor.instance;
+    if (!bysebuho.isBysebuhoUrl(url)) {
+      // Not a bysebuho URL, fall back to WebView extraction
+      _startExtractionProcess(timeout: const Duration(seconds: 7));
+      return;
+    }
+
+    debugPrint('[DirectExtraction] Trying direct Bysebuho API for: $url');
+    final result = await bysebuho.extract(url);
+    if (result != null && mounted) {
+      debugPrint('[DirectExtraction] ✅ Success! Master: ${result.masterUrl}');
+      setState(() {
+        _isExtracting = false;
+        _discoveryComplete = true;
+      });
+      _startPlayback(result.masterUrl);
+      return;
+    }
+
+    // Direct extraction failed, fall back to WebView
+    debugPrint('[DirectExtraction] Failed, falling back to WebView...');
+    if (mounted) {
+      _startExtractionProcess(timeout: const Duration(seconds: 7));
+    }
   }
 
   void _startExtractionProcess({required Duration timeout}) {
@@ -142,7 +172,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
 
     // Start background auto-clicker running every 1.5 seconds
-    _autoClickTimer = Timer.periodic(const Duration(milliseconds: 1500), (
+    _autoClickTimer = Timer.periodic(const Duration(milliseconds: 1000), (
       timer,
     ) {
       if (_discoveryComplete) {
@@ -211,7 +241,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       debugPrint(
         '[Discovery] Fallback found. Waiting to see if master appears...',
       );
-      _masterWaitTimer = Timer(const Duration(seconds: 3), () {
+      _masterWaitTimer = Timer(const Duration(milliseconds: 1500), () {
         _completeDiscovery();
       });
     }
@@ -418,14 +448,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
 
     _bgTimeoutTimer?.cancel();
-    _bgTimeoutTimer = Timer(const Duration(seconds: 30), () {
+    _bgTimeoutTimer = Timer(const Duration(seconds: 15), () {
       if (mounted && _isBgExtracting) {
         _completeBackgroundDiscovery();
       }
     });
 
     _bgAutoClickTimer?.cancel();
-    _bgAutoClickTimer = Timer.periodic(const Duration(milliseconds: 1500), (
+    _bgAutoClickTimer = Timer.periodic(const Duration(milliseconds: 1000), (
       timer,
     ) {
       if (!_isBgExtracting) {
@@ -469,7 +499,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _completeBackgroundDiscovery();
       });
     } else {
-      _bgMasterWaitTimer ??= Timer(const Duration(seconds: 3), () {
+      _bgMasterWaitTimer ??= Timer(const Duration(milliseconds: 1500), () {
         _completeBackgroundDiscovery();
       });
     }
@@ -650,8 +680,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     // Attempt 1 (Auto-Retry after 10s fail): 20s
     // Attempt 2+ (Manual Retries): 30s
     Duration nextTimeout = (_retryCount == 1)
-        ? const Duration(seconds: 20)
-        : const Duration(seconds: 30);
+        ? const Duration(seconds: 12)
+        : const Duration(seconds: 15);
 
     debugPrint('[Retry] Next timeout set to: ${nextTimeout.inSeconds}s');
     _startExtractionProcess(timeout: nextTimeout);
@@ -1009,10 +1039,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                     _webViewKey = ValueKey(
                                                       'discovery_${DateTime.now().millisecondsSinceEpoch}',
                                                     );
-                                                    _startExtractionProcess(
-                                                      timeout: const Duration(
-                                                        seconds: 15,
-                                                      ),
+                                                    _tryDirectExtraction(
+                                                      ep.playLink!,
                                                     );
                                                   }
                                                 },

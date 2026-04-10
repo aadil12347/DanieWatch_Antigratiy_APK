@@ -70,6 +70,9 @@ dependencies:
   flutter_svg: ^2.2.4
   better_player_plus: ^1.1.5
 
+  # AES-256-GCM decryption for Bysebuho API
+  cryptography: ^2.7.0
+
 
 dev_dependencies:
   flutter_driver:
