@@ -96,6 +96,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   ValueKey? _webViewKey;
   int _retryCount = 0;
   String? _currentExtractionUrl;
+  bool _canPop = false;
 
   @override
   void initState() {
@@ -789,7 +790,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     setState(() {});
   }
 
-  void _goBack() {
+  Future<void> _goBack() async {
     if (!mounted) return;
 
     // Save watch progress before leaving
@@ -806,7 +807,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _bgMasterWaitTimer?.cancel();
     }
 
-    Navigator.of(context).pop();
+    // Force portrait orientation before popping to prevent being stuck in landscape
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    setState(() {
+      _canPop = true;
+    });
+
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _playNextEpisode() {
@@ -1463,12 +1476,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          _buildMainContent(),
-        ],
+    return PopScope(
+      canPop: _canPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goBack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            _buildMainContent(),
+          ],
+        ),
       ),
     );
   }
