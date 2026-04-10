@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../core/utils/responsive.dart';
 import '../../data/clients/tmdb_client.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
@@ -599,9 +600,10 @@ class _RankNumber extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final r = Responsive(context);
     // Premium font for the rank number
     final textStyle = GoogleFonts.inter(
-      fontSize: 90,
+      fontSize: r.f(90).clamp(60.0, 120.0),
       fontWeight: FontWeight.w900,
       letterSpacing: -4,
       height: 1,

@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:open_file/open_file.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../../core/utils/responsive.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
@@ -213,7 +214,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   Widget _buildSectionHeader(String title, {Widget? trailing}) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+        padding: EdgeInsets.fromLTRB(
+          Responsive(context).w(16), Responsive(context).h(20),
+          Responsive(context).w(16), Responsive(context).h(12)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -271,8 +274,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         ref.read(downloadsSelectionProvider.notifier).activate(item.id);
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        padding: const EdgeInsets.all(12),
+        margin: EdgeInsets.symmetric(
+          horizontal: Responsive(context).w(16),
+          vertical: Responsive(context).h(6),
+        ),
+        padding: EdgeInsets.all(Responsive(context).w(12)),
         decoration: BoxDecoration(
           color: isSelected
               ? Colors.red.withValues(alpha: 0.1)
@@ -459,8 +465,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         ref.read(downloadsSelectionProvider.notifier).activate(item.id);
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        padding: const EdgeInsets.all(12),
+        margin: EdgeInsets.symmetric(
+          horizontal: Responsive(context).w(16),
+          vertical: Responsive(context).h(6),
+        ),
+        padding: EdgeInsets.all(Responsive(context).w(12)),
         decoration: BoxDecoration(
           color: isSelected
               ? Colors.red.withValues(alpha: 0.1)

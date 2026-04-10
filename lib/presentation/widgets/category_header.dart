@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../core/utils/responsive.dart';
 import '../providers/search_provider.dart';
 import '../providers/filter_modal_provider.dart';
 
@@ -18,8 +19,9 @@ class CategoryTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final r = Responsive(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(24), r.w(16), r.h(8)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -27,7 +29,7 @@ class CategoryTitle extends StatelessWidget {
             title,
             style: GoogleFonts.lora(
               color: AppColors.textPrimary,
-              fontSize: 32,
+              fontSize: r.f(32).clamp(24.0, 42.0),
               fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
             ),
@@ -54,20 +56,23 @@ class CategorySearchBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final r = Responsive(context);
     final searchState = ref.watch(searchProvider);
     final hasSearch = searchState.query.isNotEmpty;
+    final barHeight = r.h(48).clamp(40.0, 56.0);
+    final filterBtnSize = r.d(48).clamp(40.0, 56.0);
 
     return Container(
       color: AppColors.background,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(8), r.w(16), 0),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              height: 48,
+              height: barHeight,
               decoration: BoxDecoration(
                 color: AppColors.input,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(r.w(12)),
                 border: Border.all(
                   color: searchFocus.hasFocus 
                       ? AppColors.primary.withValues(alpha: 0.5)
@@ -78,29 +83,28 @@ class CategorySearchBar extends ConsumerWidget {
               child: TextField(
                 controller: searchController,
                 focusNode: searchFocus,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
+                style: TextStyle(color: Colors.white, fontSize: r.f(15).clamp(13.0, 18.0)),
                 decoration: InputDecoration(
                   hintText: 'Search',
                   hintStyle: TextStyle(
                       color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 15),
+                      fontSize: r.f(15).clamp(13.0, 18.0)),
                   prefixIcon: Icon(Icons.search,
-                      color: Colors.white.withValues(alpha: 0.4), size: 22),
+                      color: Colors.white.withValues(alpha: 0.4), size: r.d(22).clamp(18.0, 26.0)),
                   suffixIcon: hasSearch
                       ? IconButton(
                           onPressed: () {
                             searchController.clear();
                             onSearchChanged('');
-                            // Keep focus but reset the logic
                             searchFocus.requestFocus();
                           },
                           icon: Icon(Icons.close,
                               color: Colors.white.withValues(alpha: 0.4),
-                              size: 20),
+                              size: r.d(20).clamp(16.0, 24.0)),
                         )
                       : null,
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  contentPadding: EdgeInsets.symmetric(vertical: r.h(14)),
                 ),
                 onChanged: (val) {
                   onSearchChanged(val);
@@ -111,7 +115,7 @@ class CategorySearchBar extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: r.w(12)),
           GestureDetector(
             onTap: () {
               searchFocus.unfocus();
@@ -125,14 +129,14 @@ class CategorySearchBar extends ConsumerWidget {
               }
             },
             child: Container(
-              height: 48,
-              width: 48,
+              height: filterBtnSize,
+              width: filterBtnSize,
               decoration: BoxDecoration(
                 color: AppColors.primary,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(r.w(12)),
               ),
-              child: const Icon(Icons.tune_rounded,
-                  color: Colors.white, size: 22),
+              child: Icon(Icons.tune_rounded,
+                  color: Colors.white, size: r.d(22).clamp(18.0, 26.0)),
             ),
           ),
         ],

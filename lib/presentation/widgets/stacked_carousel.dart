@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../core/utils/responsive.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/detail_provider.dart';
 
@@ -137,6 +138,9 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
   Widget build(BuildContext context) {
     if (_displayItems.isEmpty) return const SizedBox.shrink();
 
+    final r = Responsive(context);
+    final carouselHeight = r.h(320).clamp(240.0, 420.0);
+
     // Safety check for activeIndex
     final activeIndex = _activeIndex >= 0 && _activeIndex < _displayItems.length 
         ? _activeIndex 
@@ -156,7 +160,7 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
             }
           },
           child: SizedBox(
-            height: 320,
+            height: carouselHeight,
             width: double.infinity,
             child: Stack(
               alignment: Alignment.center,
@@ -174,11 +178,11 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        SizedBox(height: r.h(24)),
         // Active Item Info Display — always fetch TMDB logo
         Container(
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+          height: r.h(60),
+          padding: EdgeInsets.symmetric(horizontal: r.w(32)),
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 400),
             transitionBuilder: (child, animation) {
@@ -216,14 +220,17 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
 
   Widget _buildCarouselItem(int index, int pos) {
     final item = _displayItems[index];
+    final r = Responsive(context);
 
     double scale = 1.0;
     double translateX = 0.0;
     double opacity = 1.0;
     double blur = 0.0;
 
-    const double cardWidth = 170.0; // match working commit
-    const double cardHeight = 280.0; // match working commit
+    final double cardWidth = r.w(170).clamp(120.0, 220.0);
+    final double cardHeight = r.h(280).clamp(210.0, 360.0);
+    final double offset1 = r.w(75).clamp(55.0, 100.0);
+    final double offset2 = r.w(130).clamp(95.0, 170.0);
 
     if (pos == 0) {
       scale = 1.0;
@@ -231,31 +238,31 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
       opacity = 1.0;
       blur = 0.0;
     } else if (pos == -1) {
-      scale = 0.85; // match working commit
-      translateX = -75.0; // match working commit
-      opacity = 0.7; // match working commit
+      scale = 0.85;
+      translateX = -offset1;
+      opacity = 0.7;
       blur = 1.0; 
     } else if (pos == 1) {
       scale = 0.85;
-      translateX = 75.0;
+      translateX = offset1;
       opacity = 0.7;
       blur = 1.0;
     } else if (pos == -2) {
-      scale = 0.75; // match working commit
-      translateX = -130.0; // match working commit
-      opacity = 0.4; // match working commit
+      scale = 0.75;
+      translateX = -offset2;
+      opacity = 0.4;
       blur = 3.0;
     } else if (pos == 2) {
       scale = 0.75;
-      translateX = 130.0;
+      translateX = offset2;
       opacity = 0.4;
       blur = 3.0;
     }
 
     return AnimatedPositioned(
       key: ValueKey<int>(index),
-      duration: const Duration(milliseconds: 350), // match working commit
-      curve: Curves.easeOutCubic, // match working commit
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
       left: 0,
       right: 0,
       child: Center(
@@ -312,40 +319,42 @@ class _TmdbLogoInfo extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final r = Responsive(context);
     final logoAsync = ref.watch(tmdbLogoProvider(
       TmdbLogoParams(tmdbId: item.id, mediaType: item.mediaType),
     ));
 
     return Container(
-      width: 250,
+      width: r.w(250).clamp(180.0, 320.0),
       alignment: Alignment.topCenter,
       child: logoAsync.when(
         data: (logoUrl) {
           if (logoUrl != null && logoUrl.isNotEmpty) {
             return CachedNetworkImage(
               imageUrl: logoUrl,
-              height: 40,
+              height: r.h(40).clamp(30.0, 52.0),
               fit: BoxFit.contain,
-              errorWidget: (_, __, ___) => _buildActiveTitle(item.title),
+              errorWidget: (_, __, ___) => _buildActiveTitle(context, item.title),
             );
           }
-          return _buildActiveTitle(item.title);
+          return _buildActiveTitle(context, item.title);
         },
-        loading: () => _buildActiveTitle(item.title),
-        error: (_, __) => _buildActiveTitle(item.title),
+        loading: () => _buildActiveTitle(context, item.title),
+        error: (_, __) => _buildActiveTitle(context, item.title),
       ),
     );
   }
 
-  Widget _buildActiveTitle(String title) {
+  Widget _buildActiveTitle(BuildContext context, String title) {
+    final r = Responsive(context);
     return Text(
       title,
       textAlign: TextAlign.center,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
+      style: TextStyle(
         color: Colors.white,
-        fontSize: 22,
+        fontSize: r.f(22).clamp(16.0, 28.0),
         fontWeight: FontWeight.w900,
         height: 1.2,
       ),

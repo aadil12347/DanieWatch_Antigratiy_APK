@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/models/manifest_item.dart';
+import '../../core/utils/responsive.dart';
 import 'movie_card.dart';
 
 /// Horizontal scrolling content row used on home screen.
@@ -15,24 +16,29 @@ class ContentRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final r = Responsive(context);
+    final rowHeight = r.h(265).clamp(200.0, 340.0);
+    final cardWidth = r.w(145).clamp(110.0, 190.0);
+    final leftPad = isRanked ? r.w(48).clamp(36.0, 64.0) : r.w(16).clamp(12.0, 24.0);
+    final rightPad = r.w(16).clamp(12.0, 24.0);
+    final spacing = isRanked ? r.w(42).clamp(30.0, 56.0) : r.w(12).clamp(8.0, 18.0);
+
     return SizedBox(
-      height: 265,
+      height: rowHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const AlwaysScrollableScrollPhysics(),
-        // Extra left padding to make room for the first item's rank number
         padding: EdgeInsets.only(
-          left: isRanked ? 48.0 : 16.0,
-          right: 16.0,
+          left: leftPad,
+          right: rightPad,
         ),
         itemCount: items.length,
-        // Increased spacing between ranked items for better clarity
-        separatorBuilder: (_, __) => SizedBox(width: isRanked ? 42.0 : 12.0),
+        separatorBuilder: (_, __) => SizedBox(width: spacing),
         itemBuilder: (context, index) {
           return MovieCard(
             item: items[index],
-            width: 145,
-            height: 265,
+            width: cardWidth,
+            height: rowHeight,
             rank: isRanked ? index + 1 : null,
           );
         },

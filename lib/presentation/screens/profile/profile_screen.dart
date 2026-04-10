@@ -9,6 +9,7 @@ import '../../widgets/user_avatar.dart';
 import '../../widgets/settings_tile.dart';
 import '../../../domain/models/user_profile.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../../core/utils/responsive.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../../core/utils/restart_widget.dart';
 
@@ -153,9 +154,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           tag: 'profile-avatar',
           child: UserAvatar(size: 100, canEdit: true),
         ),
-        const SizedBox(height: 24),
+        SizedBox(height: Responsive(context).h(24)),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(24)),
           child: TapRegion(
             onTapOutside: (_) {
               if (_isEditing) _saveUsername();
@@ -246,7 +247,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildMainSettings(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -264,7 +265,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildContentSettings(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -294,7 +295,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildActivitySettings(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -327,7 +328,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildLogoutButton(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(24)),
       child: ElevatedButton(
         onPressed: () => _handleLogout(context, ref),
         style: ElevatedButton.styleFrom(

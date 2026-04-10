@@ -12,6 +12,7 @@ import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../../core/utils/responsive.dart';
 import '../../../data/clients/tmdb_client.dart';
 import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
@@ -85,7 +86,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             // Content body
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(16)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -163,8 +164,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Hero Section ──────────────────────────────────────────────────────────
   Widget _buildHeroSection(ContentDetail content) {
+    final r = Responsive(context);
     return SizedBox(
-      height: 360,
+      height: r.h(360).clamp(260.0, 480.0),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -215,8 +217,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Logo ──────────────────────────────────────────────────────────────────
   Widget _buildLogo(String logoUrl) {
+    final r = Responsive(context);
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 220, maxHeight: 80),
+      constraints: BoxConstraints(
+        maxWidth: r.w(220).clamp(160.0, 300.0),
+        maxHeight: r.h(80).clamp(60.0, 100.0),
+      ),
       child: CachedNetworkImage(
         imageUrl: logoUrl,
         fit: BoxFit.contain,

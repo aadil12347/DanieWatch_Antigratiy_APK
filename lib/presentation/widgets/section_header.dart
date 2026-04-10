@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../core/utils/responsive.dart';
 
 /// Section header with title, used before content rows.
 class SectionHeader extends StatelessWidget {
@@ -24,8 +25,9 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final r = Responsive(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(32), r.w(16), r.h(16)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -37,13 +39,13 @@ class SectionHeader extends StatelessWidget {
                   style: titleStyle ??
                       GoogleFonts.lora(
                         color: titleColor ?? AppColors.textPrimary,
-                        fontSize: 24,
+                        fontSize: r.f(24).clamp(18.0, 32.0),
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.5,
                       ),
                 ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: r.w(8)),
           if (showSeeAll && onSeeAll != null)
             GestureDetector(
               onTap: onSeeAll,
@@ -51,7 +53,7 @@ class SectionHeader extends StatelessWidget {
                 'See all',
                 style: GoogleFonts.inter(
                   color: AppColors.primary,
-                  fontSize: 14,
+                  fontSize: r.f(14).clamp(11.0, 18.0),
                   fontWeight: FontWeight.w600,
                 ),
               ),

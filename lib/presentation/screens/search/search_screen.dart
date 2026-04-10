@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../../core/utils/responsive.dart';
 import '../../../domain/models/manifest_item.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../providers/manifest_provider.dart';
@@ -214,15 +215,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildResultsGrid(List<ManifestItem> items) {
+    final r = Responsive(context);
+    final gridPad = r.w(28).clamp(16.0, 40.0);
+    final gridSpacing = r.w(28).clamp(16.0, 36.0);
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(
-          28, 12, 28, MediaQuery.paddingOf(context).bottom + 100),
+          gridPad, r.h(12), gridPad, MediaQuery.paddingOf(context).bottom + r.h(100)),
       sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: r.gridColumns,
           childAspectRatio: 0.55,
-          crossAxisSpacing: 28,
-          mainAxisSpacing: 28,
+          crossAxisSpacing: gridSpacing,
+          mainAxisSpacing: gridSpacing,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, idx) {
@@ -240,14 +244,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildShimmerGrid() {
+    final r = Responsive(context);
+    final gridPad = r.w(28).clamp(16.0, 40.0);
+    final gridSpacing = r.w(28).clamp(16.0, 36.0);
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(28, 12, 28, 24),
+      padding: EdgeInsets.fromLTRB(gridPad, r.h(12), gridPad, r.h(24)),
       sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: r.gridColumns,
           childAspectRatio: 0.55,
-          crossAxisSpacing: 28,
-          mainAxisSpacing: 28,
+          crossAxisSpacing: gridSpacing,
+          mainAxisSpacing: gridSpacing,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) => Shimmer.fromColors(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../../core/utils/responsive.dart';
 import '../../../domain/models/manifest_item.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/search_provider.dart';
@@ -82,63 +83,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           slivers: [
             // Personalized Header
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 44, 16, 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      onTap: () => context.push('/profile'),
-                      child: Row(
-                        children: [
-                          const Hero(
-                            tag: 'profile-avatar',
-                            child: UserAvatar(size: 60, canEdit: false),
-                          ),
-                          const SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Hello,',
-                                  style: GoogleFonts.inter(
-                                      color: AppColors.textMuted,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      height: 1.1)),
-                              ref.watch(profileProvider).when(
-                                    data: (profile) => Text(
-                                      profile?.username ?? 'User',
-                                      style: GoogleFonts.lora(
-                                          color: AppColors.textPrimary,
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w500,
-                                          height: 1.2),
+              child: Builder(builder: (context) {
+                final r = Responsive(context);
+                return Padding(
+                  padding: EdgeInsets.fromLTRB(r.w(16), r.h(44), r.w(16), r.h(20)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      GestureDetector(
+                        onTap: () => context.push('/profile'),
+                        child: Row(
+                          children: [
+                            Hero(
+                              tag: 'profile-avatar',
+                              child: UserAvatar(size: r.d(60).clamp(44.0, 76.0), canEdit: false),
+                            ),
+                            SizedBox(width: r.w(16)),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Hello,',
+                                    style: GoogleFonts.inter(
+                                        color: AppColors.textMuted,
+                                        fontSize: r.f(13).clamp(11.0, 16.0),
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.1)),
+                                ref.watch(profileProvider).when(
+                                      data: (profile) => Text(
+                                        profile?.username ?? 'User',
+                                        style: GoogleFonts.lora(
+                                            color: AppColors.textPrimary,
+                                            fontSize: r.f(24).clamp(18.0, 32.0),
+                                            fontWeight: FontWeight.w500,
+                                            height: 1.2),
+                                      ),
+                                      loading: () => const SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ),
+                                      error: (_, __) => Text(
+                                        'User',
+                                        style: GoogleFonts.lora(
+                                            color: AppColors.textPrimary,
+                                            fontSize: r.f(24).clamp(18.0, 32.0),
+                                            fontWeight: FontWeight.w500,
+                                            height: 1.2),
+                                      ),
                                     ),
-                                    loading: () => const SizedBox(
-                                      height: 24,
-                                      width: 24,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
-                                    ),
-                                    error: (_, __) => Text(
-                                      'User',
-                                      style: GoogleFonts.lora(
-                                          color: AppColors.textPrimary,
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w500,
-                                          height: 1.2),
-                                    ),
-                                  ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const Icon(Icons.notifications_none_rounded,
-                        size: 28, color: Colors.white),
-                  ],
-                ),
-              ),
+                      Icon(Icons.notifications_none_rounded,
+                          size: r.d(28).clamp(22.0, 34.0), color: Colors.white),
+                    ],
+                  ),
+                );
+              }),
             ),
 
             // Content sections

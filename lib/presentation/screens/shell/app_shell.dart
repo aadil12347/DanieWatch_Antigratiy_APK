@@ -1,4 +1,5 @@
 import 'dart:ui';
+import '../../../core/utils/responsive.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
@@ -220,189 +221,194 @@ class _AppShellState extends ConsumerState<AppShell> {
               ),
             // Floating Bottom Nav Bar or Download/Filter Modal
             if (!isSearchExpanded)
-              Positioned(
-                bottom: MediaQuery.paddingOf(context).bottom + 24,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeInOutCubic,
-                    constraints:
-                        BoxConstraints(maxWidth: isOtherModalOpen ? 600 : 400),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: isOtherModalOpen ? 16 : 24),
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(isOtherModalOpen ? 24 : 32),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 400),
-                            curve: Curves.easeInOutCubic,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              borderRadius:
-                                  BorderRadius.circular(isOtherModalOpen ? 24 : 32),
-                              border: Border.all(
-                              color: AppColors.surface.withValues(alpha: 0.15),
-                                width: 1,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.2),
-                                  blurRadius: 20,
-                                  spreadRadius: -5,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: AnimatedSize(
+              Builder(builder: (context) {
+                final r = Responsive(context);
+                final navBottom = MediaQuery.paddingOf(context).bottom + r.h(24);
+                final navMaxWidth = isOtherModalOpen ? r.wClamped(600, minVal: 320) : r.wClamped(400, minVal: 280);
+                final navHPad = isOtherModalOpen ? r.w(16) : r.w(24);
+                final navRadius = isOtherModalOpen ? r.w(24) : r.w(32);
+                final iconSize = r.d(24).clamp(18.0, 30.0);
+                final labelSize = r.f(11).clamp(9.0, 14.0);
+                final tabWidth = r.w(64).clamp(48.0, 80.0);
+                final navHeight = r.h(64).clamp(52.0, 76.0);
+
+                return Positioned(
+                  bottom: navBottom,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeInOutCubic,
+                      constraints: BoxConstraints(maxWidth: navMaxWidth),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: navHPad),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(navRadius),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: AnimatedContainer(
                               duration: const Duration(milliseconds: 400),
                               curve: Curves.easeInOutCubic,
-                              alignment: Alignment.bottomCenter,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 300),
-                                switchInCurve: Curves.easeOut,
-                                switchOutCurve: Curves.easeIn,
-                                transitionBuilder: (child, animation) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: ScaleTransition(
-                                      scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
-                                      child: child,
-                                    ),
-                                  );
-                                },
-                                child: isOtherModalOpen
-                                  ? Material(
-                                      color: Colors.transparent,
-                                      child: downloadState.isOpen
-                                              ? QualitySelectorContent(
-                                                  m3u8Url:
-                                                      downloadState.m3u8Url ??
-                                                          '',
-                                                  title: downloadState.title ??
-                                                      'Download',
-                                                  onSelected: downloadState
-                                                          .onSelected ??
-                                                      (_) {},
-                                                  onCancel: () {
-                                                    downloadState.onCancel?.call();
-                                                    _closeAllModals();
-                                                  },
-                                                )
-                                              : confirmState.isOpen
-                                                  ? ConfirmationModalContent(
-                                                      title: confirmState.title,
-                                                      message:
-                                                          confirmState.message,
-                                                      confirmLabel: confirmState
-                                                          .confirmLabel,
-                                                      showDeviceDeleteToggle:
-                                                          confirmState
-                                                              .showDeviceDeleteToggle,
-                                                      onConfirm: (also) {
-                                                        confirmState.onConfirm
-                                                            ?.call(also);
-                                                        ref
-                                                            .read(
-                                                                confirmationModalProvider
-                                                                    .notifier)
-                                                            .state = const ConfirmationModalState();
-                                                      },
-                                                      onCancel: () {
-                                                        confirmState.onCancel?.call();
-                                                        _closeAllModals();
-                                                      },
-                                                    )
-                                                  : (filterState.view == FilterView.optionsList
-                                                      ? FilterSelectorContent(
-                                                          title: filterState.title,
-                                                          currentValue: filterState.currentValue,
-                                                          options: filterState.options,
-                                                          onChanged: filterState.onChanged ?? (_) {},
-                                                          onCancel: _closeAllModals,
-                                                        )
-                                                      : const MainFilterPanelContent(
-                                                          key: ValueKey('filter_main'),
-                                                        )),
-                                    )
-                                  : Column(
-                                      key: const ValueKey('navbar_column'),
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        // Main navbar row (always visible)
-                                        Container(
-                                          height: 64,
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceEvenly,
-                                            children: List.generate(4, (index) {
-                                              final isSelected = _isTabSelected(index);
-                                              return GestureDetector(
-                                                onTap: () => _onTap(index),
-                                                behavior: HitTestBehavior.opaque,
-                                                child: Container(
-                                                  key: ValueKey('tab_$index'),
-                                                  width: 64,
-                                                  alignment: Alignment.center,
-                                                  child: Column(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Stack(
-                                                        alignment: Alignment.center,
-                                                        children: [
-                                                          // Active State Icon (uses implicit animation for stability)
-                                                          AnimatedOpacity(
-                                                            duration: const Duration(milliseconds: 200),
-                                                            opacity: isSelected ? 1.0 : 0.0,
-                                                            child: Icon(
-                                                              _activeIcons[index],
-                                                              color: AppColors.primary,
-                                                              size: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(navRadius),
+                                border: Border.all(
+                                  color: AppColors.surface.withValues(alpha: 0.15),
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.2),
+                                    blurRadius: 20,
+                                    spreadRadius: -5,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: AnimatedSize(
+                                duration: const Duration(milliseconds: 400),
+                                curve: Curves.easeInOutCubic,
+                                alignment: Alignment.bottomCenter,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  switchInCurve: Curves.easeOut,
+                                  switchOutCurve: Curves.easeIn,
+                                  transitionBuilder: (child, animation) {
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: ScaleTransition(
+                                        scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  child: isOtherModalOpen
+                                    ? Material(
+                                        color: Colors.transparent,
+                                        child: downloadState.isOpen
+                                                ? QualitySelectorContent(
+                                                    m3u8Url:
+                                                        downloadState.m3u8Url ??
+                                                            '',
+                                                    title: downloadState.title ??
+                                                        'Download',
+                                                    onSelected: downloadState
+                                                            .onSelected ??
+                                                        (_) {},
+                                                    onCancel: () {
+                                                      downloadState.onCancel?.call();
+                                                      _closeAllModals();
+                                                    },
+                                                  )
+                                                : confirmState.isOpen
+                                                    ? ConfirmationModalContent(
+                                                        title: confirmState.title,
+                                                        message:
+                                                            confirmState.message,
+                                                        confirmLabel: confirmState
+                                                            .confirmLabel,
+                                                        showDeviceDeleteToggle:
+                                                            confirmState
+                                                                .showDeviceDeleteToggle,
+                                                        onConfirm: (also) {
+                                                          confirmState.onConfirm
+                                                              ?.call(also);
+                                                          ref
+                                                              .read(
+                                                                  confirmationModalProvider
+                                                                      .notifier)
+                                                              .state = const ConfirmationModalState();
+                                                        },
+                                                        onCancel: () {
+                                                          confirmState.onCancel?.call();
+                                                          _closeAllModals();
+                                                        },
+                                                      )
+                                                    : (filterState.view == FilterView.optionsList
+                                                        ? FilterSelectorContent(
+                                                            title: filterState.title,
+                                                            currentValue: filterState.currentValue,
+                                                            options: filterState.options,
+                                                            onChanged: filterState.onChanged ?? (_) {},
+                                                            onCancel: _closeAllModals,
+                                                          )
+                                                        : const MainFilterPanelContent(
+                                                            key: ValueKey('filter_main'),
+                                                          )),
+                                      )
+                                    : Column(
+                                        key: const ValueKey('navbar_column'),
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // Main navbar row (always visible)
+                                          Container(
+                                            height: navHeight,
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: r.w(12)),
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceEvenly,
+                                              children: List.generate(4, (index) {
+                                                final isSelected = _isTabSelected(index);
+                                                return GestureDetector(
+                                                  onTap: () => _onTap(index),
+                                                  behavior: HitTestBehavior.opaque,
+                                                  child: Container(
+                                                    key: ValueKey('tab_$index'),
+                                                    width: tabWidth,
+                                                    alignment: Alignment.center,
+                                                    child: Column(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Stack(
+                                                          alignment: Alignment.center,
+                                                          children: [
+                                                            AnimatedOpacity(
+                                                              duration: const Duration(milliseconds: 200),
+                                                              opacity: isSelected ? 1.0 : 0.0,
+                                                              child: Icon(
+                                                                _activeIcons[index],
+                                                                color: AppColors.primary,
+                                                                size: iconSize,
+                                                              ),
                                                             ),
-                                                          ),
-                                                          // Inactive State Icon
-                                                          AnimatedOpacity(
-                                                            duration: const Duration(milliseconds: 200),
-                                                            opacity: isSelected ? 0.0 : 1.0,
-                                                            child: Icon(
-                                                              _icons[index],
-                                                              color: AppColors.textMuted,
-                                                              size: 24,
+                                                            AnimatedOpacity(
+                                                              duration: const Duration(milliseconds: 200),
+                                                              opacity: isSelected ? 0.0 : 1.0,
+                                                              child: Icon(
+                                                                _icons[index],
+                                                                color: AppColors.textMuted,
+                                                                size: iconSize,
+                                                              ),
                                                             ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      // Stable text animation
-                                                      AnimatedDefaultTextStyle(
-                                                        duration: const Duration(milliseconds: 200),
-                                                        style: GoogleFonts.inter(
-                                                          color: isSelected
-                                                              ? AppColors.primary
-                                                              : AppColors.textMuted,
-                                                          fontSize: 11,
-                                                          fontWeight: isSelected
-                                                              ? FontWeight.w600
-                                                              : FontWeight.w500,
-                                                          letterSpacing: -0.2,
+                                                          ],
                                                         ),
-                                                        child: Text(_labels[index]),
-                                                      ),
-                                                    ],
+                                                        SizedBox(height: r.h(2)),
+                                                        AnimatedDefaultTextStyle(
+                                                          duration: const Duration(milliseconds: 200),
+                                                          style: GoogleFonts.inter(
+                                                            color: isSelected
+                                                                ? AppColors.primary
+                                                                : AppColors.textMuted,
+                                                            fontSize: labelSize,
+                                                            fontWeight: isSelected
+                                                                ? FontWeight.w600
+                                                                : FontWeight.w500,
+                                                            letterSpacing: -0.2,
+                                                          ),
+                                                          child: Text(_labels[index]),
+                                                        ),
+                                                      ],
+                                                    ),
                                                   ),
-                                                ),
-                                              );
-                                            }),
+                                                );
+                                              }),
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
+                                        ],
+                                      ),
+                                ),
                               ),
                             ),
                           ),
@@ -410,8 +416,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                       ),
                     ),
                   ),
-                ),
-              ),
+                );
+              }),
           ],
         ),
       ),
