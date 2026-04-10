@@ -705,6 +705,57 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     Navigator.of(context).pop();
   }
 
+  void _playNextEpisode() {
+    if (!mounted) return;
+    if (widget.mediaType == 'movie') return;
+
+    final episodesAsync = ref.read(
+      episodesProvider(
+        EpisodeParams(
+          tmdbId: widget.tmdbId,
+          seasonNumber: _currentSeason ?? 1,
+        ),
+      ),
+    );
+    final episodes = episodesAsync.valueOrNull;
+    if (episodes == null || episodes.isEmpty) return;
+
+    // Find current episode index
+    final currentIdx = episodes.indexWhere(
+      (ep) => ep.episodeNumber == _currentEpisode,
+    );
+
+    // Get the next episode
+    final nextIdx = currentIdx + 1;
+    if (nextIdx >= episodes.length) {
+      debugPrint('[NextEp] No more episodes in this season.');
+      return;
+    }
+
+    final nextEp = episodes[nextIdx];
+    if (nextEp.playLink == null || nextEp.playLink!.isEmpty) {
+      debugPrint('[NextEp] Next episode has no play link.');
+      return;
+    }
+
+    debugPrint('[NextEp] Playing Episode ${nextEp.episodeNumber}');
+
+    setState(() {
+      _currentEpisode = nextEp.episodeNumber;
+      _currentExtractionUrl = nextEp.playLink;
+      _isExtracting = true;
+      _discoveryComplete = false;
+      _isInitialized = false;
+      _extractedLink = null;
+      _discoveredLinks.clear();
+    });
+
+    _webViewKey = ValueKey(
+      'discovery_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    _tryDirectExtraction(nextEp.playLink!);
+  }
+
   @override
   void dispose() {
     _betterPlayerController?.dispose();
@@ -746,6 +797,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             handlerName: 'showEpisodes',
             callback: (args) => _showEpisodeSelector(),
           );
+          controller.addJavaScriptHandler(
+            handlerName: 'playNextEpisode',
+            callback: (args) => _playNextEpisode(),
+          );
         },
         onLoadStop: (controller, url) async {
           debugPrint('[Engine] Web Player Loaded: $url');
@@ -771,6 +826,32 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             await controller.evaluateJavascript(
               source: "setMediaType('${widget.mediaType}')",
             );
+
+            // Send next episode title for auto-play overlay
+            if (widget.mediaType != 'movie') {
+              final episodesAsync = ref.read(
+                episodesProvider(
+                  EpisodeParams(
+                    tmdbId: widget.tmdbId,
+                    seasonNumber: _currentSeason ?? 1,
+                  ),
+                ),
+              );
+              final epsList = episodesAsync.valueOrNull;
+              if (epsList != null) {
+                final curIdx = epsList.indexWhere(
+                  (e) => e.episodeNumber == _currentEpisode,
+                );
+                if (curIdx >= 0 && curIdx + 1 < epsList.length) {
+                  final nextEp = epsList[curIdx + 1];
+                  final nextTitle = 'EP ${nextEp.episodeNumber}: ${nextEp.title ?? 'Episode ${nextEp.episodeNumber}'}';
+                  final escaped = nextTitle.replaceAll("'", "\\'");
+                  await controller.evaluateJavascript(
+                    source: "setNextEpisodeTitle('$escaped')",
+                  );
+                }
+              }
+            }
           }
         },
       ),
@@ -786,10 +867,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       barrierDismissible: true,
       barrierLabel: 'Episodes',
       barrierColor: Colors.black87,
-      transitionDuration: const Duration(milliseconds: 400),
+      transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (context, anim1, anim2) => const SizedBox.shrink(),
       transitionBuilder: (context, anim1, anim2, child) {
-        const curve = Curves.easeInOutBack;
+        const curve = Curves.easeOutCubic;
         return FadeTransition(
           opacity: anim1,
           child: ScaleTransition(
