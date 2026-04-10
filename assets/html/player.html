@@ -42,12 +42,16 @@
             height: 100%;
             z-index: 1;
             object-fit: contain;
-            transition: object-fit 0.3s ease;
+            transition: object-fit 0.3s ease, transform 0.15s ease;
+            transform-origin: center center;
         }
 
         video.aspect-fill { object-fit: cover !important; }
         video.aspect-stretch { object-fit: fill !important; }
         video.aspect-contain { object-fit: contain !important; }
+
+        /* ===== PINCH-TO-ZOOM ===== */
+        video.zooming { transition: none !important; }
 
         /* ===== DIMMER OVERLAY ===== */
         .dimmer {
@@ -97,7 +101,7 @@
             display: flex; align-items: center; justify-content: center;
             cursor: pointer;
             flex-shrink: 0;
-            transition: transform 0.15s ease, background 0.2s ease;
+            transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s ease;
         }
         .back-btn:active { transform: scale(0.88); background: rgba(0, 0, 0, 0.65); }
         .back-btn svg { width: 26px; height: 26px; fill: white; }
@@ -610,6 +614,102 @@
         }
         .next-ep-cancel:hover { color: white; }
 
+        /* ===== FULL-SCREEN AUTO-PLAY OVERLAY (video ended) ===== */
+        .autoplay-fullscreen {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 400;
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+            animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .autoplay-fullscreen.visible { display: flex; }
+
+        @keyframes fadeInScale {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .autoplay-ring {
+            width: 100px; height: 100px;
+            position: relative;
+            cursor: pointer;
+        }
+        .autoplay-ring svg {
+            width: 100px; height: 100px;
+            transform: rotate(-90deg);
+        }
+        .autoplay-ring-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 4; }
+        .autoplay-ring-fill {
+            fill: none; stroke: #E11D48; stroke-width: 4;
+            stroke-linecap: round;
+            stroke-dasharray: 283;
+            stroke-dashoffset: 283;
+            transition: stroke-dashoffset 0.3s linear;
+        }
+        .autoplay-ring-play {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 36px; height: 36px;
+            fill: white;
+        }
+        .autoplay-ring-count {
+            position: absolute;
+            bottom: -6px; left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.6);
+            font-size: 13px; font-weight: 700;
+        }
+
+        .autoplay-title {
+            color: white;
+            font-size: 22px;
+            font-weight: 800;
+            text-align: center;
+            letter-spacing: -0.5px;
+        }
+        .autoplay-subtitle {
+            color: rgba(255,255,255,0.5);
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .autoplay-cancel {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: white;
+            font-size: 14px; font-weight: 600;
+            padding: 10px 28px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            margin-top: 8px;
+        }
+        .autoplay-cancel:active { transform: scale(0.92); }
+        .autoplay-cancel:hover { background: rgba(255,255,255,0.18); }
+
+        /* ===== SVG MORPH PLAY/PAUSE ===== */
+        .center-btn.play svg path {
+            transition: d 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .center-btn.play { transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .center-btn.play:active { transform: scale(0.82); }
+
+        /* Spring micro-animations on all control buttons */
+        .ctrl-btn { transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important; }
+        .ctrl-btn:active { transform: scale(0.85) !important; }
+        .center-btn.skip { transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .center-btn.skip:active { transform: scale(0.82); }
+
         /* ===== SUBTITLE STYLING PANEL ===== */
         .subtitle-panel {
             position: absolute;
@@ -774,7 +874,7 @@
             </button>
         </div>
 
-        <!-- Next Episode Overlay -->
+        <!-- Next Episode Overlay (in-progress card at bottom-right) -->
         <div class="next-episode-overlay" id="nextEpisodeOverlay" onclick="playNextEpisode()">
             <div class="next-ep-countdown">
                 <div class="next-ep-countdown-fill" id="nextEpCountdownFill"></div>
@@ -786,6 +886,21 @@
             </div>
             <svg class="next-ep-play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             <button class="next-ep-cancel" onclick="cancelNextEpisode(event)">Cancel</button>
+        </div>
+
+        <!-- Full-Screen Auto-Play Overlay (when video ends) -->
+        <div class="autoplay-fullscreen" id="autoplayFullscreen">
+            <div class="autoplay-subtitle" id="autoplayLabel">UP NEXT</div>
+            <div class="autoplay-ring" onclick="playNextEpisode()">
+                <svg viewBox="0 0 100 100">
+                    <circle class="autoplay-ring-bg" cx="50" cy="50" r="45"/>
+                    <circle class="autoplay-ring-fill" id="autoplayRingFill" cx="50" cy="50" r="45"/>
+                </svg>
+                <svg class="autoplay-ring-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <span class="autoplay-ring-count" id="autoplayCountText">5</span>
+            </div>
+            <div class="autoplay-title" id="autoplayTitle">Next Episode</div>
+            <button class="autoplay-cancel" onclick="cancelAutoplay(event)">Cancel</button>
         </div>
 
         <!-- Subtitle Styling Panel -->
@@ -998,7 +1113,10 @@
         let currentVideoUrl = '';
 
         // Next episode
+        let nextEpisodeTitle = '';
         let nextEpisodeTimer = null;
+        let autoplayTimer = null;
+        let autoplayCount = 5;
         let nextEpCountdown = 5;
         let nextEpTriggered = false;
         let mediaType = 'movie';
@@ -1034,9 +1152,27 @@
         };
 
         // ===== RESUME PLAYBACK =====
+        // ===== HAPTIC FEEDBACK =====
+        function haptic(type) {
+            try {
+                if (window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('haptic', type || 'light');
+                }
+            } catch(e) {}
+        }
+
         function savePlaybackPosition() {
             if (currentVideoUrl && video.currentTime > 5 && video.duration && (video.duration - video.currentTime) > 10) {
                 try { localStorage.setItem('resume_' + hashUrl(currentVideoUrl), JSON.stringify({ time: video.currentTime, duration: video.duration, ts: Date.now() })); } catch(e) {}
+                // Report to Flutter for Continue Watching
+                try {
+                    if (window.flutter_inappwebview) {
+                        window.flutter_inappwebview.callHandler('saveWatchProgress', JSON.stringify({
+                            currentTime: video.currentTime,
+                            duration: video.duration
+                        }));
+                    }
+                } catch(e) {}
             }
         }
 
@@ -1332,9 +1468,13 @@
             }
         }
 
-        // ===== PLAY / PAUSE =====
+        // ===== PLAY / PAUSE WITH SVG MORPH =====
+        const playPath = 'M8 5v14l11-7z';
+        const pausePath = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+
         function playPause(e) {
             if (e) e.stopPropagation();
+            haptic('light');
             if (video.paused) {
                 video.play();
             } else {
@@ -1343,18 +1483,24 @@
             showControls();
         }
 
-        video.addEventListener('play', () => {
-            iconPlayCenter.classList.add('icon-hidden');
-            iconPauseCenter.classList.remove('icon-hidden');
-        });
-        video.addEventListener('pause', () => {
-            iconPlayCenter.classList.remove('icon-hidden');
-            iconPauseCenter.classList.add('icon-hidden');
-        });
+        function morphPlayPause(isPlaying) {
+            const playEl = document.querySelector('#iconPlayCenter path');
+            const pauseEl = document.querySelector('#iconPauseCenter path');
+            if (isPlaying) {
+                iconPlayCenter.classList.add('icon-hidden');
+                iconPauseCenter.classList.remove('icon-hidden');
+            } else {
+                iconPlayCenter.classList.remove('icon-hidden');
+                iconPauseCenter.classList.add('icon-hidden');
+            }
+        }
+
+        video.addEventListener('play', () => morphPlayPause(true));
+        video.addEventListener('pause', () => morphPlayPause(false));
 
         // ===== FORWARD & BACK =====
-        function forward(e) { if (e) e.stopPropagation(); video.currentTime += 10; showControls(); }
-        function back(e) { if (e) e.stopPropagation(); video.currentTime -= 10; showControls(); }
+        function forward(e) { if (e) e.stopPropagation(); haptic('light'); video.currentTime += 10; showControls(); }
+        function back(e) { if (e) e.stopPropagation(); haptic('light'); video.currentTime -= 10; showControls(); }
 
         // ===== VOLUME =====
         function volumeToggle(e) {
@@ -1391,6 +1537,7 @@
         // ===== LOCK =====
         function toggleLock(e) {
             if (e) e.stopPropagation();
+            haptic('medium');
             isLocked = !isLocked;
             const overlay = document.getElementById('lockOverlay');
             const lockBtn = document.getElementById('lockBtn');
@@ -1398,7 +1545,6 @@
                 hideUI();
                 overlay.classList.add('active');
                 showNotify('Screen Locked');
-                // Show lock button briefly then hide
                 lockBtn.classList.add('show');
                 if (lockHideTimer) clearTimeout(lockHideTimer);
                 lockHideTimer = setTimeout(() => { lockBtn.classList.remove('show'); }, 3000);
@@ -1738,9 +1884,7 @@
             nextEpTriggered = true; // Don't trigger again
         }
 
-        window.setNextEpisodeTitle = function(title) {
-            document.getElementById('nextEpTitle').textContent = title || 'Next Episode';
-        };
+
 
         // ===== CONTROL VISIBILITY (3s auto-hide) =====
         function showControls() {
@@ -1815,6 +1959,128 @@
             renderQualityOptions();
         }
 
+        // ===== VIDEO ENDED — FULL-SCREEN AUTO-PLAY =====
+        video.addEventListener('ended', () => {
+            savePlaybackPosition();
+            if (mediaType && mediaType.toLowerCase() !== 'movie' && nextEpisodeTitle) {
+                showAutoplayOverlay();
+            }
+        });
+
+        function showAutoplayOverlay() {
+            // Hide the small card overlay if visible
+            document.getElementById('nextEpisodeOverlay').classList.remove('visible');
+            if (nextEpisodeTimer) { clearInterval(nextEpisodeTimer); nextEpisodeTimer = null; }
+
+            autoplayCount = 5;
+            const overlay = document.getElementById('autoplayFullscreen');
+            const ring = document.getElementById('autoplayRingFill');
+            const countText = document.getElementById('autoplayCountText');
+            const titleEl = document.getElementById('autoplayTitle');
+
+            titleEl.textContent = nextEpisodeTitle || 'Next Episode';
+            countText.textContent = autoplayCount;
+            ring.style.strokeDashoffset = '283';
+            overlay.classList.add('visible');
+            haptic('medium');
+
+            autoplayTimer = setInterval(() => {
+                autoplayCount--;
+                countText.textContent = autoplayCount;
+                // 283 is the circumference of r=45 circle (2 * PI * 45)
+                const progress = (5 - autoplayCount) / 5;
+                ring.style.strokeDashoffset = (283 * (1 - progress)).toString();
+
+                if (autoplayCount <= 0) {
+                    clearInterval(autoplayTimer);
+                    autoplayTimer = null;
+                    overlay.classList.remove('visible');
+                    playNextEpisode();
+                }
+            }, 1000);
+        }
+
+        function cancelAutoplay(e) {
+            if (e) { e.stopPropagation(); e.preventDefault(); }
+            haptic('light');
+            if (autoplayTimer) { clearInterval(autoplayTimer); autoplayTimer = null; }
+            document.getElementById('autoplayFullscreen').classList.remove('visible');
+        }
+
+        // ===== PINCH-TO-ZOOM =====
+        let pinchStartDist = 0;
+        let pinchStartScale = 1;
+        let currentZoom = 1;
+        let panX = 0, panY = 0;
+        let lastPanX = 0, lastPanY = 0;
+        let isPinching = false;
+
+        function getPinchDist(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        videoContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                isPinching = true;
+                video.classList.add('zooming');
+                pinchStartDist = getPinchDist(e.touches);
+                pinchStartScale = currentZoom;
+                lastPanX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                lastPanY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            }
+        }, { passive: true });
+
+        videoContainer.addEventListener('touchmove', (e) => {
+            if (!isPinching || e.touches.length < 2) return;
+            e.preventDefault();
+            const dist = getPinchDist(e.touches);
+            currentZoom = Math.max(1, Math.min(4, pinchStartScale * (dist / pinchStartDist)));
+
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            panX += (midX - lastPanX);
+            panY += (midY - lastPanY);
+            lastPanX = midX;
+            lastPanY = midY;
+
+            // Limit pan to avoid going too far
+            const maxPan = (currentZoom - 1) * 150;
+            panX = Math.max(-maxPan, Math.min(maxPan, panX));
+            panY = Math.max(-maxPan, Math.min(maxPan, panY));
+
+            video.style.transform = 'scale(' + currentZoom + ') translate(' + (panX / currentZoom) + 'px, ' + (panY / currentZoom) + 'px)';
+        }, { passive: false });
+
+        videoContainer.addEventListener('touchend', (e) => {
+            if (isPinching && e.touches.length < 2) {
+                isPinching = false;
+                video.classList.remove('zooming');
+                // Snap back if close to 1x
+                if (currentZoom < 1.1) {
+                    currentZoom = 1;
+                    panX = 0;
+                    panY = 0;
+                    video.style.transform = '';
+                }
+            }
+        }, { passive: true });
+
+        // Double-tap to reset zoom
+        let zoomResetTap = 0;
+        videoContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1 && currentZoom > 1) {
+                const now = Date.now();
+                if (now - zoomResetTap < 300) {
+                    currentZoom = 1; panX = 0; panY = 0;
+                    video.style.transform = '';
+                    haptic('light');
+                }
+                zoomResetTap = now;
+            }
+        }, { passive: true });
+
         // ===== PUBLIC API =====
         window.playVideo = function(url) { loadVideo(url); };
         window.videoTitle = function(title) {
@@ -1825,6 +2091,11 @@
             const span = document.getElementById('episodeButtonText');
             if (span) span.textContent = text;
             if (btn) btn.classList.remove('hidden');
+        };
+
+        window.setNextEpisodeInfo = function(title) {
+            nextEpisodeTitle = title || '';
+            document.getElementById('nextEpTitle').textContent = title || 'Next Episode';
         };
 
         // Initialize speed and aspect options on load

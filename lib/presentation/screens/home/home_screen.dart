@@ -15,6 +15,7 @@ import '../../widgets/shimmer_loading.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_drawer.dart';
 import '../../widgets/user_avatar.dart';
+import '../../widgets/continue_watching_row.dart';
 import '../../providers/auth_provider.dart';
 
 import '../../providers/scroll_provider.dart';
@@ -150,6 +151,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               SliverToBoxAdapter(
                 child: StackedCarousel(items: trending),
               ),
+
+            // Continue Watching row
+            const SliverToBoxAdapter(
+              child: ContinueWatchingRow(),
+            ),
 
             // Content sections
             ...sections.map((section) {

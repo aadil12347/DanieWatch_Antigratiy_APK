@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import 'package:daniewatch_app/services/bysebuho_extractor.dart';
 import '../../providers/detail_provider.dart';
+import '../../providers/watch_history_provider.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -22,6 +24,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final int? episode;
   final bool isOffline;
   final bool isDirectLink;
+  final String? posterUrl;
 
   const VideoPlayerScreen({
     super.key,
@@ -34,6 +37,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.episode,
     this.isOffline = false,
     this.isDirectLink = false,
+    this.posterUrl,
   });
 
   @override
@@ -70,6 +74,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Timer? _bgMasterWaitTimer;
   Timer? _bgAutoClickTimer;
   Timer? _bgTimeoutTimer;
+
+  // Watch progress tracking
+  double _lastCurrentTime = 0;
+  double _lastDuration = 0;
+  Timer? _errorAutoCloseTimer;
 
   // Episode Info
   int? _currentEpisode;
@@ -316,6 +325,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _bgDiscoveryTimer?.cancel();
         _masterWaitTimer?.cancel();
         _extractionTimer?.cancel();
+        
+        // Auto-close after 5 seconds on error
+        _errorAutoCloseTimer = Timer(const Duration(seconds: 5), () {
+          if (mounted) Navigator.of(context).pop();
+        });
       }
     }
   }
@@ -575,7 +589,66 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
   }
 
+  /// Save current watch progress to the Continue Watching provider
+  void _saveToWatchHistory() {
+    if (_lastCurrentTime < 10 || _lastDuration < 30) return;
+
+    // Get poster URL from detail provider
+    String? posterUrl;
+    String? episodeTitle;
+    try {
+      final detailAsync = ref.read(
+        detailProvider(
+          DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
+        ),
+      );
+      posterUrl = detailAsync.valueOrNull?.posterUrl;
+      if (posterUrl != null && !posterUrl.startsWith('http')) {
+        posterUrl = 'https://image.tmdb.org/t/p/w500$posterUrl';
+      }
+    } catch (_) {}
+
+    // Get episode title
+    try {
+      if (widget.mediaType != 'movie' && _currentSeason != null) {
+        final epsAsync = ref.read(
+          episodesProvider(
+            EpisodeParams(
+              tmdbId: widget.tmdbId,
+              seasonNumber: _currentSeason!,
+            ),
+          ),
+        );
+        final ep = epsAsync.valueOrNull?.firstWhere(
+          (e) => e.episodeNumber == _currentEpisode,
+          orElse: () => epsAsync.valueOrNull!.first,
+        );
+        episodeTitle = ep?.title;
+      }
+    } catch (_) {}
+
+    final item = WatchHistoryItem(
+      tmdbId: widget.tmdbId,
+      mediaType: widget.mediaType,
+      title: widget.title,
+      season: _currentSeason,
+      episode: _currentEpisode,
+      episodeTitle: episodeTitle,
+      currentTime: _lastCurrentTime,
+      duration: _lastDuration,
+      posterUrl: posterUrl,
+      playUrl: _currentExtractionUrl ?? widget.url,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    ref.read(watchHistoryProvider.notifier).saveProgress(item);
+    debugPrint('[WatchHistory] Saved: ${item.title} @ ${_lastCurrentTime.toStringAsFixed(0)}s / ${_lastDuration.toStringAsFixed(0)}s');
+  }
+
   Widget _buildLoadingState({Key? key}) {
+    final epLabel = widget.mediaType != 'movie' && _currentEpisode != null
+        ? 'Episode $_currentEpisode'
+        : widget.title;
     return Container(
       key: key,
       color: Colors.black,
@@ -593,7 +666,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             ),
             const SizedBox(height: 20),
             Text(
-              'Loading Stream',
+              'Please wait',
               style: GoogleFonts.inter(
                 color: AppColors.textPrimary,
                 fontSize: 16,
@@ -603,7 +676,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             ),
             const SizedBox(height: 6),
             Text(
-              'Preparing playback...',
+              'Loading $epLabel',
               style: GoogleFonts.inter(
                 color: AppColors.textMuted,
                 fontSize: 13,
@@ -617,6 +690,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildDiscoveryProgress({Key? key}) {
+    final epLabel = widget.mediaType != 'movie' && _currentEpisode != null
+        ? 'Episode $_currentEpisode'
+        : widget.title;
     return Container(
       key: key,
       color: Colors.black,
@@ -634,12 +710,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             ),
             const SizedBox(height: 24),
             Text(
-              'Finding sources...',
+              'Please wait',
               style: GoogleFonts.inter(
                 color: AppColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.3,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Loading $epLabel',
+              style: GoogleFonts.inter(
+                color: AppColors.textMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
@@ -690,6 +775,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _goBack() {
     if (!mounted) return;
+
+    // Save watch progress before leaving
+    _saveToWatchHistory();
 
     // If we're extracting an episode, stop that first
     if (_isBgExtracting) {
@@ -758,6 +846,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   @override
   void dispose() {
+    _saveToWatchHistory();
+    _errorAutoCloseTimer?.cancel();
     _betterPlayerController?.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -791,7 +881,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _webViewController = controller;
           controller.addJavaScriptHandler(
             handlerName: 'goBack',
-            callback: (args) => _goBack(),
+            callback: (args) {
+              _saveToWatchHistory();
+              _goBack();
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: 'showEpisodes',
@@ -799,7 +892,30 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           );
           controller.addJavaScriptHandler(
             handlerName: 'playNextEpisode',
-            callback: (args) => _playNextEpisode(),
+            callback: (args) {
+              _saveToWatchHistory();
+              _playNextEpisode();
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'saveWatchProgress',
+            callback: (args) {
+              if (args.isNotEmpty) {
+                try {
+                  final data = jsonDecode(args[0] as String);
+                  _lastCurrentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
+                  _lastDuration = (data['duration'] as num?)?.toDouble() ?? 0;
+                } catch (e) {
+                  debugPrint('[WatchHistory] Failed to parse progress: $e');
+                }
+              }
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'haptic',
+            callback: (args) {
+              HapticFeedback.lightImpact();
+            },
           );
         },
         onLoadStop: (controller, url) async {
@@ -847,7 +963,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   final nextTitle = 'EP ${nextEp.episodeNumber}: ${nextEp.title ?? 'Episode ${nextEp.episodeNumber}'}';
                   final escaped = nextTitle.replaceAll("'", "\\'");
                   await controller.evaluateJavascript(
-                    source: "setNextEpisodeTitle('$escaped')",
+                    source: "setNextEpisodeInfo('$escaped')",
                   );
                 }
               }
@@ -1518,15 +1634,27 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Widget _buildControlHints() => const SizedBox.shrink();
 
   Widget _buildErrorOverlay() {
+    // Auto-close player after 5 seconds on error
+    _errorAutoCloseTimer?.cancel();
+    _errorAutoCloseTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _hasError) {
+        _goBack();
+      }
+    });
+
+    final epLabel = widget.mediaType != 'movie' && _currentEpisode != null
+        ? 'Episode $_currentEpisode'
+        : widget.title;
+
     return Container(
-      color: Colors.black.withValues(alpha: 0.92),
+      color: Colors.black.withValues(alpha: 0.95),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 64,
-              height: 64,
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
@@ -1534,15 +1662,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               child: Icon(
                 Icons.error_outline_rounded,
                 color: AppColors.primary.withValues(alpha: 0.7),
-                size: 36,
+                size: 40,
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Playback Failed',
-              style: TextStyle(
+            Text(
+              'Failed to load $epLabel',
+              style: const TextStyle(
                 color: Colors.white,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.3,
               ),
@@ -1560,12 +1688,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 10),
+            Text(
+              'Closing automatically...',
+              style: GoogleFonts.inter(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 28),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton.icon(
-                  onPressed: _retry,
+                  onPressed: () {
+                    _errorAutoCloseTimer?.cancel();
+                    _retry();
+                  },
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('Retry'),
                   style: ElevatedButton.styleFrom(
@@ -1573,7 +1712,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ),
                 const SizedBox(width: 14),
                 TextButton.icon(
-                  onPressed: _goBack,
+                  onPressed: () {
+                    _errorAutoCloseTimer?.cancel();
+                    _goBack();
+                  },
                   icon: const Icon(Icons.arrow_back_rounded),
                   label: const Text('Back'),
                   style: TextButton.styleFrom(foregroundColor: Colors.white60),
