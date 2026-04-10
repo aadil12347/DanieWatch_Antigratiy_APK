@@ -289,7 +289,7 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 14px;
             width: 240px;
-            max-height: 340px;
+            max-height: 60vh;
             overflow-y: auto;
             z-index: 100;
             box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
@@ -385,7 +385,7 @@
             font-size: 14px; font-weight: 500;
             opacity: 0;
             transition: opacity 0.3s ease;
-            z-index: 101;
+            z-index: 350;
             pointer-events: none;
             border: 1px solid rgba(255, 255, 255, 0.08);
         }
@@ -526,25 +526,26 @@
             top: 0; left: 0; right: 0; bottom: 0;
             z-index: 300;
             display: none;
-            align-items: center;
-            justify-content: center;
         }
-        .lock-overlay.active { display: flex; }
+        .lock-overlay.active { display: block; }
 
         .lock-btn {
-            width: 64px; height: 64px;
+            position: absolute;
+            top: 20px; left: 20px;
+            width: 52px; height: 52px;
             border-radius: 50%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.55);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             display: flex; align-items: center; justify-content: center;
             cursor: pointer;
-            opacity: 0.5;
-            transition: opacity 0.3s ease, transform 0.2s ease;
+            opacity: 0;
+            transition: opacity 0.35s ease, transform 0.2s ease;
         }
+        .lock-btn.show { opacity: 0.85; }
         .lock-btn:active { transform: scale(0.88); }
-        .lock-btn svg { width: 32px; height: 32px; fill: white; }
+        .lock-btn svg { width: 28px; height: 28px; fill: white; }
 
         /* ===== NEXT EPISODE OVERLAY ===== */
         .next-episode-overlay {
@@ -649,6 +650,29 @@
             transition: background 0.15s ease;
         }
         .sub-style-btn:active { background: rgba(255,255,255,0.15); }
+
+        /* ===== TOGGLE SWITCH ===== */
+        .toggle-switch {
+            position: relative;
+            width: 44px; height: 24px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            flex-shrink: 0;
+        }
+        .toggle-switch.active { background: #E11D48; }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 20px; height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+        .toggle-switch.active::after { transform: translateX(20px); }
     </style>
 </head>
 <body>
@@ -770,9 +794,9 @@
                 <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:white;"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/></svg>
                 <span>Subtitles</span>
             </div>
-            <div class="menu-option" id="subToggleOption" onclick="toggleSubtitles()">
-                <span class="menu-option-text" id="subToggleText">Subtitles: ON</span>
-                <svg class="menu-option-check" viewBox="0 0 24 24" style="opacity:1;"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <div class="sub-style-row" onclick="toggleSubtitles()">
+                <span class="sub-style-label" id="subToggleText">Subtitles</span>
+                <div class="toggle-switch active" id="subToggleSwitch"></div>
             </div>
             <div style="border-top: 1px solid rgba(255,255,255,0.06);"></div>
             <div class="sub-style-row">
@@ -1171,12 +1195,14 @@
             }
         }
 
+        let lockHideTimer = null;
         function onTouchEnd(e) {
             if (isLocked) {
-                // Show lock button briefly on tap
+                // Show lock button on tap at top-left, then auto-hide after 3s
                 const lockBtn = document.getElementById('lockBtn');
-                lockBtn.style.opacity = '1';
-                setTimeout(() => { lockBtn.style.opacity = '0.5'; }, 2000);
+                lockBtn.classList.add('show');
+                if (lockHideTimer) clearTimeout(lockHideTimer);
+                lockHideTimer = setTimeout(() => { lockBtn.classList.remove('show'); }, 3000);
                 return;
             }
 
@@ -1367,12 +1393,18 @@
             if (e) e.stopPropagation();
             isLocked = !isLocked;
             const overlay = document.getElementById('lockOverlay');
+            const lockBtn = document.getElementById('lockBtn');
             if (isLocked) {
                 hideUI();
                 overlay.classList.add('active');
                 showNotify('Screen Locked');
+                // Show lock button briefly then hide
+                lockBtn.classList.add('show');
+                if (lockHideTimer) clearTimeout(lockHideTimer);
+                lockHideTimer = setTimeout(() => { lockBtn.classList.remove('show'); }, 3000);
             } else {
                 overlay.classList.remove('active');
+                lockBtn.classList.remove('show');
                 showControls();
                 showNotify('Screen Unlocked');
             }
@@ -1436,9 +1468,12 @@
 
         function toggleSubtitles() {
             subtitlesEnabled = !subtitlesEnabled;
-            document.getElementById('subToggleText').textContent = 'Subtitles: ' + (subtitlesEnabled ? 'ON' : 'OFF');
-            const check = document.querySelector('#subToggleOption .menu-option-check');
-            check.style.opacity = subtitlesEnabled ? '1' : '0';
+            const toggle = document.getElementById('subToggleSwitch');
+            if (subtitlesEnabled) {
+                toggle.classList.add('active');
+            } else {
+                toggle.classList.remove('active');
+            }
             // Toggle subtitle track in hls
             if (hls) {
                 hls.subtitleDisplay = subtitlesEnabled;
