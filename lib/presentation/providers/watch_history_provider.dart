@@ -14,6 +14,7 @@ class WatchHistoryItem {
   final double duration; // seconds
   final String? posterUrl;
   final String? thumbnailUrl;
+  final String? backdropUrl;
   final String? playUrl;
   final int timestamp; // millisecondsSinceEpoch
 
@@ -28,6 +29,7 @@ class WatchHistoryItem {
     required this.duration,
     this.posterUrl,
     this.thumbnailUrl,
+    this.backdropUrl,
     this.playUrl,
     required this.timestamp,
   });
@@ -76,6 +78,7 @@ class WatchHistoryItem {
         'duration': duration,
         'posterUrl': posterUrl,
         'thumbnailUrl': thumbnailUrl,
+        'backdropUrl': backdropUrl,
         'playUrl': playUrl,
         'timestamp': timestamp,
       };
@@ -92,6 +95,7 @@ class WatchHistoryItem {
       duration: (json['duration'] as num?)?.toDouble() ?? 0.0,
       posterUrl: json['posterUrl'] as String?,
       thumbnailUrl: json['thumbnailUrl'] as String?,
+      backdropUrl: json['backdropUrl'] as String?,
       playUrl: json['playUrl'] as String?,
       timestamp: json['timestamp'] as int? ?? 0,
     );
@@ -134,8 +138,8 @@ class WatchHistoryNotifier extends StateNotifier<List<WatchHistoryItem>> {
   /// Save or update watch progress for a video.
   /// Deduplicates by tmdbId + season + episode. Keeps most recent 10.
   Future<void> saveProgress(WatchHistoryItem item) async {
-    // Don't save very short watches (< 10 seconds)
-    if (item.currentTime < 10) return;
+    // Don't save very short watches (< 15 seconds)
+    if (item.currentTime < 15) return;
 
     final key = item.uniqueKey;
     final updated = <WatchHistoryItem>[item];

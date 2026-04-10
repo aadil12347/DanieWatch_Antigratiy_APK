@@ -2657,6 +2657,22 @@
 
         // ===== PUBLIC API =====
         window.playVideo = function (url) { loadVideo(url); };
+        window.seekToPosition = function (seconds) {
+            if (!seconds || seconds < 5) return;
+            // If video is already ready, seek immediately
+            if (video.readyState >= 2 && video.duration > 0) {
+                video.currentTime = Math.min(seconds, video.duration - 5);
+                return;
+            }
+            // Otherwise wait for canplay event
+            var seekHandler = function () {
+                video.removeEventListener('canplay', seekHandler);
+                if (video.duration > 0) {
+                    video.currentTime = Math.min(seconds, video.duration - 5);
+                }
+            };
+            video.addEventListener('canplay', seekHandler);
+        };
         window.videoTitle = function (title) {
             document.getElementById('episodeBadge').innerText = title;
         };

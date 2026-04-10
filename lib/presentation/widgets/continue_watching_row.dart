@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
+import '../providers/detail_provider.dart';
 import '../providers/watch_history_provider.dart';
 import '../screens/video_player/video_player_screen.dart';
 
@@ -270,7 +271,8 @@ class _ContinueWatchingCard extends ConsumerWidget {
   }
 
   Widget _buildThumbnail() {
-    final imageUrl = item.thumbnailUrl ?? item.posterUrl;
+    // Prefer backdrop (landscape) > thumbnail > poster for continue watching cards
+    final imageUrl = item.backdropUrl ?? item.thumbnailUrl ?? item.posterUrl;
     if (imageUrl == null || imageUrl.isEmpty) {
       return Container(
         color: const Color(0xFF222222),
@@ -301,7 +303,18 @@ class _ContinueWatchingCard extends ConsumerWidget {
   }
 
   void _resumePlayback(BuildContext context, WidgetRef ref) {
-    // Navigate to the video player with the saved item data
+    // Look up seasons data for episode picker in player
+    List<int>? seasons;
+    try {
+      final detailAsync = ref.read(
+        detailProvider(
+          DetailParams(tmdbId: item.tmdbId, mediaType: item.mediaType),
+        ),
+      );
+      seasons = detailAsync.valueOrNull?.seasonNumbers;
+    } catch (_) {}
+
+    // Navigate to the video player with resume position
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => VideoPlayerScreen(
@@ -311,6 +324,9 @@ class _ContinueWatchingCard extends ConsumerWidget {
           mediaType: item.mediaType,
           season: item.season,
           episode: item.episode,
+          seasons: seasons,
+          startPosition: item.currentTime,
+          posterUrl: item.posterUrl,
         ),
       ),
     );

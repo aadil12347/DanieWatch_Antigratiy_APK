@@ -25,6 +25,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final bool isOffline;
   final bool isDirectLink;
   final String? posterUrl;
+  final double? startPosition;
 
   const VideoPlayerScreen({
     super.key,
@@ -38,6 +39,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.isOffline = false,
     this.isDirectLink = false,
     this.posterUrl,
+    this.startPosition,
   });
 
   @override
@@ -79,6 +81,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   double _lastCurrentTime = 0;
   double _lastDuration = 0;
   Timer? _errorAutoCloseTimer;
+  Timer? _progressSaveTimer;  // Periodic Dart-side save
+  bool _startPositionApplied = false;  // Track if we've seeked to startPosition
 
   // Episode Info
   int? _currentEpisode;
@@ -138,6 +142,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     // Try direct Bysebuho API extraction first (much faster ~1-2s)
     _tryDirectExtraction(widget.url);
+
+    // Start periodic progress save timer (every 15 seconds)
+    _progressSaveTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _saveToWatchHistory();
+    });
   }
 
   /// Try direct Bysebuho API extraction first (much faster ~1-2s vs 10-20s WebView)
@@ -591,10 +600,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   /// Save current watch progress to the Continue Watching provider
   void _saveToWatchHistory() {
-    if (_lastCurrentTime < 10 || _lastDuration < 30) return;
+    if (_lastCurrentTime < 15 || _lastDuration < 30) return;
 
-    // Get poster URL from detail provider
+    // Get poster URL and backdrop URL from detail provider
     String? posterUrl;
+    String? backdropUrl;
     String? episodeTitle;
     try {
       final detailAsync = ref.read(
@@ -602,9 +612,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
         ),
       );
-      posterUrl = detailAsync.valueOrNull?.posterUrl;
+      final detail = detailAsync.valueOrNull;
+      posterUrl = detail?.posterUrl;
       if (posterUrl != null && !posterUrl.startsWith('http')) {
         posterUrl = 'https://image.tmdb.org/t/p/w500$posterUrl';
+      }
+      backdropUrl = detail?.backdropUrl;
+      if (backdropUrl != null && !backdropUrl.startsWith('http')) {
+        backdropUrl = 'https://image.tmdb.org/t/p/w780$backdropUrl';
       }
     } catch (_) {}
 
@@ -637,6 +652,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       currentTime: _lastCurrentTime,
       duration: _lastDuration,
       posterUrl: posterUrl,
+      backdropUrl: backdropUrl,
       playUrl: _currentExtractionUrl ?? widget.url,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
@@ -848,6 +864,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void dispose() {
     _saveToWatchHistory();
     _errorAutoCloseTimer?.cancel();
+    _progressSaveTimer?.cancel();
     _betterPlayerController?.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -924,6 +941,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             await controller.evaluateJavascript(
               source: "playVideo('$_extractedLink')",
             );
+
+            // Seek to saved position for Continue Watching resume
+            if (!_startPositionApplied && widget.startPosition != null && widget.startPosition! > 5) {
+              _startPositionApplied = true;
+              await controller.evaluateJavascript(
+                source: "seekToPosition(${widget.startPosition})",
+              );
+              debugPrint('[Resume] Seeking to ${widget.startPosition}s');
+            }
 
             const epText = 'Episodes';
             await controller.evaluateJavascript(

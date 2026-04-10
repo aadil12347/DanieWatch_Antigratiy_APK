@@ -152,16 +152,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: StackedCarousel(items: trending),
               ),
 
-            // Continue Watching row
-            const SliverToBoxAdapter(
-              child: ContinueWatchingRow(),
-            ),
-
-            // Content sections
-            ...sections.map((section) {
+            // Content sections with Continue Watching inserted after Top 10
+            ...sections.expand((section) {
               final isTop10 = section.title == 'Top 10 Today';
               
-              return SliverToBoxAdapter(
+              final sectionWidget = SliverToBoxAdapter(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -178,6 +173,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ],
                 ),
               );
+
+              // Insert Continue Watching row right after Top 10
+              if (isTop10) {
+                return [
+                  sectionWidget,
+                  const SliverToBoxAdapter(
+                    child: ContinueWatchingRow(),
+                  ),
+                ];
+              }
+              return [sectionWidget];
             }),
 
             const SliverToBoxAdapter(
