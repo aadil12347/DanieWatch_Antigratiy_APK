@@ -271,8 +271,14 @@ class _ContinueWatchingCard extends ConsumerWidget {
   }
 
   Widget _buildThumbnail() {
-    // Prefer backdrop (landscape) > thumbnail > poster for continue watching cards
-    final imageUrl = item.backdropUrl ?? item.thumbnailUrl ?? item.posterUrl;
+    String? imageUrl;
+    
+    if (item.mediaType == 'movie') {
+      imageUrl = item.posterUrl ?? item.backdropUrl ?? item.thumbnailUrl;
+    } else {
+      imageUrl = item.thumbnailUrl ?? item.posterUrl ?? item.backdropUrl;
+    }
+
     if (imageUrl == null || imageUrl.isEmpty) {
       return Container(
         color: const Color(0xFF222222),

@@ -624,7 +624,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
     } catch (_) {}
 
-    // Get episode title
+    // Get episode title and thumbnail
+    String? episodeThumbnailUrl;
     try {
       if (widget.mediaType != 'movie' && _currentSeason != null) {
         final epsAsync = ref.read(
@@ -640,6 +641,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           orElse: () => epsAsync.valueOrNull!.first,
         );
         episodeTitle = ep?.title;
+        episodeThumbnailUrl = ep?.thumbnailUrl;
+        if (episodeThumbnailUrl != null && !episodeThumbnailUrl.startsWith('http')) {
+          episodeThumbnailUrl = 'https://image.tmdb.org/t/p/w500$episodeThumbnailUrl';
+        }
       }
     } catch (_) {}
 
@@ -654,6 +659,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       duration: _lastDuration,
       posterUrl: posterUrl,
       backdropUrl: backdropUrl,
+      thumbnailUrl: episodeThumbnailUrl,
       playUrl: _currentExtractionUrl ?? widget.url,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
