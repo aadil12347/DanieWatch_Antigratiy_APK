@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/settings_tile.dart';
 import '../../../domain/models/user_profile.dart';
+import '../../providers/watch_history_provider.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/utils/toast_utils.dart';
@@ -27,7 +28,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool? _isUnique;
   bool _isValidating = false;
   Timer? _debounce;
-  bool _historyEnabled = true; // Local state for toggle
 
   @override
   void initState() {
@@ -294,6 +294,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildActivitySettings(BuildContext context) {
+    final historyEnabled = ref.watch(continueWatchingSettingsProvider);
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
@@ -305,9 +306,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             title: 'Watch History',
             subtitle: 'Recently watched titles',
             trailing: Switch.adaptive(
-              value: _historyEnabled,
+              value: historyEnabled,
               activeTrackColor: AppColors.primary,
-              onChanged: (v) => setState(() => _historyEnabled = v),
+              onChanged: (v) => ref.read(continueWatchingSettingsProvider.notifier).toggle(v),
             ),
             onTap: () => context.push('/placeholder/Watch History'),
           ),

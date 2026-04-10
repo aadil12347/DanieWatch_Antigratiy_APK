@@ -206,7 +206,7 @@ class _ContinueWatchingCard extends ConsumerWidget {
                             ),
                           ),
                         Text(
-                          item.timeRemainingText,
+                          item.timeWatchedText,
                           style: GoogleFonts.inter(
                             color: Colors.white.withValues(alpha: 0.6),
                             fontSize: r.f(10).clamp(8.0, 13.0),
@@ -315,7 +315,7 @@ class _ContinueWatchingCard extends ConsumerWidget {
     } catch (_) {}
 
     // Navigate to the video player with resume position
-    Navigator.of(context).push(
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => VideoPlayerScreen(
           title: item.title,

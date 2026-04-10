@@ -41,18 +41,18 @@ class WatchHistoryItem {
   double get progress =>
       duration > 0 ? (currentTime / duration).clamp(0.0, 1.0) : 0.0;
 
-  /// Human-readable time remaining, e.g. "23 min left" or "5:30 left"
-  String get timeRemainingText {
-    final remaining = (duration - currentTime).clamp(0, double.infinity);
-    final minutes = (remaining / 60).floor();
-    final seconds = (remaining % 60).floor();
+  /// Human-readable time watched, e.g. "23 min watched" or "5:30 watched"
+  String get timeWatchedText {
+    final watched = currentTime.clamp(0, duration > 0 ? duration : double.infinity);
+    final minutes = (watched / 60).floor();
+    final seconds = (watched % 60).floor();
     if (minutes >= 60) {
       final hours = (minutes / 60).floor();
       final mins = minutes % 60;
-      return '${hours}h ${mins}m left';
+      return '${hours}h ${mins}m watched';
     }
-    if (minutes > 0) return '${minutes}m ${seconds}s left';
-    return '${seconds}s left';
+    if (minutes > 0) return '${minutes}m ${seconds}s watched';
+    return '${seconds}s watched';
   }
 
   /// Display subtitle: "S01 E03" or movie title
@@ -172,3 +172,28 @@ final watchHistoryProvider =
     StateNotifierProvider<WatchHistoryNotifier, List<WatchHistoryItem>>(
   (ref) => WatchHistoryNotifier(),
 );
+
+class ContinueWatchingSettingsNotifier extends StateNotifier<bool> {
+  static const _key = 'daniewatch_history_enabled';
+
+  ContinueWatchingSettingsNotifier() : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> toggle(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
+final continueWatchingSettingsProvider =
+    StateNotifierProvider<ContinueWatchingSettingsNotifier, bool>(
+  (ref) => ContinueWatchingSettingsNotifier(),
+);
+

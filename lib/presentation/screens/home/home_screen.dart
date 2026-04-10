@@ -17,6 +17,7 @@ import '../../widgets/custom_drawer.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/continue_watching_row.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/watch_history_provider.dart';
 
 import '../../providers/scroll_provider.dart';
 
@@ -152,7 +153,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: StackedCarousel(items: trending),
               ),
 
-            // Content sections with Continue Watching inserted after Top 10
+            // Content sections with Continue Watching inserted ABOVE Top 10
             ...sections.expand((section) {
               final isTop10 = section.title == 'Top 10 Today';
               
@@ -174,14 +175,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               );
 
-              // Insert Continue Watching row right after Top 10
+              // Insert Continue Watching row right ABOVE Top 10
               if (isTop10) {
-                return [
-                  sectionWidget,
-                  const SliverToBoxAdapter(
-                    child: ContinueWatchingRow(),
-                  ),
-                ];
+                final historyEnabled = ref.watch(continueWatchingSettingsProvider);
+                if (historyEnabled) {
+                  return [
+                    const SliverToBoxAdapter(
+                      child: ContinueWatchingRow(),
+                    ),
+                    sectionWidget,
+                  ];
+                } else {
+                  return [sectionWidget];
+                }
               }
               return [sectionWidget];
             }),
