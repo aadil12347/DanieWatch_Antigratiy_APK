@@ -93,7 +93,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             // Hero section
-            SliverToBoxAdapter(child: _buildHeroSection(content)),
+            SliverToBoxAdapter(child: _HeroSection(content: content)),
             // Content body
             SliverToBoxAdapter(
               child: Padding(
@@ -164,79 +164,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
-  // ─── Hero Section ──────────────────────────────────────────────────────────
-  Widget _buildHeroSection(ContentDetail content) {
-    final r = Responsive(context);
-
-    return SizedBox(
-      height: r.h(360).clamp(260.0, 480.0),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Background Backdrop
-          if (content.backdropUrl != null && content.backdropUrl!.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: content.backdropUrl!,
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => _buildFallbackBackdrop(),
-            )
-          else
-            _buildFallbackBackdrop(),
-
-          // Gradient Overlay (don't cover trailer fully)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.3),
-                      Colors.transparent,
-                      AppColors.background.withValues(alpha: 0.05),
-                      AppColors.background.withValues(alpha: 0.7),
-                      AppColors.background,
-                    ],
-                    stops: const [0.0, 0.25, 0.5, 0.8, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // ── Back Button (top-left) ──
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 12,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFallbackBackdrop() {
-    return Container(
-      color: AppColors.surface,
-      child: Center(
-        child: Icon(Icons.movie_outlined,
-            color: AppColors.textMuted.withValues(alpha: 0.3), size: 80),
-      ),
-    );
-  }
+  // ─── Hero Section Replaced by _HeroSection StatefulWidget ───────────────
 
   // ─── Logo ──────────────────────────────────────────────────────────────────
   Widget _buildLogo(String logoUrl) {
@@ -1560,6 +1488,184 @@ class _ExpandableReviewContentState extends State<_ExpandableReviewContent> {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ─── Hero Section (with Autoplay Trailer) ────────────────────────────────────
+class _HeroSection extends StatefulWidget {
+  final ContentDetail content;
+
+  const _HeroSection({required this.content});
+
+  @override
+  State<_HeroSection> createState() => _HeroSectionState();
+}
+
+class _HeroSectionState extends State<_HeroSection> {
+  YoutubePlayerController? _ytController;
+  bool _isMuted = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initTrailer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.content.trailerUrl != widget.content.trailerUrl) {
+      _ytController?.close();
+      _ytController = null;
+      _initTrailer();
+    }
+  }
+
+  void _initTrailer() {
+    if (widget.content.trailerUrl != null && widget.content.trailerUrl!.isNotEmpty) {
+      final videoId = YoutubePlayerController.convertUrlToId(widget.content.trailerUrl!);
+      if (videoId != null) {
+        _ytController = YoutubePlayerController.fromVideoId(
+          videoId: videoId,
+          autoPlay: true,
+          params: const YoutubePlayerParams(
+            showControls: false,
+            mute: true,
+            showFullscreenButton: false,
+            loop: true,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ytController?.close();
+    super.dispose();
+  }
+
+  void _toggleMute() {
+    if (_ytController == null) return;
+    setState(() {
+      _isMuted = !_isMuted;
+    });
+    if (_isMuted) {
+      _ytController!.mute();
+    } else {
+      _ytController!.unMute();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = Responsive(context);
+
+    return SizedBox(
+      // Keep hero section height logic
+      height: r.h(360).clamp(260.0, 480.0),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // ── Background: Trailer or Backdrop ──
+          if (_ytController != null)
+            AbsorbPointer(
+              child: SizedBox.expand(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: 1600,
+                    height: 900, // 16:9 ratio
+                    child: YoutubePlayer(controller: _ytController!),
+                  ),
+                ),
+              ),
+            )
+          else if (widget.content.backdropUrl != null && widget.content.backdropUrl!.isNotEmpty)
+            CachedNetworkImage(
+              imageUrl: widget.content.backdropUrl!,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => _buildFallbackBackdrop(),
+            )
+          else
+            _buildFallbackBackdrop(),
+
+          // ── Gradient Overlay ──
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.3),
+                      Colors.transparent,
+                      AppColors.background.withValues(alpha: 0.05),
+                      AppColors.background.withValues(alpha: 0.7),
+                      AppColors.background,
+                    ],
+                    stops: const [0.0, 0.25, 0.5, 0.8, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Back Button (top-left) ──
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 12,
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+              ),
+            ),
+          ),
+
+          // ── Mute/Unmute Button (top-right) ──
+          if (_ytController != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 12,
+              child: GestureDetector(
+                onTap: _toggleMute,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Icon(
+                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFallbackBackdrop() {
+    return Container(
+      color: AppColors.surface,
+      child: Center(
+        child: Icon(Icons.movie_outlined, color: AppColors.textMuted.withValues(alpha: 0.3), size: 80),
+      ),
     );
   }
 }
