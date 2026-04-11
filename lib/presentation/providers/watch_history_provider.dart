@@ -35,7 +35,7 @@ class WatchHistoryItem {
   });
 
   /// Unique key for deduplication: same show + season + episode = same entry
-  String get uniqueKey => '${tmdbId}_${season ?? 0}_${episode ?? 0}';
+  String get uniqueKey => '$tmdbId';
 
   /// Progress as a 0.0–1.0 fraction
   double get progress =>
@@ -156,7 +156,7 @@ class WatchHistoryNotifier extends StateNotifier<List<WatchHistoryItem>> {
 
   /// Remove a specific item from watch history (e.g. when finished)
   Future<void> removeItem(int tmdbId, {int? season, int? episode}) async {
-    final key = '${tmdbId}_${season ?? 0}_${episode ?? 0}';
+    final key = '$tmdbId';
     state = state.where((e) => e.uniqueKey != key).toList();
     await _persistToStorage();
   }
