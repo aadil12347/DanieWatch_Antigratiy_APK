@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/download_modal_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
@@ -708,18 +708,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       children: [
         _buildEmptyTab(Icons.share_rounded, 'Share with friends'),
         const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildShareAction(Icons.copy_rounded, 'Copy Link', () {
-              Clipboard.setData(ClipboardData(text: deepLink));
-              CustomToast.show(context, 'Link copied!', type: ToastType.success, icon: Icons.check_rounded);
-            }),
-            const SizedBox(width: 48),
-            _buildShareAction(Icons.send_rounded, 'Share', () {
-              Share.share('Check out ${content.title} on DanieWatch!\n\n$deepLink');
-            }),
-          ],
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildShareAction(Icons.copy_rounded, 'Copy Link', () {
+                Clipboard.setData(ClipboardData(text: deepLink));
+                CustomToast.show(context, 'Link copied!', type: ToastType.success, icon: Icons.check_rounded);
+              }),
+              const SizedBox(width: 48),
+              _buildShareAction(Icons.send_rounded, 'Share', () {
+                Share.share('Check out ${content.title} on DanieWatch!\n\n$deepLink');
+              }),
+            ],
+          ),
         ),
       ],
     );
@@ -1492,7 +1496,7 @@ class _ExpandableReviewContentState extends State<_ExpandableReviewContent> {
   }
 }
 
-// ─── Hero Section (with Autoplay Trailer) ────────────────────────────────────
+// ─── Hero Section (with Autoplay Trailer via InAppWebView) ───────────────────
 class _HeroSection extends StatefulWidget {
   final ContentDetail content;
 
@@ -1503,84 +1507,253 @@ class _HeroSection extends StatefulWidget {
 }
 
 class _HeroSectionState extends State<_HeroSection> {
-  YoutubePlayerController? _ytController;
+  InAppWebViewController? _webViewController;
   bool _isMuted = true;
+  bool _hasTrailer = false;
+  bool _trailerReady = false;
+
+  String? _videoId;
 
   @override
   void initState() {
     super.initState();
-    _initTrailer();
+    _extractVideoId();
   }
 
   @override
   void didUpdateWidget(covariant _HeroSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.content.trailerUrl != widget.content.trailerUrl) {
-      _ytController?.close();
-      _ytController = null;
-      _initTrailer();
+      _extractVideoId();
     }
   }
 
-  void _initTrailer() {
-    if (widget.content.trailerUrl != null && widget.content.trailerUrl!.isNotEmpty) {
-      final videoId = YoutubePlayerController.convertUrlToId(widget.content.trailerUrl!);
-      if (videoId != null) {
-        _ytController = YoutubePlayerController.fromVideoId(
-          videoId: videoId,
-          autoPlay: true,
-          params: const YoutubePlayerParams(
-            showControls: false,
-            mute: true,
-            showFullscreenButton: false,
-            loop: true,
-          ),
-        );
+  void _extractVideoId() {
+    final url = widget.content.trailerUrl;
+    if (url != null && url.isNotEmpty) {
+      // Extract video ID from various YouTube URL formats
+      final uri = Uri.tryParse(url);
+      String? id;
+      if (uri != null) {
+        if (uri.host.contains('youtu.be')) {
+          id = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+        } else if (uri.queryParameters.containsKey('v')) {
+          id = uri.queryParameters['v'];
+        } else if (uri.pathSegments.contains('embed') && uri.pathSegments.length > 1) {
+          id = uri.pathSegments[uri.pathSegments.indexOf('embed') + 1];
+        }
       }
+      // Fallback regex
+      if (id == null || id.isEmpty) {
+        final regex = RegExp(r'(?:v=|\/embed\/|youtu\.be\/)([a-zA-Z0-9_-]{11})');
+        final match = regex.firstMatch(url);
+        id = match?.group(1);
+      }
+      setState(() {
+        _videoId = id;
+        _hasTrailer = id != null && id.isNotEmpty;
+        _trailerReady = false;
+      });
+    } else {
+      setState(() {
+        _videoId = null;
+        _hasTrailer = false;
+        _trailerReady = false;
+      });
     }
+  }
+
+  // JavaScript to inject after YouTube page loads — hides all chrome,
+  // forces the video player to fill viewport, and auto-plays muted.
+  static const String _hideYouTubeChromeJs = r'''
+    (function() {
+      var style = document.createElement('style');
+      style.textContent = `
+        /* Hide all YouTube chrome */
+        ytm-mobile-topbar-renderer,
+        ytm-pivot-bar-renderer,
+        .player-controls-top,
+        .player-controls-bottom,
+        ytm-item-section-renderer,
+        ytm-comments-entry-point-header-renderer,
+        ytm-engagement-panel-section-list-renderer,
+        ytm-related-chip-cloud-renderer,
+        ytm-compact-video-renderer,
+        ytm-compact-autoplay-renderer,
+        .slim-video-information-renderer,
+        .slim-owner-renderer,
+        .menu-renderer,
+        ytm-section-list-renderer,
+        .single-column-watch-next-results,
+        #secondary, #below, #related, #comments, #chat,
+        .ytp-chrome-top, .ytp-chrome-bottom,
+        .ytp-gradient-top, .ytp-gradient-bottom,
+        .ytp-pause-overlay, .ytp-watermark,
+        .ytp-show-cards-title, .ytp-ce-element,
+        .ytp-endscreen-content, .branding-img-container,
+        ytm-watch-metadata-app-promo-renderer,
+        .player-controls-middle, #player-control-overlay,
+        .ytp-overflow-menu-button, .ytp-settings-button,
+        .related-chips-slot-wrapper, .watch-below-the-player,
+        ytm-single-column-watch-next-results-renderer > *:not(.player-container) {
+          display: none !important;
+          visibility: hidden !important;
+          height: 0 !important;
+          overflow: hidden !important;
+        }
+        html, body {
+          margin: 0 !important; padding: 0 !important;
+          overflow: hidden !important; background: #000 !important;
+        }
+        .player-container, #player, #movie_player,
+        .html5-video-container, video {
+          position: fixed !important;
+          top: 0 !important; left: 0 !important;
+          width: 100vw !important; height: 100vh !important;
+          max-height: 100vh !important; min-height: 100vh !important;
+          z-index: 99999 !important; object-fit: cover !important;
+        }
+        ytm-app, ytm-watch { overflow: hidden !important; }
+      `;
+      document.head.appendChild(style);
+
+      function tryAutoplay() {
+        var video = document.querySelector('video');
+        if (video) {
+          video.muted = true;
+          video.loop = true;
+          video.setAttribute('playsinline', '');
+          video.play().catch(function(){});
+          if (window.flutter_inappwebview) {
+            window.flutter_inappwebview.callHandler('onTrailerReady');
+          }
+          return true;
+        }
+        return false;
+      }
+
+      if (!tryAutoplay()) {
+        var attempts = 0;
+        var interval = setInterval(function() {
+          attempts++;
+          if (tryAutoplay() || attempts > 30) clearInterval(interval);
+        }, 500);
+      }
+
+      var observer = new MutationObserver(function() {
+        var video = document.querySelector('video');
+        if (video) {
+          video.muted = true; video.loop = true;
+          video.play().catch(function(){});
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    })();
+  ''';
+
+  void _toggleMute() {
+    if (_webViewController == null || !_hasTrailer) return;
+    setState(() {
+      _isMuted = !_isMuted;
+    });
+    _webViewController!.evaluateJavascript(source: '''
+      var video = document.querySelector('video');
+      if (video) { video.muted = ${_isMuted}; }
+    ''');
   }
 
   @override
   void dispose() {
-    _ytController?.close();
+    _webViewController = null;
     super.dispose();
-  }
-
-  void _toggleMute() {
-    if (_ytController == null) return;
-    setState(() {
-      _isMuted = !_isMuted;
-    });
-    if (_isMuted) {
-      _ytController!.mute();
-    } else {
-      _ytController!.unMute();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final r = Responsive(context);
+    final heroHeight = r.h(420).clamp(320.0, 520.0);
 
     return SizedBox(
-      // Keep hero section height logic
-      height: r.h(360).clamp(260.0, 480.0),
+      height: heroHeight,
       child: Stack(
         fit: StackFit.expand,
         children: [
           // ── Background: Trailer or Backdrop ──
-          if (_ytController != null)
-            AbsorbPointer(
-              child: SizedBox.expand(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: 1600,
-                    height: 900, // 16:9 ratio
-                    child: YoutubePlayer(controller: _ytController!),
+          if (_hasTrailer && _videoId != null)
+            Stack(
+              fit: StackFit.expand,
+              children: [
+                // Show backdrop behind while loading
+                if (widget.content.backdropUrl != null && widget.content.backdropUrl!.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: widget.content.backdropUrl!,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => _buildFallbackBackdrop(),
+                  ),
+                // WebView trailer layer — fills entire hero area like the backdrop
+                Positioned.fill(
+                  child: AbsorbPointer(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 600),
+                      opacity: _trailerReady ? 1.0 : 0.0,
+                      child: ClipRect(
+                        child: InAppWebView(
+                          initialUrlRequest: URLRequest(
+                            url: WebUri('https://m.youtube.com/watch?v=$_videoId'),
+                          ),
+                          initialSettings: InAppWebViewSettings(
+                            mediaPlaybackRequiresUserGesture: false,
+                            allowsInlineMediaPlayback: true,
+                            transparentBackground: true,
+                            javaScriptEnabled: true,
+                            useHybridComposition: true,
+                            disableVerticalScroll: true,
+                            disableHorizontalScroll: true,
+                            supportZoom: false,
+                            builtInZoomControls: false,
+                            displayZoomControls: false,
+                            verticalScrollBarEnabled: false,
+                            horizontalScrollBarEnabled: false,
+                            userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                          ),
+                          onWebViewCreated: (controller) {
+                            _webViewController = controller;
+                            controller.addJavaScriptHandler(
+                              handlerName: 'onTrailerReady',
+                              callback: (args) {
+                                Future.delayed(const Duration(milliseconds: 800), () {
+                                  if (mounted) {
+                                    setState(() => _trailerReady = true);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                          onLoadStop: (controller, url) async {
+                            await controller.evaluateJavascript(source: _hideYouTubeChromeJs);
+                            Future.delayed(const Duration(milliseconds: 2000), () {
+                              if (mounted) controller.evaluateJavascript(source: _hideYouTubeChromeJs);
+                            });
+                            Future.delayed(const Duration(milliseconds: 4000), () {
+                              if (mounted) controller.evaluateJavascript(source: _hideYouTubeChromeJs);
+                            });
+                          },
+                          shouldOverrideUrlLoading: (controller, navigationAction) async {
+                            final navUrl = navigationAction.request.url?.toString() ?? '';
+                            if (navUrl.contains('youtube.com') ||
+                                navUrl.contains('consent.google') ||
+                                navUrl.contains('accounts.google')) {
+                              return NavigationActionPolicy.ALLOW;
+                            }
+                            return NavigationActionPolicy.CANCEL;
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             )
           else if (widget.content.backdropUrl != null && widget.content.backdropUrl!.isNotEmpty)
             CachedNetworkImage(
@@ -1591,22 +1764,23 @@ class _HeroSectionState extends State<_HeroSection> {
           else
             _buildFallbackBackdrop(),
 
-          // ── Gradient Overlay ──
+          // ── Vignette Gradient Overlay (same for both trailer and backdrop) ──
           Positioned.fill(
             child: IgnorePointer(
-              child: Container(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.3),
+                      Colors.black.withValues(alpha: 0.25),
                       Colors.transparent,
-                      AppColors.background.withValues(alpha: 0.05),
-                      AppColors.background.withValues(alpha: 0.7),
+                      Colors.transparent,
+                      AppColors.background.withValues(alpha: 0.5),
+                      AppColors.background.withValues(alpha: 0.85),
                       AppColors.background,
                     ],
-                    stops: const [0.0, 0.25, 0.5, 0.8, 1.0],
+                    stops: const [0.0, 0.15, 0.4, 0.7, 0.88, 1.0],
                   ),
                 ),
               ),
@@ -1633,7 +1807,7 @@ class _HeroSectionState extends State<_HeroSection> {
           ),
 
           // ── Mute/Unmute Button (top-right) ──
-          if (_ytController != null)
+          if (_hasTrailer && _trailerReady)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               right: 12,
@@ -1669,3 +1843,4 @@ class _HeroSectionState extends State<_HeroSection> {
     );
   }
 }
+
