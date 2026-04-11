@@ -925,13 +925,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               source: "playVideo('$_extractedLink')",
             );
 
-            // Seek to saved position for Continue Watching resume
-            if (!_startPositionApplied && widget.startPosition != null && widget.startPosition! > 5) {
+            // Seek to saved position for Continue Watching resume using a robust watcher
+            if (!_startPositionApplied && widget.startPosition != null && widget.startPosition! > 1) {
               _startPositionApplied = true;
               await controller.evaluateJavascript(
-                source: "seekToPosition(${widget.startPosition})",
+                source: """
+                  (function() {
+                    var v = document.querySelector('video');
+                    if (!v) return;
+                    var seekHandler = function() {
+                      if (v.currentTime >= 0.5) {
+                        v.currentTime = ${widget.startPosition};
+                        v.removeEventListener('timeupdate', seekHandler);
+                        console.log('Antigravity: Seeked to ${widget.startPosition}s after play started');
+                      }
+                    };
+                    v.addEventListener('timeupdate', seekHandler);
+                  })();
+                """,
               );
-              debugPrint('[Resume] Seeking to ${widget.startPosition}s');
+              debugPrint('[Resume] Injected robust seek watcher for ${widget.startPosition}s');
             }
 
             const epText = 'Episodes';

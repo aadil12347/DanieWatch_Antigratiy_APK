@@ -320,7 +320,6 @@ class _ContinueWatchingCard extends ConsumerWidget {
       seasons = detailAsync.valueOrNull?.seasonNumbers;
     } catch (_) {}
 
-    // Navigate to the video player with resume position
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => VideoPlayerScreen(
@@ -333,6 +332,7 @@ class _ContinueWatchingCard extends ConsumerWidget {
           seasons: seasons,
           startPosition: item.currentTime,
           posterUrl: item.posterUrl,
+          isOffline: item.mediaType == 'offline',
         ),
       ),
     );
