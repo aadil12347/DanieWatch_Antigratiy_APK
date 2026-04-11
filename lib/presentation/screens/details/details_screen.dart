@@ -43,10 +43,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   int _selectedSeason = 1;
   int _tabIndex = 0; // 0 = Episodes/Similars, 1 = Similars/Reviews, 2 = Reviews/Share, 3 = Share
   String _episodeSearch = '';
-  late YoutubePlayerController _trailerController;
-  bool _showTrailer = false;
-  bool _isMuted = true;
-  bool _trailerReady = false;
 
   DetailParams get _detailParams =>
       DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType);
@@ -62,21 +58,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _trailerController = YoutubePlayerController(
-      params: const YoutubePlayerParams(
-        showControls: false,
-        showFullscreenButton: false,
-        mute: true,
-        loop: true,
-        showVideoAnnotations: false,
-        strictRelatedVideos: true,
-      ),
-    );
   }
 
   @override
   void dispose() {
-    _trailerController.close();
     super.dispose();
   }
 
@@ -179,44 +164,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
-  // ─── Auto-play trailer ─────────────────────────────────────────────────────
-  void _autoPlayTrailer(ContentDetail content) {
-    if (_trailerReady) return;
-    final trailerUrl = content.trailerUrl;
-    if (trailerUrl == null || trailerUrl.isEmpty) return;
-    final videoId = YoutubePlayerController.convertUrlToId(trailerUrl);
-    if (videoId == null) return;
-    _trailerReady = true;
-    _showTrailer = true;
-    _trailerController.loadVideoById(videoId: videoId);
-  }
-
   // ─── Hero Section ──────────────────────────────────────────────────────────
   Widget _buildHeroSection(ContentDetail content) {
     final r = Responsive(context);
-    final hasTrailer = content.trailerUrl != null && content.trailerUrl!.isNotEmpty;
-
-    // Auto-play trailer on first build
-    if (hasTrailer && !_trailerReady) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _autoPlayTrailer(content);
-      });
-    }
 
     return SizedBox(
       height: r.h(360).clamp(260.0, 480.0),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Background: Trailer or Backdrop
-          if (_showTrailer && hasTrailer)
-            ClipRect(
-              child: YoutubePlayer(
-                controller: _trailerController,
-                aspectRatio: 16 / 9,
-              ),
-            )
-          else if (content.backdropUrl != null && content.backdropUrl!.isNotEmpty)
+          // Background Backdrop
+          if (content.backdropUrl != null && content.backdropUrl!.isNotEmpty)
             CachedNetworkImage(
               imageUrl: content.backdropUrl!,
               fit: BoxFit.cover,
@@ -265,80 +223,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
             ),
           ),
-
-          // ── Volume Toggle (top-right) — only when trailer is playing ──
-          if (_showTrailer && hasTrailer)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              right: 12,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isMuted = !_isMuted;
-                    if (_isMuted) {
-                      _trailerController.mute();
-                    } else {
-                      _trailerController.unMute();
-                    }
-                  });
-                },
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Icon(
-                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
-
-          // ── Trailer Play/Stop toggle (bottom-right) ──
-          if (hasTrailer)
-            Positioned(
-              right: 16,
-              bottom: 16,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() => _showTrailer = !_showTrailer);
-                  if (_showTrailer) {
-                    _autoPlayTrailer(content);
-                    _trailerController.playVideo();
-                  } else {
-                    _trailerController.pauseVideo();
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _showTrailer ? Icons.close_rounded : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _showTrailer ? 'Hide Trailer' : 'Play Trailer',
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -496,7 +380,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     }
 
     final bool hasWatch = watchLink != null && watchLink.isNotEmpty;
-    final bool hasTrailer = content.trailerUrl != null && content.trailerUrl!.isNotEmpty;
     return Row(
       children: [
         // Play Button
@@ -550,23 +433,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             icon: Icons.download_rounded,
             onTap: hasWatch ? () => _handleDownload(watchLink!) : null,
             isActive: false,
-          ),
-        if (content.isMovie) const SizedBox(width: 12),
-
-        // Trailer Button (from TMDB)
-        if (hasTrailer)
-          _AnimatedActionButton(
-            icon: Icons.play_circle_outline_rounded,
-            onTap: () {
-              setState(() => _showTrailer = !_showTrailer);
-              if (_showTrailer) {
-                _autoPlayTrailer(content);
-                _trailerController.playVideo();
-              } else {
-                _trailerController.pauseVideo();
-              }
-            },
-            isActive: _showTrailer,
           ),
       ],
     );
@@ -653,83 +519,64 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Unified Tab Section ──────────────────────────────────────────────────
   Widget _buildTabSection(ContentDetail content) {
-    // TV shows: Episodes / Similars / Reviews / Share
-    // Movies: Similars / Reviews / Share
-    final tabs = content.isTv
-        ? ['Episodes', 'Similars', 'Reviews', 'Share']
-        : ['Similars', 'Reviews', 'Share'];
-
-    // Clamp tab index to valid range
-    if (_tabIndex >= tabs.length) _tabIndex = 0;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Tab bar
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: List.generate(tabs.length, (i) {
-              return Padding(
-                padding: EdgeInsets.only(right: i < tabs.length - 1 ? 8 : 0),
-                child: _buildTabChip(tabs[i], i),
-              );
-            }),
-          ),
+        // Tab selector
+        Row(
+          children: [
+            if (content.isTv) ...[
+              _buildTabChip('Episodes', 0),
+              const SizedBox(width: 16),
+            ],
+            _buildTabChip('Similars', content.isTv ? 1 : 0),
+            const SizedBox(width: 16),
+            _buildTabChip('Reviews', content.isTv ? 2 : 1),
+            const SizedBox(width: 16),
+            _buildTabChip('Share', content.isTv ? 3 : 2),
+          ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
 
-        // Tab content
-        _buildTabContent(content, tabs),
+        if (content.isTv && _tabIndex == 0)
+          _buildEpisodesTab(content)
+        else if ((content.isTv && _tabIndex == 1) || (!content.isTv && _tabIndex == 0))
+          _buildSimilarsTab()
+        else if ((content.isTv && _tabIndex == 2) || (!content.isTv && _tabIndex == 1))
+          _buildReviewsTab()
+        else if ((content.isTv && _tabIndex == 3) || (!content.isTv && _tabIndex == 2))
+          _buildShareTab(content),
       ],
     );
   }
 
   Widget _buildTabChip(String label, int index) {
-    final isActive = _tabIndex == index;
+    final isSelected = _tabIndex == index;
     return GestureDetector(
       onTap: () {
         setState(() => _tabIndex = index);
         HapticFeedback.selectionClick();
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: isActive ? AppColors.primary : AppColors.textMuted.withValues(alpha: 0.3),
-            width: 1.2,
+      child: Column(
+        children: [
+          Text(label,
+              style: GoogleFonts.lora(
+                color: isSelected ? AppColors.textPrimary : AppColors.textMuted,
+                fontSize: 18,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              )),
+          const SizedBox(height: 4),
+          Container(
+            height: 2,
+            width: label.length * 8.0,
+            color: isSelected ? AppColors.primary : Colors.transparent,
           ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isActive ? Colors.white : AppColors.textSecondary,
-            fontSize: 14,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildTabContent(ContentDetail content, List<String> tabs) {
-    final activeTab = tabs[_tabIndex];
-    switch (activeTab) {
-      case 'Episodes':
-        return _buildEpisodesTab(content);
-      case 'Similars':
-        return _buildSimilarsTab();
-      case 'Reviews':
-        return _buildReviewsTab();
-      case 'Share':
-        return _buildShareTab(content);
-      default:
-        return const SizedBox.shrink();
-    }
-  }
+
 
   // ─── Episodes Tab ─────────────────────────────────────────────────────────
   Widget _buildEpisodesTab(ContentDetail content) {
@@ -765,7 +612,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Similars Tab ─────────────────────────────────────────────────────────
   Widget _buildSimilarsTab() {
-    final similarAsync = ref.watch(manifestFilteredSimilarProvider(_detailParams));
+    final similarAsync = ref.watch(similarProvider(_detailParams));
     return similarAsync.when(
       loading: () => const Center(
         child: Padding(
