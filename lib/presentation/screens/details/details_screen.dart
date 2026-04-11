@@ -90,7 +90,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       body: CustomAppBar(
         showBackButton: true,
         child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
+          physics: const ClampingScrollPhysics(),
           slivers: [
             // Hero section
             SliverToBoxAdapter(child: _HeroSection(content: content)),
@@ -1603,15 +1603,25 @@ class _HeroSectionState extends State<_HeroSection> {
         }
         html, body {
           margin: 0 !important; padding: 0 !important;
-          overflow: hidden !important; background: #000 !important;
+          overflow: hidden !important; background: #141413 !important;
         }
         .player-container, #player, #movie_player,
-        .html5-video-container, video {
+        .html5-video-container {
           position: fixed !important;
           top: 0 !important; left: 0 !important;
           width: 100vw !important; height: 100vh !important;
           max-height: 100vh !important; min-height: 100vh !important;
           z-index: 99999 !important; object-fit: cover !important;
+          background: #141413 !important;
+        }
+        video {
+          position: fixed !important;
+          top: 50% !important; left: 50% !important;
+          min-width: 100vw !important; min-height: 100vh !important;
+          width: auto !important; height: auto !important;
+          z-index: 99999 !important; object-fit: cover !important;
+          transform: translate(-50%, -50%) scale(1.5) !important;
+          background: #141413 !important;
         }
         ytm-app, ytm-watch { overflow: hidden !important; }
       `;
