@@ -788,4 +788,15 @@ class ContentRepository {
       return [];
     }
   }
+
+  // ─── Fetch Reviews ─────────────────────────────────────────────────────────
+  Future<List<ReviewItem>> fetchReviews(int tmdbId, String mediaType) async {
+    try {
+      final results = await TmdbClient.instance.getReviews(tmdbId, mediaType);
+      return results.map((r) => ReviewItem.fromTmdbJson(r)).toList();
+    } catch (e) {
+      dev.log('[ContentRepo] fetchReviews error: $e');
+      return [];
+    }
+  }
 }

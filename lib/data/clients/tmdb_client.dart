@@ -174,4 +174,16 @@ class TmdbClient {
       return [];
     }
   }
+  /// Fetch reviews for a given media item
+  Future<List<Map<String, dynamic>>> getReviews(int id, String mediaType) async {
+    try {
+      final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
+      final res = await _dio.get('/$type/$id/reviews');
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Reviews $id error: ${e.message}');
+      return [];
+    }
+  }
 }

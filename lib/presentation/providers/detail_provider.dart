@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/clients/tmdb_client.dart';
 import '../../data/repositories/content_repository.dart';
 import '../../domain/models/content_detail.dart';
+import '../../domain/models/manifest_item.dart';
+import 'manifest_provider.dart';
 
 // ─── Param Classes ───────────────────────────────────────────────────────────
 
@@ -77,6 +79,29 @@ final episodesProvider =
 final similarProvider = FutureProvider.family<List<SimilarItem>, DetailParams>(
   (ref, params) async {
     return ContentRepository.instance.fetchSimilar(
+      params.tmdbId,
+      params.mediaType,
+    );
+  },
+);
+
+/// Manifest filtered similar content
+final manifestFilteredSimilarProvider = FutureProvider.family<List<SimilarItem>, DetailParams>(
+  (ref, params) async {
+    final allSimilar = await ref.watch(similarProvider(params).future);
+    final manifestIndex = ref.watch(manifestIndexProvider);
+    
+    return allSimilar.where((item) {
+      final key = '${item.mediaType}_${item.id}';
+      return manifestIndex.containsKey(key);
+    }).toList();
+  },
+);
+
+/// Reviews content
+final reviewsProvider = FutureProvider.family<List<ReviewItem>, DetailParams>(
+  (ref, params) async {
+    return ContentRepository.instance.fetchReviews(
       params.tmdbId,
       params.mediaType,
     );

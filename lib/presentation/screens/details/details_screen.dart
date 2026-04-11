@@ -10,7 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/download_modal_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
-
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../data/clients/tmdb_client.dart';
@@ -40,8 +41,12 @@ class DetailsScreen extends ConsumerStatefulWidget {
 
 class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   int _selectedSeason = 1;
-  int _tabIndex = 0; // 0 = Episodes, 1 = Similars
+  int _tabIndex = 0; // 0 = Episodes/Similars, 1 = Similars/Reviews, 2 = Reviews/Share, 3 = Share
   String _episodeSearch = '';
+  late YoutubePlayerController _trailerController;
+  bool _showTrailer = false;
+  bool _isMuted = true;
+  bool _trailerReady = false;
 
   DetailParams get _detailParams =>
       DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType);
@@ -53,6 +58,27 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         seasonsData: content?.seasonsData,
         isAdmin: content?.isAdmin ?? false,
       );
+
+  @override
+  void initState() {
+    super.initState();
+    _trailerController = YoutubePlayerController(
+      params: const YoutubePlayerParams(
+        showControls: false,
+        showFullscreenButton: false,
+        mute: true,
+        loop: true,
+        showVideoAnnotations: false,
+        strictRelatedVideos: true,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _trailerController.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -138,18 +164,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       const SizedBox(height: 24),
                       _buildActorsSection(content.castMembers),
                     ],
-
-                    // TV Episodes / Similars Section
-                    if (content.isTv) ...[
-                      const SizedBox(height: 24),
-                      _buildTvSection(content),
-                    ],
-
-                    // Movie Similars
-                    if (content.isMovie) ...[
-                      const SizedBox(height: 24),
-                      _buildSimilarsSection(),
-                    ],
+                    // ─── Unified Tab Section (Episodes/Similars/Reviews/Share) ───
+                    const SizedBox(height: 24),
+                    _buildTabSection(content),
 
                     const SizedBox(height: 120),
                   ],
@@ -162,44 +179,166 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
+  // ─── Auto-play trailer ─────────────────────────────────────────────────────
+  void _autoPlayTrailer(ContentDetail content) {
+    if (_trailerReady) return;
+    final trailerUrl = content.trailerUrl;
+    if (trailerUrl == null || trailerUrl.isEmpty) return;
+    final videoId = YoutubePlayerController.convertUrlToId(trailerUrl);
+    if (videoId == null) return;
+    _trailerReady = true;
+    _showTrailer = true;
+    _trailerController.loadVideoById(videoId: videoId);
+  }
+
   // ─── Hero Section ──────────────────────────────────────────────────────────
   Widget _buildHeroSection(ContentDetail content) {
     final r = Responsive(context);
+    final hasTrailer = content.trailerUrl != null && content.trailerUrl!.isNotEmpty;
+
+    // Auto-play trailer on first build
+    if (hasTrailer && !_trailerReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _autoPlayTrailer(content);
+      });
+    }
+
     return SizedBox(
       height: r.h(360).clamp(260.0, 480.0),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (content.backdropUrl != null && content.backdropUrl!.isNotEmpty)
+          // Background: Trailer or Backdrop
+          if (_showTrailer && hasTrailer)
+            ClipRect(
+              child: YoutubePlayer(
+                controller: _trailerController,
+                aspectRatio: 16 / 9,
+              ),
+            )
+          else if (content.backdropUrl != null && content.backdropUrl!.isNotEmpty)
             CachedNetworkImage(
               imageUrl: content.backdropUrl!,
               fit: BoxFit.cover,
               errorWidget: (_, __, ___) => _buildFallbackBackdrop(),
             )
-          else if (content.posterUrl != null && content.posterUrl!.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: content.posterUrl!,
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => _buildFallbackBackdrop(),
-            )
           else
             _buildFallbackBackdrop(),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.transparent,
-                  AppColors.background.withValues(alpha: 0.5),
-                  AppColors.background.withValues(alpha: 0.9),
-                  AppColors.background,
-                ],
-                stops: const [0.0, 0.3, 0.55, 0.8, 1.0],
+
+          // Gradient Overlay (don't cover trailer fully)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.3),
+                      Colors.transparent,
+                      AppColors.background.withValues(alpha: 0.05),
+                      AppColors.background.withValues(alpha: 0.7),
+                      AppColors.background,
+                    ],
+                    stops: const [0.0, 0.25, 0.5, 0.8, 1.0],
+                  ),
+                ),
               ),
             ),
           ),
+
+          // ── Back Button (top-left) ──
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 12,
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+              ),
+            ),
+          ),
+
+          // ── Volume Toggle (top-right) — only when trailer is playing ──
+          if (_showTrailer && hasTrailer)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 12,
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isMuted = !_isMuted;
+                    if (_isMuted) {
+                      _trailerController.mute();
+                    } else {
+                      _trailerController.unMute();
+                    }
+                  });
+                },
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Icon(
+                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Trailer Play/Stop toggle (bottom-right) ──
+          if (hasTrailer)
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => _showTrailer = !_showTrailer);
+                  if (_showTrailer) {
+                    _autoPlayTrailer(content);
+                    _trailerController.playVideo();
+                  } else {
+                    _trailerController.pauseVideo();
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _showTrailer ? Icons.close_rounded : Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _showTrailer ? 'Hide Trailer' : 'Play Trailer',
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -344,23 +483,19 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   // ─── Action Buttons ────────────────────────────────────────────────────────
   Widget _buildActionButtons(ContentDetail content, bool isInWatchlist) {
     String? watchLink;
-    String? downloadLink;
 
     if (content.isMovie) {
       watchLink = content.primaryWatchLink;
-      downloadLink = content.primaryDownloadLink ?? watchLink;
     } else {
       // For TV: get first episode link from current season episodes
       final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
       final episodes = episodesAsync.valueOrNull ?? [];
       if (episodes.isNotEmpty) {
         watchLink = episodes.first.playLink;
-        downloadLink = episodes.first.downloadLink ?? episodes.first.playLink;
       }
     }
 
     final bool hasWatch = watchLink != null && watchLink.isNotEmpty;
-    final bool hasDownload = downloadLink != null && downloadLink.isNotEmpty;
     final bool hasTrailer = content.trailerUrl != null && content.trailerUrl!.isNotEmpty;
     return Row(
       children: [
@@ -422,8 +557,16 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         if (hasTrailer)
           _AnimatedActionButton(
             icon: Icons.play_circle_outline_rounded,
-            onTap: () => _openTrailer(content.trailerUrl!),
-            isActive: false,
+            onTap: () {
+              setState(() => _showTrailer = !_showTrailer);
+              if (_showTrailer) {
+                _autoPlayTrailer(content);
+                _trailerController.playVideo();
+              } else {
+                _trailerController.pauseVideo();
+              }
+            },
+            isActive: _showTrailer,
           ),
       ],
     );
@@ -508,88 +651,356 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
-  // ─── TV Section ────────────────────────────────────────────────────────────
-  Widget _buildTvSection(ContentDetail content) {
+  // ─── Unified Tab Section ──────────────────────────────────────────────────
+  Widget _buildTabSection(ContentDetail content) {
+    // TV shows: Episodes / Similars / Reviews / Share
+    // Movies: Similars / Reviews / Share
+    final tabs = content.isTv
+        ? ['Episodes', 'Similars', 'Reviews', 'Share']
+        : ['Similars', 'Reviews', 'Share'];
+
+    // Clamp tab index to valid range
+    if (_tabIndex >= tabs.length) _tabIndex = 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Tab selector
-        Row(
-          children: [
-            _buildTabButton('Episodes', 0),
-            const SizedBox(width: 16),
-            _buildTabButton('Similars', 1),
-          ],
+        // Tab bar
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: List.generate(tabs.length, (i) {
+              return Padding(
+                padding: EdgeInsets.only(right: i < tabs.length - 1 ? 8 : 0),
+                child: _buildTabChip(tabs[i], i),
+              );
+            }),
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
 
-        if (_tabIndex == 0) ...[
-          _buildSeasonSearchRow(content),
-          const SizedBox(height: 16),
-
-          // Episodes from provider
-          Consumer(builder: (context, ref, _) {
-            final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
-            return episodesAsync.when(
-              loading: () => const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(
-                      color: AppColors.primary, strokeWidth: 2),
-                ),
-              ),
-              error: (e, _) => const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(
-                    child: Text('Error loading episodes',
-                        style: TextStyle(color: AppColors.textMuted))),
-              ),
-              data: (episodes) {
-                final filtered = _filterEpisodes(episodes);
-                if (filtered.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(
-                        child: Text('No episodes available',
-                            style: TextStyle(color: AppColors.textMuted))),
-                  );
-                }
-                return Column(
-                    children: filtered
-                        .map((ep) => _buildEpisodeCard(ep, content))
-                        .toList());
-              },
-            );
-          }),
-        ] else ...[
-          _buildSimilarsSection(),
-        ],
+        // Tab content
+        _buildTabContent(content, tabs),
       ],
     );
   }
 
-  Widget _buildTabButton(String label, int index) {
-    final isSelected = _tabIndex == index;
+  Widget _buildTabChip(String label, int index) {
+    final isActive = _tabIndex == index;
     return GestureDetector(
-      onTap: () => setState(() => _tabIndex = index),
-      child: Column(
-        children: [
-          Text(label,
-              style: GoogleFonts.lora(
-                color: isSelected ? AppColors.textPrimary : AppColors.textMuted,
-                fontSize: 18,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              )),
-          const SizedBox(height: 4),
-          Container(
-            height: 2,
-            width: label.length * 8.0,
-            color: isSelected ? AppColors.primary : Colors.transparent,
+      onTap: () {
+        setState(() => _tabIndex = index);
+        HapticFeedback.selectionClick();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: isActive ? AppColors.primary : AppColors.textMuted.withValues(alpha: 0.3),
+            width: 1.2,
           ),
-        ],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? Colors.white : AppColors.textSecondary,
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
+
+  Widget _buildTabContent(ContentDetail content, List<String> tabs) {
+    final activeTab = tabs[_tabIndex];
+    switch (activeTab) {
+      case 'Episodes':
+        return _buildEpisodesTab(content);
+      case 'Similars':
+        return _buildSimilarsTab();
+      case 'Reviews':
+        return _buildReviewsTab();
+      case 'Share':
+        return _buildShareTab(content);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // ─── Episodes Tab ─────────────────────────────────────────────────────────
+  Widget _buildEpisodesTab(ContentDetail content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSeasonSearchRow(content),
+        const SizedBox(height: 16),
+        Consumer(builder: (context, ref, _) {
+          final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
+          return episodesAsync.when(
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+              ),
+            ),
+            error: (e, _) => _buildEmptyTab(Icons.error_outline, 'Error loading episodes'),
+            data: (episodes) {
+              final filtered = _filterEpisodes(episodes);
+              if (filtered.isEmpty) {
+                return _buildEmptyTab(Icons.tv_off_rounded, 'No episodes available');
+              }
+              return Column(
+                children: filtered.map((ep) => _buildEpisodeCard(ep, content)).toList(),
+              );
+            },
+          );
+        }),
+      ],
+    );
+  }
+
+  // ─── Similars Tab ─────────────────────────────────────────────────────────
+  Widget _buildSimilarsTab() {
+    final similarAsync = ref.watch(manifestFilteredSimilarProvider(_detailParams));
+    return similarAsync.when(
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+        ),
+      ),
+      error: (e, _) => _buildEmptyTab(Icons.error_outline, 'Failed to load similar content'),
+      data: (list) {
+        if (list.isEmpty) {
+          return _buildEmptyTab(Icons.movie_filter_outlined, 'No similar content found');
+        }
+        return SizedBox(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: list.length,
+            itemBuilder: (context, index) {
+              final item = list[index];
+              return _buildSimilarCard(item);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSimilarCard(SimilarItem item) {
+    final posterUrl =
+        item.posterPath != null ? TmdbClient.posterUrl(item.posterPath) : null;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DetailsScreen(tmdbId: item.id, mediaType: item.mediaType),
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: SizedBox(
+          width: 110,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 110,
+                  height: 160,
+                  child: posterUrl != null && posterUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: posterUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
+                          errorWidget: (_, __, ___) => Container(
+                            color: AppColors.surfaceElevated,
+                            child: const Icon(Icons.movie, color: AppColors.textMuted),
+                          ),
+                        )
+                      : Container(
+                          color: AppColors.surfaceElevated,
+                          child: const Icon(Icons.movie, color: AppColors.textMuted),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                item.title,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Reviews Tab ──────────────────────────────────────────────────────────
+  Widget _buildReviewsTab() {
+    final reviewsAsync = ref.watch(reviewsProvider(_detailParams));
+    return reviewsAsync.when(
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+        ),
+      ),
+      error: (e, _) => _buildEmptyTab(Icons.error_outline, 'Could not load reviews'),
+      data: (reviews) {
+        if (reviews.isEmpty) {
+          return _buildEmptyTab(Icons.rate_review_outlined, 'No reviews yet');
+        }
+        return Column(
+          children: reviews.map((review) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                        child: Text(
+                          review.author.isNotEmpty ? review.author[0].toUpperCase() : '?',
+                          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              review.author,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            if (review.rating != null)
+                              Row(
+                                children: [
+                                  const Icon(Icons.star_rounded, color: AppColors.ratingMid, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${review.rating!.toStringAsFixed(0)}/10',
+                                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _ExpandableReviewContent(content: review.content),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  // ─── Share Tab ────────────────────────────────────────────────────────────
+  Widget _buildShareTab(ContentDetail content) {
+    final deepLink = 'https://daniewatch.app/${content.isTv ? 'tv' : 'movie'}/${content.id}';
+    return Column(
+      children: [
+        _buildEmptyTab(Icons.share_rounded, 'Share with friends'),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildShareAction(Icons.copy_rounded, 'Copy Link', () {
+              Clipboard.setData(ClipboardData(text: deepLink));
+              CustomToast.show(context, 'Link copied!', type: ToastType.success, icon: Icons.check_rounded);
+            }),
+            const SizedBox(width: 48),
+            _buildShareAction(Icons.send_rounded, 'Share', () {
+              Share.share('Check out ${content.title} on DanieWatch!\n\n$deepLink');
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShareAction(IconData icon, String label, VoidCallback onTap) {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      ],
+    );
+  }
+
+  // ─── Empty State Helper ───────────────────────────────────────────────────
+  Widget _buildEmptyTab(IconData icon, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Column(
+          children: [
+            Icon(icon, size: 48, color: AppColors.textMuted.withValues(alpha: 0.4)),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.6), fontSize: 15),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
 
   Widget _buildSeasonSearchRow(ContentDetail content) {
     final seasonNums = content.seasonNumbers;
@@ -821,125 +1232,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
-  // ─── Similars Section ──────────────────────────────────────────────────────
-  Widget _buildSimilarsSection() {
-    final similarAsync = ref.watch(similarProvider(_detailParams));
 
-    return similarAsync.when(
-      loading: () => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(
-              color: AppColors.primary, strokeWidth: 2),
-        ),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (items) {
-        if (items.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(
-                child: Text('No similar content found',
-                    style: TextStyle(color: AppColors.textMuted))),
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (ref.read(detailProvider(_detailParams)).valueOrNull?.isMovie ??
-                false) ...[
-              const Text('Similar',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-            ],
-            SizedBox(
-              height: 200,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  return _buildSimilarCard(item);
-                },
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSimilarCard(SimilarItem item) {
-    final posterUrl =
-        item.posterPath != null ? TmdbClient.posterUrl(item.posterPath) : null;
-
-    return GestureDetector(
-      onTap: () {
-        // Navigate to similar content detail
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                DetailsScreen(tmdbId: item.id, mediaType: item.mediaType),
-          ),
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: SizedBox(
-          width: 110,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 110,
-                  height: 160,
-                  child: posterUrl != null && posterUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: posterUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: AppColors.surfaceElevated),
-                          errorWidget: (_, __, ___) => Container(
-                            color: AppColors.surfaceElevated,
-                            child: const Icon(Icons.movie,
-                                color: AppColors.textMuted),
-                          ),
-                        )
-                      : Container(
-                          color: AppColors.surfaceElevated,
-                          child: const Icon(Icons.movie,
-                              color: AppColors.textMuted),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                item.title,
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 12),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openTrailer(String trailerUrl) async {
-    HapticFeedback.lightImpact();
-    final uri = Uri.parse(trailerUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
 
   void _toggleWatchlist(ContentDetail content, bool currentIsInWatchlist) {
     HapticFeedback.lightImpact();
@@ -1374,6 +1667,52 @@ class _AnimatedActionButtonState extends State<_AnimatedActionButton>
           ),
         ),
       ),
+    );
+  }
+}
+class _ExpandableReviewContent extends StatefulWidget {
+  final String content;
+
+  const _ExpandableReviewContent({required this.content});
+
+  @override
+  State<_ExpandableReviewContent> createState() => _ExpandableReviewContentState();
+}
+
+class _ExpandableReviewContentState extends State<_ExpandableReviewContent> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.content,
+          maxLines: _isExpanded ? null : 4,
+          overflow: _isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        if (widget.content.length > 200)
+          GestureDetector(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _isExpanded ? 'Show Less' : 'Read More',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

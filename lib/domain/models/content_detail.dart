@@ -515,3 +515,30 @@ class TmdbEpisode {
     );
   }
 }
+
+class ReviewItem {
+  final String author;
+  final String content;
+  final String? createdAt;
+  final String? authorAvatarPath;
+  final double? rating;
+
+  ReviewItem({
+    required this.author,
+    required this.content,
+    this.createdAt,
+    this.authorAvatarPath,
+    this.rating,
+  });
+
+  factory ReviewItem.fromTmdbJson(Map<String, dynamic> json) {
+    final authorDetails = json['author_details'] as Map<String, dynamic>?;
+    return ReviewItem(
+      author: json['author']?.toString() ?? 'Anonymous',
+      content: json['content']?.toString() ?? '',
+      createdAt: json['created_at']?.toString(),
+      authorAvatarPath: authorDetails?['avatar_path']?.toString(),
+      rating: _safeDouble(authorDetails?['rating']),
+    );
+  }
+}
