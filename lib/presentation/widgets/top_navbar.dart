@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../providers/search_provider.dart';
+import 'underline_glow_indicator.dart';
 
 class TopNavbar extends ConsumerWidget {
   const TopNavbar({super.key});
@@ -51,54 +52,32 @@ class TopNavbar extends ConsumerWidget {
       selectedIndex = 0; // Clear state -> Explore
     }
 
-    return Container(
-      height: 60,
-      width: double.infinity,
-      color: Colors.transparent,
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final isSelected = selectedIndex == index;
-            final label = items[index];
-
-            return GestureDetector(
-              onTap: () => _onItemTapped(ref, label, filters),
-              child: Padding(
-                padding: const EdgeInsets.only(right: 32.0),
-                child: Center(
-                  child: AnimatedScale(
-                    scale: isSelected ? 1.12 : 1.0,
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeOutBack,
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      style: GoogleFonts.inter(
-                        fontSize: isSelected ? 17 : 15,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        color: isSelected 
-                            ? Colors.white 
-                            : Colors.white.withValues(alpha: 0.5),
-                        shadows: isSelected ? [
-                          Shadow(
-                            color: Colors.white.withValues(alpha: 0.4),
-                            blurRadius: 15,
-                            offset: Offset.zero,
-                          ),
-                        ] : [],
-                      ),
-                      child: Text(label),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
+    return DefaultTabController(
+      length: items.length,
+      initialIndex: selectedIndex < 0 ? 0 : selectedIndex,
+      child: Container(
+        height: 60,
+        width: double.infinity,
+        color: Colors.transparent,
+        child: TabBar(
+          isScrollable: true,
+          dividerColor: Colors.transparent,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
+          onTap: (index) => _onItemTapped(ref, items[index], filters),
+          indicator: const UnderlineGlowIndicator(),
+          indicatorSize: TabBarIndicatorSize.label,
+          labelStyle: GoogleFonts.inter(
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+          unselectedLabelStyle: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white.withValues(alpha: 0.5),
+          tabs: items.map((label) => Tab(text: label)).toList(),
         ),
       ),
     );
