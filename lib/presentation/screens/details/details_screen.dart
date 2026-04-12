@@ -92,17 +92,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         child: CustomScrollView(
           physics: const ClampingScrollPhysics(),
           slivers: [
-            // Hero section
-            SliverToBoxAdapter(child: _HeroSection(content: content)),
-            // Content body
+            // Hero and Content body combined in a Stack to enforce Z-ordering over the WebView
             SliverToBoxAdapter(
-              child: Transform.translate(
-                offset: const Offset(0, -40.0),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(8)),
-                  child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _HeroSection(content: content),
+                  Container(
+                    margin: EdgeInsets.only(top: Responsive(context).h(420).clamp(320.0, 520.0) - 40.0),
+                    padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(8)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                     // Logo or Title
                     if (content.hasLogo)
                       _buildLogo(content.displayLogoUrl!)
@@ -155,10 +156,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     const SizedBox(height: 24),
                     _buildTabSection(content),
 
-                    const SizedBox(height: 120),
-                    ],
+                        const SizedBox(height: 120),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
@@ -1638,6 +1640,7 @@ class _HeroSectionState extends State<_HeroSection> {
         var video = document.querySelector('video');
         if (video) {
           video.muted = true;
+          video.volume = 0; // Default to volume off
           video.loop = true;
           video.setAttribute('playsinline', '');
           video.play().catch(function(){});
@@ -1660,7 +1663,9 @@ class _HeroSectionState extends State<_HeroSection> {
       var observer = new MutationObserver(function() {
         var video = document.querySelector('video');
         if (video) {
-          video.muted = true; video.loop = true;
+          video.muted = true;
+          video.volume = 0; // Default to volume off
+          video.loop = true;
           video.play().catch(function(){});
           observer.disconnect();
         }
@@ -1674,10 +1679,33 @@ class _HeroSectionState extends State<_HeroSection> {
     setState(() {
       _isMuted = !_isMuted;
     });
+    
+    // Use a more robust script that targets both the video element and the YT player API
     _webViewController!.evaluateJavascript(source: '''
-      var video = document.querySelector('video');
-      if (video) { video.muted = ${_isMuted}; }
+      (function() {
+        var video = document.querySelector('video');
+        if (video) {
+          video.muted = ${_isMuted};
+          video.volume = ${_isMuted ? 0 : 1};
+          // Some mobile browsers require a play call after unmuting
+          if (!${_isMuted}) {
+            video.play().catch(function(e) { console.log("Play failed: " + e); });
+          }
+        }
+        
+        var player = document.getElementById('movie_player');
+        if (player) {
+          if (${_isMuted}) {
+            if (typeof player.mute === 'function') player.mute();
+            if (typeof player.setVolume === 'function') player.setVolume(0);
+          } else {
+            if (typeof player.unMute === 'function') player.unMute();
+            if (typeof player.setVolume === 'function') player.setVolume(100);
+          }
+        }
+      })();
     ''');
+    HapticFeedback.selectionClick();
   }
 
   @override
