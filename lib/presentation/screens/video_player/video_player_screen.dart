@@ -12,6 +12,7 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import 'package:daniewatch_app/services/bysebuho_extractor.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watch_history_provider.dart';
+import '../../widgets/sticky_dropdown_modal.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -1068,9 +1069,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                       const SizedBox(height: 16),
                                       // Season Selector
                                       Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
                                         decoration: BoxDecoration(
                                           color: Colors.white.withValues(
                                             alpha: 0.05,
@@ -1079,37 +1077,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                             12,
                                           ),
                                         ),
-                                        child: DropdownButton<int>(
-                                          value: tempSeason,
-                                          dropdownColor: const Color(
-                                            0xFF1A1A1A,
-                                          ),
-                                          underline: const SizedBox(),
-                                          isExpanded: true,
-                                          icon: const Icon(
-                                            Icons.keyboard_arrow_down_rounded,
-                                            color: Colors.white38,
-                                          ),
-                                          items: List.generate(
-                                            widget.seasons?.length ?? 0,
-                                            (i) => DropdownMenuItem(
-                                              value: widget.seasons![i],
-                                              child: Text(
-                                                'Season ${widget.seasons![i]}',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 14,
-                                                ),
+                                        clipBehavior: Clip.hardEdge,
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          child: StickyDropdownModal<int>(
+                                            items: widget.seasons ?? [],
+                                            value: tempSeason,
+                                            onChanged: (result) {
+                                              if (result != tempSeason) {
+                                                setModalState(() => tempSeason = result);
+                                              }
+                                            },
+                                            itemLabelBuilder: (val) => 'Season $val',
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Text(
+                                                    'Season $tempSeason',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 14,
+                                                    ),
+                                                  ),
+                                                  const Icon(
+                                                    Icons.keyboard_arrow_down_rounded,
+                                                    color: Colors.white38,
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),
-                                          onChanged: (val) {
-                                            if (val != null) {
-                                              setModalState(
-                                                () => tempSeason = val,
-                                              );
-                                            }
-                                          },
                                         ),
                                       ),
                                       const SizedBox(height: 12),

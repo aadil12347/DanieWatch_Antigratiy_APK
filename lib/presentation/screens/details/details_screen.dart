@@ -23,6 +23,7 @@ import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/play_loader_overlay.dart';
+import '../../widgets/sticky_dropdown_modal.dart';
 import '../video_player/video_player_screen.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
@@ -796,25 +797,26 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       children: [
         // Season dropdown
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: AppColors.input,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border, width: 0.5),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              value: seasonNums.contains(_selectedSeason)
-                  ? _selectedSeason
-                  : seasonNums.first,
-              dropdownColor: AppColors.surfaceElevated,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: AppColors.textSecondary, size: 20),
-              items: seasonNums.map((seasonNum) {
+          clipBehavior: Clip.hardEdge,
+          child: Material(
+            color: Colors.transparent,
+            child: StickyDropdownModal<int>(
+              items: seasonNums,
+              value: seasonNums.contains(_selectedSeason) ? _selectedSeason : seasonNums.first,
+              onChanged: (result) {
+                if (result != _selectedSeason) {
+                  setState(() => _selectedSeason = result);
+                }
+              },
+              itemLabelBuilder: (seasonNum) {
                 String label = 'Season $seasonNum';
                 if (tmdbSeasons != null) {
-                  final match = tmdbSeasons
+                  final match = tmdbSeasons!
                       .where((s) => s.seasonNumber == seasonNum)
                       .firstOrNull;
                   if (match?.name != null &&
@@ -823,13 +825,39 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     label = match.name!;
                   }
                 }
-                return DropdownMenuItem(value: seasonNum, child: Text(label));
-              }).toList(),
-              onChanged: (v) {
-                if (v != null && v != _selectedSeason) {
-                  setState(() => _selectedSeason = v);
-                }
+                return label;
               },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      (() {
+                        final val = seasonNums.contains(_selectedSeason)
+                            ? _selectedSeason
+                            : seasonNums.first;
+                        String label = 'Season $val';
+                        if (tmdbSeasons != null) {
+                          final match = tmdbSeasons!
+                              .where((s) => s.seasonNumber == val)
+                              .firstOrNull;
+                          if (match?.name != null &&
+                              match!.name!.isNotEmpty &&
+                              match.name != 'Season $val') {
+                            label = match.name!;
+                          }
+                        }
+                        return label;
+                      })(),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.textSecondary, size: 20),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
