@@ -1,4 +1,4 @@
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -37,22 +37,27 @@ class MovieCard extends ConsumerStatefulWidget {
 
 class _MovieCardState extends ConsumerState<MovieCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _hoverController;
+  late AnimationController _pinchController;
+  late Animation<double> _pinchAnimation;
 
   String get _cardKey => '${widget.item.mediaType}_${widget.item.id}';
 
   @override
   void initState() {
     super.initState();
-    _hoverController = AnimationController(
+    _pinchController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 150),
+      reverseDuration: const Duration(milliseconds: 100),
+    );
+    _pinchAnimation = Tween<double>(begin: 1.0, end: 0.96).animate(
+      CurvedAnimation(parent: _pinchController, curve: Curves.easeOutCubic),
     );
   }
 
   @override
   void dispose() {
-    _hoverController.dispose();
+    _pinchController.dispose();
     super.dispose();
   }
 
@@ -69,10 +74,11 @@ class _MovieCardState extends ConsumerState<MovieCard>
     final activeKey = ref.watch(activeCardProvider);
     final isActive = activeKey == _cardKey;
 
-    if (isActive && !_hoverController.isCompleted) {
-      _hoverController.forward();
-    } else if (!isActive && _hoverController.value > 0) {
-      _hoverController.reverse();
+    // Drive the pinch from active state
+    if (isActive && !_pinchController.isCompleted) {
+      _pinchController.forward();
+    } else if (!isActive && _pinchController.value > 0) {
+      _pinchController.reverse();
     }
 
     final watchlistAsync = ref.watch(watchlistProvider);
@@ -87,35 +93,24 @@ class _MovieCardState extends ConsumerState<MovieCard>
           () => context.push('/details/${item.mediaType}/${item.id}'),
       onLongPress: () => _activateHover(),
       child: AnimatedBuilder(
-        animation: _hoverController,
+        animation: _pinchAnimation,
         builder: (context, child) {
-          final hoverValue = _hoverController.value;
-          final scale = 1.0 + (hoverValue * 0.05);
-          final shadowBlur = 12.0 + (hoverValue * 12.0);
-          final shadowOffset = 6.0 + (hoverValue * 6.0);
-
-          return Transform(
-            transform: Matrix4.identity()
-              ..setEntry(3, 2, 0.001)
-              ..scale(scale, scale, 1.0)
-              ..rotateX(0.01 - (hoverValue * 0.02))
-              ..rotateY(0.01 - (hoverValue * 0.02)),
-            alignment: Alignment.center,
-            child: Container(
-              width: widget.width,
-              height: widget.height,
-              color: Colors.transparent, // Purely for sizing
-              child: child,
-            ),
+          return Transform.scale(
+            scale: _pinchAnimation.value,
+            child: child,
           );
         },
-        child: _buildCardContent(
-          item: item,
-          posterUrl: posterUrl,
-          logoUrl: logoUrl,
-          isInWatchlist: isInWatchlist,
-          isHovering: isActive,
-          hoverAnimation: _hoverController,
+        child: SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: _buildCardContent(
+            item: item,
+            posterUrl: posterUrl,
+            logoUrl: logoUrl,
+            isInWatchlist: isInWatchlist,
+            isHovering: isActive,
+            hoverAnimation: _pinchController,
+          ),
         ),
       ),
     );
@@ -147,11 +142,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
 
               // 2. Main Poster Stack (Image + Overlays)
               Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-                  builder: (context, child) {
-                    final hv = hoverAnimation?.value ?? 0.0;
-                    return Container(
+                child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
@@ -160,18 +151,14 @@ class _MovieCardState extends ConsumerState<MovieCard>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5 + (hv * 0.2)),
-                            blurRadius: 12.0 + (hv * 12.0),
-                            offset: Offset(0, 6.0 + (hv * 6.0)),
-                            spreadRadius: hv * 2,
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 12.0,
+                            offset: const Offset(0, 6.0),
                           ),
                         ],
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: child,
-                    );
-                  },
-                  child: Stack(
+                      child: Stack(
                     fit: StackFit.expand,
                     children: [
                       // Base Poster
@@ -184,7 +171,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
                       else
                         _placeholder(),
 
-                      // Hover Overlay (Vignette)
+                      // Hover Overlay (simple darken)
                       if (hoverAnimation != null)
                         AnimatedBuilder(
                           animation: hoverAnimation,
@@ -193,18 +180,8 @@ class _MovieCardState extends ConsumerState<MovieCard>
                               return const SizedBox.shrink();
                             }
                             return Positioned.fill(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: RadialGradient(
-                                    center: Alignment.center,
-                                    radius: 0.8,
-                                    colors: [
-                                      Colors.black.withValues(alpha: 0.2 * hoverAnimation.value),
-                                      Colors.black.withValues(alpha: 0.85 * hoverAnimation.value),
-                                    ],
-                                    stops: const [0.2, 1.0],
-                                  ),
-                                ),
+                              child: ColoredBox(
+                                color: Colors.black.withValues(alpha: 0.5 * hoverAnimation.value),
                               ),
                             );
                           },
@@ -387,7 +364,7 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
   void initState() {
     super.initState();
     _controller = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
+        vsync: this, duration: const Duration(milliseconds: 400));
     
     _scaleAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 20),

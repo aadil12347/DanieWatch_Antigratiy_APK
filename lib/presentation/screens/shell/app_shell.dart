@@ -238,7 +238,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                   right: 0,
                   child: Center(
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 400),
+                      duration: const Duration(milliseconds: 200),
                       curve: Curves.easeInOutCubic,
                       constraints: BoxConstraints(maxWidth: navMaxWidth),
                       child: Padding(
@@ -248,7 +248,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 400),
+                              duration: const Duration(milliseconds: 200),
                               curve: Curves.easeInOutCubic,
                               decoration: BoxDecoration(
                                 color: Colors.black.withValues(alpha: 0.5),
@@ -267,11 +267,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                                 ],
                               ),
                               child: AnimatedSize(
-                                duration: const Duration(milliseconds: 400),
+                                duration: const Duration(milliseconds: 200),
                                 curve: Curves.easeInOutCubic,
                                 alignment: Alignment.bottomCenter,
                                 child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 300),
+                                  duration: const Duration(milliseconds: 150),
                                   switchInCurve: Curves.easeOut,
                                   switchOutCurve: Curves.easeIn,
                                   transitionBuilder: (child, animation) {
@@ -365,7 +365,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                           alignment: Alignment.center,
                                                           children: [
                                                             AnimatedOpacity(
-                                                              duration: const Duration(milliseconds: 200),
+                                                              duration: const Duration(milliseconds: 150),
                                                               opacity: isSelected ? 1.0 : 0.0,
                                                               child: Icon(
                                                                 _activeIcons[index],
@@ -374,7 +374,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                               ),
                                                             ),
                                                             AnimatedOpacity(
-                                                              duration: const Duration(milliseconds: 200),
+                                                              duration: const Duration(milliseconds: 150),
                                                               opacity: isSelected ? 0.0 : 1.0,
                                                               child: Icon(
                                                                 _icons[index],
@@ -386,7 +386,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                         ),
                                                         SizedBox(height: r.h(2)),
                                                         AnimatedDefaultTextStyle(
-                                                          duration: const Duration(milliseconds: 200),
+                                                          duration: const Duration(milliseconds: 150),
                                                           style: GoogleFonts.inter(
                                                             color: isSelected
                                                                 ? AppColors.primary

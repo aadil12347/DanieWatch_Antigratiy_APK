@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -184,7 +183,7 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
           height: r.h(60),
           padding: EdgeInsets.symmetric(horizontal: r.w(32)),
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
+            duration: const Duration(milliseconds: 200),
             transitionBuilder: (child, animation) {
               return FadeTransition(
                 opacity: animation,
@@ -225,7 +224,6 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     double scale = 1.0;
     double translateX = 0.0;
     double opacity = 1.0;
-    double blur = 0.0;
 
     final double cardWidth = r.w(170).clamp(120.0, 220.0);
     final double cardHeight = r.h(280).clamp(210.0, 360.0);
@@ -236,32 +234,27 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
       scale = 1.0;
       translateX = 0.0;
       opacity = 1.0;
-      blur = 0.0;
     } else if (pos == -1) {
       scale = 0.85;
       translateX = -offset1;
       opacity = 0.7;
-      blur = 1.0; 
     } else if (pos == 1) {
       scale = 0.85;
       translateX = offset1;
       opacity = 0.7;
-      blur = 1.0;
     } else if (pos == -2) {
       scale = 0.75;
       translateX = -offset2;
       opacity = 0.4;
-      blur = 3.0;
     } else if (pos == 2) {
       scale = 0.75;
       translateX = offset2;
       opacity = 0.4;
-      blur = 3.0;
     }
 
     return AnimatedPositioned(
       key: ValueKey<int>(index),
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
       left: 0,
       right: 0,
@@ -270,17 +263,15 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
           transform: Matrix4.identity()
             ..translate(translateX)
             ..scale(scale),
-          duration: const Duration(milliseconds: 350),
+          duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
           child: GestureDetector(
             onTap: () => _handleTap(index),
             behavior: HitTestBehavior.opaque,
             child: AnimatedOpacity(
               opacity: opacity,
-              duration: const Duration(milliseconds: 350),
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                child: Container(
+              duration: const Duration(milliseconds: 250),
+              child: Container(
                   width: cardWidth,
                   height: cardHeight,
                   decoration: BoxDecoration(
@@ -299,7 +290,6 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
                     errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
-                  ),
                 ),
               ),
             ),

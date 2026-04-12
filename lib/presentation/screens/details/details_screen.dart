@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -582,12 +583,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DetailsScreen(tmdbId: item.id, mediaType: item.mediaType),
-          ),
-        );
+        context.push('/details/${item.mediaType}/${item.id}');
       },
       child: Padding(
         padding: const EdgeInsets.only(right: 12),

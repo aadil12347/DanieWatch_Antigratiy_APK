@@ -19,57 +19,22 @@ class AppRouter {
   static GlobalKey<NavigatorState> rootNavKey = GlobalKey<NavigatorState>();
 }
 
-/// Smooth slide-up + fade + scale transition for tab pages
-CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
+/// Unified fast transition — subtle slide-up + fade for all pages.
+/// Keeps the app feeling snappy and consistent across every navigation path.
+CustomTransitionPage<void> _quickPage(Widget child, GoRouterState state) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
     child: ShellPopScope(child: child),
-    transitionDuration: const Duration(milliseconds: 350),
-    reverseTransitionDuration: const Duration(milliseconds: 250),
+    transitionDuration: const Duration(milliseconds: 200),
+    reverseTransitionDuration: const Duration(milliseconds: 150),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final slide = Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero)
           .chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
-      final fade = CurveTween(curve: Curves.easeOut).animate(animation);
-      final scale = Tween<double>(begin: 0.97, end: 1.0)
-          .chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
+      final fade = CurveTween(curve: Curves.easeOutCubic).animate(animation);
 
       return FadeTransition(
         opacity: fade,
-        child: ScaleTransition(
-          scale: scale,
-          child: SlideTransition(position: slide, child: child),
-        ),
-      );
-    },
-  );
-}
-
-/// Cinematic vertical shutter transition for premium entering/exiting (Login & Player)
-CustomTransitionPage<void> _shutterPage(Widget child, GoRouterState state) {
-  return CustomTransitionPage<void>(
-    key: state.pageKey,
-    child: ShellPopScope(child: child),
-    transitionDuration: const Duration(milliseconds: 750),
-    reverseTransitionDuration: const Duration(milliseconds: 600),
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final curve = CurvedAnimation(parent: animation, curve: Curves.easeOutExpo);
-      
-      // Secondary animation for pushing another route on top
-      final secondaryFade = Tween<double>(begin: 1.0, end: 0.5)
-          .chain(CurveTween(curve: Curves.easeOut)).animate(secondaryAnimation);
-
-      return FadeTransition(
-        opacity: secondaryFade,
-        child: ClipRect(
-          child: Align(
-            alignment: Alignment.center,
-            heightFactor: curve.value.clamp(0.0, 1.0),
-            child: Opacity(
-              opacity: curve.value.clamp(0.0, 1.0),
-              child: child,
-            ),
-          ),
-        ),
+        child: SlideTransition(position: slide, child: child),
       );
     },
   );
@@ -138,7 +103,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           routes: [
             GoRoute(
               path: '/home',
-              pageBuilder: (context, state) => _shutterPage(const HomeScreen(), state),
+              pageBuilder: (context, state) => _quickPage(const HomeScreen(), state),
             ),
             _detailsRoute(),
           ],
@@ -148,7 +113,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           routes: [
             GoRoute(
               path: '/search',
-              pageBuilder: (context, state) => _fadePage(const SearchScreen(), state),
+              pageBuilder: (context, state) => _quickPage(const SearchScreen(), state),
             ),
             _detailsRoute(),
           ],
@@ -158,7 +123,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           routes: [
             GoRoute(
               path: '/watchlist',
-              pageBuilder: (context, state) => _fadePage(const WatchlistScreen(), state),
+              pageBuilder: (context, state) => _quickPage(const WatchlistScreen(), state),
             ),
             _detailsRoute(),
           ],
@@ -168,7 +133,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           routes: [
             GoRoute(
               path: '/downloads',
-              pageBuilder: (context, state) => _fadePage(const DownloadsScreen(), state),
+              pageBuilder: (context, state) => _quickPage(const DownloadsScreen(), state),
             ),
             _detailsRoute(),
           ],
@@ -177,21 +142,21 @@ final routerProvider = Provider<GoRouter>((ref) {
     ),
     GoRoute(
       path: '/profile',
-      builder: (context, state) => const ProfileScreen(),
+      pageBuilder: (context, state) => _quickPage(const ProfileScreen(), state),
     ),
     GoRoute(
       path: '/account-settings',
-      builder: (context, state) => const AccountSettingsScreen(),
+      pageBuilder: (context, state) => _quickPage(const AccountSettingsScreen(), state),
     ),
     GoRoute(
       path: '/security-settings',
-      builder: (context, state) => const PlaceholderScreen(title: 'Security Settings'),
+      pageBuilder: (context, state) => _quickPage(const PlaceholderScreen(title: 'Security Settings'), state),
     ),
     GoRoute(
       path: '/placeholder/:title',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final title = state.pathParameters['title'] ?? 'Coming Soon';
-        return PlaceholderScreen(title: title);
+        return _quickPage(PlaceholderScreen(title: title), state);
       },
     ),
   ],
@@ -245,7 +210,7 @@ GoRoute _detailsRoute() {
     pageBuilder: (context, state) {
       final mediaType = state.pathParameters['mediaType']!;
       final id = int.parse(state.pathParameters['id']!);
-      return _shutterPage(DetailsScreen(tmdbId: id, mediaType: mediaType), state);
+      return _quickPage(DetailsScreen(tmdbId: id, mediaType: mediaType), state);
     },
   );
 }
