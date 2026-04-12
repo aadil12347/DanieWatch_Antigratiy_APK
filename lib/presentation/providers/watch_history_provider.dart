@@ -176,13 +176,13 @@ final watchHistoryProvider =
 class ContinueWatchingSettingsNotifier extends StateNotifier<bool> {
   static const _key = 'daniewatch_history_enabled';
 
-  ContinueWatchingSettingsNotifier() : super(true) {
+  ContinueWatchingSettingsNotifier() : super(false) {
     _load();
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool(_key) ?? true;
+    state = prefs.getBool(_key) ?? false;
   }
 
   Future<void> toggle(bool value) async {

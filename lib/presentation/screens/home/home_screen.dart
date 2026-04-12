@@ -98,7 +98,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           children: [
                             Hero(
                               tag: 'profile-avatar',
-                              child: UserAvatar(size: r.d(60).clamp(44.0, 76.0), canEdit: false),
+                              child: UserAvatar(size: r.d(40).clamp(32.0, 50.0), canEdit: false),
                             ),
                             SizedBox(width: r.w(16)),
                             Column(
@@ -115,7 +115,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         profile?.username ?? 'User',
                                         style: GoogleFonts.lora(
                                             color: AppColors.textPrimary,
-                                            fontSize: r.f(24).clamp(18.0, 32.0),
+                                            fontSize: r.f(18).clamp(14.0, 24.0),
                                             fontWeight: FontWeight.w500,
                                             height: 1.2),
                                       ),
@@ -129,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         'User',
                                         style: GoogleFonts.lora(
                                             color: AppColors.textPrimary,
-                                            fontSize: r.f(24).clamp(18.0, 32.0),
+                                            fontSize: r.f(18).clamp(14.0, 24.0),
                                             fontWeight: FontWeight.w500,
                                             height: 1.2),
                                       ),
