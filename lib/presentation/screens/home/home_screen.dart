@@ -18,6 +18,7 @@ import '../../widgets/user_avatar.dart';
 import '../../widgets/continue_watching_row.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/watch_history_provider.dart';
+import '../../../core/utils/toast_utils.dart';
 
 import '../../providers/scroll_provider.dart';
 
@@ -98,7 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           children: [
                             Hero(
                               tag: 'profile-avatar',
-                              child: UserAvatar(size: r.d(40).clamp(32.0, 50.0), canEdit: false),
+                              child: UserAvatar(size: r.d(48).clamp(40.0, 60.0), canEdit: false),
                             ),
                             SizedBox(width: r.w(16)),
                             Column(
@@ -139,8 +140,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ],
                         ),
                       ),
-                      Icon(Icons.notifications_none_rounded,
-                          size: r.d(28).clamp(22.0, 34.0), color: Colors.white),
+                      GestureDetector(
+                        onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
+                        child: Icon(Icons.notifications_none_rounded,
+                            size: r.d(28).clamp(22.0, 34.0), color: Colors.white),
+                      ),
                     ],
                   ),
                 );
