@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
@@ -11,6 +12,7 @@ import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
+
   const SplashScreen({super.key});
 
   @override
@@ -150,6 +152,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         } else if (context.mounted) {
           context.go('/home');
         }
+        // Fetch new posters in background for next launch
+        fetchAndCachePosters();
       } catch (e) {
         debugPrint('SplashScreen: Exception during context.go: $e');
       }
@@ -374,11 +378,15 @@ class _MarqueeColumnState extends State<MarqueeColumn> {
           padding: const EdgeInsets.only(bottom: 12),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(
-              extendedImages[index],
+            child: CachedNetworkImage(
+              imageUrl: extendedImages[index],
               height: 170,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
+              placeholder: (context, url) => Container(
+                height: 170,
+                color: Colors.white10,
+              ),
+              errorWidget: (context, url, error) => Container(
                 height: 170,
                 color: Colors.white10,
                 child: const Icon(Icons.movie_filter_outlined, color: Colors.white24),
