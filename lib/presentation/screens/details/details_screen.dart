@@ -1575,9 +1575,15 @@ class _HeroSectionState extends State<_HeroSection> {
 
   // JavaScript to inject after YouTube page loads — hides all chrome,
   // forces the video player to fill viewport, and auto-plays muted.
-  static const String _hideYouTubeChromeJs = r'''
+  // CSS to hide YouTube's UI and force the video to fill the viewport
+  static const String _ytPureCss = r'''
     (function() {
-      var style = document.createElement('style');
+      var style = document.getElementById('daniewatch-styles');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'daniewatch-styles';
+        document.head.appendChild(style);
+      }
       style.textContent = `
         /* Hide all YouTube chrome */
         ytm-mobile-topbar-renderer,
@@ -1635,9 +1641,12 @@ class _HeroSectionState extends State<_HeroSection> {
         }
         ytm-app, ytm-watch { overflow: hidden !important; }
       `;
-      document.head.appendChild(style);
+    })();
+  ''';
 
-      // Initial Autoplay Setup
+  // Logic to handle initial autoplay (muted)
+  static const String _ytInitialPlaybackJs = r'''
+    (function() {
       function tryAutoplay() {
         var video = document.querySelector('video');
         if (video) {
@@ -1669,20 +1678,25 @@ class _HeroSectionState extends State<_HeroSection> {
     setState(() {
       _isMuted = !_isMuted;
     });
-    
+
     _webViewController!.evaluateJavascript(source: '''
       (function() {
         var videos = document.querySelectorAll('video');
         videos.forEach(function(v) {
           v.muted = ${_isMuted};
           v.volume = ${_isMuted ? 0 : 1};
+          // Explicitly call play case it paused during mute/unmute
+          if (!${_isMuted}) v.play().catch(function(){});
         });
+        
         var player = document.getElementById('movie_player');
         if (player) {
           if (${_isMuted}) {
             if (typeof player.mute === 'function') player.mute();
+            if (typeof player.setVolume === 'function') player.setVolume(0);
           } else {
             if (typeof player.unMute === 'function') player.unMute();
+            if (typeof player.setVolume === 'function') player.setVolume(100);
           }
         }
       })();
@@ -1761,9 +1775,14 @@ class _HeroSectionState extends State<_HeroSection> {
                             if (mounted) {
                               setState(() => _isPageLoaded = true);
                             }
-                            await controller.evaluateJavascript(source: _hideYouTubeChromeJs);
+                            // Apply CSS and start initial playback logic
+                            await controller.evaluateJavascript(source: _ytPureCss);
+                            await controller.evaluateJavascript(source: _ytInitialPlaybackJs);
+                            
+                            // Re-apply ONLY CSS after 2 seconds to catch any late-injected elements
+                            // without resetting the mute/volume state.
                             Future.delayed(const Duration(milliseconds: 2000), () {
-                              if (mounted) controller.evaluateJavascript(source: _hideYouTubeChromeJs);
+                              if (mounted) controller.evaluateJavascript(source: _ytPureCss);
                             });
                           },
                           shouldOverrideUrlLoading: (controller, navigationAction) async {
