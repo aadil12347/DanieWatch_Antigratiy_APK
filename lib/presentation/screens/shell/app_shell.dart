@@ -385,19 +385,25 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                           ],
                                                         ),
                                                         SizedBox(height: r.h(2)),
-                                                        AnimatedDefaultTextStyle(
-                                                          duration: const Duration(milliseconds: 150),
-                                                          style: GoogleFonts.inter(
-                                                            color: isSelected
-                                                                ? AppColors.primary
-                                                                : AppColors.textMuted,
-                                                            fontSize: labelSize,
-                                                            fontWeight: isSelected
-                                                                ? FontWeight.w600
-                                                                : FontWeight.w500,
-                                                            letterSpacing: -0.2,
+                                                        FittedBox(
+                                                          fit: BoxFit.scaleDown,
+                                                          child: AnimatedDefaultTextStyle(
+                                                            duration: const Duration(milliseconds: 150),
+                                                            style: GoogleFonts.inter(
+                                                              color: isSelected
+                                                                  ? AppColors.primary
+                                                                  : AppColors.textMuted,
+                                                              fontSize: labelSize,
+                                                              fontWeight: isSelected
+                                                                  ? FontWeight.w600
+                                                                  : FontWeight.w500,
+                                                              letterSpacing: -0.2,
+                                                            ),
+                                                            child: Text(
+                                                              _labels[index],
+                                                              maxLines: 1,
+                                                            ),
                                                           ),
-                                                          child: Text(_labels[index]),
                                                         ),
                                                       ],
                                                     ),
