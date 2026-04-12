@@ -1654,13 +1654,21 @@ class _HeroSectionState extends State<_HeroSection> {
 
       if (!tryAutoplay()) {
         var attempts = 0;
-        var interval = setInterval(function() {
+        window.ytInitInterval = setInterval(function() {
+          if (window.manualAudioToggle) {
+             clearInterval(window.ytInitInterval);
+             return;
+          }
           attempts++;
-          if (tryAutoplay() || attempts > 30) clearInterval(interval);
+          if (tryAutoplay() || attempts > 30) clearInterval(window.ytInitInterval);
         }, 500);
       }
 
       var observer = new MutationObserver(function() {
+        if (window.manualAudioToggle) {
+          observer.disconnect();
+          return;
+        }
         var video = document.querySelector('video');
         if (video) {
           video.muted = true;
@@ -1680,29 +1688,38 @@ class _HeroSectionState extends State<_HeroSection> {
       _isMuted = !_isMuted;
     });
     
-    // Use a more robust script that targets both the video element and the YT player API
+    // Use an aggressive script that overrides initialization and targets both video and player
     _webViewController!.evaluateJavascript(source: '''
       (function() {
-        var video = document.querySelector('video');
-        if (video) {
-          video.muted = ${_isMuted};
-          video.volume = ${_isMuted ? 0 : 1};
-          // Some mobile browsers require a play call after unmuting
-          if (!${_isMuted}) {
-            video.play().catch(function(e) { console.log("Play failed: " + e); });
+        window.manualAudioToggle = true; 
+        if (window.ytInitInterval) clearInterval(window.ytInitInterval);
+        
+        function applyAudioSettings() {
+          var video = document.querySelector('video');
+          if (video) {
+            video.muted = ${_isMuted};
+            video.volume = ${_isMuted ? 0 : 1};
+            if (!${_isMuted}) {
+              video.play().catch(function(e) { console.log("Play failed: " + e); });
+            }
+          }
+          
+          var player = document.getElementById('movie_player');
+          if (player) {
+            if (${_isMuted}) {
+              if (typeof player.mute === 'function') player.mute();
+              if (typeof player.setVolume === 'function') player.setVolume(0);
+            } else {
+              if (typeof player.unMute === 'function') player.unMute();
+              if (typeof player.setVolume === 'function') player.setVolume(100);
+            }
           }
         }
         
-        var player = document.getElementById('movie_player');
-        if (player) {
-          if (${_isMuted}) {
-            if (typeof player.mute === 'function') player.mute();
-            if (typeof player.setVolume === 'function') player.setVolume(0);
-          } else {
-            if (typeof player.unMute === 'function') player.unMute();
-            if (typeof player.setVolume === 'function') player.setVolume(100);
-          }
-        }
+        applyAudioSettings();
+        // Run again slightly later just in case YouTube overrides it during initial load
+        setTimeout(applyAudioSettings, 100);
+        setTimeout(applyAudioSettings, 500);
       })();
     ''');
     HapticFeedback.selectionClick();
