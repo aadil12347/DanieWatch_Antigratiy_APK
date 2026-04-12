@@ -152,14 +152,54 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
   Widget build(BuildContext context) {
     return Stack(
       children: [
+        // The main content
         Positioned.fill(
-          child: widget.extendBehindAppBar
-              ? widget.child
-              : Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: widget.child,
-                ),
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              _handleScroll(notification);
+              return false;
+            },
+            child: widget.extendBehindAppBar
+                ? widget.child
+                : Padding(
+                    padding: const EdgeInsets.only(top: kToolbarHeight),
+                    child: widget.child,
+                  ),
+          ),
         ),
+
+        // Floating Back Button
+        if (widget.showBackButton)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 12,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: GestureDetector(
+                  onTap: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/');
+                    }
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white, size: 18),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

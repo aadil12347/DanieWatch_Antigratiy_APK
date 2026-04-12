@@ -86,7 +86,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   Widget _buildDetailPage(ContentDetail content, bool isInWatchlist) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.black,
       body: CustomAppBar(
         showBackButton: true,
         child: CustomScrollView(
@@ -96,9 +96,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             SliverToBoxAdapter(child: _HeroSection(content: content)),
             // Content body
             SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(16)),
-                child: Column(
+              child: Transform.translate(
+                offset: const Offset(0, -40.0),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(8)),
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Logo or Title
@@ -154,7 +156,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     _buildTabSection(content),
 
                     const SizedBox(height: 120),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -380,6 +383,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         SizedBox(
           height: 100,
           child: ListView.builder(
+            physics: const ClampingScrollPhysics(),
             scrollDirection: Axis.horizontal,
             itemCount: cast.length,
             itemBuilder: (context, index) {
@@ -556,6 +560,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         return SizedBox(
           height: 200,
           child: ListView.builder(
+            physics: const ClampingScrollPhysics(),
             scrollDirection: Axis.horizontal,
             itemCount: list.length,
             itemBuilder: (context, index) {
@@ -1220,7 +1225,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   // ─── Error Screen ──────────────────────────────────────────────────────────
   Widget _buildErrorScreen(String message) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.black,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1246,11 +1251,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   // ─── Loading Skeleton ──────────────────────────────────────────────────────
   Widget _buildLoadingScreen() {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.black,
       body: Shimmer.fromColors(
         baseColor: AppColors.surface,
         highlightColor: AppColors.surfaceElevated,
         child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1319,6 +1325,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     SizedBox(
                       height: 80,
                       child: ListView.builder(
+                        physics: const ClampingScrollPhysics(),
                         scrollDirection: Axis.horizontal,
                         itemCount: 5,
                         itemBuilder: (_, __) => Padding(
@@ -1603,7 +1610,7 @@ class _HeroSectionState extends State<_HeroSection> {
         }
         html, body {
           margin: 0 !important; padding: 0 !important;
-          overflow: hidden !important; background: #141413 !important;
+          overflow: hidden !important; background: #000000 !important;
         }
         .player-container, #player, #movie_player,
         .html5-video-container {
@@ -1612,7 +1619,7 @@ class _HeroSectionState extends State<_HeroSection> {
           width: 100vw !important; height: 100vh !important;
           max-height: 100vh !important; min-height: 100vh !important;
           z-index: 99999 !important; object-fit: cover !important;
-          background: #141413 !important;
+          background: #000000 !important;
         }
         video {
           position: fixed !important;
@@ -1621,7 +1628,7 @@ class _HeroSectionState extends State<_HeroSection> {
           width: auto !important; height: auto !important;
           z-index: 99999 !important; object-fit: cover !important;
           transform: translate(-50%, -50%) scale(1.5) !important;
-          background: #141413 !important;
+          background: #000000 !important;
         }
         ytm-app, ytm-watch { overflow: hidden !important; }
       `;
@@ -1717,7 +1724,7 @@ class _HeroSectionState extends State<_HeroSection> {
                             allowsInlineMediaPlayback: true,
                             transparentBackground: true,
                             javaScriptEnabled: true,
-                            useHybridComposition: true,
+                            useHybridComposition: false,
                             disableVerticalScroll: true,
                             disableHorizontalScroll: true,
                             supportZoom: false,
@@ -1783,38 +1790,21 @@ class _HeroSectionState extends State<_HeroSection> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.25),
+                      Colors.black.withValues(alpha: 0.4),
                       Colors.transparent,
                       Colors.transparent,
-                      AppColors.background.withValues(alpha: 0.5),
-                      AppColors.background.withValues(alpha: 0.85),
-                      AppColors.background,
+                      Colors.black.withValues(alpha: 0.2),
+                      Colors.black.withValues(alpha: 0.7),
+                      Colors.black.withValues(alpha: 0.95),
+                      Colors.black,
                     ],
-                    stops: const [0.0, 0.15, 0.4, 0.7, 0.88, 1.0],
+                    stops: const [0.0, 0.15, 0.5, 0.75, 0.85, 0.92, 1.0],
                   ),
                 ),
               ),
             ),
           ),
 
-          // ── Back Button (top-left) ──
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 12,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
-              ),
-            ),
-          ),
 
           // ── Mute/Unmute Button (top-right) ──
           if (_hasTrailer && _trailerReady)
