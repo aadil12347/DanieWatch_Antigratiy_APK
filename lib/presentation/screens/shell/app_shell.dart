@@ -378,7 +378,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                               opacity: isSelected ? 0.0 : 1.0,
                                                               child: Icon(
                                                                 _icons[index],
-                                                                color: AppColors.textMuted,
+                                                                color: AppColors.textPrimary,
                                                                 size: iconSize,
                                                               ),
                                                             ),
@@ -392,7 +392,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                             style: GoogleFonts.inter(
                                                               color: isSelected
                                                                   ? AppColors.primary
-                                                                  : AppColors.textMuted,
+                                                                  : AppColors.textPrimary,
                                                               fontSize: labelSize,
                                                               fontWeight: isSelected
                                                                   ? FontWeight.w600
