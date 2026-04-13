@@ -35,7 +35,12 @@ class WatchHistoryItem {
   });
 
   /// Unique key for deduplication: same show + season + episode = same entry
-  String get uniqueKey => '$tmdbId';
+  String get uniqueKey {
+    if (mediaType == 'tv' && season != null && episode != null) {
+      return '$tmdbId-$season-$episode';
+    }
+    return '$tmdbId';
+  }
 
   /// Progress as a 0.0–1.0 fraction
   double get progress =>
@@ -156,7 +161,12 @@ class WatchHistoryNotifier extends StateNotifier<List<WatchHistoryItem>> {
 
   /// Remove a specific item from watch history (e.g. when finished)
   Future<void> removeItem(int tmdbId, {int? season, int? episode}) async {
-    final key = '$tmdbId';
+    String key;
+    if (season != null && episode != null) {
+      key = '$tmdbId-$season-$episode';
+    } else {
+      key = '$tmdbId';
+    }
     state = state.where((e) => e.uniqueKey != key).toList();
     await _persistToStorage();
   }
