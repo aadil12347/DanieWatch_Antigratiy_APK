@@ -8,6 +8,7 @@ import '../../core/utils/responsive.dart';
 import '../providers/detail_provider.dart';
 import '../providers/watch_history_provider.dart';
 import '../screens/video_player/video_player_screen.dart';
+import 'play_loader_overlay.dart';
 
 /// Premium "Continue Watching" row for the home screen.
 /// Shows recent watch history with progress bars and thumbnails.
@@ -320,21 +321,52 @@ class _ContinueWatchingCard extends ConsumerWidget {
       seasons = detailAsync.valueOrNull?.seasonNumbers;
     } catch (_) {}
 
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => VideoPlayerScreen(
-          title: item.title,
-          url: item.playUrl ?? '',
-          tmdbId: item.tmdbId,
-          mediaType: item.mediaType,
-          season: item.season,
-          episode: item.episode,
-          seasons: seasons,
-          startPosition: item.currentTime,
-          posterUrl: item.posterUrl,
-          isOffline: item.mediaType == 'offline',
-        ),
-      ),
+    // Use the same play loader animation as the detail page
+    showPlayLoader(
+      context: context,
+      fetchLinkFuture: () async {
+        // If we already have a play URL, return it
+        if (item.playUrl != null && item.playUrl!.isNotEmpty) {
+          return item.playUrl;
+        }
+        // Otherwise, fetch the link using the detail provider
+        try {
+          final detailAsync = await ref.read(
+            detailProvider(
+              DetailParams(tmdbId: item.tmdbId, mediaType: item.mediaType),
+            ).future,
+          );
+          return detailAsync?.playUrl;
+        } catch (_) {
+          return null;
+        }
+      },
+      onSuccess: (url) {
+        Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute(
+            builder: (_) => VideoPlayerScreen(
+              title: item.title,
+              url: url,
+              tmdbId: item.tmdbId,
+              mediaType: item.mediaType,
+              season: item.season,
+              episode: item.episode,
+              seasons: seasons,
+              startPosition: item.currentTime,
+              posterUrl: item.posterUrl,
+              isOffline: item.mediaType == 'offline',
+            ),
+          ),
+        );
+      },
+      onError: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load video'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      },
     );
   }
 }
