@@ -16,7 +16,6 @@ class TopNavbar extends ConsumerWidget {
     'Korean',
     'Chinese',
     'Punjabi',
-    'Pakistani',
     'Action',
     'Comedy',
     'Romance',
@@ -110,8 +109,7 @@ class TopNavbar extends ConsumerWidget {
       'Anime', 
       'Korean', 
       'Chinese', 
-      'Punjabi', 
-      'Pakistani'
+      'Punjabi',
     };
     const genres = {
       'Action', 

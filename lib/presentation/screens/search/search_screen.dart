@@ -97,8 +97,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       categoryItems = ref.watch(chineseProvider);
     } else if (filterCat.contains('Punjabi')) {
       categoryItems = ref.watch(punjabiProvider);
-    } else if (filterCat.contains('Pakistani')) {
-      categoryItems = ref.watch(pakistaniProvider);
     } else {
       categoryItems = globalItemsAsync;
     }
@@ -109,19 +107,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         SliverToBoxAdapter(child: Center(child: Text('Error: $err')))
       ], [], searchState),
       data: (items) {
-        // When searching, manually trigger the in-memory search on the subset
-        // We do this to ensure search is isolated to the "file" being viewed.
-        if (hasSearch && filterCat.isNotEmpty) {
-          // Note: In a real app, you might want to debounce this or use a separate provider
-          // for the filtered subset search.
-        }
-
+        // ALWAYS apply filters through FilterUtils when any filter or search is active
+        // This ensures year, genre, region etc. filters always work correctly
         final itemsToDisplay = showResults
             ? FilterUtils.getFilteredItems(
                 allItems: items,
                 searchState: searchState,
                 index: index,
-                // Pass the active category to enforce strict filtering
                 enforceCategory: filterCat.isNotEmpty ? filterCat.first : null,
               )
             : items;
@@ -200,8 +192,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return [_buildShimmerGrid()];
     }
 
-    // User typed something but no results
-    if (hasSearch && itemsToDisplay.isEmpty) {
+    // Filters or search active but no matching results
+    if (showResults && itemsToDisplay.isEmpty) {
       return [
         const SliverFillRemaining(
           child: EmptyResultsView(),
@@ -209,7 +201,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ];
     }
 
-    // Active search or filter with results
+    // Active search or filter with results → show ONLY filtered items
     if (showResults && itemsToDisplay.isNotEmpty) {
       return [_buildResultsGrid(itemsToDisplay)];
     }
