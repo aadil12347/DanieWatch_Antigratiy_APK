@@ -232,7 +232,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       filters = filters.copyWith(genres: {title});
     }
 
-    ref.read(searchProvider.notifier).updateFilters(filters);
+    ref.read(searchProvider('explore').notifier).updateFilters(filters);
     context.go('/search');
   }
 }

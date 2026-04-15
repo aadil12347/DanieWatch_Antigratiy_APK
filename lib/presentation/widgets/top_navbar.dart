@@ -10,29 +10,40 @@ class TopNavbar extends ConsumerWidget {
 
   static const List<String> items = [
     'Explore',
-    'Korean',
-    'Anime',
     'Bollywood',
+    'Hollywood',
+    'Anime',
+    'Korean',
+    'Chinese',
+    'Punjabi',
+    'Pakistani',
     'Action',
     'Comedy',
+    'Romance',
+    'Horror',
+    'Drama',
     'Thriller',
+    'Sci-Fi',
   ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider('explore'));
     final filters = searchState.filters;
 
     // Determine which item is currently active
-    // Determine which item is currently active
     int selectedIndex = 0; // Default to 'Explore'
 
-    if (filters.categories.contains('Korean')) {
-      selectedIndex = 1;
-    } else if (filters.categories.contains('Anime')) {
-      selectedIndex = 2;
-    } else if (filters.categories.contains('Bollywood')) {
-      selectedIndex = 3;
+    if (filters.categories.isNotEmpty) {
+      final activeCategory = filters.categories.firstWhere(
+        (c) => items.contains(c),
+        orElse: () => '',
+      );
+      if (activeCategory.isNotEmpty) {
+        selectedIndex = items.indexOf(activeCategory);
+      } else {
+        selectedIndex = -1;
+      }
     } else if (filters.genres.isNotEmpty) {
       // Check if any selected genre is present in our navbar list
       final activeGenre = filters.genres.firstWhere(
@@ -84,7 +95,7 @@ class TopNavbar extends ConsumerWidget {
   }
 
   void _onItemTapped(WidgetRef ref, String label, SearchFilters currentFilters) {
-    final notifier = ref.read(searchProvider.notifier);
+    final notifier = ref.read(searchProvider('explore').notifier);
     
     if (label == 'Explore') {
       // Clear all filters to return to fresh Explore state
@@ -93,8 +104,24 @@ class TopNavbar extends ConsumerWidget {
     }
 
     // Is it a category or a genre?
-    const categories = {'Korean', 'Anime', 'Bollywood'};
-    const genres = {'Action', 'Comedy', 'Thriller'};
+    const categories = {
+      'Bollywood', 
+      'Hollywood', 
+      'Anime', 
+      'Korean', 
+      'Chinese', 
+      'Punjabi', 
+      'Pakistani'
+    };
+    const genres = {
+      'Action', 
+      'Comedy', 
+      'Romance', 
+      'Horror', 
+      'Drama', 
+      'Thriller', 
+      'Sci-Fi'
+    };
 
     if (categories.contains(label)) {
       // Reset filters and apply the new category

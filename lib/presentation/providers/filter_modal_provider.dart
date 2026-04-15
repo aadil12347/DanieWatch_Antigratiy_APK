@@ -9,6 +9,7 @@ class FilterModalState {
   final List<String> options;
   final void Function(String)? onChanged;
   final bool isSubMenu; // If true, cancel returns to mainPanel instead of none
+  final String contextId;
 
   bool get isOpen => view != FilterView.none;
 
@@ -19,6 +20,7 @@ class FilterModalState {
     this.options = const [],
     this.onChanged,
     this.isSubMenu = false,
+    this.contextId = 'explore',
   });
 
   FilterModalState copyWith({
@@ -28,6 +30,7 @@ class FilterModalState {
     List<String>? options,
     void Function(String)? onChanged,
     bool? isSubMenu,
+    String? contextId,
   }) {
     return FilterModalState(
       view: view ?? this.view,
@@ -36,6 +39,7 @@ class FilterModalState {
       options: options ?? this.options,
       onChanged: onChanged ?? this.onChanged,
       isSubMenu: isSubMenu ?? this.isSubMenu,
+      contextId: contextId ?? this.contextId,
     );
   }
 }

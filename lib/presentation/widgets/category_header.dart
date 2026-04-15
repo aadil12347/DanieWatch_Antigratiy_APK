@@ -46,18 +46,20 @@ class CategorySearchBar extends ConsumerWidget {
   final TextEditingController searchController;
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
+  final String contextId;
 
   const CategorySearchBar({
     super.key,
     required this.searchController,
     required this.searchFocus,
     required this.onSearchChanged,
+    this.contextId = 'explore',
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final r = Responsive(context);
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider(contextId));
     final hasSearch = searchState.query.isNotEmpty;
     final barHeight = r.h(48).clamp(40.0, 56.0);
     final filterBtnSize = r.d(48).clamp(40.0, 56.0);
@@ -125,7 +127,10 @@ class CategorySearchBar extends ConsumerWidget {
                     const FilterModalState(view: FilterView.none);
               } else {
                 ref.read(filterModalProvider.notifier).state =
-                    const FilterModalState(view: FilterView.mainPanel);
+                    FilterModalState(
+                  view: FilterView.mainPanel,
+                  contextId: contextId,
+                );
               }
             },
             child: Container(
@@ -147,7 +152,11 @@ class CategorySearchBar extends ConsumerWidget {
 
 /// Active filter chips row — scrolls with content.
 class CategoryFilterChips extends ConsumerWidget {
-  const CategoryFilterChips({super.key});
+  final String contextId;
+  const CategoryFilterChips({
+    super.key,
+    this.contextId = 'explore',
+  });
 
   List<String> _getActiveFilterLabels(SearchState s) {
     final labels = <String>[];
@@ -165,24 +174,24 @@ class CategoryFilterChips extends ConsumerWidget {
     final f = state.filters;
     if (f.categories.contains(label)) {
       final newSet = Set<String>.from(f.categories)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(categories: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(categories: newSet));
     } else if (f.regions.contains(label)) {
       final newSet = Set<String>.from(f.regions)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(regions: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(regions: newSet));
     } else if (f.genres.contains(label)) {
       final newSet = Set<String>.from(f.genres)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(genres: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(genres: newSet));
     } else if (f.years.contains(label)) {
       final newSet = Set<String>.from(f.years)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(years: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(years: newSet));
     } else if (f.sortBy == label) {
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(sortBy: 'Popularity'));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(sortBy: 'Popularity'));
     }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider(contextId));
     final activeFilterLabels = _getActiveFilterLabels(searchState);
 
     if (activeFilterLabels.isEmpty) return const SizedBox.shrink();
@@ -239,11 +248,13 @@ class FloatingSearchBarDelegate extends SliverPersistentHeaderDelegate {
   final TextEditingController searchController;
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
+  final String contextId;
 
   FloatingSearchBarDelegate({
     required this.searchController,
     required this.searchFocus,
     required this.onSearchChanged,
+    this.contextId = 'explore',
   });
 
   @override
@@ -258,6 +269,7 @@ class FloatingSearchBarDelegate extends SliverPersistentHeaderDelegate {
       searchController: searchController,
       searchFocus: searchFocus,
       onSearchChanged: onSearchChanged,
+      contextId: contextId,
     );
   }
 
@@ -273,6 +285,7 @@ class CategoryHeader extends ConsumerWidget {
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
   final Widget? trailing;
+  final String contextId;
 
   const CategoryHeader({
     super.key,
@@ -281,6 +294,7 @@ class CategoryHeader extends ConsumerWidget {
     required this.searchFocus,
     required this.onSearchChanged,
     this.trailing,
+    this.contextId = 'explore',
   });
 
   List<String> _getActiveFilterLabels(SearchState s) {
@@ -299,24 +313,24 @@ class CategoryHeader extends ConsumerWidget {
     final f = state.filters;
     if (f.categories.contains(label)) {
       final newSet = Set<String>.from(f.categories)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(categories: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(categories: newSet));
     } else if (f.regions.contains(label)) {
       final newSet = Set<String>.from(f.regions)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(regions: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(regions: newSet));
     } else if (f.genres.contains(label)) {
       final newSet = Set<String>.from(f.genres)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(genres: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(genres: newSet));
     } else if (f.years.contains(label)) {
       final newSet = Set<String>.from(f.years)..remove(label);
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(years: newSet));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(years: newSet));
     } else if (f.sortBy == label) {
-      ref.read(searchProvider.notifier).updateFilters(f.copyWith(sortBy: 'Popularity'));
+      ref.read(searchProvider(contextId).notifier).updateFilters(f.copyWith(sortBy: 'Popularity'));
     }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider(contextId));
     final activeFilterLabels = _getActiveFilterLabels(searchState);
     final hasSearch = searchState.query.isNotEmpty;
 
@@ -401,7 +415,10 @@ class CategoryHeader extends ConsumerWidget {
                         const FilterModalState(view: FilterView.none);
                   } else {
                     ref.read(filterModalProvider.notifier).state =
-                        const FilterModalState(view: FilterView.mainPanel);
+                        FilterModalState(
+                      view: FilterView.mainPanel,
+                      contextId: contextId,
+                    );
                   }
                 },
                 child: Container(

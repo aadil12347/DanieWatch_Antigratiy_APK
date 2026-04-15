@@ -28,7 +28,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   @override
   void initState() {
     super.initState();
-    final currentQuery = ref.read(searchProvider).query;
+    final currentQuery = ref.read(searchProvider('watchlist')).query;
     if (currentQuery.isNotEmpty) {
       _searchController.text = currentQuery;
     }
@@ -59,13 +59,13 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   }
 
   void _onSearchChanged(String query) {
-    ref.read(searchProvider.notifier).search(query);
+    ref.read(searchProvider('watchlist').notifier).search(query);
   }
 
   @override
   Widget build(BuildContext context) {
     final watchlistAsync = ref.watch(watchlistProvider);
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider('watchlist'));
     final index = ref.watch(manifestIndexProvider);
 
     return Scaffold(
@@ -88,11 +88,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                   searchController: _searchController,
                   searchFocus: _searchFocus,
                   onSearchChanged: _onSearchChanged,
+                  contextId: 'watchlist',
                 ),
               ),
               // Filter chips
               const SliverToBoxAdapter(
-                child: CategoryFilterChips(),
+                child: CategoryFilterChips(contextId: 'watchlist'),
               ),
               // Content
               ...watchlistAsync.when(

@@ -118,23 +118,23 @@ class FilterUtils {
     // 4. Filter by Genre
     if (f.genres.isNotEmpty) {
       final genreMap = {
-        'Action': [28, 10759], // Movie: Action, TV: Action & Adventure
+        'Action': [28, 12, 10759], // Action, Adventure, Action & Adventure
         'Animation': [16],
         'Comedy': [35],
         'Crime': [80],
         'Documentary': [99],
         'Drama': [18],
         'Family': [10751],
-        'Fantasy': [14, 10765], // Movie: Fantasy, TV: Sci-Fi & Fantasy
+        'Fantasy': [14, 10765],
         'History': [36],
         'Horror': [27],
         'Music': [10402],
         'Mystery': [9648],
         'Romance': [10749],
-        'Science Fiction': [878, 10765], // Movie: Sci-Fi, TV: Sci-Fi & Fantasy
-        'Sci-Fi': [878, 10765],
+        'Sci-Fi': [878, 14, 10765], // Sci-Fi, Fantasy, Sci-Fi & Fantasy
+        'Science Fiction': [878, 14, 10765],
         'Thriller': [53],
-        'War': [10752, 10768], // Movie: War, TV: War & Politics
+        'War': [10752, 10768],
         'Western': [37],
         'Adventure': [12, 10759],
       };
@@ -152,10 +152,10 @@ class FilterUtils {
           return item.genres.any((g) {
             final normalized = g.toLowerCase();
             return normalized.contains(searchLabel) ||
-                (searchLabel == 'sci-fi' &&
-                    normalized.contains('science fiction')) ||
-                (searchLabel == 'science fiction' &&
-                    normalized.contains('sci-fi'));
+                (searchLabel == 'sci-fi' && (normalized.contains('science fiction') || normalized.contains('fantasy') || normalized.contains('supernatural'))) ||
+                (searchLabel == 'science fiction' && (normalized.contains('sci-fi') || normalized.contains('fantasy') || normalized.contains('supernatural'))) ||
+                (searchLabel == 'action' && normalized.contains('adventure')) ||
+                (searchLabel == 'adventure' && normalized.contains('action'));
           });
         });
       }).toList();
@@ -206,11 +206,28 @@ class FilterUtils {
         return item.originCountry.contains('KR') ||
             item.originalLanguage == 'ko';
       case 'Bollywood':
-        // Strict Bollywood: IN origin or hi language
+        // Strict Bollywood: IN origin or hi language (Hindi)
         return item.originCountry.contains('IN') ||
-            item.originalLanguage == 'hi' ||
-            item.originalLanguage == 'ur' ||
-            item.originalLanguage == 'pa';
+            item.originalLanguage == 'hi';
+      case 'Hollywood':
+        // US/UK or en
+        return item.originCountry.contains('US') ||
+            item.originCountry.contains('GB') ||
+            item.originCountry.contains('UK') ||
+            item.originalLanguage == 'en';
+      case 'Chinese':
+        // CN/HK/TW or zh/cn
+        return item.originCountry.contains('CN') ||
+            item.originCountry.contains('HK') ||
+            item.originCountry.contains('TW') ||
+            item.originalLanguage == 'zh' ||
+            item.originalLanguage == 'cn';
+      case 'Punjabi':
+        // pa
+        return item.originalLanguage == 'pa';
+      case 'Pakistani':
+        // PK or ur
+        return item.originCountry.contains('PK') || item.originalLanguage == 'ur';
       default:
         return false;
     }

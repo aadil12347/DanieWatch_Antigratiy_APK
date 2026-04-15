@@ -63,7 +63,7 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
       }
     });
 
-    final currentQuery = ref.read(searchProvider).query;
+    final currentQuery = ref.read(searchProvider('explore')).query;
     if (currentQuery.isNotEmpty) {
       _searchController.text = currentQuery;
     }
@@ -142,7 +142,7 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
           _searchController.clear();
-          ref.read(searchProvider.notifier).search('');
+          ref.read(searchProvider('explore').notifier).search('');
         }
       });
     }
@@ -205,6 +205,6 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
   }
 
   void _onSearchChanged(String query) {
-    ref.read(searchProvider.notifier).search(query);
+    ref.read(searchProvider('explore').notifier).search(query);
   }
 }

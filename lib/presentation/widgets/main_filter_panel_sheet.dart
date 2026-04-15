@@ -21,7 +21,8 @@ class _MainFilterPanelContentState
   @override
   void initState() {
     super.initState();
-    _pendingFilters = ref.read(searchProvider).filters;
+    final contextId = ref.read(filterModalProvider).contextId;
+    _pendingFilters = ref.read(searchProvider(contextId)).filters;
   }
 
   // ── Categories ──
@@ -199,7 +200,8 @@ class _MainFilterPanelContentState
 
   @override
   Widget build(BuildContext context) {
-    final filters = ref.watch(searchProvider).filters;
+    final contextId = ref.watch(filterModalProvider).contextId;
+    final filters = ref.watch(searchProvider(contextId)).filters;
     final activeCategory = filters.categories.isNotEmpty ? filters.categories.first : null;
     final isRegionalPage = activeCategory == 'Korean' || 
                           activeCategory == 'Anime' || 
@@ -386,8 +388,9 @@ class _MainFilterPanelContentState
                     height: 52,
                     child: ElevatedButton(
                       onPressed: () {
+                        final contextId = ref.read(filterModalProvider).contextId;
                         ref
-                            .read(searchProvider.notifier)
+                            .read(searchProvider(contextId).notifier)
                             .updateFilters(_pendingFilters);
                         ref.read(filterModalProvider.notifier).state =
                             const FilterModalState(view: FilterView.none);

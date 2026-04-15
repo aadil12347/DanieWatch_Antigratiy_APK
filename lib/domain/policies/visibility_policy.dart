@@ -126,6 +126,45 @@ class VisibilityPolicy {
     }).toList();
   }
 
+  /// Hollywood: Origin US/UK or English language
+  static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
+    return all.where((item) {
+      if (!_hasMetadata(item)) return false;
+      return item.originCountry.contains('US') ||
+          item.originCountry.contains('GB') ||
+          item.originCountry.contains('UK') ||
+          item.originalLanguage == 'en';
+    }).toList();
+  }
+
+  /// Chinese: Origin CN/HK/TW or Chinese language
+  static List<ManifestItem> filterChinese(List<ManifestItem> all) {
+    return all.where((item) {
+      if (!_hasMetadata(item)) return false;
+      return item.originCountry.contains('CN') ||
+          item.originCountry.contains('HK') ||
+          item.originCountry.contains('TW') ||
+          item.originalLanguage == 'zh' ||
+          item.originalLanguage == 'cn';
+    }).toList();
+  }
+
+  /// Punjabi: Native Punjabi language
+  static List<ManifestItem> filterPunjabi(List<ManifestItem> all) {
+    return all.where((item) {
+      if (!_hasMetadata(item)) return false;
+      return item.originalLanguage == 'pa';
+    }).toList();
+  }
+
+  /// Pakistani: Origin PK or Urdu language
+  static List<ManifestItem> filterPakistani(List<ManifestItem> all) {
+    return all.where((item) {
+      if (!_hasMetadata(item)) return false;
+      return item.originCountry.contains('PK') || item.originalLanguage == 'ur';
+    }).toList();
+  }
+
 
   /// Filter for movies only
   static List<ManifestItem> filterMovies(List<ManifestItem> all) {
@@ -150,6 +189,37 @@ class VisibilityPolicy {
     }
     if (genre is String) {
       final search = genre.toLowerCase();
+
+      // Composite Genre: Action (Action [28], Adventure [12], Action & Adventure [10759])
+      if (search == 'action') {
+        final actionIds = {28, 12, 10759};
+        return all.where((item) {
+          final matchesId = item.genreIds.any((id) => actionIds.contains(id));
+          if (matchesId) return true;
+          return item.genres.any((g) {
+            final n = g.toLowerCase();
+            return n.contains('action') || n.contains('adventure');
+          });
+        }).toList();
+      }
+
+      // Composite Genre: Sci-Fi (Sci-Fi [878], Fantasy [14], Sci-Fi & Fantasy [10765])
+      // Also includes "Supernatural" by string check
+      if (search == 'sci-fi' || search == 'science fiction') {
+        final scifiIds = {878, 14, 10765};
+        return all.where((item) {
+          final matchesId = item.genreIds.any((id) => scifiIds.contains(id));
+          if (matchesId) return true;
+          return item.genres.any((g) {
+            final n = g.toLowerCase();
+            return n.contains('sci-fi') ||
+                n.contains('science fiction') ||
+                n.contains('fantasy') ||
+                n.contains('supernatural');
+          });
+        }).toList();
+      }
+
       return all
           .where((item) => item.genres.any((g) => g.toLowerCase() == search))
           .toList();

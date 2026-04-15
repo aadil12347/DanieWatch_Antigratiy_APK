@@ -30,7 +30,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    final currentQuery = ref.read(searchProvider).query;
+    final currentQuery = ref.read(searchProvider('explore')).query;
     if (currentQuery.isNotEmpty) {
       _searchController.text = currentQuery;
     }
@@ -64,15 +64,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _onSearchChanged(String query, List<ManifestItem> currentItems, bool isGlobal) {
     if (isGlobal) {
-      ref.read(searchProvider.notifier).search(query);
+      ref.read(searchProvider('explore').notifier).search(query);
     } else {
-      ref.read(searchProvider.notifier).searchInList(query, currentItems);
+      ref.read(searchProvider('explore').notifier).searchInList(query, currentItems);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider('explore'));
     final globalItemsAsync = ref.watch(globalItemsProvider);
     final index = ref.watch(manifestIndexProvider);
 
@@ -91,6 +91,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       categoryItems = ref.watch(animeProvider);
     } else if (filterCat.contains('Bollywood')) {
       categoryItems = ref.watch(bollywoodProvider);
+    } else if (filterCat.contains('Hollywood')) {
+      categoryItems = ref.watch(hollywoodProvider);
+    } else if (filterCat.contains('Chinese')) {
+      categoryItems = ref.watch(chineseProvider);
+    } else if (filterCat.contains('Punjabi')) {
+      categoryItems = ref.watch(punjabiProvider);
+    } else if (filterCat.contains('Pakistani')) {
+      categoryItems = ref.watch(pakistaniProvider);
     } else {
       categoryItems = globalItemsAsync;
     }
@@ -152,15 +160,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               const SliverToBoxAdapter(child: TopNavbar()),
               SliverToBoxAdapter(
                 child: CategoryTitle(
-                  title: activeCategories.contains('Korean')
-                      ? 'Korean'
-                      : activeCategories.contains('Anime')
-                          ? 'Anime'
-                          : activeCategories.contains('Bollywood')
-                              ? 'Bollywood'
-                              : searchState.filters.genres.isNotEmpty
-                                  ? searchState.filters.genres.first
-                                  : 'Explore',
+                  title: activeCategories.isNotEmpty
+                      ? activeCategories.first
+                      : searchState.filters.genres.isNotEmpty
+                          ? searchState.filters.genres.first
+                          : 'Explore',
                 ),
               ),
               SliverPersistentHeader(

@@ -64,7 +64,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   void _onSearchChanged(String query) {
-    ref.read(searchProvider.notifier).search(query);
+    ref.read(searchProvider('downloads').notifier).search(query);
   }
 
   List<DownloadItem> _getFilteredDownloads(List<DownloadItem> allDownloads, SearchState searchState) {
@@ -94,7 +94,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final searchState = ref.watch(searchProvider);
+    final searchState = ref.watch(searchProvider('downloads'));
     final allDownloads = DownloadManager.instance.downloads;
     final downloads = _getFilteredDownloads(allDownloads, searchState);
 
@@ -141,11 +141,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     searchController: _searchController,
                     searchFocus: _searchFocus,
                     onSearchChanged: _onSearchChanged,
+                    contextId: 'downloads',
                   ),
                 ),
                 // Filter chips
                 const SliverToBoxAdapter(
-                  child: CategoryFilterChips(),
+                  child: CategoryFilterChips(contextId: 'downloads'),
                 ),
                 // Content
                 if (allDownloads.isEmpty)

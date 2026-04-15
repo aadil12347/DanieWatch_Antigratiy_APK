@@ -144,6 +144,50 @@ final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
     });
 });
 
+/// Provides Hollywood content (filtered from global)
+final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final all = await ref.watch(globalItemsProvider.future);
+  return VisibilityPolicy.filterHollywood(all)
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
+});
+
+/// Provides Chinese content (filtered from global)
+final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final all = await ref.watch(globalItemsProvider.future);
+  return VisibilityPolicy.filterChinese(all)
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
+});
+
+/// Provides Punjabi content (filtered from global)
+final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final all = await ref.watch(globalItemsProvider.future);
+  return VisibilityPolicy.filterPunjabi(all)
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
+});
+
+/// Provides Pakistani content (filtered from global)
+final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final all = await ref.watch(globalItemsProvider.future);
+  return VisibilityPolicy.filterPakistani(all)
+    ..sort((a, b) {
+      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      if (yearCmp != 0) return yearCmp;
+      return b.voteAverage.compareTo(a.voteAverage);
+    });
+});
+
 
 /// Genre-based section data for home screen
 class ContentSection {

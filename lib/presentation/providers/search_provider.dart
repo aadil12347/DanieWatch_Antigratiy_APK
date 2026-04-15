@@ -184,7 +184,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
 }
 
 final searchProvider =
-    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+    StateNotifierProvider.family<SearchNotifier, SearchState, String>((ref, contextId) {
   return SearchNotifier();
 });
 
