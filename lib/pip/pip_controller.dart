@@ -1,222 +1,104 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:floaty_chatheads/floaty_chatheads.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 
-/// Singleton controller for PIP (Picture-in-Picture) mode lifecycle.
+/// Singleton controller for PIP (Picture-in-Picture) mode using Android's native API.
 ///
-/// Manages launching/closing the floating overlay, passing video data
-/// to the overlay engine, and handling "restore in app" events.
+/// Uses a MethodChannel to communicate with the native Android PiP implementation.
+/// The video continues playing inside the same Flutter activity, which Android
+/// shrinks into a mini floating window.
 class PipController {
   PipController._();
   static final PipController instance = PipController._();
 
+  static const _channel = MethodChannel('com.daniewatch.app/pip');
+
   bool _isInPipMode = false;
   bool get isInPipMode => _isInPipMode;
 
-  StreamSubscription? _dataSubscription;
+  /// Callback invoked when PiP mode changes (entering or exiting).
+  void Function(bool isInPip)? onPipModeChanged;
 
-  /// Callback invoked when the user taps "Open in App" in the PIP overlay.
-  /// Receives a Map with: {url, position, title, tmdbId, mediaType, season, episode, originalUrl}
-  void Function(Map<String, dynamic>)? onRestoreRequested;
+  /// Callback invoked when the user presses home while in the video player.
+  /// This can be used for auto-PiP on home press.
+  VoidCallback? onUserLeaveHint;
 
-  /// Enter PIP mode with the given video data.
+  /// Initialize the PiP controller and set up method channel listeners.
+  Future<void> init() async {
+    _channel.setMethodCallHandler(_handleMethodCall);
+    debugPrint('[PIP] Controller initialized with native Android PiP');
+  }
+
+  /// Handle method calls from the native side.
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'onPipChanged':
+        final bool isInPip = call.arguments as bool;
+        _isInPipMode = isInPip;
+        debugPrint('[PIP] Mode changed: $isInPip');
+        onPipModeChanged?.call(isInPip);
+        break;
+      case 'onUserLeaveHint':
+        debugPrint('[PIP] User leave hint received');
+        onUserLeaveHint?.call();
+        break;
+    }
+  }
+
+  /// Enter PiP mode. The current activity will shrink into a mini floating window.
+  /// The video WebView continues playing inside the window.
   ///
-  /// Steps:
-  /// 1. Check/request SYSTEM_ALERT_WINDOW permission
-  /// 2. Save restore data to SharedPreferences (backup)
-  /// 3. Launch the floating overlay via floaty_chatheads
-  /// 4. Send video data to the overlay
+  /// [aspectWidth] and [aspectHeight] control the PiP window aspect ratio.
+  /// Default is 16:9 for video content.
   Future<bool> enterPipMode({
-    required String videoUrl,
-    required double currentPosition,
-    required String title,
-    required int tmdbId,
-    required String mediaType,
-    String? originalUrl,
-    int? season,
-    int? episode,
+    int aspectWidth = 16,
+    int aspectHeight = 9,
   }) async {
     if (_isInPipMode) {
-      debugPrint('[PIP] Already in PIP mode');
+      debugPrint('[PIP] Already in PiP mode');
       return false;
     }
 
-    // 1. Check permission
-    final granted = await FloatyChatheads.checkPermission();
-    if (!granted) {
-      await FloatyChatheads.requestPermission();
-      // Re-check after user returns from settings
-      final nowGranted = await FloatyChatheads.checkPermission();
-      if (!nowGranted) {
-        debugPrint('[PIP] Permission denied by user');
-        return false;
-      }
-    }
-
-    // 2. Save restore data to SharedPreferences as backup
-    final restoreData = {
-      'url': videoUrl,
-      'position': currentPosition,
-      'title': title,
-      'tmdbId': tmdbId,
-      'mediaType': mediaType,
-      'originalUrl': originalUrl,
-      'season': season,
-      'episode': episode,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    };
-
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('pip_restore_data', jsonEncode(restoreData));
+      final result = await _channel.invokeMethod<bool>('enterPipMode', {
+        'aspectWidth': aspectWidth,
+        'aspectHeight': aspectHeight,
+      });
+      debugPrint('[PIP] enterPipMode result: $result');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[PIP] Failed to enter PiP: ${e.message}');
+      return false;
     } catch (e) {
-      debugPrint('[PIP] Failed to save restore data: $e');
-    }
-
-    // 3. Listen for data from overlay
-    _dataSubscription?.cancel();
-    _dataSubscription = FloatyChatheads.onData.listen((data) {
-      debugPrint('[PIP] Received data from overlay: $data');
-      if (data is Map) {
-        final action = data['action'];
-        if (action == 'restore') {
-          _handleRestore(data);
-        } else if (action == 'close') {
-          _handleClose();
-        }
-      }
-    });
-
-    // 4. Launch the floating overlay
-    try {
-      await FloatyChatheads.showChatHead(
-        entryPoint: 'pipOverlayMain',
-        iconWidget: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF111111),
-            border: Border.all(color: const Color(0xFFE11D48), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFE11D48).withValues(alpha: 0.3),
-                blurRadius: 12,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const Center(
-            child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
-          ),
-        ),
-        notification: const NotificationConfig(
-          title: 'DanieWatch PIP',
-        ),
-        sizePreset: ContentSizePreset.card,
-      );
-
-      _isInPipMode = true;
-
-      // 5. Send video data to the overlay after a brief delay to let it initialize
-      await Future.delayed(const Duration(milliseconds: 800));
-      await FloatyChatheads.shareData(restoreData);
-      debugPrint('[PIP] Entered PIP mode with: $title @ ${currentPosition}s');
-
-      return true;
-    } catch (e) {
-      debugPrint('[PIP] Failed to launch overlay: $e');
-      _isInPipMode = false;
+      debugPrint('[PIP] Unexpected error entering PiP: $e');
       return false;
     }
   }
 
-  /// Programmatically exit PIP mode.
-  Future<void> exitPipMode() async {
-    if (!_isInPipMode) return;
+  /// Check if PiP mode is supported on this device.
+  Future<bool> isPipSupported() async {
     try {
-      await FloatyChatheads.closeChatHead();
+      final result = await _channel.invokeMethod<bool>('isPipSupported');
+      return result ?? false;
     } catch (e) {
-      debugPrint('[PIP] Error closing overlay: $e');
+      debugPrint('[PIP] Error checking PiP support: $e');
+      return false;
     }
-    _handleClose();
   }
 
-  void _handleRestore(Map data) {
-    debugPrint('[PIP] Restore requested with position: ${data['position']}');
-    _isInPipMode = false;
-    _dataSubscription?.cancel();
-    _dataSubscription = null;
-
-    // Close the overlay
+  /// Check current PiP state from the native side.
+  Future<bool> checkPipState() async {
     try {
-      FloatyChatheads.closeChatHead();
+      final result = await _channel.invokeMethod<bool>('isInPipMode');
+      _isInPipMode = result ?? false;
+      return _isInPipMode;
     } catch (e) {
-      debugPrint('[PIP] Error closing overlay on restore: $e');
-    }
-
-    // Invoke restore callback with full data
-    if (onRestoreRequested != null) {
-      final restoreInfo = {
-        'url': data['url'] ?? '',
-        'position': (data['position'] as num?)?.toDouble() ?? 0.0,
-        'title': data['title'] ?? '',
-        'tmdbId': data['tmdbId'] ?? 0,
-        'mediaType': data['mediaType'] ?? 'movie',
-        'originalUrl': data['originalUrl'],
-        'season': data['season'],
-        'episode': data['episode'],
-      };
-      onRestoreRequested!(restoreInfo);
-    }
-
-    _clearSavedData();
-  }
-
-  void _handleClose() {
-    debugPrint('[PIP] PIP closed');
-    _isInPipMode = false;
-    _dataSubscription?.cancel();
-    _dataSubscription = null;
-    _clearSavedData();
-  }
-
-  Future<void> _clearSavedData() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('pip_restore_data');
-    } catch (e) {
-      debugPrint('[PIP] Failed to clear restore data: $e');
-    }
-  }
-
-  /// Check if there's pending PIP restore data (for cold start recovery).
-  Future<Map<String, dynamic>?> getPendingRestoreData() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString('pip_restore_data');
-      if (json != null) {
-        return jsonDecode(json) as Map<String, dynamic>;
-      }
-    } catch (e) {
-      debugPrint('[PIP] Failed to read restore data: $e');
-    }
-    return null;
-  }
-
-  Future<void> init() async {
-    // Initialization block if needed for cold-starts
-    final data = await getPendingRestoreData();
-    if (data != null) {
-      debugPrint('[PIP] Found pending restore data from previous crash/close: $data');
-      // Could auto-restore here, but for now we just clear it or handle it in home screen
+      return false;
     }
   }
 
   void dispose() {
-    _dataSubscription?.cancel();
-    _dataSubscription = null;
+    onPipModeChanged = null;
+    onUserLeaveHint = null;
   }
 }

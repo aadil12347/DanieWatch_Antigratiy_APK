@@ -51,7 +51,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isLoading = true;
   bool _hasError = false;
   bool _isInitialized = false;
@@ -88,6 +88,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Timer? _progressSaveTimer;  // Periodic Dart-side save
   bool _startPositionApplied = false;  // Track if we've seeked to startPosition
 
+  // PiP mode state
+  bool _isInPipMode = false;
+
   // Episode Info
   int? _currentEpisode;
   int? _currentSeason;
@@ -105,8 +108,29 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentSeason = widget.season;
     _currentEpisode = widget.episode;
+
+    // Set up PiP mode change listener
+    PipController.instance.onPipModeChanged = (isInPip) {
+      if (mounted) {
+        setState(() => _isInPipMode = isInPip);
+        if (isInPip) {
+          // Hide controls in PiP mode via JS
+          _webViewController?.evaluateJavascript(
+            source: "document.querySelector('.controls-overlay')?.style.display='none'; document.querySelector('.top-bar')?.style.display='none';",
+          );
+        }
+      }
+    };
+
+    // Auto-enter PiP when user presses home while video is playing
+    PipController.instance.onUserLeaveHint = () {
+      if (mounted && _isInitialized && !_isExtracting && !_hasError) {
+        PipController.instance.enterPipMode();
+      }
+    };
 
     // Force landscape fullscreen
     SystemChrome.setPreferredOrientations([
@@ -863,6 +887,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PipController.instance.onPipModeChanged = null;
+    PipController.instance.onUserLeaveHint = null;
     _saveToWatchHistory();
     _errorAutoCloseTimer?.cancel();
     _progressSaveTimer?.cancel();
@@ -911,34 +938,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           controller.addJavaScriptHandler(
             handlerName: 'enterPipMode',
             callback: (args) async {
-              if (args.isNotEmpty) {
-                try {
-                  final data = jsonDecode(args[0] as String);
-                  final position = (data['currentTime'] as num?)?.toDouble() ?? 0;
-                  final duration = (data['duration'] as num?)?.toDouble() ?? 0;
-                  final url = data['url'] as String? ?? _extractedLink;
-                  
-                  if (url != null && url.isNotEmpty) {
-                    _saveToWatchHistory();
-                    await PipController.instance.launchPipOverlay(
-                      context: context,
-                      videoUrl: url,
-                      startPosition: position,
-                      title: widget.title,
-                      episodeLabel: widget.episode != null 
-                        ? 'S${widget.season ?? 1} E${widget.episode}' 
-                        : null,
-                    );
-                    
-                    // Exit the full screen player since PIP is taking over
-                    if (mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  }
-                } catch (e) {
-                  debugPrint('[PIP] Failed to parse PIP data: $e');
-                }
-              }
+              // Native PiP: shrink the activity into a mini window
+              // Video continues playing in the WebView
+              _saveToWatchHistory();
+              await PipController.instance.enterPipMode();
             },
           );
           controller.addJavaScriptHandler(
