@@ -70,10 +70,11 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.lora(
+        titleTextStyle: GoogleFonts.plusJakartaSans(
           fontSize: 24,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
+          letterSpacing: -0.6,
         ),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
       ),
@@ -107,21 +108,23 @@ class AppTheme {
 
       // Text
       textTheme: baseTextTheme.copyWith(
-        displayLarge: GoogleFonts.lora(
+        displayLarge: GoogleFonts.plusJakartaSans(
           fontSize: 36,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+          letterSpacing: -1.2,
+        ),
+        headlineMedium: GoogleFonts.plusJakartaSans(
+          fontSize: 28,
+          fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
           letterSpacing: -1.0,
         ),
-        headlineMedium: GoogleFonts.lora(
-          fontSize: 28,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        titleLarge: GoogleFonts.lora(
+        titleLarge: GoogleFonts.plusJakartaSans(
           fontSize: 20,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
+          letterSpacing: -0.8,
         ),
         titleMedium: GoogleFonts.inter(
           fontSize: 16,

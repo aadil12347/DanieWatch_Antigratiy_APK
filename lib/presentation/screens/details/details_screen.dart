@@ -112,11 +112,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     else
                       Text(
                         content.title,
-                        style: GoogleFonts.lora(
+                        style: GoogleFonts.plusJakartaSans(
                           color: AppColors.textPrimary,
                           fontSize: 32,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -1.2,
                         ),
                       ),
                     const SizedBox(height: 12),
@@ -379,10 +379,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Actors',
-            style: GoogleFonts.lora(
+            style: GoogleFonts.plusJakartaSans(
                 color: AppColors.textPrimary,
                 fontSize: 22,
-                fontWeight: FontWeight.w600)),
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8)),
         const SizedBox(height: 12),
         SizedBox(
           height: 100,
@@ -496,10 +497,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       child: Column(
         children: [
           Text(label,
-              style: GoogleFonts.lora(
+              style: GoogleFonts.plusJakartaSans(
                 color: isSelected ? AppColors.textPrimary : AppColors.textMuted,
                 fontSize: 18,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                letterSpacing: -0.5,
               )),
           const SizedBox(height: 4),
           Container(

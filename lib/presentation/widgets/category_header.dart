@@ -27,11 +27,11 @@ class CategoryTitle extends StatelessWidget {
         children: [
           Text(
             title,
-            style: GoogleFonts.lora(
+            style: GoogleFonts.plusJakartaSans(
               color: AppColors.textPrimary,
               fontSize: r.f(32).clamp(24.0, 42.0),
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1.0,
             ),
           ),
           if (trailing != null) trailing!,
@@ -332,11 +332,11 @@ class CategoryHeader extends ConsumerWidget {
             children: [
               Text(
                 title,
-                style: GoogleFonts.lora(
+                style: GoogleFonts.plusJakartaSans(
                   color: AppColors.textPrimary,
                   fontSize: 32,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1.0,
                 ),
               ),
               if (trailing != null) trailing!,

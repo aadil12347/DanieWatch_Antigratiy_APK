@@ -37,11 +37,11 @@ class SectionHeader extends StatelessWidget {
                 Text(
                   title,
                   style: titleStyle ??
-                      GoogleFonts.lora(
+                      GoogleFonts.plusJakartaSans(
                         color: titleColor ?? AppColors.textPrimary,
-                        fontSize: r.f(24).clamp(18.0, 32.0),
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.5,
+                        fontSize: r.f(22).clamp(18.0, 28.0),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.8,
                       ),
                 ),
           ),

@@ -146,11 +146,11 @@ class _ContinueWatchingRowState extends ConsumerState<ContinueWatchingRow> {
             children: [
               Text(
                 'Continue Watching',
-                style: GoogleFonts.outfit(
+                style: GoogleFonts.plusJakartaSans(
                   color: Colors.white,
                   fontSize: r.f(20).clamp(18.0, 24.0),
                   fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+                  letterSpacing: -0.7,
                 ),
               ),
               if (isDeleteMode)

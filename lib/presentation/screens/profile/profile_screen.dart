@@ -190,7 +190,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Text(
             profile?.username ?? 'User',
-            style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1.0),
           ),
           const SizedBox(width: 8),
           const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
@@ -209,7 +210,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           autofocus: true,
           onChanged: _onUsernameChanged,
           onSubmitted: (_) => _saveUsername(),
-          style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1.0),
           textAlign: TextAlign.center,
           decoration: InputDecoration(
             hintText: 'Username',
@@ -322,7 +324,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       padding: const EdgeInsets.only(left: 4, bottom: 12),
       child: Text(
         title.toUpperCase(),
-        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMuted, letterSpacing: 1.2),
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textMuted,
+          letterSpacing: 1.2,
+        ),
       ),
     );
   }
@@ -362,7 +369,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Logout', style: GoogleFonts.outfit(color: Colors.white)),
+        title: Text('Logout', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
         content: const Text('Are you sure you want to sign out?', style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
