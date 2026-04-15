@@ -208,7 +208,7 @@ class _ContinueWatchingRowState extends ConsumerState<ContinueWatchingRow> {
   }
 }
 
-class _ContinueWatchingCard extends StatelessWidget {
+class _ContinueWatchingCard extends StatefulWidget {
   final WatchHistoryItem item;
   final bool isDeleteMode;
   final VoidCallback onDelete;
@@ -224,30 +224,91 @@ class _ContinueWatchingCard extends StatelessWidget {
   });
 
   @override
+  State<_ContinueWatchingCard> createState() => _ContinueWatchingCardState();
+}
+
+class _ContinueWatchingCardState extends State<_ContinueWatchingCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _wiggleController;
+  late Animation<double> _wiggleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _wiggleController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+
+    _wiggleAnimation = Tween<double>(
+      begin: -0.012, // ~ -0.7 degrees
+      end: 0.012,   // ~ +0.7 degrees
+    ).animate(CurvedAnimation(
+      parent: _wiggleController,
+      curve: Curves.easeInOut,
+    ));
+
+    if (widget.isDeleteMode) {
+      _wiggleController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_ContinueWatchingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isDeleteMode && !oldWidget.isDeleteMode) {
+      _wiggleController.repeat(reverse: true);
+    } else if (!widget.isDeleteMode && oldWidget.isDeleteMode) {
+      _wiggleController.stop();
+      _wiggleController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _wiggleController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
+    final isDeleteMode = widget.isDeleteMode;
+    final onDelete = widget.onDelete;
+    final onLongPress = widget.onLongPress;
+    final onTap = widget.onTap;
+
     final r = Responsive(context);
     final width = r.w(240).clamp(200.0, 300.0);
 
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Container(
-        width: width,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
+    return AnimatedBuilder(
+      animation: _wiggleAnimation,
+      builder: (context, child) {
+        return Transform.rotate(
+          angle: isDeleteMode ? _wiggleAnimation.value : 0,
+          child: child,
+        );
+      },
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          width: width,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
               // 1. Thumbnail
               _buildThumbnail(),
 
@@ -391,11 +452,21 @@ class _ContinueWatchingCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildThumbnail() {
-    String? imageUrl = item.backdropUrl ?? item.thumbnailUrl ?? item.posterUrl;
+    final item = widget.item;
+    String? imageUrl;
+
+    if (item.mediaType == 'movie') {
+      // Movie: Backdrop -> Poster
+      imageUrl = item.backdropUrl ?? item.posterUrl;
+    } else {
+      // Series: Episode Thumbnail -> Backdrop -> Season Poster (stored in posterUrl)
+      imageUrl = item.thumbnailUrl ?? item.backdropUrl ?? item.posterUrl;
+    }
     
     if (imageUrl == null || imageUrl.isEmpty) {
       return Container(

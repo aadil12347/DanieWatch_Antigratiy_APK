@@ -618,6 +618,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       );
       final detail = detailAsync.valueOrNull;
       posterUrl = detail?.posterUrl;
+      
+      // For TV shows, try to use the specific season's poster if available
+      if (widget.mediaType != 'movie' && _currentSeason != null && detail?.tmdbSeasons != null) {
+        try {
+          final season = detail!.tmdbSeasons!.firstWhere(
+            (s) => s.seasonNumber == _currentSeason,
+            orElse: () => detail.tmdbSeasons!.first,
+          );
+          if (season.posterPath != null && season.posterPath!.isNotEmpty) {
+            posterUrl = season.posterPath;
+          }
+        } catch (_) {}
+      }
+
       if (posterUrl != null && !posterUrl.startsWith('http')) {
         posterUrl = 'https://image.tmdb.org/t/p/w500$posterUrl';
       }

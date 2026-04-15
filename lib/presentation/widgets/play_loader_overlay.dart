@@ -9,6 +9,7 @@ Future<void> showPlayLoader<T>({
 }) {
   return showGeneralDialog<void>(
     context: context,
+    useRootNavigator: true,
     pageBuilder: (context, animation, secondaryAnimation) {
       return PlayLoaderOverlay<T>(
         fetchLinkFuture: fetchLinkFuture,
@@ -85,13 +86,14 @@ class _PlayLoaderOverlayState<T> extends State<PlayLoaderOverlay<T>>
         await _panelController.reverse();
         if (mounted) {
           // IMPORTANT: Pop the dialog BEFORE calling onSuccess so the overlay is removed
-          Navigator.of(context).pop();
+          // Use rootNavigator: true to match how showGeneralDialog was called
+          Navigator.of(context, rootNavigator: true).pop();
           widget.onSuccess(link as T);
         }
       } else {
         widget.onError();
         await _panelController.reverse();
-        if (mounted) Navigator.of(context).pop();
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
       }
     }
   }
@@ -111,7 +113,8 @@ class _PlayLoaderOverlayState<T> extends State<PlayLoaderOverlay<T>>
         if (didPop) return;
         _isCancelled = true;
         // Play the exit animation (panels opening)
-        final navigator = Navigator.of(context);
+        // Use rootNavigator: true to match how showGeneralDialog was called
+        final navigator = Navigator.of(context, rootNavigator: true);
         await _panelController.reverse();
         if (mounted) navigator.pop();
       },
