@@ -1324,15 +1324,24 @@
                 </button>
                 <span class="episode-badge" id="episodeBadge"></span>
             </div>
-            <button class="ctrl-btn hidden" id="btnEpisodes" onclick="showEpisodes(event)"
-                style="background: rgba(0,0,0,0.5); border-radius: 8px; padding: 0 18px; height: 48px; display: flex; align-items: center; justify-content: center; gap: 12px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); width: auto;">
-                <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: white;">
-                    <path
-                        d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h4v2h-4zm0-6h8v2h-8z" />
-                </svg>
-                <span id="episodeButtonText"
-                    style="color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 700; white-space: nowrap; letter-spacing: -0.2px;">Episodes</span>
-            </button>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button class="ctrl-btn hidden" id="btnEpisodes" onclick="showEpisodes(event)"
+                    style="background: rgba(0,0,0,0.5); border-radius: 8px; padding: 0 18px; height: 48px; display: flex; align-items: center; justify-content: center; gap: 12px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); width: auto;">
+                    <svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: white;">
+                        <path
+                            d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h4v2h-4zm0-6h8v2h-8z" />
+                    </svg>
+                    <span id="episodeButtonText"
+                        style="color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 700; white-space: nowrap; letter-spacing: -0.2px;">Episodes</span>
+                </button>
+                <!-- PIP Mode Button -->
+                <button class="back-btn" id="btnPip" onclick="enterPipMode(event)"
+                    style="width: 48px; height: 48px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px);">
+                    <svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: white;">
+                        <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <!-- Center Controls (Skip Back + Play/Pause + Skip Forward) -->
@@ -1682,6 +1691,20 @@
             savePlaybackPosition();
             if (window.flutter_inappwebview) {
                 window.flutter_inappwebview.callHandler('goBack');
+            }
+        }
+
+        // ===== PIP MODE =====
+        function enterPipMode(e) {
+            if (e) e.stopPropagation();
+            var pos = video ? video.currentTime : 0;
+            var dur = video ? video.duration : 0;
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('enterPipMode', JSON.stringify({
+                    currentTime: pos,
+                    duration: dur,
+                    url: currentVideoUrl
+                }));
             }
         }
 

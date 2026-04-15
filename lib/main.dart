@@ -9,6 +9,7 @@ import 'core/config/env.dart';
 import 'data/local/database.dart';
 import 'data/local/download_manager.dart';
 import 'core/utils/restart_widget.dart';
+import 'pip/pip_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -81,6 +82,9 @@ Future<void> main() async {
       url: Env.supabaseUrl,
       anonKey: Env.supabaseAnonKey,
     );
+
+    // Initialize PIP Controller for handling cold recovery
+    PipController.instance.init();
 
     runApp(
       const RestartWidget(

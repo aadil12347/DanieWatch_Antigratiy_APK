@@ -13,6 +13,7 @@ import 'package:daniewatch_app/services/bysebuho_extractor.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watch_history_provider.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
+import '../../../pip/pip_controller.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -906,6 +907,39 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           controller.addJavaScriptHandler(
             handlerName: 'showEpisodes',
             callback: (args) => _showEpisodeSelector(),
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'enterPipMode',
+            callback: (args) async {
+              if (args.isNotEmpty) {
+                try {
+                  final data = jsonDecode(args[0] as String);
+                  final position = (data['currentTime'] as num?)?.toDouble() ?? 0;
+                  final duration = (data['duration'] as num?)?.toDouble() ?? 0;
+                  final url = data['url'] as String? ?? _extractedLink;
+                  
+                  if (url != null && url.isNotEmpty) {
+                    _saveToWatchHistory();
+                    await PipController.instance.launchPipOverlay(
+                      context: context,
+                      videoUrl: url,
+                      startPosition: position,
+                      title: widget.title,
+                      episodeLabel: widget.episode != null 
+                        ? 'S${widget.season ?? 1} E${widget.episode}' 
+                        : null,
+                    );
+                    
+                    // Exit the full screen player since PIP is taking over
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('[PIP] Failed to parse PIP data: $e');
+                }
+              }
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: 'playNextEpisode',

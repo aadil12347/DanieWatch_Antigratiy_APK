@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>DanieWatch PIP Player</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="hls.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        body {
+            max-height: 100vh;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* ===== VIDEO CONTAINER ===== */
+        .video-container {
+            height: 100vh;
+            width: 100%;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            object-fit: contain;
+        }
+
+        /* ===== DIMMER OVERLAY ===== */
+        .dimmer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+
+        .dimmer.visible {
+            opacity: 1;
+        }
+
+        /* ===== TOP BAR ===== */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 15;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+
+        .top-bar.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .top-bar-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.12);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .top-bar-btn:active {
+            transform: scale(0.88);
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .top-bar-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: white;
+        }
+
+        .pip-title {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 11px;
+            font-weight: 600;
+            flex: 1;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 6px;
+            letter-spacing: -0.2px;
+        }
+
+        /* ===== CENTER CONTROLS ===== */
+        .center-controls {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 15;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .center-controls.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .center-btn {
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .center-btn:active {
+            transform: scale(0.88);
+            background: rgba(0, 0, 0, 0.75);
+        }
+
+        .center-btn svg {
+            fill: white;
+        }
+
+        .center-btn.play {
+            width: 52px;
+            height: 52px;
+        }
+
+        .center-btn.play svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .center-btn.skip {
+            width: 36px;
+            height: 36px;
+            background: rgba(0, 0, 0, 0.40);
+        }
+
+        .center-btn.skip svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* ===== BOTTOM CONTROLS ===== */
+        .bottom-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 15;
+            display: flex;
+            flex-direction: column;
+            padding: 0 10px 8px 10px;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+
+        .bottom-controls.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* ===== SEEK BAR ===== */
+        .seek-bar-container {
+            width: 100%;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            position: relative;
+            margin-bottom: 2px;
+        }
+
+        .seek-bar {
+            width: 100%;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 2px;
+            position: relative;
+        }
+
+        .seek-buffer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.40);
+            border-radius: 2px;
+            width: 0%;
+        }
+
+        .seek-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: #E11D48;
+            border-radius: 2px;
+            width: 0%;
+        }
+
+        .seek-thumb {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            width: 12px;
+            height: 12px;
+            background: #E11D48;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 6px rgba(225, 29, 72, 0.5);
+            z-index: 2;
+        }
+
+        /* ===== TIME ROW ===== */
+        .time-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .time-display {
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 10px;
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ===== LOADING SPINNER ===== */
+        #pip-loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+            display: none;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 2px solid rgba(225, 29, 72, 0.15);
+            border-left-color: #E11D48;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="video-container" id="videoContainer">
+        <video id="video" playsinline></video>
+
+        <!-- Dimmer -->
+        <div class="dimmer" id="dimmer"></div>
+
+        <!-- Top Bar: Close + Title + Open In App -->
+        <div class="top-bar" id="topBar">
+            <button class="top-bar-btn" id="closeBtn" onclick="closePip()">
+                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+            <span class="pip-title" id="pipTitle">PIP Player</span>
+            <button class="top-bar-btn" id="restoreBtn" onclick="restoreInApp()">
+                <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+            </button>
+        </div>
+
+        <!-- Center: Skip Back + Play/Pause + Skip Forward -->
+        <div class="center-controls" id="centerControls">
+            <button class="center-btn skip" onclick="skipBackward()">
+                <svg viewBox="0 0 24 24"><path d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="10" y="16" font-size="7" fill="white" text-anchor="middle" font-weight="bold" font-family="Inter">10</text></svg>
+            </button>
+            <button class="center-btn play" id="playPauseBtn" onclick="togglePlayPause()">
+                <!-- Play icon -->
+                <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <!-- Pause icon -->
+                <svg id="pauseIcon" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button class="center-btn skip" onclick="skipForward()">
+                <svg viewBox="0 0 24 24"><path d="M12.01 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/><text x="14" y="16" font-size="7" fill="white" text-anchor="middle" font-weight="bold" font-family="Inter">10</text></svg>
+            </button>
+        </div>
+
+        <!-- Bottom: Progress Bar + Time -->
+        <div class="bottom-controls" id="bottomControls">
+            <div class="seek-bar-container" id="seekBarContainer">
+                <div class="seek-bar">
+                    <div class="seek-buffer" id="seekBuffer"></div>
+                    <div class="seek-progress" id="seekProgress"></div>
+                    <div class="seek-thumb" id="seekThumb"></div>
+                </div>
+            </div>
+            <div class="time-row">
+                <span class="time-display" id="currentTime">0:00</span>
+                <span class="time-display" id="duration">0:00</span>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="pip-loader"><div class="spinner"></div></div>
+    </div>
+
+    <script>
+        // ===== STATE =====
+        var video = document.getElementById('video');
+        var hls = null;
+        var controlsVisible = true;
+        var controlsTimer = null;
+        var isSeeking = false;
+
+        // ===== INIT VIDEO =====
+        function playVideo(url) {
+            console.log('[PIP] playVideo called: ' + url);
+            showLoader();
+
+            if (url.includes('.m3u8')) {
+                if (Hls.isSupported()) {
+                    if (hls) { hls.destroy(); }
+                    hls = new Hls({
+                        maxBufferLength: 15,
+                        maxMaxBufferLength: 30,
+                        startLevel: -1,
+                        capLevelToPlayerSize: true,
+                    });
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        video.play().catch(function(e) { console.log('[PIP] Autoplay blocked:', e); });
+                        hideLoader();
+                    });
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        console.log('[PIP] HLS error:', data.type, data.details);
+                        if (data.fatal) { hideLoader(); }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = url;
+                    video.addEventListener('loadedmetadata', function() {
+                        video.play().catch(function(e) {});
+                        hideLoader();
+                    });
+                }
+            } else {
+                video.src = url;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play().catch(function(e) {});
+                    hideLoader();
+                });
+            }
+        }
+
+        function seekTo(seconds) {
+            if (video && !isNaN(seconds) && isFinite(seconds)) {
+                video.currentTime = seconds;
+                console.log('[PIP] Seeked to: ' + seconds);
+            }
+        }
+
+        function setTitle(title) {
+            document.getElementById('pipTitle').textContent = title;
+        }
+
+        // ===== CONTROLS =====
+        function togglePlayPause() {
+            if (!video) return;
+            sendHaptic();
+            if (video.paused) {
+                video.play().catch(function(e) {});
+            } else {
+                video.pause();
+            }
+        }
+
+        function skipForward() {
+            if (!video) return;
+            sendHaptic();
+            video.currentTime = Math.min(video.currentTime + 10, video.duration || video.currentTime + 10);
+        }
+
+        function skipBackward() {
+            if (!video) return;
+            sendHaptic();
+            video.currentTime = Math.max(video.currentTime - 10, 0);
+        }
+
+        function closePip() {
+            sendHaptic();
+            if (video) { video.pause(); }
+            try { window.flutter_inappwebview.callHandler('closePip'); } catch(e) {}
+        }
+
+        function restoreInApp() {
+            sendHaptic();
+            var pos = video ? video.currentTime : 0;
+            try { window.flutter_inappwebview.callHandler('restoreInApp', JSON.stringify({ position: pos })); } catch(e) {}
+        }
+
+        function sendHaptic() {
+            try { window.flutter_inappwebview.callHandler('haptic'); } catch(e) {}
+        }
+
+        // ===== VIDEO EVENT LISTENERS =====
+        video.addEventListener('play', function() {
+            document.getElementById('playIcon').style.display = 'none';
+            document.getElementById('pauseIcon').style.display = '';
+        });
+
+        video.addEventListener('pause', function() {
+            document.getElementById('playIcon').style.display = '';
+            document.getElementById('pauseIcon').style.display = 'none';
+        });
+
+        video.addEventListener('timeupdate', function() {
+            if (isSeeking) return;
+            var cur = video.currentTime;
+            var dur = video.duration;
+            if (!isNaN(dur) && dur > 0) {
+                var pct = (cur / dur) * 100;
+                document.getElementById('seekProgress').style.width = pct + '%';
+                document.getElementById('seekThumb').style.left = pct + '%';
+                document.getElementById('currentTime').textContent = formatTime(cur);
+                document.getElementById('duration').textContent = formatTime(dur);
+            }
+
+            // Report progress every 5 seconds
+            if (Math.floor(cur) % 5 === 0) {
+                try {
+                    window.flutter_inappwebview.callHandler('saveProgress',
+                        JSON.stringify({ currentTime: cur, duration: dur || 0 }));
+                } catch(e) {}
+            }
+        });
+
+        video.addEventListener('progress', function() {
+            if (video.buffered.length > 0) {
+                var buffered = video.buffered.end(video.buffered.length - 1);
+                var dur = video.duration;
+                if (dur > 0) {
+                    document.getElementById('seekBuffer').style.width = (buffered / dur * 100) + '%';
+                }
+            }
+        });
+
+        video.addEventListener('waiting', function() { showLoader(); });
+        video.addEventListener('canplay', function() { hideLoader(); });
+        video.addEventListener('playing', function() { hideLoader(); });
+
+        // ===== SEEK BAR INTERACTION =====
+        var seekContainer = document.getElementById('seekBarContainer');
+        seekContainer.addEventListener('touchstart', function(e) {
+            isSeeking = true;
+            handleSeek(e);
+        }, { passive: true });
+        seekContainer.addEventListener('touchmove', function(e) {
+            handleSeek(e);
+        }, { passive: true });
+        seekContainer.addEventListener('touchend', function(e) {
+            isSeeking = false;
+        });
+
+        function handleSeek(e) {
+            var rect = seekContainer.getBoundingClientRect();
+            var touch = e.touches ? e.touches[0] : e;
+            var x = Math.max(0, Math.min(touch.clientX - rect.left, rect.width));
+            var pct = x / rect.width;
+            var dur = video.duration;
+            if (!isNaN(dur) && dur > 0) {
+                video.currentTime = pct * dur;
+                document.getElementById('seekProgress').style.width = (pct * 100) + '%';
+                document.getElementById('seekThumb').style.left = (pct * 100) + '%';
+                document.getElementById('currentTime').textContent = formatTime(pct * dur);
+            }
+        }
+
+        // ===== SHOW/HIDE CONTROLS =====
+        document.getElementById('videoContainer').addEventListener('click', function(e) {
+            // Don't toggle if clicking a button
+            if (e.target.closest('.top-bar-btn, .center-btn')) return;
+            toggleControls();
+        });
+
+        function toggleControls() {
+            controlsVisible = !controlsVisible;
+            var cls = controlsVisible ? 'visible' : '';
+            document.getElementById('dimmer').className = 'dimmer ' + cls;
+            document.getElementById('topBar').className = 'top-bar ' + cls;
+            document.getElementById('centerControls').className = 'center-controls ' + cls;
+            document.getElementById('bottomControls').className = 'bottom-controls ' + cls;
+
+            clearTimeout(controlsTimer);
+            if (controlsVisible && !video.paused) {
+                controlsTimer = setTimeout(function() {
+                    toggleControls();
+                }, 4000);
+            }
+        }
+
+        function showControls() {
+            controlsVisible = true;
+            document.getElementById('dimmer').className = 'dimmer visible';
+            document.getElementById('topBar').className = 'top-bar visible';
+            document.getElementById('centerControls').className = 'center-controls visible';
+            document.getElementById('bottomControls').className = 'bottom-controls visible';
+        }
+
+        // Show controls initially
+        showControls();
+        controlsTimer = setTimeout(function() { toggleControls(); }, 4000);
+
+        // ===== HELPERS =====
+        function formatTime(sec) {
+            if (isNaN(sec) || !isFinite(sec)) return '0:00';
+            sec = Math.floor(sec);
+            var h = Math.floor(sec / 3600);
+            var m = Math.floor((sec % 3600) / 60);
+            var s = sec % 60;
+            if (h > 0) {
+                return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+            }
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        function showLoader() {
+            document.getElementById('pip-loader').style.display = 'block';
+        }
+
+        function hideLoader() {
+            document.getElementById('pip-loader').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
