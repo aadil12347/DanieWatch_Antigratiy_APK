@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
+import '../../services/video_extractor_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/detail_provider.dart';
 import '../providers/watch_history_provider.dart';
 import '../screens/video_player/video_player_screen.dart';
@@ -322,31 +324,78 @@ class _ContinueWatchingCard extends ConsumerWidget {
     } catch (_) {}
 
     // Use the same play loader animation as the detail page
-    showPlayLoader(
+    showPlayLoader<Map<String, String>>(
       context: context,
       fetchLinkFuture: () async {
-        // If we already have a play URL, return it
-        if (item.playUrl != null && item.playUrl!.isNotEmpty) {
-          return item.playUrl;
+        if (item.mediaType == 'offline') {
+          return {'extracted': item.playUrl ?? '', 'original': item.playUrl ?? ''};
         }
-        // Otherwise, fetch the link using the detail provider
+
+        String originalLink = '';
+
+        // Prioritize original iframe link if valid
+        if (item.playUrl != null &&
+            item.playUrl!.isNotEmpty &&
+            !item.playUrl!.contains('.m3u8') &&
+            !item.playUrl!.contains('.mp4')) {
+          originalLink = item.playUrl!;
+        } else {
+          // Fallback if we only have the extracted link in db
+          try {
+            if (item.mediaType == 'movie') {
+              final detailAsync = await ref.read(
+                detailProvider(
+                  DetailParams(tmdbId: item.tmdbId, mediaType: item.mediaType),
+                ).future,
+              );
+              originalLink = detailAsync?.watchLink ?? '';
+            } else {
+              final episodesAsync = await ref.read(
+                episodesProvider(
+                  EpisodeParams(tmdbId: item.tmdbId, seasonNumber: item.season ?? 1),
+                ).future,
+              );
+              final ep = episodesAsync.firstWhere(
+                (e) => e.episodeNumber == item.episode,
+                orElse: () => episodesAsync.first,
+              );
+              originalLink = ep.playLink ?? '';
+            }
+          } catch (_) {
+            return null;
+          }
+        }
+
+        if (originalLink.isEmpty) return null;
+
         try {
-          final detailAsync = await ref.read(
-            detailProvider(
-              DetailParams(tmdbId: item.tmdbId, mediaType: item.mediaType),
-            ).future,
-          );
-          return detailAsync?.playUrl;
-        } catch (_) {
+          final extractor = VideoExtractorService();
+          String? m3u8Url =
+              await extractor.extractVideoUrl(originalLink, bypassCache: true);
+
+          if (m3u8Url == null || m3u8Url.isEmpty) {
+            debugPrint('[ContinueWatch] First extraction failed, retrying...');
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.remove('extract_$originalLink');
+            m3u8Url = await extractor.extractVideoUrl(originalLink, bypassCache: true);
+          }
+          if (m3u8Url != null && m3u8Url.isNotEmpty) {
+            return {'extracted': m3u8Url, 'original': originalLink};
+          }
+          return null;
+        } catch (e) {
+          debugPrint('[ContinueWatch] Extraction error: $e');
           return null;
         }
       },
-      onSuccess: (url) {
+      onSuccess: (data) {
+        if (!context.mounted) return;
         Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(
             builder: (_) => VideoPlayerScreen(
               title: item.title,
-              url: url,
+              url: data['extracted'] ?? '',
+              originalUrl: data['original'],
               tmdbId: item.tmdbId,
               mediaType: item.mediaType,
               season: item.season,
@@ -355,6 +404,7 @@ class _ContinueWatchingCard extends ConsumerWidget {
               startPosition: item.currentTime,
               posterUrl: item.posterUrl,
               isOffline: item.mediaType == 'offline',
+              isDirectLink: item.mediaType != 'offline',
             ),
           ),
         );

@@ -16,6 +16,7 @@ import '../../widgets/sticky_dropdown_modal.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
+  final String? originalUrl;
   final String title;
   final int tmdbId;
   final String mediaType;
@@ -31,6 +32,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   const VideoPlayerScreen({
     super.key,
     required this.url,
+    this.originalUrl,
     required this.title,
     required this.tmdbId,
     required this.mediaType,
@@ -661,7 +663,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       posterUrl: posterUrl,
       backdropUrl: backdropUrl,
       thumbnailUrl: episodeThumbnailUrl,
-      playUrl: _currentExtractionUrl ?? widget.url,
+      playUrl: widget.originalUrl ?? _currentExtractionUrl ?? widget.url,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
 

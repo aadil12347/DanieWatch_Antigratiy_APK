@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 
-Future<void> showPlayLoader({
+Future<void> showPlayLoader<T>({
   required BuildContext context,
-  required Future<String?> Function() fetchLinkFuture,
-  required void Function(String) onSuccess,
+  required Future<T?> Function() fetchLinkFuture,
+  required void Function(T) onSuccess,
   required VoidCallback onError,
 }) {
   return showGeneralDialog<void>(
     context: context,
     pageBuilder: (context, animation, secondaryAnimation) {
-      return PlayLoaderOverlay(
+      return PlayLoaderOverlay<T>(
         fetchLinkFuture: fetchLinkFuture,
         onSuccess: onSuccess,
         onError: onError,
@@ -25,9 +25,9 @@ Future<void> showPlayLoader({
   );
 }
 
-class PlayLoaderOverlay extends StatefulWidget {
-  final Future<String?> Function() fetchLinkFuture;
-  final void Function(String) onSuccess;
+class PlayLoaderOverlay<T> extends StatefulWidget {
+  final Future<T?> Function() fetchLinkFuture;
+  final void Function(T) onSuccess;
   final VoidCallback onError;
 
   const PlayLoaderOverlay({
@@ -38,10 +38,10 @@ class PlayLoaderOverlay extends StatefulWidget {
   });
 
   @override
-  State<PlayLoaderOverlay> createState() => _PlayLoaderOverlayState();
+  State<PlayLoaderOverlay<T>> createState() => _PlayLoaderOverlayState<T>();
 }
 
-class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
+class _PlayLoaderOverlayState<T> extends State<PlayLoaderOverlay<T>>
     with TickerProviderStateMixin {
   late AnimationController _barController;
   late AnimationController _panelController;
@@ -75,9 +75,14 @@ class _PlayLoaderOverlayState extends State<PlayLoaderOverlay>
   Future<void> _executeFetch() async {
     final link = await widget.fetchLinkFuture();
     if (mounted && !_isCancelled) {
-      if (link != null && link.isNotEmpty) {
+      bool isValid = link != null;
+      if (isValid && link is String) {
+        isValid = link.isNotEmpty;
+      }
+      
+      if (isValid) {
         await _panelController.reverse();
-        if (mounted) widget.onSuccess(link);
+        if (mounted) widget.onSuccess(link as T);
       } else {
         widget.onError();
         await _panelController.reverse();

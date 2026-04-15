@@ -1178,7 +1178,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
 
     // Show Loader and start background extraction
-    showPlayLoader(
+    showPlayLoader<String>(
       context: context,
       fetchLinkFuture: () async {
         try {
@@ -1207,6 +1207,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             reverseTransitionDuration: Duration.zero,
             pageBuilder: (_, __, ___) => VideoPlayerScreen(
               url: extractedLink,
+              originalUrl: url,
               title: content?.title ?? '',
               tmdbId: widget.tmdbId,
               mediaType: widget.mediaType,
