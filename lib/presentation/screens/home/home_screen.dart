@@ -18,6 +18,7 @@ import '../../widgets/user_avatar.dart';
 import '../../widgets/continue_watching_row.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/watch_history_provider.dart';
+import '../../providers/delete_mode_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 
 import '../../providers/scroll_provider.dart';
@@ -79,8 +80,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const CustomDrawer(),
-      body: CustomAppBar(
-        child: CustomScrollView(
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          // Exit delete mode if user clicks anywhere on the screen
+          final isDeleteMode = ref.read(continueWatchingDeleteModeProvider);
+          if (isDeleteMode) {
+            ref.read(continueWatchingDeleteModeProvider.notifier).state = false;
+          }
+        },
+        child: CustomAppBar(
+          child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -201,6 +211,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

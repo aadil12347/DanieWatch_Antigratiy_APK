@@ -81,8 +81,13 @@ class _PlayLoaderOverlayState<T> extends State<PlayLoaderOverlay<T>>
       }
       
       if (isValid) {
+        // First reverse the panel animation
         await _panelController.reverse();
-        if (mounted) widget.onSuccess(link as T);
+        if (mounted) {
+          // IMPORTANT: Pop the dialog BEFORE calling onSuccess so the overlay is removed
+          Navigator.of(context).pop();
+          widget.onSuccess(link as T);
+        }
       } else {
         widget.onError();
         await _panelController.reverse();
