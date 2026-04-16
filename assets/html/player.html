@@ -1233,6 +1233,28 @@
         .toggle-switch.active::after {
             transform: translateX(20px);
         }
+
+        /* ===== PIP MODE ===== */
+        .pip-mode .headline,
+        .pip-mode .center-controls,
+        .pip-mode .bottom-controls,
+        .pip-mode .top-gradient,
+        .pip-mode .dimmer,
+        .pip-mode #settings-menu,
+        .pip-mode .subtitle-panel,
+        .pip-mode .next-episode-overlay,
+        .pip-mode .autoplay-fullscreen,
+        .pip-mode .lock-overlay,
+        .pip-mode .speed-pill,
+        .pip-mode .seek-indicator,
+        .pip-mode .gesture-indicator,
+        .pip-mode .skip-ripple,
+        .pip-mode .notify-pill,
+        .pip-mode #player-loader {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
     </style>
 </head>
 
@@ -1338,7 +1360,8 @@
                 <button class="back-btn" id="btnPip" onclick="enterPipMode(event)"
                     style="width: 48px; height: 48px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px);">
                     <svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: white;">
-                        <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
+                        <path
+                            d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
                     </svg>
                 </button>
             </div>
@@ -1924,7 +1947,7 @@
                 seekProgress.style.width = percent + '%';
                 seekThumb.style.left = percent + '%';
                 timeDisplay.textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
-                
+
                 const tooltipAreaWidth = seekBar.getBoundingClientRect().width;
                 const tooltipPosX = (percent / 100) * tooltipAreaWidth;
                 seekTooltip.textContent = formatTime(newTime);
@@ -1973,12 +1996,12 @@
                 const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
                 const seekDelta = dx * seekSensitivity;
                 video.currentTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
-                
+
                 document.getElementById('seekIndicator').classList.remove('visible');
                 isScrubbing = false;
                 seekBarContainer.classList.remove('scrubbing');
                 seekTooltip.classList.remove('visible');
-                
+
                 gestureActive = false;
                 gestureType = null;
                 return;
@@ -2505,6 +2528,7 @@
         // ===== CONTROL VISIBILITY (3s auto-hide) =====
         function showControls() {
             if (isLocked) return;
+            if (isInPipMode) return;
             clearTimeout(controlsTimeout);
             controlsVisible = true;
             controlsBar.classList.add('visible');
@@ -2697,6 +2721,30 @@
                 zoomResetTap = now;
             }
         }, { passive: true });
+
+        // ===== PIP MODE UI =====
+        let isInPipMode = false;
+
+        window.enterPipModeUI = function () {
+            isInPipMode = true;
+            document.querySelector('.video-container').classList.add('pip-mode');
+            hideUI();
+            // Cancel any pending timers
+            if (nextEpisodeTimer) { clearInterval(nextEpisodeTimer); nextEpisodeTimer = null; }
+            if (autoplayTimer) { clearInterval(autoplayTimer); autoplayTimer = null; }
+            document.getElementById('nextEpisodeOverlay').classList.remove('visible');
+            document.getElementById('autoplayFullscreen').classList.remove('visible');
+            document.getElementById('settings-menu').classList.remove('visible');
+            document.getElementById('subtitlePanel').classList.remove('visible');
+            isMenuOpen = false;
+            isSubPanelOpen = false;
+        };
+
+        window.exitPipModeUI = function () {
+            isInPipMode = false;
+            document.querySelector('.video-container').classList.remove('pip-mode');
+            showControls();
+        };
 
         // ===== PUBLIC API =====
         window.playVideo = function (url) { loadVideo(url); };

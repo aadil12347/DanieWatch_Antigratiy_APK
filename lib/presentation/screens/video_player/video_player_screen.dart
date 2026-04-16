@@ -117,11 +117,40 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       if (mounted) {
         setState(() => _isInPipMode = isInPip);
         if (isInPip) {
-          // Hide controls in PiP mode via JS
-          _webViewController?.evaluateJavascript(
-            source: "document.querySelector('.controls-overlay')?.style.display='none'; document.querySelector('.top-bar')?.style.display='none';",
-          );
+          // Hide HTML controls in PiP mode using the existing player.html function
+          _webViewController?.evaluateJavascript(source: "enterPipModeUI();");
+        } else {
+          // Restore HTML controls when exiting PiP
+          _webViewController?.evaluateJavascript(source: "exitPipModeUI();");
         }
+      }
+    };
+
+    // Handle PiP action buttons (play/pause, seek backward/forward)
+    PipController.instance.onPipAction = (action) {
+      if (!mounted || _webViewController == null) return;
+      debugPrint('[PIP] Handling action: $action');
+      switch (action) {
+        case 'play':
+          _webViewController?.evaluateJavascript(
+            source: "document.querySelector('video')?.play();",
+          );
+          break;
+        case 'pause':
+          _webViewController?.evaluateJavascript(
+            source: "document.querySelector('video')?.pause();",
+          );
+          break;
+        case 'seekForward':
+          _webViewController?.evaluateJavascript(
+            source: "(function(){ var v = document.querySelector('video'); if(v) v.currentTime = Math.min(v.duration, v.currentTime + 10); })();",
+          );
+          break;
+        case 'seekBackward':
+          _webViewController?.evaluateJavascript(
+            source: "(function(){ var v = document.querySelector('video'); if(v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
+          );
+          break;
       }
     };
 
@@ -890,6 +919,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     WidgetsBinding.instance.removeObserver(this);
     PipController.instance.onPipModeChanged = null;
     PipController.instance.onUserLeaveHint = null;
+    PipController.instance.onPipAction = null;
     _saveToWatchHistory();
     _errorAutoCloseTimer?.cancel();
     _progressSaveTimer?.cancel();
@@ -1600,7 +1630,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 : _isExtracting
                     ? _buildDiscoveryProgress(key: const ValueKey('loader'))
                     : _useWebViewEngine
-                        ? _buildWebPlayer(key: const ValueKey('web_player'))
+                        ? (_isInPipMode
+                            ? const SizedBox.shrink()
+                            : _buildWebPlayer(key: const ValueKey('web_player')))
                         : (!_isInitialized || _isLoading)
                             ? _buildLoadingState(key: const ValueKey('prep'))
                             : _buildPlayerInterface(),
@@ -1649,9 +1681,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 key: const ValueKey('native_player'),
                 controller: _betterPlayerController!,
               ),
-              _buildTopBar(),
-              _buildEpisodeInfoOverlay(),
-              _buildControlHints(),
+              // Hide all overlays when in PiP mode — they flash on top of video otherwise
+              if (!_isInPipMode) _buildTopBar(),
+              if (!_isInPipMode) _buildEpisodeInfoOverlay(),
+              if (!_isInPipMode) _buildControlHints(),
             ],
           ),
         ),

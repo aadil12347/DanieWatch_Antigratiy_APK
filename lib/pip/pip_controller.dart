@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 /// Uses a MethodChannel to communicate with the native Android PiP implementation.
 /// The video continues playing inside the same Flutter activity, which Android
 /// shrinks into a mini floating window.
+///
+/// Supports 3 PiP window actions: Seek Backward, Play/Pause, Seek Forward.
 class PipController {
   PipController._();
   static final PipController instance = PipController._();
@@ -22,6 +24,10 @@ class PipController {
   /// Callback invoked when the user presses home while in the video player.
   /// This can be used for auto-PiP on home press.
   VoidCallback? onUserLeaveHint;
+
+  /// Callback invoked when the user taps a PiP action button.
+  /// Actions: "play", "pause", "seekForward", "seekBackward"
+  void Function(String action)? onPipAction;
 
   /// Initialize the PiP controller and set up method channel listeners.
   Future<void> init() async {
@@ -42,6 +48,11 @@ class PipController {
         debugPrint('[PIP] User leave hint received');
         onUserLeaveHint?.call();
         break;
+      case 'onPipAction':
+        final String action = call.arguments as String;
+        debugPrint('[PIP] Action received: $action');
+        onPipAction?.call(action);
+        break;
     }
   }
 
@@ -59,6 +70,12 @@ class PipController {
       return false;
     }
 
+    // Immediately update state so Flutter UI hides controls before native PiP window appears.
+    // This prevents the brief flash of controls on top of the video during the transition.
+    _isInPipMode = true;
+    onPipModeChanged?.call(true);
+    debugPrint('[PIP] Entering PiP mode (state updated optimistically)');
+
     try {
       final result = await _channel.invokeMethod<bool>('enterPipMode', {
         'aspectWidth': aspectWidth,
@@ -68,10 +85,30 @@ class PipController {
       return result ?? false;
     } on PlatformException catch (e) {
       debugPrint('[PIP] Failed to enter PiP: ${e.message}');
+      // Rollback on failure
+      _isInPipMode = false;
+      onPipModeChanged?.call(false);
       return false;
     } catch (e) {
       debugPrint('[PIP] Unexpected error entering PiP: $e');
+      // Rollback on failure
+      _isInPipMode = false;
+      onPipModeChanged?.call(false);
       return false;
+    }
+  }
+
+  /// Update the play/pause state shown on the PiP window buttons.
+  /// Call this whenever the video play state changes so the PiP icon stays in sync.
+  Future<void> updatePipPlayState(bool isPlaying) async {
+    if (!_isInPipMode) return;
+    try {
+      await _channel.invokeMethod('updatePipPlayState', {
+        'isPlaying': isPlaying,
+      });
+      debugPrint('[PIP] Updated play state: $isPlaying');
+    } catch (e) {
+      debugPrint('[PIP] Error updating play state: $e');
     }
   }
 
@@ -100,5 +137,6 @@ class PipController {
   void dispose() {
     onPipModeChanged = null;
     onUserLeaveHint = null;
+    onPipAction = null;
   }
 }
