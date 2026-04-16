@@ -876,8 +876,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       DeviceOrientation.portraitDown,
     ]);
     SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: SystemUiOverlay.values,
+      SystemUiMode.immersiveSticky,
+      overlays: [],
     );
 
     // 4. Pop WITHOUT setState — directly set field and pop to avoid rebuild crash
@@ -972,8 +972,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       DeviceOrientation.portraitDown,
     ]);
     SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: SystemUiOverlay.values,
+      SystemUiMode.immersiveSticky,
+      overlays: [],
     );
 
     super.dispose();
