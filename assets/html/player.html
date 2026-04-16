@@ -685,7 +685,7 @@
             align-items: center;
             justify-content: flex-end;
             opacity: 0;
-            transition: opacity 0.2s ease;
+            transition: opacity 0.1s ease;
             pointer-events: none;
         }
 
@@ -694,11 +694,11 @@
         }
 
         .gesture-indicator.left {
-            left: 20px;
+            left: 48px;
         }
 
         .gesture-indicator.right {
-            right: 20px;
+            right: 48px;
         }
 
         .gesture-indicator-icon {
@@ -729,7 +729,7 @@
             right: 0;
             background: #E11D48;
             border-radius: 3px;
-            transition: height 0.05s linear;
+            transition: none;
             box-shadow: 0 0 8px rgba(225, 29, 72, 0.4);
         }
 
@@ -1352,14 +1352,7 @@
                     <span id="episodeButtonText"
                         style="color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 700; white-space: nowrap; letter-spacing: -0.2px;">Episodes</span>
                 </button>
-                <!-- PIP Mode Button -->
-                <button class="back-btn" id="btnPip" onclick="enterPipMode(event)"
-                    style="width: 48px; height: 48px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px);">
-                    <svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: white;">
-                        <path
-                            d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
-                    </svg>
-                </button>
+
             </div>
         </div>
 
@@ -1868,7 +1861,7 @@
             const absDy = Math.abs(dy);
 
             // Determine gesture type on first significant move
-            if (!gestureType && (absDx > 15 || absDy > 15)) {
+            if (!gestureType && (absDx > 8 || absDy > 8)) {
                 if (absDy > absDx) {
                     // Vertical gesture
                     const rect = videoContainer.getBoundingClientRect();
@@ -1888,8 +1881,8 @@
 
             if (gestureType === 'brightness') {
                 const rect = videoContainer.getBoundingClientRect();
-                const sensitivity = 1.5 / rect.height;
-                gestureBrightness = Math.max(0, Math.min(1, gestureBrightness + (-dy * sensitivity * 0.3)));
+                const sensitivity = 1.8 / rect.height;
+                gestureBrightness = Math.max(0, Math.min(1, gestureBrightness + (-dy * sensitivity)));
                 // We approximate brightness via a CSS filter
                 video.style.filter = 'brightness(' + (0.2 + gestureBrightness * 0.8) + ')';
                 const indicator = document.getElementById('brightnessIndicator');
@@ -1901,8 +1894,8 @@
                 gestureStartY = touch.clientY;
             } else if (gestureType === 'volume') {
                 const rect = videoContainer.getBoundingClientRect();
-                const sensitivity = 1.5 / rect.height;
-                gestureVolume = Math.max(0, Math.min(1, gestureVolume + (-dy * sensitivity * 0.3)));
+                const sensitivity = 1.8 / rect.height;
+                gestureVolume = Math.max(0, Math.min(1, gestureVolume + (-dy * sensitivity)));
                 // Control system volume instead of video.volume
                 sendSystemVolume(gestureVolume);
                 const indicator = document.getElementById('volumeIndicator');
