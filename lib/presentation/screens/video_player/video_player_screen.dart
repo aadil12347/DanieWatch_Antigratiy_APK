@@ -630,7 +630,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             ),
           ),
         );
-        final episode = episodesAsync.valueOrNull?[_extractingEpisodeIndex!];
+        final epIndex = _extractingEpisodeIndex;
+        final epsList = episodesAsync.valueOrNull;
+        final episode = (epsList != null && epIndex != null && epIndex >= 0 && epIndex < epsList.length)
+            ? epsList[epIndex]
+            : null;
 
         setState(() {
           _isBgExtracting = false;
@@ -674,14 +678,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       posterUrl = detail?.posterUrl;
       
       // For TV shows, try to use the specific season's poster if available
-      if (widget.mediaType != 'movie' && _currentSeason != null && detail?.tmdbSeasons != null) {
+      if (widget.mediaType != 'movie' && _currentSeason != null) {
         try {
-          final season = detail!.tmdbSeasons!.firstWhere(
-            (s) => s.seasonNumber == _currentSeason,
-            orElse: () => detail.tmdbSeasons!.first,
-          );
-          if (season.posterPath != null && season.posterPath!.isNotEmpty) {
-            posterUrl = season.posterPath;
+          final tmdbSeasons = detail?.tmdbSeasons;
+          if (tmdbSeasons != null && tmdbSeasons.isNotEmpty) {
+            final season = tmdbSeasons.firstWhere(
+              (s) => s.seasonNumber == _currentSeason,
+              orElse: () => tmdbSeasons.first,
+            );
+            if (season.posterPath != null && season.posterPath!.isNotEmpty) {
+              posterUrl = season.posterPath;
+            }
           }
         } catch (_) {}
       }
@@ -707,14 +714,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             ),
           ),
         );
-        final ep = epsAsync.valueOrNull?.firstWhere(
-          (e) => e.episodeNumber == _currentEpisode,
-          orElse: () => epsAsync.valueOrNull!.first,
-        );
-        episodeTitle = ep?.title;
-        episodeThumbnailUrl = ep?.thumbnailUrl;
-        if (episodeThumbnailUrl != null && !episodeThumbnailUrl.startsWith('http')) {
-          episodeThumbnailUrl = 'https://image.tmdb.org/t/p/w500$episodeThumbnailUrl';
+        final epsList = epsAsync.valueOrNull;
+        if (epsList != null && epsList.isNotEmpty) {
+          final ep = epsList.firstWhere(
+            (e) => e.episodeNumber == _currentEpisode,
+            orElse: () => epsList.first,
+          );
+          episodeTitle = ep.title;
+          episodeThumbnailUrl = ep.thumbnailUrl;
+          if (episodeThumbnailUrl != null && !episodeThumbnailUrl.startsWith('http')) {
+            episodeThumbnailUrl = 'https://image.tmdb.org/t/p/w500$episodeThumbnailUrl';
+          }
         }
       }
     } catch (_) {}
@@ -921,9 +931,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     PipController.instance.onUserLeaveHint = null;
     PipController.instance.onPipAction = null;
     _saveToWatchHistory();
+
+    // Cancel ALL timers to prevent leaks
     _errorAutoCloseTimer?.cancel();
     _progressSaveTimer?.cancel();
+    _extractionTimer?.cancel();
+    _masterWaitTimer?.cancel();
+    _autoClickTimer?.cancel();
+    _bgDiscoveryTimer?.cancel();
+    _bgAutoClickTimer?.cancel();
+    _bgTimeoutTimer?.cancel();
+    _bgMasterWaitTimer?.cancel();
+
+    // Dispose controllers
+    _searchController.dispose();
     _betterPlayerController?.dispose();
+
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,

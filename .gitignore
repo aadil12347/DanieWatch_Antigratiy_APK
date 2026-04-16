@@ -51,3 +51,7 @@ analysis.md
 video_player_ui_design.md
 carousel_v.txt
 carousel_v.dart
+
+# Environment secrets - NEVER commit
+.dart_define.env
+*.dart_define.env

@@ -349,7 +349,7 @@ class DownloadManager {
         item = _findById(payload);
       }
       item ??= _downloads.cast<DownloadItem?>().firstWhere(
-            (d) => d!.id.hashCode == notifId,
+            (d) => _notificationId(d!.id) == notifId,
             orElse: () => null,
           );
 
@@ -401,20 +401,20 @@ class DownloadManager {
       item.status = DownloadStatus.completed;
       item.completedAt = DateTime.now();
       _notifService.showComplete(
-          id: item.id.hashCode, title: item.displayName, payload: item.id);
+          id: _notificationId(item.id), title: item.displayName, payload: item.id);
       onDownloadComplete?.call(item);
     } else if (status == DownloadTaskStatus.failed.index) {
       item.status = DownloadStatus.failed;
       item.error = 'Download failed';
       _notifService.showFailed(
-          id: item.id.hashCode, title: item.displayName, payload: item.id);
+          id: _notificationId(item.id), title: item.displayName, payload: item.id);
     } else if (status == DownloadTaskStatus.canceled.index) {
       item.status = DownloadStatus.canceled;
-      _notifService.cancel(item.id.hashCode);
+      _notifService.cancel(_notificationId(item.id));
     } else if (status == DownloadTaskStatus.running.index) {
       item.status = DownloadStatus.downloading;
       _notifService.showProgress(
-        id: item.id.hashCode,
+        id: _notificationId(item.id),
         title: item.displayName,
         progress: progress,
         payload: item.id,
@@ -465,12 +465,12 @@ class DownloadManager {
   Future<bool> requestPermissions() async {
     if (kIsWeb) return true;
     if (Platform.isAndroid) {
+      // On Android 10+, app-specific external storage needs no permission.
+      // Only request WRITE_EXTERNAL_STORAGE for legacy Android (< 10).
+      // MANAGE_EXTERNAL_STORAGE is intentionally NOT requested to avoid
+      // Play Store policy violations.
       final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        final manageStatus = await Permission.manageExternalStorage.request();
-        return manageStatus.isGranted;
-      }
-      return status.isGranted;
+      return status.isGranted || status.isLimited;
     }
     return true;
   }
@@ -478,7 +478,19 @@ class DownloadManager {
   Future<Directory> getDownloadDirectory() async {
     if (kIsWeb) throw UnsupportedError('Downloads not supported on web');
     if (Platform.isAndroid) {
-      final dir = Directory('/storage/emulated/0/Download/DanieWatch');
+      // Use app-specific external directory — no MANAGE_EXTERNAL_STORAGE needed.
+      // Files persist until app uninstall; accessible via file manager.
+      final extDir = await getExternalStorageDirectory();
+      if (extDir != null) {
+        final dir = Directory('${extDir.path}/DanieWatch');
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+        return dir;
+      }
+      // Fallback to app documents directory
+      final appDir = await getApplicationDocumentsDirectory();
+      final dir = Directory('${appDir.path}/DanieWatch');
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
@@ -546,7 +558,7 @@ class DownloadManager {
 
     // Show initial notification
     _notifService.showProgress(
-      id: item.id.hashCode,
+      id: _notificationId(item.id),
       title: item.displayName,
       progress: 0,
       body: 'Starting download…',
@@ -603,7 +615,7 @@ class DownloadManager {
 
         final speedStr = item.formattedSpeed;
         _notifService.showProgress(
-          id: item.id.hashCode,
+          id: _notificationId(item.id),
           title: item.displayName,
           progress: pct,
           body: '$pct%${speedStr.isNotEmpty ? " · $speedStr" : ""}',
@@ -623,7 +635,7 @@ class DownloadManager {
       item.downloadSpeed = 0;
 
       _notifService.showProgress(
-        id: item.id.hashCode,
+        id: _notificationId(item.id),
         title: item.displayName,
         progress: 97,
         body: '97% · Finalizing...',
@@ -641,7 +653,7 @@ class DownloadManager {
       _activeHlsDownloads.remove(item.id);
 
       _notifService.showFailed(
-        id: item.id.hashCode,
+        id: _notificationId(item.id),
         title: item.displayName,
         error: item.error,
         payload: item.id,
@@ -668,7 +680,7 @@ class DownloadManager {
       }
 
       _notifService.showComplete(
-          id: item.id.hashCode, title: item.displayName, payload: item.id);
+          id: _notificationId(item.id), title: item.displayName, payload: item.id);
       _updateController.add(item);
       onDownloadComplete?.call(item);
       onDownloadUpdate?.call(item);
@@ -715,7 +727,7 @@ class DownloadManager {
 
       // Update notification to show 'Resume'
       _notifService.showProgress(
-        id: item.id.hashCode,
+        id: _notificationId(item.id),
         title: item.displayName,
         progress: (item.progress * 100).toInt(),
         body: 'Paused · ${(item.progress * 100).toInt()}%',
@@ -751,7 +763,7 @@ class DownloadManager {
 
       // Update notification to show 'Pause'
       _notifService.showProgress(
-        id: item.id.hashCode,
+        id: _notificationId(item.id),
         title: item.displayName,
         progress: (item.progress * 100).toInt(),
         body: 'Downloading · ${(item.progress * 100).toInt()}%',
@@ -774,7 +786,7 @@ class DownloadManager {
       onDownloadUpdate?.call(item);
 
       _notifService.showProgress(
-        id: item.id.hashCode,
+        id: _notificationId(item.id),
         title: item.displayName,
         progress: (item.progress * 100).toInt(),
         body: 'Resuming download…',
@@ -812,7 +824,7 @@ class DownloadManager {
     }
 
     item.status = DownloadStatus.canceled;
-    _notifService.cancel(item.id.hashCode);
+    _notifService.cancel(_notificationId(item.id));
 
     // Clean up segment directory if exists
     if (item.segmentDirectory != null) {
@@ -834,7 +846,7 @@ class DownloadManager {
     final item = _findById(id);
     if (item == null) return;
 
-    _notifService.cancel(item.id.hashCode);
+    _notifService.cancel(_notificationId(item.id));
 
     // Cancel if still active
     if (_activeHlsDownloads.containsKey(item.id)) {
@@ -932,6 +944,16 @@ class DownloadManager {
       if (d.id == id) return d;
     }
     return null;
+  }
+
+  /// Generate a collision-resistant notification ID from the download item ID.
+  /// item.id is a millisecond timestamp string, so we parse it and truncate
+  /// to a positive 32-bit int. This avoids hashCode collisions where different
+  /// items could receive the same notification ID.
+  static int _notificationId(String itemId) {
+    final ts = int.tryParse(itemId) ?? itemId.hashCode;
+    // Ensure positive 32-bit int for Android notification ID
+    return ts.abs() % 2147483647;
   }
 
   Future<void> _loadDownloads() async {

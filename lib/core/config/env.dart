@@ -1,36 +1,39 @@
 /// Environment configuration injected via --dart-define at build time.
-/// NEVER hardcode values here — they come from build arguments.
+/// NEVER hardcode secrets here — they come from build arguments.
 ///
 /// Build example:
+///   flutter build apk --release \
+///     --dart-define-from-file=.dart_define.env
+///
+/// Or individually:
 ///   flutter build apk --release \
 ///     --dart-define=SUPABASE_URL=https://xxx.supabase.co \
 ///     --dart-define=SUPABASE_ANON_KEY=eyJ... \
 ///     --dart-define=TMDB_API_KEY=abc123 \
-///     --dart-define=MANIFEST_BUCKET=manifests \
-///     --dart-define=MANIFEST_PATH=db_manifest_v1.json
+///     --dart-define=GOOGLE_WEB_CLIENT_ID=xxx.apps.googleusercontent.com
 class Env {
   Env._();
-  
-  // Supabase
+
+  // ── Supabase ──────────────────────────────────────────────
   static const supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://jeotfdtmfdyywktktikz.supabase.co',
+    defaultValue: '',
   );
   static const supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Implb3RmZHRtZmR5eXdrdGt0aWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMDA2MzIsImV4cCI6MjA5MDc3NjYzMn0.Zpr13uqaKmwp46Qg7QZJ85A3VoyGpjPFmNSMpIkJeK0',
+    defaultValue: '',
   );
 
-  // GitHub Data Source
+  // ── GitHub Data Source ────────────────────────────────────
   static const githubRawBaseUrl = String.fromEnvironment(
     'GITHUB_RAW_BASE_URL',
-    defaultValue: 'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main',
+    defaultValue: '',
   );
 
-  // TMDB
+  // ── TMDB ──────────────────────────────────────────────────
   static const tmdbApiKey = String.fromEnvironment(
     'TMDB_API_KEY',
-    defaultValue: 'fc6d85b3839330e3458701b975195487', // Provide your TMDB API Key
+    defaultValue: '',
   );
   static const tmdbBaseUrl = String.fromEnvironment(
     'TMDB_BASE_URL',
@@ -41,7 +44,7 @@ class Env {
     defaultValue: 'https://image.tmdb.org/t/p',
   );
 
-  // Manifest storage
+  // ── Manifest storage ─────────────────────────────────────
   static const manifestBucket = String.fromEnvironment(
     'MANIFEST_BUCKET',
     defaultValue: 'manifests',
@@ -51,20 +54,36 @@ class Env {
     defaultValue: 'db_manifest_v1.json',
   );
 
-  // App version for cache invalidation
+  // ── App version for cache invalidation ────────────────────
   static const appVersion = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '1.0.0',
   );
-  
-  // Google Sign-In
+
+  // ── Google Sign-In ────────────────────────────────────────
   static const googleWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '896428292637-0vuh07psg3otfkeehjg9v5merlnngjr5.apps.googleusercontent.com', // Provide your Google Web Client ID
+    defaultValue: '',
   );
-  
+
   static const googleClientSecret = String.fromEnvironment(
     'GOOGLE_CLIENT_SECRET',
-    defaultValue: '', // Provide your Google Client Secret
+    defaultValue: '',
   );
+
+  /// Validates that all required environment variables are configured.
+  /// Call once at app startup to fail fast with a clear message.
+  static void validate() {
+    final missing = <String>[];
+    if (supabaseUrl.isEmpty) missing.add('SUPABASE_URL');
+    if (supabaseAnonKey.isEmpty) missing.add('SUPABASE_ANON_KEY');
+    if (tmdbApiKey.isEmpty) missing.add('TMDB_API_KEY');
+    if (githubRawBaseUrl.isEmpty) missing.add('GITHUB_RAW_BASE_URL');
+    if (missing.isNotEmpty) {
+      throw StateError(
+        'Missing required --dart-define values: ${missing.join(', ')}.\n'
+        'Pass them at build time or use --dart-define-from-file=.dart_define.env',
+      );
+    }
+  }
 }

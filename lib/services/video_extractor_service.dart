@@ -193,7 +193,10 @@ class VideoExtractorService {
               })();
             """);
           } catch (e) {
-            // ignore
+            developer.log(
+              '[Extractor] Click sequence $i failed: $e',
+              name: 'Extractor',
+            );
           }
 
           // Wait between clicks to allow for popups to trigger and be handled

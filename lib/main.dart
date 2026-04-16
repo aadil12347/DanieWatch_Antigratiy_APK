@@ -14,6 +14,9 @@ import 'pip/pip_controller.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Validate required environment variables are configured via --dart-define
+  Env.validate();
+
   try {
     // Override the default release-mode blank screen error behavior
     ErrorWidget.builder = (FlutterErrorDetails details) {
