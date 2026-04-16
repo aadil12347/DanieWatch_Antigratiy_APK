@@ -1630,9 +1630,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 : _isExtracting
                     ? _buildDiscoveryProgress(key: const ValueKey('loader'))
                     : _useWebViewEngine
-                        ? (_isInPipMode
-                            ? const SizedBox.shrink()
-                            : _buildWebPlayer(key: const ValueKey('web_player')))
+                        ? _buildWebPlayer(key: const ValueKey('web_player'))
                         : (!_isInitialized || _isLoading)
                             ? _buildLoadingState(key: const ValueKey('prep'))
                             : _buildPlayerInterface(),
