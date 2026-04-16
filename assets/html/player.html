@@ -59,10 +59,6 @@
             object-fit: contain !important;
         }
 
-        /* ===== PINCH-TO-ZOOM ===== */
-        video.zooming {
-            transition: none !important;
-        }
 
         /* ===== DIMMER OVERLAY ===== */
         .dimmer {
@@ -1292,7 +1288,7 @@
         </div>
 
         <!-- Brightness Indicator (Left) -->
-        <div class="gesture-indicator left" id="brightnessIndicator">
+        <div class="gesture-indicator right" id="brightnessIndicator">
             <div class="gesture-indicator-icon">
                 <svg viewBox="0 0 24 24">
                     <path
@@ -1306,7 +1302,7 @@
         </div>
 
         <!-- Volume Indicator (Right) -->
-        <div class="gesture-indicator right" id="volumeIndicator">
+        <div class="gesture-indicator left" id="volumeIndicator">
             <div class="gesture-indicator-icon">
                 <svg viewBox="0 0 24 24">
                     <path
@@ -1620,10 +1616,11 @@
                                 d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" />
                         </svg>
                     </button>
-                    <!-- Speed -->
-                    <button class="ctrl-btn"
-                        onclick="showSubMenu('speed'); document.getElementById('settings-menu').classList.add('visible'); isMenuOpen=true; clearTimeout(controlsTimeout);">
-                        <span class="speed-label" id="speedBtnLabel">1.0x</span>
+                    <!-- PiP Mode -->
+                    <button class="ctrl-btn" onclick="enterPipMode(event)">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
+                        </svg>
                     </button>
                     <!-- Settings -->
                     <button class="ctrl-btn" id="btnSettings" onclick="toggleMenu(event)">
@@ -1834,7 +1831,7 @@
             gestureType = null;
             gestureActive = false;
             gestureSeekStart = video.currentTime || 0;
-            gestureVolume = video.volume;
+            // gestureVolume tracks system volume — don't reset from video.volume
 
             // Long-press detection
             longPressTimer = setTimeout(() => {
@@ -1906,8 +1903,8 @@
                 const rect = videoContainer.getBoundingClientRect();
                 const sensitivity = 1.5 / rect.height;
                 gestureVolume = Math.max(0, Math.min(1, gestureVolume + (-dy * sensitivity * 0.3)));
-                video.volume = gestureVolume;
-                video.muted = gestureVolume <= 0.01;
+                // Control system volume instead of video.volume
+                sendSystemVolume(gestureVolume);
                 const indicator = document.getElementById('volumeIndicator');
                 const fill = document.getElementById('volumeFill');
                 const label = document.getElementById('volumeLabel');
@@ -2082,6 +2079,7 @@
 
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     video.play();
+                    video.volume = 1.0; // Keep internal volume at max; system controls loudness
                     hideLoader();
                     // Restore saved position
                     setTimeout(restorePlaybackPosition, 300);
@@ -2144,15 +2142,23 @@
         // ===== VOLUME =====
         function volumeToggle(e) {
             if (e) e.stopPropagation();
-            if (video.muted) {
-                video.muted = false;
+            if (gestureVolume <= 0.01) {
+                // Unmute: restore previous volume
+                gestureVolume = savedVolumeBeforeMute || 1.0;
                 iconVolumeUp.classList.remove('icon-hidden');
                 iconVolumeMuted.classList.add('icon-hidden');
             } else {
-                video.muted = true;
+                // Mute: save current and set to 0
+                savedVolumeBeforeMute = gestureVolume;
+                gestureVolume = 0;
                 iconVolumeUp.classList.add('icon-hidden');
                 iconVolumeMuted.classList.remove('icon-hidden');
             }
+            sendSystemVolume(gestureVolume);
+            var fill = document.getElementById('volumeFill');
+            var label = document.getElementById('volumeLabel');
+            if (fill) fill.style.height = (gestureVolume * 100) + '%';
+            if (label) label.textContent = Math.round(gestureVolume * 100) + '%';
             showControls();
         }
 
@@ -2200,7 +2206,7 @@
             currentSpeed = speed;
             video.playbackRate = speed;
             document.getElementById('speedValueText').textContent = speed + 'x';
-            document.getElementById('speedBtnLabel').textContent = speed + 'x';
+            var speedBtn = document.getElementById('speedBtnLabel'); if (speedBtn) speedBtn.textContent = speed + 'x';
             renderSpeedOptions();
             setTimeout(showMainMenu, 200);
         }
@@ -2647,80 +2653,7 @@
             document.getElementById('autoplayFullscreen').classList.remove('visible');
         }
 
-        // ===== PINCH-TO-ZOOM =====
-        let pinchStartDist = 0;
-        let pinchStartScale = 1;
-        let currentZoom = 1;
-        let panX = 0, panY = 0;
-        let lastPanX = 0, lastPanY = 0;
-        let isPinching = false;
-
-        function getPinchDist(touches) {
-            const dx = touches[0].clientX - touches[1].clientX;
-            const dy = touches[0].clientY - touches[1].clientY;
-            return Math.sqrt(dx * dx + dy * dy);
-        }
-
-        videoContainer.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 2) {
-                isPinching = true;
-                video.classList.add('zooming');
-                pinchStartDist = getPinchDist(e.touches);
-                pinchStartScale = currentZoom;
-                lastPanX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-                lastPanY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            }
-        }, { passive: true });
-
-        videoContainer.addEventListener('touchmove', (e) => {
-            if (!isPinching || e.touches.length < 2) return;
-            e.preventDefault();
-            const dist = getPinchDist(e.touches);
-            currentZoom = Math.max(1, Math.min(4, pinchStartScale * (dist / pinchStartDist)));
-
-            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            panX += (midX - lastPanX);
-            panY += (midY - lastPanY);
-            lastPanX = midX;
-            lastPanY = midY;
-
-            // Limit pan to avoid going too far
-            const maxPan = (currentZoom - 1) * 150;
-            panX = Math.max(-maxPan, Math.min(maxPan, panX));
-            panY = Math.max(-maxPan, Math.min(maxPan, panY));
-
-            video.style.transform = 'scale(' + currentZoom + ') translate(' + (panX / currentZoom) + 'px, ' + (panY / currentZoom) + 'px)';
-        }, { passive: false });
-
-        videoContainer.addEventListener('touchend', (e) => {
-            if (isPinching && e.touches.length < 2) {
-                isPinching = false;
-                wasPinching = true; // Signal to single-finger onTouchEnd to skip
-                video.classList.remove('zooming');
-                // Snap back if close to 1x
-                if (currentZoom < 1.1) {
-                    currentZoom = 1;
-                    panX = 0;
-                    panY = 0;
-                    video.style.transform = '';
-                }
-            }
-        }, { passive: true });
-
-        // Double-tap to reset zoom
-        let zoomResetTap = 0;
-        videoContainer.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1 && currentZoom > 1) {
-                const now = Date.now();
-                if (now - zoomResetTap < 300) {
-                    currentZoom = 1; panX = 0; panY = 0;
-                    video.style.transform = '';
-                    haptic('light');
-                }
-                zoomResetTap = now;
-            }
-        }, { passive: true });
+        // Pinch-to-zoom removed
 
         // ===== PIP MODE UI =====
         let isInPipMode = false;
@@ -2745,6 +2678,36 @@
             document.querySelector('.video-container').classList.remove('pip-mode');
             showControls();
         };
+
+        // ===== SYSTEM VOLUME CONTROL =====
+        // Keep video internal volume at max; system volume controls actual loudness
+        video.volume = 1.0;
+        video.muted = false;
+        let savedVolumeBeforeMute = 1.0;
+
+        // Called by Flutter to sync system volume level
+        window.initSystemVolume = function(level) {
+            gestureVolume = Math.max(0, Math.min(1, level));
+            var fill = document.getElementById('volumeFill');
+            var label = document.getElementById('volumeLabel');
+            if (fill) fill.style.height = (gestureVolume * 100) + '%';
+            if (label) label.textContent = Math.round(gestureVolume * 100) + '%';
+            if (gestureVolume <= 0.01) {
+                iconVolumeUp.classList.add('icon-hidden');
+                iconVolumeMuted.classList.remove('icon-hidden');
+            } else {
+                iconVolumeUp.classList.remove('icon-hidden');
+                iconVolumeMuted.classList.add('icon-hidden');
+            }
+        };
+
+        function sendSystemVolume(vol) {
+            try {
+                if (window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('setSystemVolume', vol);
+                }
+            } catch(e) {}
+        }
 
         // ===== PUBLIC API =====
         window.playVideo = function (url) { loadVideo(url); };

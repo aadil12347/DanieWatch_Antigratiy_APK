@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:better_player_plus/better_player_plus.dart';
+import 'package:volume_controller/volume_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
@@ -1051,6 +1052,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               HapticFeedback.lightImpact();
             },
           );
+          controller.addJavaScriptHandler(
+            handlerName: 'setSystemVolume',
+            callback: (args) {
+              if (_isClosing) return;
+              if (args.isNotEmpty) {
+                final vol = (args[0] as num).toDouble().clamp(0.0, 1.0);
+                VolumeController.instance.showSystemUI = false;
+                VolumeController.instance.setVolume(vol);
+              }
+            },
+          );
         },
         onLoadStop: (controller, url) async {
           debugPrint('[Engine] Web Player Loaded: $url');
@@ -1098,6 +1110,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             await controller.evaluateJavascript(
               source: "setMediaType('${widget.mediaType}')",
             );
+
+            // Send current system volume to web player
+            try {
+              final vol = await VolumeController.instance.getVolume();
+              await controller.evaluateJavascript(
+                source: "initSystemVolume($vol)",
+              );
+            } catch (_) {}
 
             // Send next episode title for auto-play overlay
             if (widget.mediaType != 'movie') {
