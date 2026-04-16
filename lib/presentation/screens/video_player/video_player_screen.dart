@@ -104,6 +104,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   int _retryCount = 0;
   String? _currentExtractionUrl;
   bool _canPop = false;
+  bool _isClosing = false; // Prevents double pops/crashes when pressing back
 
   @override
   void initState() {
@@ -395,7 +396,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         
         // Auto-close after 5 seconds on error
         _errorAutoCloseTimer = Timer(const Duration(seconds: 5), () {
-          if (mounted) Navigator.of(context).pop();
+          if (mounted) _goBack();
         });
       }
     }
@@ -768,7 +769,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-
           ],
         ),
       ),
@@ -794,7 +794,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 strokeWidth: 3,
               ),
             ),
-
           ],
         ),
       ),
@@ -842,32 +841,47 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _goBack() async {
-    if (!mounted) return;
+    // Prevent double execution — once _isClosing is true, nothing else runs
+    if (!mounted || _isClosing) return;
+    _isClosing = true;
 
-    // Save watch progress before leaving
-    _saveToWatchHistory();
+    // Save watch progress (best-effort, no await)
+    try { _saveToWatchHistory(); } catch (_) {}
 
-    // If we're extracting an episode, stop that first
-    if (_isBgExtracting) {
-      setState(() {
-        _isBgExtracting = false;
-        _extractingEpisodeIndex = null;
-      });
-      _bgAutoClickTimer?.cancel();
-      _bgTimeoutTimer?.cancel();
-      _bgMasterWaitTimer?.cancel();
-    }
+    // 1. Cancel ALL timers immediately to stop any pending callbacks
+    _errorAutoCloseTimer?.cancel();
+    _progressSaveTimer?.cancel();
+    _extractionTimer?.cancel();
+    _masterWaitTimer?.cancel();
+    _autoClickTimer?.cancel();
+    _bgDiscoveryTimer?.cancel();
+    _bgAutoClickTimer?.cancel();
+    _bgTimeoutTimer?.cancel();
+    _bgMasterWaitTimer?.cancel();
 
-    // Force portrait orientation before popping to prevent being stuck in landscape
-    await SystemChrome.setPreferredOrientations([
+    // 2. Pause & null ALL controllers to prevent JS handler callbacks
+    try { _betterPlayerController?.pause(); } catch (_) {}
+    try {
+      _webViewController?.evaluateJavascript(
+        source: "document.querySelector('video')?.pause();",
+      );
+    } catch (_) {}
+    _betterPlayerController = null;
+    _webViewController = null;
+    _bgWebViewController = null;
+
+    // 3. Restore orientation & system UI (fire-and-forget, no await)
+    SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
 
-    setState(() {
-      _canPop = true;
-    });
-
+    // 4. Pop WITHOUT setState — directly set field and pop to avoid rebuild crash
+    _canPop = true;
     if (mounted) {
       Navigator.of(context).pop();
     }
@@ -930,7 +944,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     PipController.instance.onPipModeChanged = null;
     PipController.instance.onUserLeaveHint = null;
     PipController.instance.onPipAction = null;
-    _saveToWatchHistory();
+
+    // Best-effort save (may have been done already in _goBack)
+    try { _saveToWatchHistory(); } catch (_) {}
 
     // Cancel ALL timers to prevent leaks
     _errorAutoCloseTimer?.cancel();
@@ -943,18 +959,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _bgTimeoutTimer?.cancel();
     _bgMasterWaitTimer?.cancel();
 
-    // Dispose controllers
+    // Dispose controllers (null-safe since _goBack may have already nulled them)
     _searchController.dispose();
     _betterPlayerController?.dispose();
+    _betterPlayerController = null;
+    _webViewController = null;
+    _bgWebViewController = null;
 
+    // Restore orientation and system UI (fire-and-forget)
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
     SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: [],
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
     );
+
     super.dispose();
   }
 
@@ -976,23 +997,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           useShouldOverrideUrlLoading: true,
         ),
         onWebViewCreated: (controller) {
+          if (_isClosing) return; // Don't set up handlers if already closing
           _webViewController = controller;
           controller.addJavaScriptHandler(
             handlerName: 'goBack',
             callback: (args) {
-              _saveToWatchHistory();
+              if (_isClosing) return;
               _goBack();
             },
           );
           controller.addJavaScriptHandler(
             handlerName: 'showEpisodes',
-            callback: (args) => _showEpisodeSelector(),
+            callback: (args) {
+              if (_isClosing) return;
+              _showEpisodeSelector();
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: 'enterPipMode',
             callback: (args) async {
-              // Native PiP: shrink the activity into a mini window
-              // Video continues playing in the WebView
+              if (_isClosing) return;
               _saveToWatchHistory();
               await PipController.instance.enterPipMode();
             },
@@ -1000,6 +1024,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           controller.addJavaScriptHandler(
             handlerName: 'playNextEpisode',
             callback: (args) {
+              if (_isClosing) return;
               _saveToWatchHistory();
               _playNextEpisode();
             },
@@ -1007,6 +1032,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           controller.addJavaScriptHandler(
             handlerName: 'saveWatchProgress',
             callback: (args) {
+              if (_isClosing) return;
               if (args.isNotEmpty) {
                 try {
                   final data = jsonDecode(args[0] as String);
@@ -1021,6 +1047,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           controller.addJavaScriptHandler(
             handlerName: 'haptic',
             callback: (args) {
+              if (_isClosing) return;
               HapticFeedback.lightImpact();
             },
           );
@@ -1769,13 +1796,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Widget _buildControlHints() => const SizedBox.shrink();
 
   Widget _buildErrorOverlay() {
-    // Auto-close player after 5 seconds on error
-    _errorAutoCloseTimer?.cancel();
-    _errorAutoCloseTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted && _hasError) {
-        _goBack();
-      }
-    });
+    // NOTE: Timer is NOT created here — it's started in _completeDiscovery()
+    // Creating timers inside build() causes multiple timer instances on every rebuild
 
     final epLabel = widget.mediaType != 'movie' && _currentEpisode != null
         ? 'Episode $_currentEpisode'

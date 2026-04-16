@@ -1203,7 +1203,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       },
       onSuccess: (extractedLink) {
         if (!mounted) return;
-        Navigator.of(context, rootNavigator: true).pushReplacement(
+        Navigator.of(context, rootNavigator: true).push(
           PageRouteBuilder(
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
