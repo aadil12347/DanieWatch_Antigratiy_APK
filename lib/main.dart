@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import 'app.dart';
 import 'core/config/env.dart';
@@ -12,7 +13,8 @@ import 'core/utils/restart_widget.dart';
 import 'pip/pip_controller.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
   // Validate required environment variables are configured via --dart-define
   Env.validate();
@@ -89,6 +91,9 @@ Future<void> main() async {
     // Initialize PIP Controller for handling cold recovery
     PipController.instance.init();
 
+    // Remove splash screen just before running the app
+    FlutterNativeSplash.remove();
+
     runApp(
       const RestartWidget(
         child: ProviderScope(
@@ -97,6 +102,9 @@ Future<void> main() async {
       ),
     );
   } catch (e, stackTrace) {
+    // Ensure splash is removed even on failure to show error UI
+    FlutterNativeSplash.remove();
+
     runApp(
       MaterialApp(
         home: Scaffold(

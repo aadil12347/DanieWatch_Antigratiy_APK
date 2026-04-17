@@ -75,7 +75,7 @@ dependencies:
   youtube_player_iframe: ^5.2.2
   share_plus: ^12.0.2
   volume_controller: ^3.4.4
-
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_driver:
@@ -85,7 +85,6 @@ dev_dependencies:
   test: ^1.24.9
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
-  flutter_native_splash: ^2.4.7
 
   supabase: any
 flutter_launcher_icons:
