@@ -11,6 +11,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await Firebase.initializeApp();
   } catch (_) {}
   debugPrint("Handling a background message: ${message.messageId}");
+  // Background messages with a 'notification' payload are shown automatically
+  // by the system. We only need to handle data-only messages here if needed.
 }
 
 class NotificationService {
@@ -21,6 +23,17 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+
+  /// The Android notification channel used for all notifications
+  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
+    'high_importance_channel',
+    'High Importance Notifications',
+    description: 'This channel is used for important notifications.',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    showBadge: true,
+  );
 
   /// Initialize Firebase + FCM + Local Notifications.
   /// This method is designed to NEVER hang or crash — the app will still work
@@ -47,6 +60,7 @@ class NotificationService {
           alert: true,
           badge: true,
           sound: true,
+          provisional: false,
         ).timeout(const Duration(seconds: 5));
         debugPrint(
             'User granted permission: ${settings.authorizationStatus}');
@@ -54,20 +68,41 @@ class NotificationService {
         debugPrint('⚠️ Permission request failed/timed out: $e');
       }
 
-      // 4. Initialize Local Notifications
+      // 4. Create the notification channel FIRST (critical for Android 8+)
+      final androidPlugin =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        await androidPlugin.createNotificationChannel(_channel);
+        debugPrint('✅ Notification channel created: ${_channel.id}');
+      }
+
+      // 5. Initialize Local Notifications
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/launcher_icon');
 
       const InitializationSettings initializationSettings =
           InitializationSettings(android: initializationSettingsAndroid);
 
-      await _localNotifications.initialize(initializationSettings);
+      await _localNotifications.initialize(
+        initializationSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          debugPrint('Notification tapped: ${response.payload}');
+        },
+      );
 
-      // 5. Subscribe to default topic — DO NOT AWAIT (can hang on devices
+      // 6. Set foreground notification presentation options
+      await _messaging!.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      // 7. Subscribe to default topic — DO NOT AWAIT (can hang on devices
       //    without Google Play Services). Fire-and-forget with error catch.
       _subscribeToTopicsSafely();
 
-      // 6. Handle foreground messages
+      // 8. Handle foreground messages — show as local notification
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('Got a message whilst in the foreground!');
         debugPrint('Message data: ${message.data}');
@@ -79,8 +114,23 @@ class NotificationService {
         }
       });
 
+      // 9. Handle notification taps when app is in background (not killed)
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        debugPrint('Notification opened app: ${message.messageId}');
+      });
+
       _initialized = true;
       debugPrint('✅ NotificationService initialized successfully');
+
+      // Log the FCM token for debugging
+      try {
+        final token = await _messaging!
+            .getToken()
+            .timeout(const Duration(seconds: 10));
+        debugPrint('📱 FCM Token: $token');
+      } catch (e) {
+        debugPrint('⚠️ Could not get FCM token: $e');
+      }
     } catch (e, stackTrace) {
       // Don't crash the app if notifications fail to initialize
       debugPrint(
@@ -130,27 +180,31 @@ class NotificationService {
     }
   }
 
+  /// Show a local notification for foreground FCM messages
   Future<void> _showLocalNotification(RemoteMessage message) async {
     RemoteNotification? notification = message.notification;
-    AndroidNotification? android = message.notification?.android;
 
-    if (notification != null && android != null) {
+    if (notification != null) {
       await _localNotifications.show(
         notification.hashCode,
         notification.title,
         notification.body,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
-            'high_importance_channel',
-            'High Importance Notifications',
-            channelDescription:
-                'This channel is used for important notifications.',
+            _channel.id,
+            _channel.name,
+            channelDescription: _channel.description,
             importance: Importance.max,
             priority: Priority.high,
             icon: '@mipmap/launcher_icon',
+            playSound: true,
+            enableVibration: true,
+            showWhen: true,
           ),
         ),
+        payload: message.data.toString(),
       );
+      debugPrint('✅ Local notification shown: ${notification.title}');
     }
   }
 
