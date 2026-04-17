@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "142589927787",
+    "project_id": "daniewatch-a5adc",
+    "storage_bucket": "daniewatch-a5adc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:142589927787:android:74d2cb4569c7a4a8fc2c2e",
+        "android_client_info": {
+          "package_name": "com.daniewatch.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdHY814b2wbJc4ELqAnzA8zDIjVB6Mi10"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

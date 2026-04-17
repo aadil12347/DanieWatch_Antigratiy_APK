@@ -11,6 +11,7 @@ import 'data/local/database.dart';
 import 'data/local/download_manager.dart';
 import 'core/utils/restart_widget.dart';
 import 'pip/pip_controller.dart';
+import 'core/services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -90,6 +91,9 @@ Future<void> main() async {
 
     // Initialize PIP Controller for handling cold recovery
     PipController.instance.init();
+
+    // Initialize Firebase and Notifications
+    await NotificationService.instance.initialize();
 
     // Remove splash screen just before running the app
     FlutterNativeSplash.remove();

@@ -12,6 +12,11 @@ import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/profile/account_settings_screen.dart';
 import '../../presentation/screens/profile/placeholder_screen.dart';
+import '../../presentation/screens/admin/admin_console_screen.dart';
+import '../../presentation/screens/admin/manage_entries_screen.dart';
+import '../../presentation/screens/admin/send_notification_screen.dart';
+import '../../presentation/screens/admin/manage_admins_screen.dart';
+import '../../presentation/screens/profile/notification_settings_screen.dart';
 import '../../presentation/providers/auth_provider.dart';
 import '../../presentation/providers/manifest_provider.dart';
 
@@ -147,6 +152,29 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/account-settings',
       pageBuilder: (context, state) => _quickPage(const AccountSettingsScreen(), state),
+    ),
+    GoRoute(
+      path: '/admin-console',
+      pageBuilder: (context, state) => _quickPage(const AdminConsoleScreen(), state),
+    ),
+    GoRoute(
+      path: '/admin-console/manage-entries/:category',
+      pageBuilder: (context, state) {
+        final category = state.pathParameters['category'] ?? 'newly_added';
+        return _quickPage(ManageEntriesScreen(category: category), state);
+      },
+    ),
+    GoRoute(
+      path: '/admin-console/send-notifications',
+      pageBuilder: (context, state) => _quickPage(const SendNotificationScreen(), state),
+    ),
+    GoRoute(
+      path: '/admin-console/manage-admins',
+      pageBuilder: (context, state) => _quickPage(const ManageAdminsScreen(), state),
+    ),
+    GoRoute(
+      path: '/notification-settings',
+      pageBuilder: (context, state) => _quickPage(const NotificationSettingsScreen(), state),
     ),
     GoRoute(
       path: '/security-settings',

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/admin_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/settings_tile.dart';
 import '../../../domain/models/user_profile.dart';
@@ -133,7 +134,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 24),
             _buildHeader(profile),
             const SizedBox(height: 32),
-            _buildMainSettings(context),
+            _buildMainSettings(context, profile),
             const SizedBox(height: 32),
             _buildContentSettings(context),
             const SizedBox(height: 32),
@@ -247,12 +248,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildMainSettings(BuildContext context) {
+  Widget _buildMainSettings(BuildContext context, UserProfile? profile) {
+    // Database-backed admin check via Supabase admins table
+    final isAdminAsync = ref.watch(isAdminProvider);
+    final isAdmin = isAdminAsync.valueOrNull ?? false;
+
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isAdmin) ...[
+            _buildSectionTitle('Admin Only'),
+            SettingsTile(
+              icon: Icons.admin_panel_settings_rounded,
+              title: 'Admin Controls',
+              subtitle: 'Manage content, notifications & users',
+              onTap: () => context.push('/admin-console'),
+            ),
+            const SizedBox(height: 32),
+          ],
           _buildSectionTitle('Account'),
           SettingsTile(
             icon: Icons.person_outline_rounded,
@@ -275,8 +290,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           SettingsTile(
             icon: Icons.notifications_none_rounded,
             title: 'Notifications',
-            subtitle: 'Push, Email & Activity alerts',
-            onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
+            subtitle: 'Push notification preferences',
+            onTap: () => context.push('/notification-settings'),
           ),
           SettingsTile(
             icon: Icons.file_download_outlined,
