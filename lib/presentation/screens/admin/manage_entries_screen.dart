@@ -6,8 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
-import '../../../core/services/tmdb_fetch_service.dart';
+import '../../../domain/models/manifest_item.dart';
 import '../../providers/admin_provider.dart';
+import '../../providers/manifest_provider.dart';
 import '../../../domain/models/notification_entry.dart';
 
 /// Screen for managing content entries (Newly Added / Recently Released).
@@ -105,10 +106,8 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
   }
 
   Future<void> _showAddEntryDialog() async {
-    final tmdbIdController = TextEditingController();
-    String selectedType = 'movie';
-    NotificationEntry? preview;
-    bool isLoading = false;
+    final searchController = TextEditingController();
+    List<ManifestItem> searchResults = [];
 
     await showModalBottomSheet(
       context: context,
@@ -117,6 +116,7 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           return Container(
+            height: MediaQuery.of(ctx).size.height * 0.85,
             padding: EdgeInsets.only(
               bottom: MediaQuery.of(ctx).viewInsets.bottom,
               left: 24,
@@ -127,136 +127,122 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               color: AppColors.surfaceElevated,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Handle bar
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Add Entry',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Add Entry',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Search your manifest by title, TMDB ID, or IMDB ID',
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+
+                // Search Input
+                TextField(
+                  controller: searchController,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  decoration: InputDecoration(
+                    hintText: 'Search title, TMDB ID, or IMDB ID...',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
                     ),
+                    suffixIcon: searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, color: Colors.white38),
+                            onPressed: () {
+                              searchController.clear();
+                              setSheetState(() => searchResults = []);
+                            },
+                          )
+                        : null,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Enter a TMDB ID to auto-fetch movie details',
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 24),
+                  onChanged: (query) {
+                    final q = query.trim().toLowerCase();
+                    if (q.isEmpty) {
+                      setSheetState(() => searchResults = []);
+                      return;
+                    }
 
-                  // Media Type Toggle
-                  Row(
-                    children: [
-                      _buildTypeChip('Movie', 'movie', selectedType, (val) {
-                        setSheetState(() => selectedType = val);
-                      }),
-                      const SizedBox(width: 12),
-                      _buildTypeChip('TV Series', 'tv', selectedType, (val) {
-                        setSheetState(() => selectedType = val);
-                      }),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
+                    // Search manifest items
+                    final allItems = ref.read(allItemsProvider);
+                    final results = allItems.where((item) {
+                      // Match by title
+                      if (item.title.toLowerCase().contains(q)) return true;
+                      // Match by TMDB ID
+                      if (item.id.toString() == q) return true;
+                      // Match by IMDB ID
+                      if (item.imdbId != null && item.imdbId!.toLowerCase() == q) return true;
+                      return false;
+                    }).take(20).toList();
 
-                  // TMDB ID Input
-                  TextField(
-                    controller: tmdbIdController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
-                    decoration: InputDecoration(
-                      hintText: 'TMDB ID (e.g. 550 for Fight Club)',
-                      hintStyle: const TextStyle(color: Colors.white38),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      suffixIcon: IconButton(
-                        icon: isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                              )
-                            : const Icon(Icons.search_rounded, color: AppColors.primary),
-                        onPressed: isLoading
-                            ? null
-                            : () async {
-                                final id = int.tryParse(tmdbIdController.text.trim());
-                                if (id == null) {
-                                  CustomToast.show(ctx, 'Enter a valid TMDB ID', type: ToastType.error);
-                                  return;
-                                }
-                                setSheetState(() => isLoading = true);
-                                final result = await TmdbFetchService.instance.fetchByTmdbId(
-                                  tmdbId: id,
-                                  mediaType: selectedType,
-                                  category: widget.category,
-                                );
-                                setSheetState(() {
-                                  preview = result;
-                                  isLoading = false;
-                                });
-                                if (result == null && ctx.mounted) {
-                                  CustomToast.show(ctx, 'Not found on TMDB', type: ToastType.error);
-                                }
-                              },
-                      ),
-                    ),
-                  ),
+                    setSheetState(() => searchResults = results);
+                  },
+                ),
+                const SizedBox(height: 16),
 
-                  // Preview Card
-                  if (preview != null) ...[
-                    const SizedBox(height: 20),
-                    _buildPreviewCard(preview!),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: () async {
-                        try {
-                          await AdminService.instance.addEntry(preview!);
-                          ref.invalidate(notificationEntriesProvider(widget.category));
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (mounted) {
-                            CustomToast.show(context, '${preview!.title} added!', type: ToastType.success);
-                          }
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
-                          }
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: Text(
-                        'Save Entry',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 24),
-                ],
-              ),
+                // Results
+                Expanded(
+                  child: searchResults.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                searchController.text.isEmpty
+                                    ? Icons.search_rounded
+                                    : Icons.search_off_rounded,
+                                color: AppColors.textMuted,
+                                size: 48,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                searchController.text.isEmpty
+                                    ? 'Type to search your catalog'
+                                    : 'No results found',
+                                style: GoogleFonts.inter(
+                                  color: AppColors.textMuted,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: searchResults.length,
+                          itemBuilder: (ctx, index) {
+                            final item = searchResults[index];
+                            return _buildManifestResultCard(ctx, item);
+                          },
+                        ),
+                ),
+              ],
             ),
           );
         },
@@ -264,90 +250,102 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
     );
   }
 
-  Widget _buildTypeChip(String label, String value, String selected, void Function(String) onTap) {
-    final isActive = selected == value;
+  Widget _buildManifestResultCard(BuildContext ctx, ManifestItem item) {
     return GestureDetector(
-      onTap: () => onTap(value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.primary.withValues(alpha: 0.2) : AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isActive ? AppColors.primary : AppColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            color: isActive ? AppColors.primary : AppColors.textSecondary,
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-          ),
-        ),
-      ),
-    );
-  }
+      onTap: () async {
+        // Convert ManifestItem → NotificationEntry
+        final entry = NotificationEntry(
+          id: '',
+          tmdbId: item.id,
+          mediaType: item.mediaType,
+          title: item.title,
+          posterUrl: item.posterUrl,
+          backdropUrl: item.backdropUrl,
+          releaseYear: item.releaseYear,
+          voteAverage: item.voteAverage,
+          category: widget.category,
+          createdAt: DateTime.now(),
+        );
 
-  Widget _buildPreviewCard(NotificationEntry entry) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: entry.posterUrl != null
-                ? CachedNetworkImage(
-                    imageUrl: entry.posterUrl!,
-                    width: 60,
-                    height: 85,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => _placeholder(),
-                    errorWidget: (_, __, ___) => _placeholder(),
-                  )
-                : _placeholder(),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.title,
-                  style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    _infoBadge(entry.mediaType == 'tv' ? 'TV' : 'Movie'),
-                    if (entry.releaseYear != null) ...[
-                      const SizedBox(width: 8),
-                      _infoBadge('${entry.releaseYear}'),
-                    ],
-                    const SizedBox(width: 8),
-                    const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                    const SizedBox(width: 3),
-                    Text(
-                      entry.voteAverage.toStringAsFixed(1),
-                      style: GoogleFonts.inter(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ],
+        try {
+          await AdminService.instance.addEntry(entry);
+          ref.invalidate(notificationEntriesProvider(widget.category));
+          if (ctx.mounted) Navigator.pop(ctx);
+          if (mounted) {
+            CustomToast.show(context, '${item.title} added!', type: ToastType.success);
+          }
+        } catch (e) {
+          if (ctx.mounted) {
+            CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
+          }
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: item.posterUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: item.posterUrl!,
+                      width: 55,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => _placeholder(),
+                      errorWidget: (_, __, ___) => _placeholder(),
+                    )
+                  : _placeholder(),
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      _infoBadge(item.mediaType == 'tv' ? 'TV' : 'Movie'),
+                      if (item.releaseYear != null) ...[
+                        const SizedBox(width: 8),
+                        _infoBadge('${item.releaseYear}'),
+                      ],
+                      const SizedBox(width: 8),
+                      const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                      const SizedBox(width: 3),
+                      Text(
+                        item.voteAverage.toStringAsFixed(1),
+                        style: GoogleFonts.inter(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'TMDB: ${item.id}${item.imdbId != null ? ' • IMDB: ${item.imdbId}' : ''}',
+                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 24),
+          ],
+        ),
       ),
     );
   }

@@ -2,6 +2,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../../data/local/notification_storage.dart';
+import '../../domain/models/local_notification.dart';
 
 /// Top-level function to handle background messages (required by Firebase)
 @pragma('vm:entry-point')
@@ -11,8 +13,26 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await Firebase.initializeApp();
   } catch (_) {}
   debugPrint("Handling a background message: ${message.messageId}");
-  // Background messages with a 'notification' payload are shown automatically
-  // by the system. We only need to handle data-only messages here if needed.
+  // Save to local storage for the inbox
+  _saveMessageToLocalStorage(message);
+}
+
+/// Helper to save FCM message to local notification storage
+Future<void> _saveMessageToLocalStorage(RemoteMessage message) async {
+  try {
+    final notification = LocalNotification(
+      id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      type: message.data['type'] ?? 'admin_message',
+      title: message.notification?.title ?? message.data['title'] ?? '',
+      body: message.notification?.body ?? message.data['body'] ?? '',
+      data: Map<String, dynamic>.from(message.data),
+      createdAt: DateTime.now(),
+      isRead: false,
+    );
+    await NotificationStorage.instance.addNotification(notification);
+  } catch (e) {
+    debugPrint('⚠️ Failed to save notification to local storage: $e');
+  }
 }
 
 class NotificationService {
@@ -102,10 +122,13 @@ class NotificationService {
       //    without Google Play Services). Fire-and-forget with error catch.
       _subscribeToTopicsSafely();
 
-      // 8. Handle foreground messages — show as local notification
+      // 8. Handle foreground messages — show as local notification + save to inbox
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('Got a message whilst in the foreground!');
         debugPrint('Message data: ${message.data}');
+
+        // Save to local storage for the notification inbox
+        _saveMessageToLocalStorage(message);
 
         if (message.notification != null) {
           debugPrint(

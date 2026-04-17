@@ -31,12 +31,22 @@ class AppNotification {
     );
   }
 
+  // ─── Rich data getters (from data JSONB) ──────────────────────────────
+  String? get posterUrl => data['poster_url']?.toString();
+  String? get mediaType => data['media_type']?.toString();
+  int? get tmdbId => int.tryParse(data['tmdb_id']?.toString() ?? '');
+  int? get releaseYear => int.tryParse(data['release_year']?.toString() ?? '');
+  double? get voteAverage => double.tryParse(data['vote_average']?.toString() ?? '');
+
+  /// Whether this notification has rich entry data (poster, title, media type)
+  bool get isRichNotification => posterUrl != null && tmdbId != null;
+
   String get typeLabel {
     switch (type) {
       case 'newly_added':
-        return 'Newly Added';
+        return 'Latest Released';
       case 'recently_released':
-        return 'Recently Released';
+        return 'Recently Added';
       case 'admin_message':
         return 'Admin Message';
       default:

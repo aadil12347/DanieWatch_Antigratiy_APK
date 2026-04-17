@@ -49,6 +49,65 @@ class _SendNotificationScreenState extends ConsumerState<SendNotificationScreen>
     }
   }
 
+  Future<void> _sendCategoryNotifications(String category) async {
+    // Fetch entry count first for confirmation
+    final entriesAsync = ref.read(categoryEntriesProvider(category));
+    final entries = entriesAsync.valueOrNull ?? [];
+    if (entries.isEmpty) {
+      if (mounted) {
+        CustomToast.show(context, 'No entries in this category', type: ToastType.error);
+      }
+      return;
+    }
+
+    final uiLabel = AdminService.getCategoryLabel(category);
+    final isCombined = category == 'recently_released';
+    final description = isCombined
+        ? 'Send ${entries.length} $uiLabel entries as 1 combined notification?'
+        : 'Send ${entries.length} $uiLabel entries as ${entries.length} individual notifications?';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Send $uiLabel',
+          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          description,
+          style: GoogleFonts.inter(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Send', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isSending = true);
+    final count = await AdminService.instance.sendCategoryNotifications(category);
+    setState(() => _isSending = false);
+
+    if (mounted) {
+      if (count > 0) {
+        CustomToast.show(context, '$count notifications sent!', type: ToastType.success);
+        ref.invalidate(notificationHistoryProvider);
+      } else {
+        CustomToast.show(context, 'Failed to send', type: ToastType.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final historyAsync = ref.watch(notificationHistoryProvider);
@@ -79,24 +138,16 @@ class _SendNotificationScreenState extends ConsumerState<SendNotificationScreen>
             const SizedBox(height: 12),
             _buildBlastButton(
               icon: Icons.new_releases_rounded,
-              label: 'Send "Newly Added" Notification',
+              label: 'Send "Latest Released" (separate per entry)',
               color: const Color(0xFF7C3AED),
-              onTap: () => _sendNotification(
-                'newly_added',
-                '🎬 New Content Added!',
-                'Check out the latest movies and shows added to DanieWatch!',
-              ),
+              onTap: () => _sendCategoryNotifications('newly_added'),
             ),
             const SizedBox(height: 10),
             _buildBlastButton(
               icon: Icons.movie_filter_rounded,
-              label: 'Send "Recently Released" Notification',
+              label: 'Send "Recently Added" (combined summary)',
               color: const Color(0xFF0891B2),
-              onTap: () => _sendNotification(
-                'recently_released',
-                '🔥 Fresh Releases!',
-                'New releases are now available on DanieWatch. Don\'t miss out!',
-              ),
+              onTap: () => _sendCategoryNotifications('recently_released'),
             ),
 
             const SizedBox(height: 32),

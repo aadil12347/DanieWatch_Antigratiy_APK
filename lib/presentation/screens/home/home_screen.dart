@@ -19,7 +19,7 @@ import '../../widgets/continue_watching_row.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/watch_history_provider.dart';
 import '../../providers/delete_mode_provider.dart';
-import '../../../core/utils/toast_utils.dart';
+import '../../providers/notification_inbox_provider.dart';
 
 import '../../providers/scroll_provider.dart';
 
@@ -151,9 +151,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
-                        child: Icon(Icons.notifications_none_rounded,
-                            size: r.d(28).clamp(22.0, 34.0), color: Colors.white),
+                        onTap: () => context.push('/notifications'),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(Icons.notifications_none_rounded,
+                                size: r.d(28).clamp(22.0, 34.0), color: Colors.white),
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final unread = ref.watch(unreadCountProvider);
+                                if (unread == 0) return const SizedBox.shrink();
+                                return Positioned(
+                                  right: -4,
+                                  top: -4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFE91E63),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                    child: Text(
+                                      unread > 9 ? '9+' : '$unread',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

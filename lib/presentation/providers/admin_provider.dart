@@ -45,6 +45,9 @@ final notificationEntriesProvider = FutureProvider.family<List<NotificationEntry
   },
 );
 
+/// Alias for notificationEntriesProvider — used by send_notification_screen
+final categoryEntriesProvider = notificationEntriesProvider;
+
 // ─── Notification History Provider ────────────────────────────────────────
 final notificationHistoryProvider = FutureProvider<List<AppNotification>>((ref) async {
   try {
@@ -162,6 +165,18 @@ class AdminService {
   static final AdminService instance = AdminService._();
   AdminService._();
 
+  /// Category label mapping: DB value → UI label
+  static String getCategoryLabel(String dbCategory) {
+    switch (dbCategory) {
+      case 'newly_added':
+        return 'Latest Released';
+      case 'recently_released':
+        return 'Recently Added';
+      default:
+        return dbCategory;
+    }
+  }
+
   /// Add a content entry to a category
   Future<void> addEntry(NotificationEntry entry) async {
     await _supabase.from('notification_entries').insert(entry.toInsertJson());
@@ -240,4 +255,104 @@ class AdminService {
       return false;
     }
   }
+
+  /// Send category-based notifications with smart grouping:
+  /// - 'recently_released' (UI: "Recently Added") → single combined summary push
+  /// - 'newly_added' (UI: "Latest Released") → separate per-entry pushes
+  Future<int> sendCategoryNotifications(String category) async {
+    try {
+      // 1. Fetch all entries for this category
+      final data = await _supabase
+          .from('notification_entries')
+          .select()
+          .eq('category', category)
+          .order('created_at', ascending: false);
+
+      final entries = (data as List).map((e) => NotificationEntry.fromJson(e)).toList();
+      if (entries.isEmpty) return 0;
+
+      final uiLabel = getCategoryLabel(category);
+
+      if (category == 'recently_released') {
+        // ── COMBINED SUMMARY PUSH ──────────────────────────────────────
+        // Record individual entries in DB for rich inbox cards
+        for (final entry in entries) {
+          await _supabase.from('notifications').insert({
+            'type': category,
+            'title': '🎬 $uiLabel',
+            'body': '${entry.title} (${entry.releaseYear ?? ""})',
+            'data': {
+              'poster_url': entry.posterUrl ?? '',
+              'media_type': entry.mediaType,
+              'release_year': (entry.releaseYear ?? '').toString(),
+              'tmdb_id': entry.tmdbId.toString(),
+              'vote_average': (entry.voteAverage ?? 0).toString(),
+            },
+            'sent_by': _supabase.auth.currentUser?.id,
+          });
+        }
+
+        // Send ONE combined FCM push
+        final titles = entries.map((e) => e.title).take(3).join(', ');
+        final summaryBody = entries.length > 3
+            ? '$titles and ${entries.length - 3} more'
+            : titles;
+        try {
+          await _supabase.functions.invoke(
+            'send-push-notification',
+            body: {
+              'type': category,
+              'title': '🎬 ${entries.length} $uiLabel',
+              'body': summaryBody,
+              'data': {'type': category},
+            },
+          );
+        } catch (e) {
+          debugPrint('Summary FCM push failed: $e');
+        }
+      } else if (category == 'newly_added') {
+        // ── SEPARATE PER-ENTRY PUSHES ─────────────────────────────────
+        for (final entry in entries) {
+          final entryData = {
+            'poster_url': entry.posterUrl ?? '',
+            'media_type': entry.mediaType,
+            'release_year': (entry.releaseYear ?? '').toString(),
+            'tmdb_id': entry.tmdbId.toString(),
+            'vote_average': (entry.voteAverage ?? 0).toString(),
+            'type': category,
+          };
+
+          // Record in DB
+          await _supabase.from('notifications').insert({
+            'type': category,
+            'title': '🎬 ${entry.title}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
+            'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}',
+            'data': entryData,
+            'sent_by': _supabase.auth.currentUser?.id,
+          });
+
+          // Send individual FCM push
+          try {
+            await _supabase.functions.invoke(
+              'send-push-notification',
+              body: {
+                'type': category,
+                'title': '🎬 ${entry.title}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
+                'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}',
+                'data': entryData,
+              },
+            );
+          } catch (e) {
+            debugPrint('Individual FCM push failed for ${entry.title}: $e');
+          }
+        }
+      }
+
+      return entries.length;
+    } catch (e) {
+      debugPrint('Error sending category notifications: $e');
+      return 0;
+    }
+  }
 }
+
