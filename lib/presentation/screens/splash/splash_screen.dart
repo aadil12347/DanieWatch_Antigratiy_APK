@@ -154,7 +154,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
         if (navigateTo == 'notifications') {
           // Notification tap: go to notifications page (bell icon)
-          debugPrint('📱 Deep linking to /notifications');
+          // Re-set highlightTmdbId from payload so NotificationsScreen can read it
+          final hlId = pending?['highlight_tmdb_id']?.toString();
+          if (hlId != null && hlId.isNotEmpty) {
+            NotificationService.instance.highlightTmdbId = hlId;
+          }
+          debugPrint('📱 Deep linking to /notifications (highlight=$hlId)');
           if (AppRouter.rootNavKey.currentContext != null) {
             AppRouter.rootNavKey.currentContext!.go('/notifications');
           } else if (context.mounted) {

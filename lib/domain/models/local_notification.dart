@@ -21,6 +21,7 @@ class LocalNotification {
 
   // ─── Rich data getters (from FCM data payload) ──────────────────────────
   String? get posterUrl => data['poster_url']?.toString();
+  String? get backdropUrl => data['backdrop_url']?.toString();
   String? get mediaType => data['media_type']?.toString();
   int? get tmdbId => int.tryParse(data['tmdb_id']?.toString() ?? '');
   int? get releaseYear => int.tryParse(data['release_year']?.toString() ?? '');

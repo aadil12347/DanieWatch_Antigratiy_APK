@@ -24,26 +24,12 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
     
     // 2. Sync from Supabase in background (replaces cache only when fully loaded)
     syncFromSupabase();
-    
+
     // 3. Start real-time subscription for instant updates
     _startRealtimeSubscription();
-
-    // 4. Listen to FCM foreground messages for instant in-app updates
-    _listenToForegroundMessages();
   }
 
-  /// Listen to FCM foreground messages so notifications appear instantly in the app
-  void _listenToForegroundMessages() {
-    try {
-      _foregroundSubscription = NotificationService.instance.foregroundNotificationStream.listen((notification) {
-        debugPrint('📱 FCM foreground notification received in provider: ${notification.title}');
-        _addNotificationLocally(notification);
-      });
-      debugPrint('✅ FCM foreground stream listener started');
-    } catch (e) {
-      debugPrint('⚠️ Failed to listen to foreground stream: $e');
-    }
-  }
+
 
   /// Load notifications from local storage (instant)
   Future<void> loadNotifications() async {
@@ -159,8 +145,23 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
 
   /// Add a notification locally (from real-time or FCM)
   Future<void> _addNotificationLocally(LocalNotification notification) async {
-    // Avoid duplicates
+    // Avoid duplicates — check by ID first
     if (state.any((n) => n.id == notification.id)) return;
+
+    // Also dedup by tmdb_id + type for rich notifications (FCM ID ≠ Supabase UUID)
+    final tmdbId = notification.tmdbId;
+    if (tmdbId != null) {
+      final isDuplicate = state.any((n) =>
+        n.tmdbId == tmdbId &&
+        n.type == notification.type &&
+        n.title == notification.title &&
+        n.createdAt.difference(notification.createdAt).inMinutes.abs() < 5
+      );
+      if (isDuplicate) {
+        debugPrint('⚠️ Skipping duplicate notification (tmdb_id=$tmdbId, type=${notification.type})');
+        return;
+      }
+    }
     
     await NotificationStorage.instance.addNotification(notification);
     if (mounted) {

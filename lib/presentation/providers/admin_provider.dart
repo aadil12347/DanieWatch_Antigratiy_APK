@@ -379,10 +379,11 @@ class AdminService {
         for (final entry in entries) {
           await _supabase.from('notifications').insert({
             'type': category,
-            'title': '🎬 $uiLabel',
-            'body': '${entry.title} (${entry.releaseYear ?? ""})',
+            'title': '🎬 ${entry.title}',
+            'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
             'data': {
               'poster_url': entry.posterUrl ?? '',
+              'backdrop_url': entry.backdropUrl ?? '',
               'media_type': entry.mediaType,
               'release_year': (entry.releaseYear ?? '').toString(),
               'tmdb_id': entry.tmdbId.toString(),
@@ -413,6 +414,7 @@ class AdminService {
         for (final entry in entries) {
           final entryData = {
             'poster_url': entry.posterUrl ?? '',
+            'backdrop_url': entry.backdropUrl ?? '',
             'media_type': entry.mediaType,
             'release_year': (entry.releaseYear ?? '').toString(),
             'tmdb_id': entry.tmdbId.toString(),

@@ -133,6 +133,33 @@ class NotificationService {
         sound: true,
       );
 
+      // 6.5. Check if app was launched by tapping a LOCAL notification (cold start)
+      try {
+        final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
+        if (launchDetails != null && launchDetails.didNotificationLaunchApp) {
+          final payload = launchDetails.notificationResponse?.payload;
+          if (payload != null && payload.isNotEmpty) {
+            Map<String, dynamic>? data;
+            try {
+              data = Map<String, dynamic>.from(json.decode(payload));
+            } catch (_) {
+              data = _parseDartMapString(payload);
+            }
+            if (data != null) {
+              final tmdbId = data['tmdb_id']?.toString();
+              highlightTmdbId = tmdbId;
+              pendingNotificationPayload = {
+                'navigate_to': 'notifications',
+                'highlight_tmdb_id': tmdbId,
+              };
+              debugPrint('📱 App launched from local notification tap (cold start), tmdbId=$tmdbId');
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ getNotificationAppLaunchDetails failed: $e');
+      }
+
       // 7. Subscribe to default topic — DO NOT AWAIT (can hang on devices
       //    without Google Play Services). Fire-and-forget with error catch.
       _subscribeToTopicsSafely();
@@ -248,9 +275,22 @@ class NotificationService {
             if (ctx != null) {
               GoRouter.of(ctx).go('/notifications');
               debugPrint('📱 Navigated to /notifications from notification tap');
+            } else {
+              // Cold start: context not available yet, set pending payload
+              // so splash screen will navigate after initialization
+              pendingNotificationPayload = {
+                'navigate_to': 'notifications',
+                'highlight_tmdb_id': data['tmdb_id']?.toString(),
+              };
+              debugPrint('📱 Set pending notification payload (cold start, no context yet)');
             }
           } catch (e) {
             debugPrint('⚠️ Notification tap navigation failed: $e');
+            // Fallback: set pending payload
+            pendingNotificationPayload = {
+              'navigate_to': 'notifications',
+              'highlight_tmdb_id': data['tmdb_id']?.toString(),
+            };
           }
         }
       } catch (e) {

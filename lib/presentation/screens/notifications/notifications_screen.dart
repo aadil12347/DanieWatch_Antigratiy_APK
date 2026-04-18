@@ -36,6 +36,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         if (mounted) setState(() => _highlightTmdbId = null);
       });
     }
+
+    // Mark ALL notifications as seen/read when user opens this page
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(notificationInboxProvider.notifier).markAllAsRead();
+      }
+    });
   }
 
   @override
@@ -123,19 +130,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       }
     }
 
-    // Convert grouped items
+    // Convert grouped items — always group recently_released, even singles
     for (final entry in recentlyReleasedByDate.entries) {
       final items = entry.value;
-      if (items.length >= 2) {
-        // Group them into one card
-        result.add(_GroupedNotificationItem(
-          notifications: items,
-          dateKey: entry.key,
-        ));
-      } else {
-        // Single item, show normally
-        result.addAll(items);
-      }
+      result.add(_GroupedNotificationItem(
+        notifications: items,
+        dateKey: entry.key,
+      ));
     }
 
     // Sort by date (newest first)
@@ -305,24 +306,31 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Show movie titles on top
                         Text(
-                          '🎬 $count Recently Added',
+                          group.notifications.map((n) {
+                            var t = n.title.replaceAll(RegExp(r'^🎬\s*'), '');
+                            // Strip any "Recently Added" prefix that leaked into older entries
+                            t = t.replaceAll(RegExp(r'^Recently Added\s*', caseSensitive: false), '');
+                            return t;
+                          }).where((t) => t.isNotEmpty).take(3).join(', ') +
+                            (count > 3 ? ' +${count - 3} more' : ''),
                           style: GoogleFonts.inter(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
+                        // "Recently Added" label below (muted)
                         Text(
-                          group.notifications.map((n) => n.title.replaceAll(RegExp(r'^🎬\s*'), '')).take(3).join(', ') +
-                            (count > 3 ? ' +${count - 3} more' : ''),
+                          '🎬 $count Recently Added',
                           style: GoogleFonts.inter(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 6),
                         Row(
@@ -391,75 +399,83 @@ class _GroupedEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = notification.title.replaceAll(RegExp(r'^🎬\s*'), '');
-    return GestureDetector(
-      onTap: () {
-        if (notification.tmdbId != null && notification.mediaType != null) {
-          Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(
-              builder: (_) => DetailsScreen(
-                tmdbId: notification.tmdbId!,
-                mediaType: notification.mediaType!,
-              ),
-            ),
-          );
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          children: [
-            if (notification.posterUrl != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: CachedNetworkImage(
-                  imageUrl: notification.posterUrl!,
-                  width: 36,
-                  height: 54,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(width: 36, height: 54, color: AppColors.surface),
-                  errorWidget: (_, __, ___) => Container(
-                    width: 36, height: 54, color: AppColors.surface,
-                    child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
-                  ),
+    var title = notification.title.replaceAll(RegExp(r'^🎬\s*'), '');
+    // Strip any "Recently Added" prefix from older entries
+    title = title.replaceAll(RegExp(r'^Recently Added\s*', caseSensitive: false), '');
+    if (title.isEmpty) title = notification.body;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (notification.tmdbId != null && notification.mediaType != null) {
+            Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(
+                builder: (_) => DetailsScreen(
+                  tmdbId: notification.tmdbId!,
+                  mediaType: notification.mediaType!,
                 ),
-              )
-            else
-              Container(
-                width: 36, height: 54,
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
+              ),
+            );
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              if (notification.posterUrl != null || notification.backdropUrl != null)
+                ClipRRect(
                   borderRadius: BorderRadius.circular(6),
+                  child: CachedNetworkImage(
+                    imageUrl: notification.posterUrl ?? notification.backdropUrl!,
+                    width: 36,
+                    height: 54,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(width: 36, height: 54, color: AppColors.surface),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 36, height: 54, color: AppColors.surface,
+                      child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: 36, height: 54,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
                 ),
-                child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title on top
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    // "Recently Added" label below
+                    Text(
+                      'Recently Added',
+                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    notification.body,
-                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textMuted.withValues(alpha: 0.5),
+                size: 18,
               ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.textMuted.withValues(alpha: 0.5),
-              size: 18,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -529,12 +545,12 @@ class _NotificationCard extends ConsumerWidget {
                 ),
               ),
 
-            // Poster or icon
-            if (isRich && notification.posterUrl != null)
+            // Poster or icon — prefer poster, fallback to backdrop
+            if (isRich && (notification.posterUrl != null || notification.backdropUrl != null))
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: CachedNetworkImage(
-                  imageUrl: notification.posterUrl!,
+                  imageUrl: notification.posterUrl ?? notification.backdropUrl!,
                   width: 50,
                   height: 75,
                   fit: BoxFit.cover,
