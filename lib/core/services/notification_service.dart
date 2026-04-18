@@ -1,10 +1,12 @@
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
-
 /// Top-level function to handle background messages (required by Firebase)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -208,6 +210,32 @@ class NotificationService {
     RemoteNotification? notification = message.notification;
 
     if (notification != null) {
+      BigPictureStyleInformation? bigPictureStyleInformation;
+
+      if (message.data['type'] == 'newly_added') {
+        final posterUrl = message.data['poster_url'];
+        if (posterUrl != null && posterUrl.toString().isNotEmpty) {
+          try {
+            final response = await http.get(Uri.parse(posterUrl));
+            if (response.statusCode == 200) {
+              final directory = await getTemporaryDirectory();
+              final filePath = '${directory.path}/notification_image_${message.messageId ?? DateTime.now().millisecondsSinceEpoch}.jpg';
+              final file = File(filePath);
+              await file.writeAsBytes(response.bodyBytes);
+
+              bigPictureStyleInformation = BigPictureStyleInformation(
+                FilePathAndroidBitmap(filePath),
+                contentTitle: notification.title,
+                summaryText: notification.body,
+                hideExpandedLargeIcon: false,
+              );
+            }
+          } catch (e) {
+            debugPrint('Error downloading notification image: $e');
+          }
+        }
+      }
+
       await _localNotifications.show(
         notification.hashCode,
         notification.title,
@@ -223,6 +251,7 @@ class NotificationService {
             playSound: true,
             enableVibration: true,
             showWhen: true,
+            styleInformation: bigPictureStyleInformation,
           ),
         ),
         payload: message.data.toString(),

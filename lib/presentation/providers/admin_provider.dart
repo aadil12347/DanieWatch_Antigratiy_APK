@@ -339,6 +339,7 @@ class AdminService {
                 'type': category,
                 'title': '🎬 ${entry.title}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
                 'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}',
+                'image': entry.posterUrl,
                 'data': entryData,
               },
             );
