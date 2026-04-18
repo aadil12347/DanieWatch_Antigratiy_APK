@@ -150,16 +150,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       try {
         // Check for pending notification deep link
         final pending = NotificationService.instance.consumePendingPayload();
-        final tmdbId = pending?['tmdb_id']?.toString();
-        final mediaType = pending?['media_type']?.toString();
+        final navigateTo = pending?['navigate_to']?.toString();
 
-        if (tmdbId != null && mediaType != null && tmdbId.isNotEmpty && mediaType.isNotEmpty) {
-          // Deep link: go to details page (back will go to notifications)
-          debugPrint('📱 Deep linking to /notification-details/$mediaType/$tmdbId');
+        if (navigateTo == 'notifications') {
+          // Notification tap: go to notifications page (bell icon)
+          debugPrint('📱 Deep linking to /notifications');
           if (AppRouter.rootNavKey.currentContext != null) {
-            AppRouter.rootNavKey.currentContext!.go('/notification-details/$mediaType/$tmdbId');
+            AppRouter.rootNavKey.currentContext!.go('/notifications');
           } else if (context.mounted) {
-            context.go('/notification-details/$mediaType/$tmdbId');
+            context.go('/notifications');
           }
         } else {
           // Normal app launch

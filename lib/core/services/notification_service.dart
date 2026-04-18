@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -6,8 +7,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:go_router/go_router.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
+import '../router/app_router.dart';
 
 /// Top-level function to handle background messages (required by Firebase)
 @pragma('vm:entry-point')
@@ -50,6 +53,13 @@ class NotificationService {
 
   /// Pending deep link data from notification tap (set before app navigates)
   Map<String, dynamic>? pendingNotificationPayload;
+
+  /// Stream controller for foreground notifications (instant in-app updates)
+  final _foregroundNotificationController = StreamController<LocalNotification>.broadcast();
+  Stream<LocalNotification> get foregroundNotificationStream => _foregroundNotificationController.stream;
+
+  /// TMDB ID to highlight when opening the notifications page from a tap
+  String? highlightTmdbId;
 
   /// The Android notification channel used for all notifications
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
@@ -135,6 +145,23 @@ class NotificationService {
         // Save to local storage for the notification inbox
         _saveMessageToLocalStorage(message);
 
+        // Broadcast to in-app listeners for instant UI update (no app restart needed)
+        try {
+          final localNotif = LocalNotification(
+            id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            type: message.data['type'] ?? 'admin_message',
+            title: message.notification?.title ?? message.data['title'] ?? '',
+            body: message.notification?.body ?? message.data['body'] ?? '',
+            data: Map<String, dynamic>.from(message.data),
+            createdAt: DateTime.now(),
+            isRead: false,
+          );
+          _foregroundNotificationController.add(localNotif);
+          debugPrint('📱 Broadcasted foreground notification to in-app listeners');
+        } catch (e) {
+          debugPrint('⚠️ Failed to broadcast foreground notification: $e');
+        }
+
         if (message.notification != null) {
           debugPrint(
               'Message also contained a notification: ${message.notification}');
@@ -145,14 +172,32 @@ class NotificationService {
       // 9. Handle notification taps when app is in background (not killed)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         debugPrint('Notification opened app from background: ${message.messageId}');
-        _handleNotificationNavigation(message.data);
+        final tmdbId = message.data['tmdb_id']?.toString();
+        highlightTmdbId = tmdbId;
+        // Navigate to notifications page after a brief delay (app coming from background)
+        Future.delayed(const Duration(milliseconds: 500), () {
+          try {
+            final ctx = AppRouter.rootNavKey.currentContext;
+            if (ctx != null) {
+              GoRouter.of(ctx).go('/notifications');
+              debugPrint('📱 Navigated to /notifications from background tap');
+            }
+          } catch (e) {
+            debugPrint('⚠️ Background tap navigation failed: $e');
+          }
+        });
       });
 
       // 10. Check if app was opened from a terminated state by notification
       final initialMessage = await _messaging!.getInitialMessage();
       if (initialMessage != null) {
         debugPrint('App opened from terminated by notification: ${initialMessage.messageId}');
-        pendingNotificationPayload = Map<String, dynamic>.from(initialMessage.data);
+        final tmdbId = initialMessage.data['tmdb_id']?.toString();
+        highlightTmdbId = tmdbId;
+        pendingNotificationPayload = {
+          'navigate_to': 'notifications',
+          'highlight_tmdb_id': tmdbId,
+        };
       }
 
       _initialized = true;
@@ -190,12 +235,23 @@ class NotificationService {
           data = Map<String, dynamic>.from(json.decode(payloadStr));
         } catch (_) {
           // Fallback: parse the Dart map toString format
-          // e.g. {type: newly_added, tmdb_id: 123, media_type: movie}
           data = _parseDartMapString(payloadStr);
         }
 
         if (data != null) {
-          _handleNotificationNavigation(data);
+          // Set highlight data for the notifications page
+          highlightTmdbId = data['tmdb_id']?.toString();
+
+          // Navigate to notifications page (bell icon) immediately
+          try {
+            final ctx = AppRouter.rootNavKey.currentContext;
+            if (ctx != null) {
+              GoRouter.of(ctx).go('/notifications');
+              debugPrint('📱 Navigated to /notifications from notification tap');
+            }
+          } catch (e) {
+            debugPrint('⚠️ Notification tap navigation failed: $e');
+          }
         }
       } catch (e) {
         debugPrint('⚠️ Failed to parse notification payload: $e');
@@ -227,17 +283,7 @@ class NotificationService {
     }
   }
 
-  /// Handle navigation from notification tap
-  void _handleNotificationNavigation(Map<String, dynamic> data) {
-    final tmdbId = data['tmdb_id']?.toString();
-    final mediaType = data['media_type']?.toString();
 
-    if (tmdbId != null && mediaType != null && tmdbId.isNotEmpty && mediaType.isNotEmpty) {
-      // Store the pending navigation — the app will pick this up
-      pendingNotificationPayload = Map<String, dynamic>.from(data);
-      debugPrint('📱 Pending deep link: /details/$mediaType/$tmdbId');
-    }
-  }
 
   /// Check and consume pending notification payload
   Map<String, dynamic>? consumePendingPayload() {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/services/notification_service.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
 
@@ -10,6 +11,7 @@ import '../../domain/models/local_notification.dart';
 /// replace only when fresh data fully loads.
 class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
   StreamSubscription? _realtimeSubscription;
+  StreamSubscription<LocalNotification>? _foregroundSubscription;
 
   NotificationInboxNotifier() : super([]) {
     _initialize();
@@ -25,6 +27,22 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
     
     // 3. Start real-time subscription for instant updates
     _startRealtimeSubscription();
+
+    // 4. Listen to FCM foreground messages for instant in-app updates
+    _listenToForegroundMessages();
+  }
+
+  /// Listen to FCM foreground messages so notifications appear instantly in the app
+  void _listenToForegroundMessages() {
+    try {
+      _foregroundSubscription = NotificationService.instance.foregroundNotificationStream.listen((notification) {
+        debugPrint('📱 FCM foreground notification received in provider: ${notification.title}');
+        _addNotificationLocally(notification);
+      });
+      debugPrint('✅ FCM foreground stream listener started');
+    } catch (e) {
+      debugPrint('⚠️ Failed to listen to foreground stream: $e');
+    }
   }
 
   /// Load notifications from local storage (instant)
@@ -180,6 +198,7 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
   @override
   void dispose() {
     _realtimeSubscription?.cancel();
+    _foregroundSubscription?.cancel();
     super.dispose();
   }
 }

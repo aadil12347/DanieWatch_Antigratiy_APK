@@ -4,18 +4,42 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../domain/models/local_notification.dart';
 import '../../providers/notification_inbox_provider.dart';
+import '../details/details_screen.dart';
 
 /// Notification inbox screen — accessible from the bell icon on home.
 /// Shows rich notification cards with poster, title, year, and type.
 /// Supports grouped "Recently Added" cards that expand to show all entries.
 /// Tapping a rich notification opens the detail page directly.
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  String? _highlightTmdbId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Consume highlight data from notification tap
+    _highlightTmdbId = NotificationService.instance.highlightTmdbId;
+    NotificationService.instance.highlightTmdbId = null;
+
+    // Auto-clear highlight after 3 seconds
+    if (_highlightTmdbId != null) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _highlightTmdbId = null);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final notifications = ref.watch(notificationInboxProvider);
     final unreadCount = ref.watch(unreadCountProvider);
 
@@ -73,7 +97,12 @@ class NotificationsScreen extends ConsumerWidget {
                 if (item is _GroupedNotificationItem) {
                   return _GroupedNotificationCard(group: item);
                 } else {
-                  return _NotificationCard(notification: item as LocalNotification);
+                  final notif = item as LocalNotification;
+                  return _NotificationCard(
+                    notification: notif,
+                    isHighlighted: _highlightTmdbId != null &&
+                        notif.tmdbId?.toString() == _highlightTmdbId,
+                  );
                 }
               },
             ),
@@ -366,7 +395,14 @@ class _GroupedEntryTile extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         if (notification.tmdbId != null && notification.mediaType != null) {
-          context.push('/details/${notification.mediaType}/${notification.tmdbId}');
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => DetailsScreen(
+                tmdbId: notification.tmdbId!,
+                mediaType: notification.mediaType!,
+              ),
+            ),
+          );
         }
       },
       child: Container(
@@ -433,7 +469,8 @@ class _GroupedEntryTile extends StatelessWidget {
 /// Individual (non-grouped) notification card
 class _NotificationCard extends ConsumerWidget {
   final LocalNotification notification;
-  const _NotificationCard({required this.notification});
+  final bool isHighlighted;
+  const _NotificationCard({required this.notification, this.isHighlighted = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -444,12 +481,20 @@ class _NotificationCard extends ConsumerWidget {
         // Mark as read
         ref.read(notificationInboxProvider.notifier).markAsRead(notification.id);
 
-        // Navigate to detail page if rich notification
+        // Navigate to detail page if rich notification (bypasses GoRouter to avoid key_reservation error)
         if (isRich && notification.tmdbId != null && notification.mediaType != null) {
-          context.push('/details/${notification.mediaType}/${notification.tmdbId}');
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => DetailsScreen(
+                tmdbId: notification.tmdbId!,
+                mediaType: notification.mediaType!,
+              ),
+            ),
+          );
         }
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 500),
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -458,10 +503,16 @@ class _NotificationCard extends ConsumerWidget {
               : AppColors.surfaceElevated.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: notification.isRead
-                ? AppColors.border
-                : AppColors.primary.withValues(alpha: 0.3),
+            color: isHighlighted
+                ? AppColors.primary
+                : notification.isRead
+                    ? AppColors.border
+                    : AppColors.primary.withValues(alpha: 0.3),
+            width: isHighlighted ? 2 : 1,
           ),
+          boxShadow: isHighlighted
+              ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: 2)]
+              : null,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
