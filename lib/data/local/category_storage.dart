@@ -42,6 +42,24 @@ class CategoryStorage {
     }
   }
 
+  /// Snapshot the current index.json as previous before a new sync overwrites it.
+  Future<void> snapshotCurrentIndex() async {
+    try {
+      final currentFile = await _getFile(indexFile);
+      if (await currentFile.exists()) {
+        final prevFile = await _getFile(_previousIndexFile);
+        await currentFile.copy(prevFile.path);
+      }
+    } catch (_) {}
+  }
+
+  static const String _previousIndexFile = 'index_previous.json';
+
+  /// Load the previously snapshotted index (before last sync).
+  Future<List<ManifestItem>> loadPreviousIndex() async {
+    return loadCategory(_previousIndexFile);
+  }
+
   /// Clear all category files
   Future<void> clearAll() async {
     final files = [

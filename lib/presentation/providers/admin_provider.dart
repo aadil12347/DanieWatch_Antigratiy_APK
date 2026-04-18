@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/models/notification_entry.dart';
 import '../../domain/models/app_notification.dart';
+import '../../domain/models/manifest_item.dart';
 import '../../core/services/notification_service.dart';
+import '../../data/local/category_storage.dart';
 
 final _supabase = Supabase.instance.client;
 
@@ -194,7 +196,6 @@ class AdminService {
 
   /// Add a new admin by email
   Future<bool> addAdmin(String email) async {
-    // Lookup user by email in profiles table
     final userData = await _supabase
         .from('profiles')
         .select('id, email')
@@ -216,15 +217,87 @@ class AdminService {
     await _supabase.from('admins').delete().eq('id', adminId);
   }
 
+  /// Auto-add recently added items by comparing old vs new index files.
+  /// Returns the count of newly added entries.
+  Future<int> autoAddRecentlyAdded() async {
+    try {
+      final oldItems = await CategoryStorage.instance.loadPreviousIndex();
+      final newItems = await CategoryStorage.instance.loadCategory(CategoryStorage.indexFile);
+
+      if (oldItems.isEmpty || newItems.isEmpty) {
+        debugPrint('[AutoAdd] Old or new index is empty (old=${oldItems.length}, new=${newItems.length})');
+        return 0;
+      }
+
+      // Build set of old IDs (tmdbId-mediaType as unique key)
+      final oldIdSet = <String>{};
+      for (final item in oldItems) {
+        oldIdSet.add('${item.id}-${item.mediaType}');
+      }
+
+      // Find items in new but not in old
+      final newlyAddedItems = <ManifestItem>[];
+      for (final item in newItems) {
+        final key = '${item.id}-${item.mediaType}';
+        if (!oldIdSet.contains(key)) {
+          newlyAddedItems.add(item);
+        }
+      }
+
+      if (newlyAddedItems.isEmpty) return 0;
+
+      // Also check which ones are already in DB to avoid duplicates
+      final existingData = await _supabase
+          .from('notification_entries')
+          .select('tmdb_id')
+          .eq('category', 'recently_released');
+      final existingTmdbIds = <int>{};
+      for (final row in existingData) {
+        final id = row['tmdb_id'];
+        if (id is int) existingTmdbIds.add(id);
+      }
+
+      int addedCount = 0;
+      for (final item in newlyAddedItems) {
+        if (existingTmdbIds.contains(item.id)) continue;
+
+        final entry = NotificationEntry(
+          id: '',
+          tmdbId: item.id,
+          mediaType: item.mediaType,
+          title: item.title,
+          posterUrl: item.posterUrl,
+          backdropUrl: item.backdropUrl,
+          releaseYear: item.releaseYear,
+          voteAverage: item.voteAverage,
+          category: 'recently_released',
+          createdAt: DateTime.now(),
+        );
+
+        try {
+          await _supabase.from('notification_entries').insert(entry.toInsertJson());
+          addedCount++;
+        } catch (e) {
+          debugPrint('[AutoAdd] Failed to insert ${item.title}: $e');
+        }
+      }
+
+      return addedCount;
+    } catch (e) {
+      debugPrint('[AutoAdd] Error: $e');
+      return 0;
+    }
+  }
+
   /// Send a notification (records it in DB and calls Edge Function for FCM)
   Future<bool> sendNotification({
     required String type,
     required String title,
     required String body,
     Map<String, dynamic>? data,
+    String? imageUrl,
   }) async {
     try {
-      // 1. Record in database
       await _supabase.from('notifications').insert({
         'type': type,
         'title': title,
@@ -233,20 +306,22 @@ class AdminService {
         'sent_by': _supabase.auth.currentUser?.id,
       });
 
-      // 2. Call Edge Function for FCM push
       try {
+        final pushBody = <String, dynamic>{
+          'type': type,
+          'title': title,
+          'body': body,
+          'data': data ?? {},
+        };
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          pushBody['image'] = imageUrl;
+        }
         await _supabase.functions.invoke(
           'send-push-notification',
-          body: {
-            'type': type,
-            'title': title,
-            'body': body,
-            'data': data ?? {},
-          },
+          body: pushBody,
         );
       } catch (e) {
         debugPrint('Edge function call failed (notification still recorded): $e');
-        // Notification is still recorded even if FCM push fails
       }
 
       return true;
@@ -256,12 +331,9 @@ class AdminService {
     }
   }
 
-  /// Send category-based notifications with smart grouping:
-  /// - 'recently_released' (UI: "Recently Added") → single combined summary push
-  /// - 'newly_added' (UI: "Latest Released") → separate per-entry pushes
+  /// Send category-based notifications with smart grouping
   Future<int> sendCategoryNotifications(String category) async {
     try {
-      // 1. Fetch all entries for this category
       final data = await _supabase
           .from('notification_entries')
           .select()
@@ -274,8 +346,6 @@ class AdminService {
       final uiLabel = getCategoryLabel(category);
 
       if (category == 'recently_released') {
-        // ── COMBINED SUMMARY PUSH ──────────────────────────────────────
-        // Record individual entries in DB for rich inbox cards
         for (final entry in entries) {
           await _supabase.from('notifications').insert({
             'type': category,
@@ -292,7 +362,6 @@ class AdminService {
           });
         }
 
-        // Send ONE combined FCM push
         final titles = entries.map((e) => e.title).take(3).join(', ');
         final summaryBody = entries.length > 3
             ? '$titles and ${entries.length - 3} more'
@@ -311,7 +380,6 @@ class AdminService {
           debugPrint('Summary FCM push failed: $e');
         }
       } else if (category == 'newly_added') {
-        // ── SEPARATE PER-ENTRY PUSHES ─────────────────────────────────
         for (final entry in entries) {
           final entryData = {
             'poster_url': entry.posterUrl ?? '',
@@ -322,7 +390,6 @@ class AdminService {
             'type': category,
           };
 
-          // Record in DB
           await _supabase.from('notifications').insert({
             'type': category,
             'title': '🎬 ${entry.title}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
@@ -331,7 +398,6 @@ class AdminService {
             'sent_by': _supabase.auth.currentUser?.id,
           });
 
-          // Send individual FCM push
           try {
             await _supabase.functions.invoke(
               'send-push-notification',
@@ -356,4 +422,3 @@ class AdminService {
     }
   }
 }
-

@@ -54,6 +54,9 @@ class ManifestSyncEngine {
   /// Fetch manifest from GitHub, enrich with TMDB, and update SQLite cache.
   Future<SyncResult> sync() async {
     try {
+      // Snapshot the current index before overwriting (for auto-add comparison)
+      await CategoryStorage.instance.snapshotCurrentIndex();
+
       final url = Uri.parse('${Env.githubRawBaseUrl}/index.json');
       final response = await http.get(url);
 

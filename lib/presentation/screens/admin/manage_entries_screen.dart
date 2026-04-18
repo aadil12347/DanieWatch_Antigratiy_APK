@@ -11,8 +11,8 @@ import '../../providers/admin_provider.dart';
 import '../../providers/manifest_provider.dart';
 import '../../../domain/models/notification_entry.dart';
 
-/// Screen for managing content entries (Newly Added / Recently Released).
-/// Supports add by TMDB ID, multi-select, bulk delete — just like Downloads screen.
+/// Unified screen for managing entries AND sending notifications.
+/// Supports both "Latest Released" (manual) and "Recently Added" (auto-add).
 class ManageEntriesScreen extends ConsumerStatefulWidget {
   final String category;
   const ManageEntriesScreen({super.key, required this.category});
@@ -24,8 +24,12 @@ class ManageEntriesScreen extends ConsumerStatefulWidget {
 class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
   final Set<String> _selectedIds = {};
   bool _isSelectionMode = false;
+  bool _isSending = false;
+  bool _isAutoAdding = false;
 
-  String get _title => widget.category == 'newly_added' ? 'Newly Added' : 'Recently Released';
+  bool get _isRecentlyAdded => widget.category == 'recently_released';
+  String get _title => _isRecentlyAdded ? 'Recently Added' : 'Latest Released';
+  Color get _accentColor => _isRecentlyAdded ? const Color(0xFF0891B2) : const Color(0xFF7C3AED);
 
   void _toggleSelection(String id) {
     setState(() {
@@ -72,10 +76,7 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
           'Delete ${_selectedIds.length} entries?',
           style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w800),
         ),
-        content: const Text(
-          'This action cannot be undone.',
-          style: TextStyle(color: Colors.white70),
-        ),
+        content: const Text('This action cannot be undone.', style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -101,6 +102,75 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
         if (mounted) {
           CustomToast.show(context, 'Failed to delete: $e', type: ToastType.error);
         }
+      }
+    }
+  }
+
+  /// Auto-add items by comparing old vs new index
+  Future<void> _autoAddItems() async {
+    setState(() => _isAutoAdding = true);
+    final count = await AdminService.instance.autoAddRecentlyAdded();
+    setState(() => _isAutoAdding = false);
+
+    if (mounted) {
+      if (count > 0) {
+        CustomToast.show(context, '$count new items added!', type: ToastType.success);
+        ref.invalidate(notificationEntriesProvider(widget.category));
+      } else {
+        CustomToast.show(context, 'No new items found', type: ToastType.info);
+      }
+    }
+  }
+
+  /// Send notifications for all entries in this category
+  Future<void> _sendNotifications() async {
+    final entriesAsync = ref.read(notificationEntriesProvider(widget.category));
+    final entries = entriesAsync.valueOrNull ?? [];
+    if (entries.isEmpty) {
+      if (mounted) CustomToast.show(context, 'No entries to send', type: ToastType.error);
+      return;
+    }
+
+    final uiLabel = AdminService.getCategoryLabel(widget.category);
+    final isCombined = widget.category == 'recently_released';
+    final description = isCombined
+        ? 'Send ${entries.length} entries as 1 combined notification?'
+        : 'Send ${entries.length} entries as ${entries.length} individual notifications?';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Send $uiLabel',
+          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Text(description, style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Send', style: GoogleFonts.inter(color: _accentColor, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isSending = true);
+    final count = await AdminService.instance.sendCategoryNotifications(widget.category);
+    setState(() => _isSending = false);
+
+    if (mounted) {
+      if (count > 0) {
+        CustomToast.show(context, '$count notifications sent!', type: ToastType.success);
+      } else {
+        CustomToast.show(context, 'Failed to send', type: ToastType.error);
       }
     }
   }
@@ -131,34 +201,23 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Handle bar
                 Center(
                   child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
                   ),
                 ),
                 const SizedBox(height: 20),
                 Text(
                   'Add Entry',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Search your manifest by title, TMDB ID, or IMDB ID',
+                  'Search by title, TMDB ID, or IMDB ID',
                   style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 20),
-
-                // Search Input
                 TextField(
                   controller: searchController,
                   autofocus: true,
@@ -168,11 +227,8 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                     hintStyle: const TextStyle(color: Colors.white38),
                     filled: true,
                     fillColor: AppColors.surface,
-                    prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
+                    prefixIcon: Icon(Icons.search_rounded, color: _accentColor),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                     suffixIcon: searchController.text.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear_rounded, color: Colors.white38),
@@ -189,25 +245,17 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                       setSheetState(() => searchResults = []);
                       return;
                     }
-
-                    // Search manifest items
                     final allItems = ref.read(allItemsProvider);
                     final results = allItems.where((item) {
-                      // Match by title
                       if (item.title.toLowerCase().contains(q)) return true;
-                      // Match by TMDB ID
                       if (item.id.toString() == q) return true;
-                      // Match by IMDB ID
                       if (item.imdbId != null && item.imdbId!.toLowerCase() == q) return true;
                       return false;
                     }).take(20).toList();
-
                     setSheetState(() => searchResults = results);
                   },
                 ),
                 const SizedBox(height: 16),
-
-                // Results
                 Expanded(
                   child: searchResults.isEmpty
                       ? Center(
@@ -215,31 +263,20 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                searchController.text.isEmpty
-                                    ? Icons.search_rounded
-                                    : Icons.search_off_rounded,
-                                color: AppColors.textMuted,
-                                size: 48,
+                                searchController.text.isEmpty ? Icons.search_rounded : Icons.search_off_rounded,
+                                color: AppColors.textMuted, size: 48,
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                searchController.text.isEmpty
-                                    ? 'Type to search your catalog'
-                                    : 'No results found',
-                                style: GoogleFonts.inter(
-                                  color: AppColors.textMuted,
-                                  fontSize: 14,
-                                ),
+                                searchController.text.isEmpty ? 'Type to search your catalog' : 'No results found',
+                                style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14),
                               ),
                             ],
                           ),
                         )
                       : ListView.builder(
                           itemCount: searchResults.length,
-                          itemBuilder: (ctx, index) {
-                            final item = searchResults[index];
-                            return _buildManifestResultCard(ctx, item);
-                          },
+                          itemBuilder: (ctx, index) => _buildManifestResultCard(ctx, searchResults[index]),
                         ),
                 ),
               ],
@@ -253,7 +290,6 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
   Widget _buildManifestResultCard(BuildContext ctx, ManifestItem item) {
     return GestureDetector(
       onTap: () async {
-        // Convert ManifestItem → NotificationEntry
         final entry = NotificationEntry(
           id: '',
           tmdbId: item.id,
@@ -266,18 +302,13 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
           category: widget.category,
           createdAt: DateTime.now(),
         );
-
         try {
           await AdminService.instance.addEntry(entry);
           ref.invalidate(notificationEntriesProvider(widget.category));
           if (ctx.mounted) Navigator.pop(ctx);
-          if (mounted) {
-            CustomToast.show(context, '${item.title} added!', type: ToastType.success);
-          }
+          if (mounted) CustomToast.show(context, '${item.title} added!', type: ToastType.success);
         } catch (e) {
-          if (ctx.mounted) {
-            CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
-          }
+          if (ctx.mounted) CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
         }
       },
       child: Container(
@@ -293,14 +324,8 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: item.posterUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: item.posterUrl!,
-                      width: 55,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => _placeholder(),
-                      errorWidget: (_, __, ___) => _placeholder(),
-                    )
+                  ? CachedNetworkImage(imageUrl: item.posterUrl!, width: 50, height: 72, fit: BoxFit.cover,
+                      placeholder: (_, __) => _placeholder(), errorWidget: (_, __, ___) => _placeholder())
                   : _placeholder(),
             ),
             const SizedBox(width: 14),
@@ -308,42 +333,21 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.title,
-                    style: GoogleFonts.plusJakartaSans(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(item.title, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _infoBadge(item.mediaType == 'tv' ? 'TV' : 'Movie'),
-                      if (item.releaseYear != null) ...[
-                        const SizedBox(width: 8),
-                        _infoBadge('${item.releaseYear}'),
-                      ],
-                      const SizedBox(width: 8),
-                      const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                      const SizedBox(width: 3),
-                      Text(
-                        item.voteAverage.toStringAsFixed(1),
-                        style: GoogleFonts.inter(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'TMDB: ${item.id}${item.imdbId != null ? ' • IMDB: ${item.imdbId}' : ''}',
-                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
-                  ),
+                  Row(children: [
+                    _infoBadge(item.mediaType == 'tv' ? 'TV' : 'Movie'),
+                    if (item.releaseYear != null) ...[const SizedBox(width: 8), _infoBadge('${item.releaseYear}')],
+                    const SizedBox(width: 8),
+                    const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                    const SizedBox(width: 3),
+                    Text(item.voteAverage.toStringAsFixed(1), style: GoogleFonts.inter(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ]),
                 ],
               ),
             ),
-            const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 24),
+            Icon(Icons.add_circle_outline_rounded, color: _accentColor, size: 24),
           ],
         ),
       ),
@@ -354,22 +358,18 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.15),
+        color: _accentColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(
-        text,
-        style: GoogleFonts.inter(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w700),
-      ),
+      child: Text(text, style: GoogleFonts.inter(color: _accentColor, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 
   Widget _placeholder() {
     return Container(
-      width: 60,
-      height: 85,
+      width: 50, height: 72,
       color: AppColors.surface,
-      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted, size: 28),
+      child: const Icon(Icons.movie_rounded, color: AppColors.textMuted, size: 24),
     );
   }
 
@@ -404,13 +404,10 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
           elevation: 0,
           actions: [
             if (_isSelectionMode) ...[
-              // Select All
               entriesAsync.whenData((entries) {
                 return IconButton(
                   icon: Icon(
-                    _selectedIds.length == entries.length
-                        ? Icons.deselect_rounded
-                        : Icons.select_all_rounded,
+                    _selectedIds.length == entries.length ? Icons.deselect_rounded : Icons.select_all_rounded,
                     color: Colors.white70,
                   ),
                   onPressed: () {
@@ -422,24 +419,45 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                   },
                 );
               }).valueOrNull ?? const SizedBox.shrink(),
-              // Delete Selected
               IconButton(
                 icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
                 onPressed: _deleteSelected,
               ),
+            ] else ...[
+              // Auto-Add button (only for Recently Added)
+              if (_isRecentlyAdded)
+                _isAutoAdding
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0891B2))),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF0891B2)),
+                        tooltip: 'Auto-Add New Items',
+                        onPressed: _autoAddItems,
+                      ),
+              // Send button
+              _isSending
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                    )
+                  : IconButton(
+                      icon: Icon(Icons.send_rounded, color: _accentColor),
+                      tooltip: 'Send Notifications',
+                      onPressed: _sendNotifications,
+                    ),
             ],
           ],
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: _showAddEntryDialog,
-          backgroundColor: AppColors.primary,
+          backgroundColor: _accentColor,
           child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
         ),
         body: entriesAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-          error: (e, _) => Center(
-            child: Text('Error: $e', style: const TextStyle(color: AppColors.error)),
-          ),
+          loading: () => Center(child: CircularProgressIndicator(color: _accentColor)),
+          error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: AppColors.error))),
           data: (entries) {
             if (entries.isEmpty) {
               return Center(
@@ -447,24 +465,14 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      widget.category == 'newly_added'
-                          ? Icons.new_releases_outlined
-                          : Icons.movie_filter_outlined,
-                      size: 64,
-                      color: AppColors.textMuted,
+                      _isRecentlyAdded ? Icons.movie_filter_outlined : Icons.new_releases_outlined,
+                      size: 56, color: AppColors.textMuted,
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'No entries yet',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
+                    Text('No entries yet', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
                     const SizedBox(height: 8),
                     Text(
-                      'Tap + to add content by TMDB ID',
+                      _isRecentlyAdded ? 'Tap ✨ to auto-add or + to add manually' : 'Tap + to add content',
                       style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
                     ),
                   ],
@@ -472,121 +480,115 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               );
             }
 
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-              itemCount: entries.length,
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                final isSelected = _selectedIds.contains(entry.id);
-
-                return GestureDetector(
-                  onTap: _isSelectionMode
-                      ? () => _toggleSelection(entry.id)
-                      : null,
-                  onLongPress: () => _activateSelection(entry.id),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 5),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.red.withValues(alpha: 0.1)
-                          : AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isSelected
-                            ? Colors.red.withValues(alpha: 0.8)
-                            : AppColors.border,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        // Selection checkbox
-                        if (_isSelectionMode) ...[
-                          Icon(
-                            isSelected
-                                ? Icons.check_circle_rounded
-                                : Icons.radio_button_off_rounded,
-                            color: isSelected ? Colors.red : Colors.white24,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                        ],
-                        // Poster
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: entry.posterUrl != null
-                              ? CachedNetworkImage(
-                                  imageUrl: entry.posterUrl!,
-                                  width: 55,
-                                  height: 75,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, __) => _placeholder(),
-                                  errorWidget: (_, __, ___) => _placeholder(),
-                                )
-                              : _placeholder(),
-                        ),
-                        const SizedBox(width: 12),
-                        // Info
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                entry.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 5),
-                              Row(
-                                children: [
-                                  _infoBadge(entry.mediaType == 'tv' ? 'TV' : 'Movie'),
-                                  if (entry.releaseYear != null) ...[
-                                    const SizedBox(width: 6),
-                                    _infoBadge('${entry.releaseYear}'),
-                                  ],
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'ID: ${entry.tmdbId}',
-                                    style: GoogleFonts.inter(
-                                      color: AppColors.textMuted,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Delete button (when not in selection mode)
-                        if (!_isSelectionMode)
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
-                            onPressed: () async {
-                              try {
-                                await AdminService.instance.removeEntry(entry.id);
-                                ref.invalidate(notificationEntriesProvider(widget.category));
-                                if (mounted) {
-                                  CustomToast.show(context, 'Removed ${entry.title}', type: ToastType.info);
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  CustomToast.show(context, 'Failed: $e', type: ToastType.error);
-                                }
-                              }
-                            },
-                          ),
-                      ],
-                    ),
+            return Column(
+              children: [
+                // Top status bar
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _accentColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _accentColor.withValues(alpha: 0.15)),
                   ),
-                );
-              },
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: _accentColor, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${entries.length} entries ready',
+                        style: GoogleFonts.inter(color: _accentColor, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Tap 🚀 to send',
+                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                // Entry list
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final isSelected = _selectedIds.contains(entry.id);
+                      return _buildEntryCard(entry, isSelected);
+                    },
+                  ),
+                ),
+              ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEntryCard(NotificationEntry entry, bool isSelected) {
+    return GestureDetector(
+      onTap: _isSelectionMode ? () => _toggleSelection(entry.id) : null,
+      onLongPress: () => _activateSelection(entry.id),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.red.withValues(alpha: 0.08) : AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? Colors.red.withValues(alpha: 0.6) : AppColors.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            if (_isSelectionMode) ...[
+              Icon(
+                isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
+                color: isSelected ? Colors.red : Colors.white24, size: 20,
+              ),
+              const SizedBox(width: 12),
+            ],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: entry.posterUrl != null
+                  ? CachedNetworkImage(imageUrl: entry.posterUrl!, width: 50, height: 70, fit: BoxFit.cover,
+                      placeholder: (_, __) => _placeholder(), errorWidget: (_, __, ___) => _placeholder())
+                  : _placeholder(),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(entry.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 5),
+                  Row(children: [
+                    _infoBadge(entry.mediaType == 'tv' ? 'TV' : 'Movie'),
+                    if (entry.releaseYear != null) ...[const SizedBox(width: 6), _infoBadge('${entry.releaseYear}')],
+                    const SizedBox(width: 6),
+                    Text('ID: ${entry.tmdbId}', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11)),
+                  ]),
+                ],
+              ),
+            ),
+            if (!_isSelectionMode)
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                onPressed: () async {
+                  try {
+                    await AdminService.instance.removeEntry(entry.id);
+                    ref.invalidate(notificationEntriesProvider(widget.category));
+                    if (mounted) CustomToast.show(context, 'Removed ${entry.title}', type: ToastType.info);
+                  } catch (e) {
+                    if (mounted) CustomToast.show(context, 'Failed: $e', type: ToastType.error);
+                  }
+                },
+              ),
+          ],
         ),
       ),
     );

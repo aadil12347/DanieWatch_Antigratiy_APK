@@ -14,7 +14,7 @@ import '../../presentation/screens/profile/account_settings_screen.dart';
 import '../../presentation/screens/profile/placeholder_screen.dart';
 import '../../presentation/screens/admin/admin_console_screen.dart';
 import '../../presentation/screens/admin/manage_entries_screen.dart';
-import '../../presentation/screens/admin/send_notification_screen.dart';
+import '../../presentation/screens/admin/admin_message_screen.dart';
 import '../../presentation/screens/admin/manage_admins_screen.dart';
 import '../../presentation/screens/profile/notification_settings_screen.dart';
 import '../../presentation/screens/notifications/notifications_screen.dart';
@@ -166,8 +166,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       },
     ),
     GoRoute(
-      path: '/admin-console/send-notifications',
-      pageBuilder: (context, state) => _quickPage(const SendNotificationScreen(), state),
+      path: '/admin-console/admin-message',
+      pageBuilder: (context, state) => _quickPage(const AdminMessageScreen(), state),
     ),
     GoRoute(
       path: '/admin-console/manage-admins',
