@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
+
 /// Top-level function to handle background messages (required by Firebase)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -45,6 +47,9 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+
+  /// Pending deep link data from notification tap (set before app navigates)
+  Map<String, dynamic>? pendingNotificationPayload;
 
   /// The Android notification channel used for all notifications
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
@@ -99,7 +104,7 @@ class NotificationService {
         debugPrint('✅ Notification channel created: ${_channel.id}');
       }
 
-      // 5. Initialize Local Notifications
+      // 5. Initialize Local Notifications with deep link tap handler
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/launcher_icon');
 
@@ -108,9 +113,7 @@ class NotificationService {
 
       await _localNotifications.initialize(
         initializationSettings,
-        onDidReceiveNotificationResponse: (NotificationResponse response) {
-          debugPrint('Notification tapped: ${response.payload}');
-        },
+        onDidReceiveNotificationResponse: _onNotificationTapped,
       );
 
       // 6. Set foreground notification presentation options
@@ -141,8 +144,16 @@ class NotificationService {
 
       // 9. Handle notification taps when app is in background (not killed)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        debugPrint('Notification opened app: ${message.messageId}');
+        debugPrint('Notification opened app from background: ${message.messageId}');
+        _handleNotificationNavigation(message.data);
       });
+
+      // 10. Check if app was opened from a terminated state by notification
+      final initialMessage = await _messaging!.getInitialMessage();
+      if (initialMessage != null) {
+        debugPrint('App opened from terminated by notification: ${initialMessage.messageId}');
+        pendingNotificationPayload = Map<String, dynamic>.from(initialMessage.data);
+      }
 
       _initialized = true;
       debugPrint('✅ NotificationService initialized successfully');
@@ -163,6 +174,76 @@ class NotificationService {
       debugPrint('Stack trace: $stackTrace');
       _initialized = false;
     }
+  }
+
+  /// Handle notification tap from local notifications plugin
+  void _onNotificationTapped(NotificationResponse response) {
+    debugPrint('Notification tapped: ${response.payload}');
+    if (response.payload != null && response.payload!.isNotEmpty) {
+      try {
+        // Parse the payload to extract navigation data
+        final payloadStr = response.payload!;
+        Map<String, dynamic>? data;
+        
+        // Try JSON parse first
+        try {
+          data = Map<String, dynamic>.from(json.decode(payloadStr));
+        } catch (_) {
+          // Fallback: parse the Dart map toString format
+          // e.g. {type: newly_added, tmdb_id: 123, media_type: movie}
+          data = _parseDartMapString(payloadStr);
+        }
+
+        if (data != null) {
+          _handleNotificationNavigation(data);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to parse notification payload: $e');
+      }
+    }
+  }
+
+  /// Parse a Dart Map.toString() format like {key: value, key2: value2}
+  Map<String, dynamic>? _parseDartMapString(String str) {
+    try {
+      // Remove outer braces
+      var s = str.trim();
+      if (s.startsWith('{') && s.endsWith('}')) {
+        s = s.substring(1, s.length - 1);
+      }
+      final map = <String, dynamic>{};
+      final parts = s.split(', ');
+      for (final part in parts) {
+        final idx = part.indexOf(': ');
+        if (idx > 0) {
+          final key = part.substring(0, idx).trim();
+          final value = part.substring(idx + 2).trim();
+          map[key] = value;
+        }
+      }
+      return map.isNotEmpty ? map : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Handle navigation from notification tap
+  void _handleNotificationNavigation(Map<String, dynamic> data) {
+    final tmdbId = data['tmdb_id']?.toString();
+    final mediaType = data['media_type']?.toString();
+
+    if (tmdbId != null && mediaType != null && tmdbId.isNotEmpty && mediaType.isNotEmpty) {
+      // Store the pending navigation — the app will pick this up
+      pendingNotificationPayload = Map<String, dynamic>.from(data);
+      debugPrint('📱 Pending deep link: /details/$mediaType/$tmdbId');
+    }
+  }
+
+  /// Check and consume pending notification payload
+  Map<String, dynamic>? consumePendingPayload() {
+    final payload = pendingNotificationPayload;
+    pendingNotificationPayload = null;
+    return payload;
   }
 
   /// Subscribe to FCM topics in the background — never blocks app startup.
@@ -236,6 +317,9 @@ class NotificationService {
         }
       }
 
+      // Encode data as JSON payload for deep link on tap
+      final payloadJson = json.encode(message.data);
+
       await _localNotifications.show(
         notification.hashCode,
         notification.title,
@@ -254,7 +338,7 @@ class NotificationService {
             styleInformation: bigPictureStyleInformation,
           ),
         ),
-        payload: message.data.toString(),
+        payload: payloadJson,
       );
       debugPrint('✅ Local notification shown: ${notification.title}');
     }

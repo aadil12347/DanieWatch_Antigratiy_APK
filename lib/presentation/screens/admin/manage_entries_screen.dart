@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
@@ -10,6 +11,7 @@ import '../../../domain/models/manifest_item.dart';
 import '../../providers/admin_provider.dart';
 import '../../providers/manifest_provider.dart';
 import '../../../domain/models/notification_entry.dart';
+import '../../../domain/models/app_notification.dart';
 
 /// Unified screen for managing entries AND sending notifications.
 /// Supports both "Latest Released" (manual) and "Recently Added" (auto-add).
@@ -424,6 +426,12 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                 onPressed: _deleteSelected,
               ),
             ] else ...[
+              // History button
+              IconButton(
+                icon: const Icon(Icons.history_rounded, color: Colors.white54),
+                tooltip: 'Sent History',
+                onPressed: () => _showHistorySheet(context),
+              ),
               // Auto-Add button (only for Recently Added)
               if (_isRecentlyAdded)
                 _isAutoAdding
@@ -499,11 +507,6 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                       Text(
                         '${entries.length} entries ready',
                         style: GoogleFonts.inter(color: _accentColor, fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Tap 🚀 to send',
-                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -590,6 +593,117 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Show bottom sheet with per-category notification history (last 7 days)
+  void _showHistorySheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Icon(Icons.history_rounded, color: _accentColor, size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    '$_title History (7 days)',
+                    style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            Expanded(
+              child: Consumer(
+                builder: (ctx, ref, _) {
+                  final historyAsync = ref.watch(categoryNotificationHistoryProvider(widget.category));
+                  return historyAsync.when(
+                    loading: () => Center(child: CircularProgressIndicator(color: _accentColor)),
+                    error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: AppColors.error))),
+                    data: (notifications) {
+                      if (notifications.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.notifications_off_outlined, color: AppColors.textMuted, size: 48),
+                              const SizedBox(height: 12),
+                              Text('No notifications sent yet', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14)),
+                            ],
+                          ),
+                        );
+                      }
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        itemCount: notifications.length,
+                        itemBuilder: (ctx, index) {
+                          final n = notifications[index];
+                          return _buildHistoryCard(n);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistoryCard(AppNotification notification) {
+    final timeStr = DateFormat('MMM d, h:mm a').format(notification.createdAt);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            notification.title,
+            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            notification.body,
+            style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 12),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.schedule_rounded, color: AppColors.textMuted, size: 14),
+              const SizedBox(width: 4),
+              Text(timeStr, style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11)),
+            ],
+          ),
+        ],
       ),
     );
   }

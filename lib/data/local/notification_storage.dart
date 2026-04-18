@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/local_notification.dart';
 
 /// Local notification storage using SharedPreferences.
-/// Persists notifications on-device until the user clears them.
+/// Persists notifications on-device as a cache layer.
 class NotificationStorage {
   static const String _key = 'local_notifications';
   static final NotificationStorage instance = NotificationStorage._();
@@ -32,6 +32,18 @@ class NotificationStorage {
       final prefs = await SharedPreferences.getInstance();
       final jsonStr = json.encode(notifications.map((n) => n.toJson()).toList());
       await prefs.setString(_key, jsonStr);
+    } catch (_) {}
+  }
+
+  /// Replace all notifications with fresh data from Supabase
+  /// Only call this when you have a complete fresh dataset
+  Future<void> replaceAll(List<LocalNotification> notifications) async {
+    try {
+      // Cap at 100 notifications
+      final capped = notifications.length > 100
+          ? notifications.sublist(0, 100)
+          : notifications;
+      await saveNotifications(capped);
     } catch (_) {}
   }
 

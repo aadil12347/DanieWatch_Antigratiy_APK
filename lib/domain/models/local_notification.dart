@@ -29,6 +29,19 @@ class LocalNotification {
   /// Whether this notification has rich entry data (poster, title, media type)
   bool get isRichNotification => posterUrl != null && tmdbId != null;
 
+  /// Whether this is a grouped notification (multiple entries in one card)
+  bool get isGrouped => data['is_grouped'] == true;
+
+  /// Get grouped entries for expandable card display
+  List<Map<String, dynamic>> get groupedEntries {
+    if (!isGrouped) return [];
+    final entries = data['entries'];
+    if (entries is List) {
+      return entries.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return [];
+  }
+
   /// UI label for the notification type
   String get categoryLabel {
     switch (type) {

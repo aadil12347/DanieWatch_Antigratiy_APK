@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
 import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/services/notification_service.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
 
@@ -147,10 +148,26 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       // is called EXACTLY once, no matter how many listeners fire.
       _hasNavigated = true;
       try {
-        if (AppRouter.rootNavKey.currentContext != null) {
-          AppRouter.rootNavKey.currentContext!.go('/home');
-        } else if (context.mounted) {
-          context.go('/home');
+        // Check for pending notification deep link
+        final pending = NotificationService.instance.consumePendingPayload();
+        final tmdbId = pending?['tmdb_id']?.toString();
+        final mediaType = pending?['media_type']?.toString();
+
+        if (tmdbId != null && mediaType != null && tmdbId.isNotEmpty && mediaType.isNotEmpty) {
+          // Deep link: go to details page (back will go to notifications)
+          debugPrint('📱 Deep linking to /notification-details/$mediaType/$tmdbId');
+          if (AppRouter.rootNavKey.currentContext != null) {
+            AppRouter.rootNavKey.currentContext!.go('/notification-details/$mediaType/$tmdbId');
+          } else if (context.mounted) {
+            context.go('/notification-details/$mediaType/$tmdbId');
+          }
+        } else {
+          // Normal app launch
+          if (AppRouter.rootNavKey.currentContext != null) {
+            AppRouter.rootNavKey.currentContext!.go('/home');
+          } else if (context.mounted) {
+            context.go('/home');
+          }
         }
         // Fetch new posters in background for next launch
         fetchAndCachePosters();

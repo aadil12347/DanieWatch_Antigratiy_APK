@@ -181,6 +181,34 @@ final routerProvider = Provider<GoRouter>((ref) {
       path: '/notification-settings',
       pageBuilder: (context, state) => _quickPage(const NotificationSettingsScreen(), state),
     ),
+    // Deep link route: notification tap → details → back goes to /notifications
+    GoRoute(
+      path: '/notification-details/:mediaType/:id',
+      pageBuilder: (context, state) {
+        final mediaType = state.pathParameters['mediaType']!;
+        final id = int.parse(state.pathParameters['id']!);
+        return _quickPage(
+          PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              context.go('/notifications');
+            },
+            child: DetailsScreen(tmdbId: id, mediaType: mediaType),
+          ),
+          state,
+        );
+      },
+    ),
+    // Top-level details route for notification card taps within the app
+    GoRoute(
+      path: '/details/:mediaType/:id',
+      pageBuilder: (context, state) {
+        final mediaType = state.pathParameters['mediaType']!;
+        final id = int.parse(state.pathParameters['id']!);
+        return _quickPage(DetailsScreen(tmdbId: id, mediaType: mediaType), state);
+      },
+    ),
     GoRoute(
       path: '/security-settings',
       pageBuilder: (context, state) => _quickPage(const PlaceholderScreen(title: 'Security Settings'), state),

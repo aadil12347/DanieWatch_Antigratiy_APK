@@ -127,6 +127,16 @@ class NotificationPrefsNotifier extends AsyncNotifier<NotificationPrefs> {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
 
+    // 1. Optimistic update — flip the toggle INSTANTLY
+    final oldPrefs = state.valueOrNull ?? const NotificationPrefs();
+    final newPrefs = NotificationPrefs(
+      newlyAdded: field == 'newly_added' ? value : oldPrefs.newlyAdded,
+      recentlyReleased: field == 'recently_released' ? value : oldPrefs.recentlyReleased,
+      adminMessages: field == 'admin_messages' ? value : oldPrefs.adminMessages,
+    );
+    state = AsyncData(newPrefs);
+
+    // 2. Background sync — don't block UI
     try {
       await _supabase.from('user_notification_prefs').upsert({
         'user_id': user.id,
@@ -134,7 +144,7 @@ class NotificationPrefsNotifier extends AsyncNotifier<NotificationPrefs> {
         'updated_at': DateTime.now().toIso8601String(),
       }, onConflict: 'user_id');
 
-      // Update FCM topic subscription
+      // FCM topic subscription (fire-and-forget)
       final topicMap = {
         'newly_added': 'daniewatch_newly_added',
         'recently_released': 'daniewatch_recently_released',
@@ -144,15 +154,15 @@ class NotificationPrefsNotifier extends AsyncNotifier<NotificationPrefs> {
       final topic = topicMap[field];
       if (topic != null) {
         if (value) {
-          await NotificationService.instance.subscribeToTopic(topic);
+          NotificationService.instance.subscribeToTopic(topic);
         } else {
-          await NotificationService.instance.unsubscribeFromTopic(topic);
+          NotificationService.instance.unsubscribeFromTopic(topic);
         }
       }
-
-      ref.invalidateSelf();
     } catch (e) {
+      // 3. Rollback on failure
       debugPrint('Error updating notification pref: $e');
+      state = AsyncData(oldPrefs);
     }
   }
 }
@@ -161,6 +171,26 @@ final notificationPrefsProvider =
     AsyncNotifierProvider<NotificationPrefsNotifier, NotificationPrefs>(
   () => NotificationPrefsNotifier(),
 );
+
+// ─── Per-Category Notification History (last 7 days) ──────────────────────
+final categoryNotificationHistoryProvider =
+    FutureProvider.family<List<AppNotification>, String>((ref, category) async {
+  try {
+    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+    final data = await _supabase
+        .from('notifications')
+        .select()
+        .eq('type', category)
+        .gte('created_at', sevenDaysAgo.toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    return (data as List).map((e) => AppNotification.fromJson(e)).toList();
+  } catch (e) {
+    debugPrint('Error loading category notification history: $e');
+    return [];
+  }
+});
 
 // ─── Admin Actions Service ────────────────────────────────────────────────
 class AdminService {
