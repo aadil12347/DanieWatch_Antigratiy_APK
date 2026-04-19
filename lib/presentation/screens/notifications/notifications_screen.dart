@@ -250,7 +250,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
     final group = widget.group;
     final count = group.notifications.length;
     final hasUnread = group.hasUnread;
-    const accentColor = AppColors.secondary;
+    const accentColor = Color(0xFF0891B2);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -472,13 +472,13 @@ class _GroupedEntryTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.secondary.withValues(alpha: 0.15),
+        color: const Color(0xFF0891B2).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Text(
         text,
         style: GoogleFonts.inter(
-          color: AppColors.secondary,
+          color: const Color(0xFF0891B2),
           fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
@@ -610,15 +610,15 @@ class _NotificationCard extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
+                            color: _getTypeColor().withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             '${notification.releaseYear}',
                             style: GoogleFonts.inter(
-                              color: AppColors.textMuted,
+                              color: _getTypeColor(),
                               fontSize: 10,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -709,9 +709,9 @@ class _NotificationCard extends ConsumerWidget {
   Color _getTypeColor() {
     switch (notification.type) {
       case 'newly_added':
-        return AppColors.primary;
+        return const Color(0xFF7C3AED);
       case 'recently_released':
-        return AppColors.secondary;
+        return const Color(0xFF0891B2);
       default:
         return AppColors.primary;
     }
