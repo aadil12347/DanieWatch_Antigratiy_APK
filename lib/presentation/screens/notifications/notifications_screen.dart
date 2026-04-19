@@ -450,7 +450,7 @@ class _GroupedEntryTile extends StatelessWidget {
                         if (year != null && mediaType != null)
                           const SizedBox(width: 6),
                         if (mediaType != null)
-                          _typeBadge(mediaType == 'tv' ? 'TV' : 'Movie'),
+                          _typeBadge(mediaType == 'tv' ? 'Series' : 'Movie'),
                       ],
                     ),
                   ],
@@ -590,9 +590,9 @@ class _NotificationCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title
+                  // Title (strip year from display)
                   Text(
-                    notification.title,
+                    _cleanTitle(notification.title),
                     style: GoogleFonts.inter(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -601,21 +601,64 @@ class _NotificationCard extends ConsumerWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
 
-                  // Body
-                  Text(
-                    notification.body,
-                    style: GoogleFonts.inter(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  // Year + Media type row
+                  Row(
+                    children: [
+                      if (isRich && notification.releaseYear != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${notification.releaseYear}',
+                            style: GoogleFonts.inter(
+                              color: AppColors.textMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      if (isRich && notification.releaseYear != null && notification.mediaType != null)
+                        const SizedBox(width: 6),
+                      if (isRich && notification.mediaType != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: _getTypeColor().withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            notification.mediaType == 'tv' ? 'Series' : 'Movie',
+                            style: GoogleFonts.inter(
+                              color: _getTypeColor(),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+
+                  // Body (only for non-rich or admin messages)
+                  if (!isRich || notification.type == 'admin_message') ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      notification.body,
+                      style: GoogleFonts.inter(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                   const SizedBox(height: 8),
 
-                  // Category badge + type + time
+                  // Category badge + time
                   Row(
                     children: [
                       Container(
@@ -633,24 +676,6 @@ class _NotificationCard extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      if (isRich && notification.mediaType != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            notification.mediaType == 'tv' ? 'TV' : 'Movie',
-                            style: GoogleFonts.inter(
-                              color: AppColors.textMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
                       const Spacer(),
                       Text(
                         _timeAgo(notification.createdAt),
@@ -701,6 +726,13 @@ class _NotificationCard extends ConsumerWidget {
       default:
         return Icons.message_rounded;
     }
+  }
+
+  /// Strip year and emojis from the title for clean display
+  String _cleanTitle(String title) {
+    var clean = title.replaceAll(RegExp(r'^🎬\s*'), '');
+    clean = clean.replaceAll(RegExp(r'\s*\(\d{4}\)\s*$'), '');
+    return clean.isEmpty ? title : clean;
   }
 
   String _timeAgo(DateTime dt) {

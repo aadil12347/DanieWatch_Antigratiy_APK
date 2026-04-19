@@ -83,11 +83,11 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
 
-                // Newly Added Toggle
+                // Latest Released Toggle
                 _buildToggleTile(
                   context: context,
                   icon: Icons.new_releases_rounded,
-                  title: 'Newly Added',
+                  title: 'Latest Released',
                   value: prefs.newlyAdded,
                   color: const Color(0xFF7C3AED),
                   onChanged: (val) {
@@ -97,11 +97,11 @@ class NotificationSettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: 8),
 
-                // Recently Released Toggle
+                // Recently Added Toggle
                 _buildToggleTile(
                   context: context,
                   icon: Icons.movie_filter_rounded,
-                  title: 'Recently Released',
+                  title: 'Recently Added',
                   value: prefs.recentlyReleased,
                   color: const Color(0xFF0891B2),
                   onChanged: (val) {
