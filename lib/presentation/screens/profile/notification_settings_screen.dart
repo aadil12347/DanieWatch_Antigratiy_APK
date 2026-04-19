@@ -88,7 +88,6 @@ class NotificationSettingsScreen extends ConsumerWidget {
                   context: context,
                   icon: Icons.new_releases_rounded,
                   title: 'Newly Added',
-                  subtitle: 'Get notified when new content is added',
                   value: prefs.newlyAdded,
                   color: const Color(0xFF7C3AED),
                   onChanged: (val) {
@@ -103,7 +102,6 @@ class NotificationSettingsScreen extends ConsumerWidget {
                   context: context,
                   icon: Icons.movie_filter_rounded,
                   title: 'Recently Released',
-                  subtitle: 'Get notified about fresh releases',
                   value: prefs.recentlyReleased,
                   color: const Color(0xFF0891B2),
                   onChanged: (val) {
@@ -139,7 +137,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
     required BuildContext context,
     required IconData icon,
     required String title,
-    required String subtitle,
+    String? subtitle,
     required bool value,
     required Color color,
     required ValueChanged<bool> onChanged,
@@ -176,11 +174,13 @@ class NotificationSettingsScreen extends ConsumerWidget {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
-                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
               ],
             ),
           ),

@@ -333,17 +333,27 @@ class NotificationService {
   }
 
   /// Subscribe to FCM topics in the background — never blocks app startup.
+  /// Subscribes to ALL category topics so push notifications are always received.
   void _subscribeToTopicsSafely() {
     if (_messaging == null) return;
 
+    const topics = [
+      'daniewatch_all',
+      'daniewatch_newly_added',
+      'daniewatch_recently_released',
+      'daniewatch_admin_messages',
+    ];
+
     Future(() async {
-      try {
-        await _messaging!
-            .subscribeToTopic('daniewatch_all')
-            .timeout(const Duration(seconds: 10));
-        debugPrint('✅ Subscribed to daniewatch_all topic');
-      } catch (e) {
-        debugPrint('⚠️ Topic subscription failed (non-fatal): $e');
+      for (final topic in topics) {
+        try {
+          await _messaging!
+              .subscribeToTopic(topic)
+              .timeout(const Duration(seconds: 10));
+          debugPrint('✅ Subscribed to $topic topic');
+        } catch (e) {
+          debugPrint('⚠️ Topic subscription for $topic failed (non-fatal): $e');
+        }
       }
     });
   }

@@ -121,21 +121,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Profile Settings'),
+        title: Text(
+          'Profile',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
       body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
         child: Column(
           children: [
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             _buildHeader(profile),
-            const SizedBox(height: 28),
+            const SizedBox(height: 32),
             _buildAllSettings(context, profile),
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
             _buildLogoutButton(context),
             const SizedBox(height: 40),
           ],
@@ -147,11 +154,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _buildHeader(UserProfile? profile) {
     return Column(
       children: [
-        const Hero(
-          tag: 'profile-avatar',
-          child: UserAvatar(size: 100, canEdit: true),
+        // Avatar with subtle glow
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.15),
+                blurRadius: 30,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+          child: const Hero(
+            tag: 'profile-avatar',
+            child: UserAvatar(size: 96, canEdit: true),
+          ),
         ),
-        SizedBox(height: Responsive(context).h(24)),
+        SizedBox(height: Responsive(context).h(20)),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(24)),
           child: TapRegion(
@@ -161,10 +181,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: Column(
               children: [
                 _isEditing ? _buildUsernameEditor() : _buildUsernameDisplay(profile),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   profile?.email ?? '',
-                  style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.1,
+                  ),
                 ),
               ],
             ),
@@ -188,10 +212,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           Text(
             profile?.username ?? 'User',
             style: GoogleFonts.plusJakartaSans(
-                fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1.0),
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.8,
+            ),
           ),
           const SizedBox(width: 8),
-          const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(Icons.edit_outlined, color: Colors.white38, size: 14),
+          ),
         ],
       ),
     );
@@ -208,7 +243,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           onChanged: _onUsernameChanged,
           onSubmitted: (_) => _saveUsername(),
           style: GoogleFonts.plusJakartaSans(
-              fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1.0),
+              fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.8),
           textAlign: TextAlign.center,
           decoration: InputDecoration(
             hintText: 'Username',
@@ -252,80 +287,136 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isAdmin)
+          // Admin section
+          if (isAdmin) ...[
+            _buildSectionHeader('ADMIN', const Color(0xFFFF6B6B)),
+            const SizedBox(height: 8),
             SettingsTile(
               icon: Icons.admin_panel_settings_rounded,
               title: 'Admin Controls',
-              infoText: 'Manage app content, send push notifications and control user access.',
+              infoText: 'Manage content, push notifications & users',
+              accentColor: const Color(0xFFFF6B6B),
               onTap: () => context.push('/admin-console'),
             ),
+            const SizedBox(height: 20),
+          ],
+
+          // General section
+          _buildSectionHeader('GENERAL', AppColors.textMuted),
+          const SizedBox(height: 8),
           SettingsTile(
             icon: Icons.person_outline_rounded,
             title: 'Account Settings',
-            infoText: 'Update your email, change password, and manage login credentials.',
+            infoText: 'Email, password & login credentials',
             onTap: () => context.push('/account-settings'),
           ),
           SettingsTile(
             icon: Icons.notifications_none_rounded,
             title: 'Notifications',
-            infoText: 'Choose which push notifications you want to receive.',
+            infoText: 'Manage push notification preferences',
+            accentColor: const Color(0xFF7C3AED),
             onTap: () => context.push('/notification-settings'),
           ),
+
+          const SizedBox(height: 20),
+
+          // Content section
+          _buildSectionHeader('CONTENT', AppColors.textMuted),
+          const SizedBox(height: 8),
           SettingsTile(
             icon: Icons.file_download_outlined,
             title: 'Downloads',
-            infoText: 'View and manage your saved offline content.',
+            infoText: 'Manage your saved offline content',
+            accentColor: const Color(0xFF0891B2),
             onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
           ),
           SettingsTile(
             icon: Icons.send_outlined,
             title: 'Requests',
-            infoText: 'Submit content requests or report issues to the team.',
+            infoText: 'Submit content requests or report issues',
+            accentColor: const Color(0xFF059669),
             onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
           ),
           SettingsTile(
             icon: Icons.history_rounded,
             title: 'Watch History',
-            infoText: 'Toggle to show or hide your recently watched titles on the homepage.',
+            infoText: 'Show recently watched on homepage',
+            accentColor: const Color(0xFFD97706),
             trailing: Switch.adaptive(
               value: historyEnabled,
-              activeTrackColor: AppColors.primary,
+              activeTrackColor: const Color(0xFFD97706),
               onChanged: (v) => ref.read(continueWatchingSettingsProvider.notifier).toggle(v),
             ),
-            onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
+            onTap: () => ref.read(continueWatchingSettingsProvider.notifier).toggle(!historyEnabled),
           ),
         ],
       ),
     );
   }
 
-
+  Widget _buildSectionHeader(String label, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color.withValues(alpha: 0.6),
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
 
   Widget _buildLogoutButton(BuildContext context) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(24)),
-      child: ElevatedButton(
-        onPressed: () => _handleLogout(context, ref),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(60),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary.withValues(alpha: 0.9),
+              AppColors.primary,
+            ],
           ),
-          elevation: 0,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.logout_rounded, size: 20, color: Colors.white),
-            const SizedBox(width: 12),
-            Text(
-              'Logout',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1, color: Colors.white),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.25),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
             ),
           ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: () => _handleLogout(context, ref),
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.logout_rounded, size: 18, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Sign Out',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -337,11 +428,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Logout', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+        title: Text('Sign Out', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
         content: const Text('Are you sure you want to sign out?', style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Logout', style: TextStyle(color: AppColors.error))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sign Out', style: TextStyle(color: AppColors.error))),
         ],
       ),
     );
@@ -353,8 +444,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       showGeneralDialog(
         context: context,
         barrierDismissible: false,
-        barrierColor: Colors.black, // Initial black overlay
-        transitionDuration: const Duration(milliseconds: 1500), // Slow cinematic fade
+        barrierColor: Colors.black,
+        transitionDuration: const Duration(milliseconds: 1500),
         pageBuilder: (context, anim1, anim2) {
           return PopScope(
             canPop: false,
@@ -372,7 +463,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'RESETTING SESSION...',
+                        'SIGNING OUT...',
                         style: GoogleFonts.inter(
                           color: Colors.white70,
                           fontSize: 12,

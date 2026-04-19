@@ -93,17 +93,11 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
     );
 
     if (confirm == true) {
-      try {
-        await AdminService.instance.removeEntries(_selectedIds.toList());
-        _clearSelection();
-        ref.invalidate(notificationEntriesProvider(widget.category));
-        if (mounted) {
-          CustomToast.show(context, 'Entries deleted', type: ToastType.success);
-        }
-      } catch (e) {
-        if (mounted) {
-          CustomToast.show(context, 'Failed to delete: $e', type: ToastType.error);
-        }
+      final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
+      final success = await notifier.removeEntries(_selectedIds.toList());
+      _clearSelection();
+      if (mounted) {
+        CustomToast.show(context, success ? 'Entries deleted' : 'Failed to delete', type: success ? ToastType.success : ToastType.error);
       }
     }
   }
@@ -305,10 +299,12 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
           createdAt: DateTime.now(),
         );
         try {
-          await AdminService.instance.addEntry(entry);
-          ref.invalidate(notificationEntriesProvider(widget.category));
+          final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
+          final success = await notifier.addEntry(entry);
           if (ctx.mounted) Navigator.pop(ctx);
-          if (mounted) CustomToast.show(context, '${item.title} added!', type: ToastType.success);
+          if (mounted) {
+            CustomToast.show(context, success ? '${item.title} added!' : 'Failed to add', type: success ? ToastType.success : ToastType.error);
+          }
         } catch (e) {
           if (ctx.mounted) CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
         }
@@ -582,12 +578,10 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               IconButton(
                 icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
                 onPressed: () async {
-                  try {
-                    await AdminService.instance.removeEntry(entry.id);
-                    ref.invalidate(notificationEntriesProvider(widget.category));
-                    if (mounted) CustomToast.show(context, 'Removed ${entry.title}', type: ToastType.info);
-                  } catch (e) {
-                    if (mounted) CustomToast.show(context, 'Failed: $e', type: ToastType.error);
+                  final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
+                  final success = await notifier.removeEntry(entry.id);
+                  if (mounted) {
+                    CustomToast.show(context, success ? 'Removed ${entry.title}' : 'Failed to remove', type: success ? ToastType.info : ToastType.error);
                   }
                 },
               ),

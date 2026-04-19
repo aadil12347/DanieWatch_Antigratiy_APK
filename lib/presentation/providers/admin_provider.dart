@@ -28,10 +28,11 @@ final isAdminProvider = FutureProvider<bool>((ref) async {
   }
 });
 
-// ─── Notification Entries Provider ────────────────────────────────────────
-/// Provides entries for a specific category ('newly_added' or 'recently_released')
-final notificationEntriesProvider = FutureProvider.family<List<NotificationEntry>, String>(
-  (ref, category) async {
+// ─── Notification Entries Provider (Optimistic) ──────────────────────────
+/// Stateful notifier for entries that supports optimistic add/remove.
+class NotificationEntriesNotifier extends FamilyAsyncNotifier<List<NotificationEntry>, String> {
+  @override
+  Future<List<NotificationEntry>> build(String category) async {
     try {
       final data = await _supabase
           .from('notification_entries')
@@ -44,7 +45,78 @@ final notificationEntriesProvider = FutureProvider.family<List<NotificationEntry
       debugPrint('Error loading entries: $e');
       return [];
     }
-  },
+  }
+
+  /// Optimistically add an entry — shows instantly, syncs in background.
+  Future<bool> addEntry(NotificationEntry entry) async {
+    final current = state.valueOrNull ?? [];
+    // Optimistic: add to top of list with a temp ID
+    final tempEntry = NotificationEntry(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      tmdbId: entry.tmdbId,
+      mediaType: entry.mediaType,
+      title: entry.title,
+      posterUrl: entry.posterUrl,
+      backdropUrl: entry.backdropUrl,
+      releaseYear: entry.releaseYear,
+      voteAverage: entry.voteAverage,
+      category: entry.category,
+      createdAt: DateTime.now(),
+    );
+    state = AsyncData([tempEntry, ...current]);
+
+    // Background sync
+    try {
+      await AdminService.instance.addEntry(entry);
+      // Re-fetch to get real IDs
+      ref.invalidateSelf();
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+
+  /// Optimistically remove a single entry.
+  Future<bool> removeEntry(String entryId) async {
+    final current = state.valueOrNull ?? [];
+    // Optimistic: remove from list instantly
+    state = AsyncData(current.where((e) => e.id != entryId).toList());
+
+    // Background sync
+    try {
+      await AdminService.instance.removeEntry(entryId);
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+
+  /// Optimistically remove multiple entries.
+  Future<bool> removeEntries(List<String> entryIds) async {
+    final current = state.valueOrNull ?? [];
+    final idSet = entryIds.toSet();
+    // Optimistic: remove from list instantly
+    state = AsyncData(current.where((e) => !idSet.contains(e.id)).toList());
+
+    // Background sync
+    try {
+      await AdminService.instance.removeEntries(entryIds);
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+}
+
+final notificationEntriesProvider =
+    AsyncNotifierProvider.family<NotificationEntriesNotifier, List<NotificationEntry>, String>(
+  () => NotificationEntriesNotifier(),
 );
 
 /// Alias for notificationEntriesProvider — used by send_notification_screen
