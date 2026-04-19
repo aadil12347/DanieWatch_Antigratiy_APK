@@ -116,22 +116,23 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  /// Build display items: group "recently_released" by date, keep others as singles
+  /// Build display items: group "recently_released" by batch group_id, keep others as singles
   List<dynamic> _buildDisplayItems(List<LocalNotification> notifications) {
     final result = <dynamic>[];
-    final recentlyReleasedByDate = <String, List<LocalNotification>>{};
+    final recentlyReleasedByGroup = <String, List<LocalNotification>>{};
     
     for (final n in notifications) {
       if (n.type == 'recently_released' && n.isRichNotification) {
-        final dateKey = '${n.createdAt.year}-${n.createdAt.month}-${n.createdAt.day}';
-        recentlyReleasedByDate.putIfAbsent(dateKey, () => []).add(n);
+        // Group by group_id if available, otherwise fallback to date key for legacy entries
+        final groupKey = n.groupId ?? 'legacy_${n.createdAt.year}-${n.createdAt.month}-${n.createdAt.day}';
+        recentlyReleasedByGroup.putIfAbsent(groupKey, () => []).add(n);
       } else {
         result.add(n);
       }
     }
 
-    // Convert grouped items — always group recently_released, even singles
-    for (final entry in recentlyReleasedByDate.entries) {
+    // Convert grouped items — each group_id becomes its own expandable card
+    for (final entry in recentlyReleasedByGroup.entries) {
       final items = entry.value;
       result.add(_GroupedNotificationItem(
         notifications: items,

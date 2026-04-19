@@ -30,6 +30,9 @@ class LocalNotification {
   /// Whether this notification has rich entry data (poster, title, media type)
   bool get isRichNotification => posterUrl != null && tmdbId != null;
 
+  /// Batch group identifier — each admin send assigns a unique group_id
+  String? get groupId => data['group_id']?.toString();
+
   /// Whether this is a grouped notification (multiple entries in one card)
   bool get isGrouped => data['is_grouped'] == true;
 

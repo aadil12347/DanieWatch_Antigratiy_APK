@@ -376,12 +376,17 @@ class AdminService {
       final uiLabel = getCategoryLabel(category);
 
       if (category == 'recently_released') {
+        // Generate a unique group_id for this batch so each send
+        // creates a separate expandable card on the bell page.
+        final groupId = DateTime.now().millisecondsSinceEpoch.toString();
+
         for (final entry in entries) {
           await _supabase.from('notifications').insert({
             'type': category,
             'title': '🎬 ${entry.title}',
             'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
             'data': {
+              'group_id': groupId,
               'poster_url': entry.posterUrl ?? '',
               'backdrop_url': entry.backdropUrl ?? '',
               'media_type': entry.mediaType,

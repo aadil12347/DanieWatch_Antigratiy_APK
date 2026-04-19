@@ -91,12 +91,27 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
         return n;
       }).toList();
 
-      // Replace cache with fresh data
-      await NotificationStorage.instance.replaceAll(mergedNotifications);
-      if (mounted) {
-        state = mergedNotifications;
+      // ── Deduplicate "newly_added" (Latest Released) by content identity ──
+      // If admin sends the same latest release notification multiple times,
+      // keep only the newest one per (tmdb_id, title, type) combination.
+      final deduped = <LocalNotification>[];
+      final seenLatestKeys = <String>{};
+      // mergedNotifications is already sorted newest-first
+      for (final n in mergedNotifications) {
+        if (n.type == 'newly_added' && n.tmdbId != null) {
+          final key = '${n.tmdbId}_${n.title}_${n.type}';
+          if (seenLatestKeys.contains(key)) continue; // skip older duplicate
+          seenLatestKeys.add(key);
+        }
+        deduped.add(n);
       }
-      debugPrint('✅ Synced ${mergedNotifications.length} notifications from Supabase');
+
+      // Replace cache with fresh data
+      await NotificationStorage.instance.replaceAll(deduped);
+      if (mounted) {
+        state = deduped;
+      }
+      debugPrint('✅ Synced ${deduped.length} notifications from Supabase (deduped from ${mergedNotifications.length})');
     } catch (e) {
       debugPrint('⚠️ Supabase notification sync failed (keeping cache): $e');
       // Keep existing cache — don't clear
