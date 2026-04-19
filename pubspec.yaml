@@ -67,7 +67,6 @@ dependencies:
 
   # UUID for unique download IDs
   uuid: ^4.5.1
-  flutter_svg: ^2.2.4
   better_player_plus: ^1.1.5
 
   # AES-256-GCM decryption for Bysebuho API
