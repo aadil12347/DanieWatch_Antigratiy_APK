@@ -224,6 +224,22 @@ class AdminService {
     await _supabase.from('notification_entries').delete().inFilter('id', entryIds);
   }
 
+  /// Update an existing entry's details (for admin editing before sending)
+  Future<void> updateEntry(String entryId, {
+    String? title,
+    String? posterUrl,
+    String? mediaType,
+    int? releaseYear,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (title != null && title.isNotEmpty) updates['title'] = title;
+    if (posterUrl != null) updates['poster_url'] = posterUrl.isEmpty ? null : posterUrl;
+    if (mediaType != null) updates['media_type'] = mediaType;
+    if (releaseYear != null) updates['release_year'] = releaseYear;
+    if (updates.isEmpty) return;
+    await _supabase.from('notification_entries').update(updates).eq('id', entryId);
+  }
+
   /// Add a new admin by email
   Future<bool> addAdmin(String email) async {
     final userData = await _supabase

@@ -50,7 +50,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     final notifications = ref.watch(notificationInboxProvider);
     final unreadCount = ref.watch(unreadCountProvider);
 
-    // Group "recently_released" notifications by date (same day = one card)
+    // Group "recently_released" notifications by batch group_id
     final displayItems = _buildDisplayItems(notifications);
 
     return Scaffold(
@@ -123,7 +123,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     
     for (final n in notifications) {
       if (n.type == 'recently_released' && n.isRichNotification) {
-        // Group by group_id if available, otherwise fallback to date key for legacy entries
         final groupKey = n.groupId ?? 'legacy_${n.createdAt.year}-${n.createdAt.month}-${n.createdAt.day}';
         recentlyReleasedByGroup.putIfAbsent(groupKey, () => []).add(n);
       } else {
@@ -131,7 +130,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       }
     }
 
-    // Convert grouped items — each group_id becomes its own expandable card
     for (final entry in recentlyReleasedByGroup.entries) {
       final items = entry.value;
       result.add(_GroupedNotificationItem(
@@ -252,7 +250,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
     final group = widget.group;
     final count = group.notifications.length;
     final hasUnread = group.hasUnread;
-    const accentColor = Color(0xFF0891B2);
+    const accentColor = AppColors.secondary;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -269,16 +267,9 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
         children: [
           // Header — tappable to expand/collapse
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () {
               setState(() => _expanded = !_expanded);
-              // Mark all as read when expanding
-              if (_expanded) {
-                for (final n in group.notifications) {
-                  if (!n.isRead) {
-                    ref.read(notificationInboxProvider.notifier).markAsRead(n.id);
-                  }
-                }
-              }
             },
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -311,7 +302,6 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
                         Text(
                           group.notifications.map((n) {
                             var t = n.title.replaceAll(RegExp(r'^🎬\s*'), '');
-                            // Strip any "Recently Added" prefix that leaked into older entries
                             t = t.replaceAll(RegExp(r'^Recently Added\s*', caseSensitive: false), '');
                             return t;
                           }).where((t) => t.isNotEmpty).take(3).join(', ') +
@@ -324,15 +314,6 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 4),
-                        // "Recently Added" label below (muted)
-                        Text(
-                          '🎬 $count Recently Added',
-                          style: GoogleFonts.inter(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
                         const SizedBox(height: 6),
                         Row(
                           children: [
@@ -343,7 +324,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                'Recently Added',
+                                '$count Recently Added',
                                 style: GoogleFonts.inter(
                                   color: accentColor,
                                   fontSize: 10,
@@ -393,7 +374,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
   }
 }
 
-/// Single entry tile inside a grouped card
+/// Single entry tile inside a grouped card — shows poster + title + year + type
 class _GroupedEntryTile extends StatelessWidget {
   final LocalNotification notification;
   const _GroupedEntryTile({required this.notification});
@@ -401,9 +382,11 @@ class _GroupedEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var title = notification.title.replaceAll(RegExp(r'^🎬\s*'), '');
-    // Strip any "Recently Added" prefix from older entries
     title = title.replaceAll(RegExp(r'^Recently Added\s*', caseSensitive: false), '');
+    title = title.replaceAll(RegExp(r'\s*\(\d{4}\)\s*$'), '');
     if (title.isEmpty) title = notification.body;
+    final mediaType = notification.mediaType;
+    final year = notification.releaseYear;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -428,19 +411,19 @@ class _GroupedEntryTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                   child: CachedNetworkImage(
                     imageUrl: notification.posterUrl ?? notification.backdropUrl!,
-                    width: 36,
-                    height: 54,
+                    width: 40,
+                    height: 60,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(width: 36, height: 54, color: AppColors.surface),
+                    placeholder: (_, __) => Container(width: 40, height: 60, color: AppColors.surface),
                     errorWidget: (_, __, ___) => Container(
-                      width: 36, height: 54, color: AppColors.surface,
+                      width: 40, height: 60, color: AppColors.surface,
                       child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
                     ),
                   ),
                 )
               else
                 Container(
-                  width: 36, height: 54,
+                  width: 40, height: 60,
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(6),
@@ -452,20 +435,23 @@ class _GroupedEntryTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title on top
                     Text(
                       title,
                       style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 3),
-                    // "Recently Added" label below
-                    Text(
-                      'Recently Added',
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 5),
+                    // Year first, then type
+                    Row(
+                      children: [
+                        if (year != null)
+                          _typeBadge('$year'),
+                        if (year != null && mediaType != null)
+                          const SizedBox(width: 6),
+                        if (mediaType != null)
+                          _typeBadge(mediaType == 'tv' ? 'TV' : 'Movie'),
+                      ],
                     ),
                   ],
                 ),
@@ -477,6 +463,24 @@ class _GroupedEntryTile extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _typeBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          color: AppColors.secondary,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -498,7 +502,7 @@ class _NotificationCard extends ConsumerWidget {
         // Mark as read
         ref.read(notificationInboxProvider.notifier).markAsRead(notification.id);
 
-        // Navigate to detail page if rich notification (bypasses GoRouter to avoid key_reservation error)
+        // Navigate to detail page if rich notification
         if (isRich && notification.tmdbId != null && notification.mediaType != null) {
           Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
@@ -546,7 +550,7 @@ class _NotificationCard extends ConsumerWidget {
                 ),
               ),
 
-            // Poster or icon — prefer poster, fallback to backdrop
+            // Poster or icon
             if (isRich && (notification.posterUrl != null || notification.backdropUrl != null))
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -611,7 +615,7 @@ class _NotificationCard extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
 
-                  // Category badge + time
+                  // Category badge + type + time
                   Row(
                     children: [
                       Container(
@@ -680,9 +684,9 @@ class _NotificationCard extends ConsumerWidget {
   Color _getTypeColor() {
     switch (notification.type) {
       case 'newly_added':
-        return const Color(0xFF7C3AED);
+        return AppColors.primary;
       case 'recently_released':
-        return const Color(0xFF0891B2);
+        return AppColors.secondary;
       default:
         return AppColors.primary;
     }

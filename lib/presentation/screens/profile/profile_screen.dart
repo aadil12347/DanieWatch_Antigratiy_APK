@@ -133,13 +133,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           children: [
             const SizedBox(height: 24),
             _buildHeader(profile),
-            const SizedBox(height: 32),
-            _buildMainSettings(context, profile),
-            const SizedBox(height: 32),
-            _buildContentSettings(context),
-            const SizedBox(height: 32),
-            _buildActivitySettings(context),
-            const SizedBox(height: 48),
+            const SizedBox(height: 28),
+            _buildAllSettings(context, profile),
+            const SizedBox(height: 40),
             _buildLogoutButton(context),
             const SizedBox(height: 40),
           ],
@@ -248,80 +244,50 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildMainSettings(BuildContext context, UserProfile? profile) {
-    // Database-backed admin check via Supabase admins table
+  Widget _buildAllSettings(BuildContext context, UserProfile? profile) {
     final isAdminAsync = ref.watch(isAdminProvider);
     final isAdmin = isAdminAsync.valueOrNull ?? false;
+    final historyEnabled = ref.watch(continueWatchingSettingsProvider);
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isAdmin) ...[
-            _buildSectionTitle('Admin Only'),
+          if (isAdmin)
             SettingsTile(
               icon: Icons.admin_panel_settings_rounded,
               title: 'Admin Controls',
-              subtitle: 'Manage content, notifications & users',
+              infoText: 'Manage app content, send push notifications and control user access.',
               onTap: () => context.push('/admin-console'),
             ),
-            const SizedBox(height: 32),
-          ],
-          _buildSectionTitle('Account'),
           SettingsTile(
             icon: Icons.person_outline_rounded,
             title: 'Account Settings',
-            subtitle: 'Email, Password & Credentials',
+            infoText: 'Update your email, change password, and manage login credentials.',
             onTap: () => context.push('/account-settings'),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContentSettings(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionTitle('Content & Preferences'),
           SettingsTile(
             icon: Icons.notifications_none_rounded,
             title: 'Notifications',
-            subtitle: 'Push notification preferences',
+            infoText: 'Choose which push notifications you want to receive.',
             onTap: () => context.push('/notification-settings'),
           ),
           SettingsTile(
             icon: Icons.file_download_outlined,
             title: 'Downloads',
-            subtitle: 'Manage offline content',
+            infoText: 'View and manage your saved offline content.',
             onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
           ),
           SettingsTile(
             icon: Icons.send_outlined,
             title: 'Requests',
-            subtitle: 'Support & feature requests',
+            infoText: 'Submit content requests or report issues to the team.',
             onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivitySettings(BuildContext context) {
-    final historyEnabled = ref.watch(continueWatchingSettingsProvider);
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(20)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionTitle('Activity'),
           SettingsTile(
             icon: Icons.history_rounded,
             title: 'Watch History',
-            subtitle: 'Recently watched titles',
+            infoText: 'Toggle to show or hide your recently watched titles on the homepage.',
             trailing: Switch.adaptive(
               value: historyEnabled,
               activeTrackColor: AppColors.primary,
@@ -334,20 +300,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 12),
-      child: Text(
-        title.toUpperCase(),
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: AppColors.textMuted,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildLogoutButton(BuildContext context) {
     return Padding(
