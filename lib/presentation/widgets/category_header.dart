@@ -103,16 +103,21 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
                 borderRadius: BorderRadius.circular(r.w(12)),
                 border: Border.all(
                   color: _isFocused
-                      ? Colors.white.withValues(alpha: 0.35)
+                      ? AppColors.primary.withValues(alpha: 0.7)
                       : AppColors.border,
-                  width: _isFocused ? 1.2 : 0.8,
+                  width: _isFocused ? 1.4 : 0.8,
                 ),
                 boxShadow: _isFocused
                     ? [
                         BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          blurRadius: 12,
-                          spreadRadius: 1,
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          blurRadius: 16,
+                          spreadRadius: 0,
+                        ),
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.15),
+                          blurRadius: 32,
+                          spreadRadius: 2,
                         ),
                       ]
                     : [],
@@ -128,7 +133,7 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
                       fontSize: r.f(15).clamp(13.0, 18.0)),
                   prefixIcon: Icon(Icons.search_rounded,
                       color: _isFocused
-                          ? Colors.white.withValues(alpha: 0.7)
+                          ? AppColors.primary.withValues(alpha: 0.9)
                           : Colors.white.withValues(alpha: 0.35),
                       size: r.d(22).clamp(18.0, 26.0)),
                   suffixIcon: hasSearch

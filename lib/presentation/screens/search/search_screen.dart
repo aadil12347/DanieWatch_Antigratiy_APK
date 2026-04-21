@@ -160,6 +160,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
