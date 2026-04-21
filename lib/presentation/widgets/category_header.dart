@@ -232,11 +232,8 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar>
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      vertical: barHeight / 2 - 10,
-                      horizontal: 0,
-                    ),
-                    isCollapsed: true,
+                    contentPadding: EdgeInsets.zero,
+                    isDense: true,
                   ),
                   onChanged: (val) {
                     widget.onSearchChanged(val);
@@ -830,10 +827,8 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: barHeight / 2 - 10,
-                  ),
-                  isCollapsed: true,
+                  contentPadding: EdgeInsets.zero,
+                  isDense: true,
                 ),
                 onChanged: widget.onSearchChanged,
                 onSubmitted: (_) => widget.searchFocus.unfocus(),
