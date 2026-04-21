@@ -158,6 +158,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   ) {
     final activeCategories = searchState.filters.categories;
 
+    // Determine the active title
+    final activeTitle = activeCategories.isNotEmpty
+        ? activeCategories.first
+        : searchState.filters.genres.isNotEmpty
+            ? searchState.filters.genres.first
+            : 'Explore';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false,
@@ -168,24 +175,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
+              // TopNavbar — scrolls away on swipe up
               const SliverToBoxAdapter(child: TopNavbar()),
-              SliverToBoxAdapter(
-                child: CategoryTitle(
-                  title: activeCategories.isNotEmpty
-                      ? activeCategories.first
-                      : searchState.filters.genres.isNotEmpty
-                          ? searchState.filters.genres.first
-                          : 'Explore',
-                ),
-              ),
+              // Pinned header row — always stays visible at top
               SliverPersistentHeader(
-                floating: true,
-                delegate: FloatingSearchBarDelegate(
+                pinned: true,
+                delegate: PinnedHeaderDelegate(
+                  title: activeTitle,
                   searchController: _searchController,
                   searchFocus: _searchFocus,
                   onSearchChanged: _onSearchChanged,
                 ),
               ),
+              // Filter chips — scroll normally behind pinned header
               const SliverToBoxAdapter(child: CategoryFilterChips()),
               ...slivers,
             ],
