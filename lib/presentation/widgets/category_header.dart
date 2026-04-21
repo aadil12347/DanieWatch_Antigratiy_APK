@@ -232,8 +232,8 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar>
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    isCollapsed: false,
                   ),
                   onChanged: (val) {
                     widget.onSearchChanged(val);
@@ -786,77 +786,74 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
       },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(r.w(14)),
-        child: Row(
-          children: [
-            // Search icon prefix
-            Padding(
-              padding: EdgeInsets.only(left: r.w(14)),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                child: Icon(
-                  Icons.search_rounded,
-                  color: isFocused
-                      ? AppColors.primary.withValues(alpha: 0.9)
-                      : Colors.white.withValues(alpha: 0.25),
-                  size: r.d(20).clamp(18.0, 24.0),
-                ),
+        child: TextField(
+          controller: widget.searchController,
+          focusNode: widget.searchFocus,
+          maxLines: 1,
+          textAlignVertical: TextAlignVertical.center,
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: r.f(14).clamp(13.0, 17.0),
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0.1,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Search movies, shows...',
+            hintStyle: GoogleFonts.inter(
+              color: Colors.white.withValues(alpha: 0.28),
+              fontSize: r.f(14).clamp(12.0, 16.0),
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.2,
+            ),
+            filled: true,
+            fillColor: Colors.transparent,
+            prefixIcon: Padding(
+              padding: EdgeInsets.only(left: r.w(14), right: r.w(8)),
+              child: Icon(
+                Icons.search_rounded,
+                color: isFocused
+                    ? AppColors.primary.withValues(alpha: 0.9)
+                    : Colors.white.withValues(alpha: 0.3),
+                size: r.d(20).clamp(18.0, 24.0),
               ),
             ),
-            SizedBox(width: r.w(10)),
-            // Text input — properly constrained single-line
-            Expanded(
-              child: TextField(
-                controller: widget.searchController,
-                focusNode: widget.searchFocus,
-                maxLines: 1,
-                textAlignVertical: TextAlignVertical.center,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: r.f(14).clamp(13.0, 17.0),
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.1,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Search movies, shows...',
-                  hintStyle: GoogleFonts.inter(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    fontSize: r.f(14).clamp(12.0, 16.0),
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 0.2,
-                  ),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
-                  isDense: true,
-                ),
-                onChanged: widget.onSearchChanged,
-                onSubmitted: (_) => widget.searchFocus.unfocus(),
-              ),
+            prefixIconConstraints: BoxConstraints(
+              minWidth: r.w(44),
+              minHeight: 0,
             ),
-            // Close button (only when text present)
-            if (hasText)
-              GestureDetector(
-                onTap: _onCrossTapped,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: r.w(10)),
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      shape: BoxShape.circle,
+            suffixIcon: hasText
+                ? GestureDetector(
+                    onTap: _onCrossTapped,
+                    child: Container(
+                      margin: EdgeInsets.only(right: r.w(8)),
+                      padding: const EdgeInsets.all(6),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white.withValues(alpha: 0.55),
+                          size: r.d(14).clamp(12.0, 18.0),
+                        ),
+                      ),
                     ),
-                    child: Icon(
-                      Icons.close_rounded,
-                      color: Colors.white.withValues(alpha: 0.5),
-                      size: r.d(14).clamp(12.0, 18.0),
-                    ),
-                  ),
-                ),
-              )
-            else
-              SizedBox(width: r.w(12)),
-          ],
+                  )
+                : null,
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 36,
+              minHeight: 0,
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+            isCollapsed: false,
+          ),
+          onChanged: widget.onSearchChanged,
+          onSubmitted: (_) => widget.searchFocus.unfocus(),
         ),
       ),
     );
