@@ -174,11 +174,15 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
   Future<void> _showAddEntryDialog() async {
     final searchController = TextEditingController();
     List<ManifestItem> searchResults = [];
+    final addedTmdbIds = <int>{};
+    int addedCount = 0;
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      isDismissible: true,
+      enableDrag: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           return Container(
@@ -197,21 +201,41 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Add Entry',
-                  style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Search by title, TMDB ID, or IMDB ID',
-                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                // Header with drag handle and Done button
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Add Entry',
+                            style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            addedCount > 0
+                                ? '$addedCount added · Search by title, TMDB ID, or IMDB ID'
+                                : 'Search by title, TMDB ID, or IMDB ID',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: addedCount > 0 ? const Color(0xFF22C55E) : AppColors.textSecondary,
+                              fontWeight: addedCount > 0 ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.check_circle_rounded, size: 18),
+                      label: const Text('Done'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: _accentColor,
+                        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
                 TextField(
@@ -242,11 +266,17 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                       return;
                     }
                     final allItems = ref.read(allItemsProvider);
+                    // Check if query looks like a TMDB ID (all digits) or IMDB ID (starts with tt)
+                    final isIdQuery = RegExp(r'^\d+$').hasMatch(q) || q.startsWith('tt');
                     final results = allItems.where((item) {
-                      if (item.title.toLowerCase().contains(q)) return true;
-                      if (item.id.toString() == q) return true;
-                      if (item.imdbId != null && item.imdbId!.toLowerCase() == q) return true;
-                      return false;
+                      if (isIdQuery) {
+                        // Exact match only for TMDB ID or IMDB ID
+                        if (item.id.toString() == q) return true;
+                        if (item.imdbId != null && item.imdbId!.toLowerCase() == q) return true;
+                        return false;
+                      }
+                      // Title search: contains match
+                      return item.title.toLowerCase().contains(q);
                     }).take(20).toList();
                     setSheetState(() => searchResults = results);
                   },
@@ -272,7 +302,22 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                         )
                       : ListView.builder(
                           itemCount: searchResults.length,
-                          itemBuilder: (ctx, index) => _buildManifestResultCard(ctx, searchResults[index]),
+                          itemBuilder: (ctx, index) {
+                            final item = searchResults[index];
+                            final alreadyAdded = addedTmdbIds.contains(item.id);
+                            return _buildManifestResultCard(
+                              ctx, item, alreadyAdded,
+                              onAdded: () {
+                                setSheetState(() {
+                                  addedTmdbIds.add(item.id);
+                                  addedCount++;
+                                });
+                                // Clear search for next item
+                                searchController.clear();
+                                setSheetState(() => searchResults = []);
+                              },
+                            );
+                          },
                         ),
                 ),
               ],
@@ -281,41 +326,53 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
         },
       ),
     );
+
+    // Refresh entries list when sheet closes if items were added
+    if (addedCount > 0) {
+      ref.invalidate(notificationEntriesProvider(widget.category));
+    }
   }
 
-  Widget _buildManifestResultCard(BuildContext ctx, ManifestItem item) {
+  Widget _buildManifestResultCard(BuildContext ctx, ManifestItem item, bool alreadyAdded, {VoidCallback? onAdded}) {
     return GestureDetector(
-      onTap: () async {
-        final entry = NotificationEntry(
-          id: '',
-          tmdbId: item.id,
-          mediaType: item.mediaType,
-          title: item.title,
-          posterUrl: item.posterUrl,
-          backdropUrl: item.backdropUrl,
-          releaseYear: item.releaseYear,
-          voteAverage: item.voteAverage,
-          category: widget.category,
-          createdAt: DateTime.now(),
-        );
-        try {
-          final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
-          final success = await notifier.addEntry(entry);
-          if (ctx.mounted) Navigator.pop(ctx);
-          if (mounted) {
-            CustomToast.show(context, success ? '${item.title} added!' : 'Failed to add', type: success ? ToastType.success : ToastType.error);
-          }
-        } catch (e) {
-          if (ctx.mounted) CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
-        }
-      },
-      child: Container(
+      onTap: alreadyAdded
+          ? null
+          : () async {
+              final entry = NotificationEntry(
+                id: '',
+                tmdbId: item.id,
+                mediaType: item.mediaType,
+                title: item.title,
+                posterUrl: item.posterUrl,
+                backdropUrl: item.backdropUrl,
+                releaseYear: item.releaseYear,
+                voteAverage: item.voteAverage,
+                category: widget.category,
+                createdAt: DateTime.now(),
+              );
+              try {
+                final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
+                final success = await notifier.addEntry(entry);
+                if (success) {
+                  onAdded?.call();
+                }
+                if (mounted) {
+                  CustomToast.show(context, success ? '${item.title} added!' : 'Failed to add', type: success ? ToastType.success : ToastType.error);
+                }
+              } catch (e) {
+                if (ctx.mounted) CustomToast.show(ctx, 'Failed: $e', type: ToastType.error);
+              }
+            },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: alreadyAdded ? const Color(0xFF22C55E).withValues(alpha: 0.06) : AppColors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(
+            color: alreadyAdded ? const Color(0xFF22C55E).withValues(alpha: 0.4) : AppColors.border,
+          ),
         ),
         child: Row(
           children: [
@@ -331,21 +388,23 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.title, style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                  Text(item.title, style: GoogleFonts.plusJakartaSans(
+                    color: alreadyAdded ? const Color(0xFF22C55E) : Colors.white,
+                    fontWeight: FontWeight.w700, fontSize: 14),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 6),
                   Row(children: [
                     _infoBadge(item.mediaType == 'tv' ? 'TV' : 'Movie'),
                     if (item.releaseYear != null) ...[const SizedBox(width: 8), _infoBadge('${item.releaseYear}')],
                     const SizedBox(width: 8),
-                    const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                    const SizedBox(width: 3),
-                    Text(item.voteAverage.toStringAsFixed(1), style: GoogleFonts.inter(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600)),
+                    Text('TMDB: ${item.id}', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 10)),
                   ]),
                 ],
               ),
             ),
-            Icon(Icons.add_circle_outline_rounded, color: _accentColor, size: 24),
+            alreadyAdded
+                ? const Icon(Icons.check_circle_rounded, color: Color(0xFF22C55E), size: 24)
+                : Icon(Icons.add_circle_outline_rounded, color: _accentColor, size: 24),
           ],
         ),
       ),
