@@ -36,10 +36,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     _searchFocus.addListener(_onFocusChange);
 
+    // Auto-dismiss keyboard on scroll
+    _scrollController.addListener(_onScroll);
+
     // Register the controller for Explore tab (index 1)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(scrollProvider).register(1, _scrollController);
     });
+  }
+
+  void _onScroll() {
+    if (_searchFocus.hasFocus) {
+      _searchFocus.unfocus();
+    }
   }
 
   void _onFocusChange() {
@@ -52,6 +61,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     ref.read(scrollProvider).unregister(1);
     _scrollController.dispose();
     _searchController.dispose();

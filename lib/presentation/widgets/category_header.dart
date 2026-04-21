@@ -21,7 +21,7 @@ class CategoryTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final r = Responsive(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(r.w(16), r.h(24), r.w(16), r.h(8)),
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(14), r.w(16), r.h(4)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -29,9 +29,9 @@ class CategoryTitle extends StatelessWidget {
             title,
             style: GoogleFonts.plusJakartaSans(
               color: AppColors.textPrimary,
-              fontSize: r.f(32).clamp(24.0, 42.0),
+              fontSize: r.f(26).clamp(20.0, 32.0),
               fontWeight: FontWeight.w800,
-              letterSpacing: -1.0,
+              letterSpacing: -0.8,
             ),
           ),
           if (trailing != null) trailing!,
@@ -41,8 +41,8 @@ class CategoryTitle extends StatelessWidget {
   }
 }
 
-/// The search bar + filter button — used inside a floating SliverPersistentHeader.
-class CategorySearchBar extends ConsumerWidget {
+/// The search bar + filter button — StatefulWidget for proper animated focus tracking.
+class CategorySearchBar extends ConsumerStatefulWidget {
   final TextEditingController searchController;
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
@@ -57,48 +57,86 @@ class CategorySearchBar extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CategorySearchBar> createState() => _CategorySearchBarState();
+}
+
+class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isFocused = widget.searchFocus.hasFocus;
+    widget.searchFocus.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    widget.searchFocus.removeListener(_onFocusChange);
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() => _isFocused = widget.searchFocus.hasFocus);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final r = Responsive(context);
-    final searchState = ref.watch(searchProvider(contextId));
+    final searchState = ref.watch(searchProvider(widget.contextId));
     final hasSearch = searchState.query.isNotEmpty;
     final barHeight = r.h(48).clamp(40.0, 56.0);
     final filterBtnSize = r.d(48).clamp(40.0, 56.0);
 
     return Container(
       color: AppColors.background,
-      padding: EdgeInsets.fromLTRB(r.w(16), r.h(8), r.w(16), 0),
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(8), r.w(16), r.h(10)),
       child: Row(
         children: [
           Expanded(
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
               height: barHeight,
               decoration: BoxDecoration(
                 color: AppColors.input,
                 borderRadius: BorderRadius.circular(r.w(12)),
                 border: Border.all(
-                  color: searchFocus.hasFocus 
-                      ? AppColors.primary.withValues(alpha: 0.5)
+                  color: _isFocused
+                      ? Colors.white.withValues(alpha: 0.35)
                       : AppColors.border,
-                  width: 1,
+                  width: _isFocused ? 1.2 : 0.8,
                 ),
+                boxShadow: _isFocused
+                    ? [
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : [],
               ),
               child: TextField(
-                controller: searchController,
-                focusNode: searchFocus,
+                controller: widget.searchController,
+                focusNode: widget.searchFocus,
                 style: TextStyle(color: Colors.white, fontSize: r.f(15).clamp(13.0, 18.0)),
                 decoration: InputDecoration(
                   hintText: 'Search',
                   hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      color: Colors.white.withValues(alpha: 0.35),
                       fontSize: r.f(15).clamp(13.0, 18.0)),
-                  prefixIcon: Icon(Icons.search,
-                      color: Colors.white.withValues(alpha: 0.4), size: r.d(22).clamp(18.0, 26.0)),
+                  prefixIcon: Icon(Icons.search_rounded,
+                      color: _isFocused
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : Colors.white.withValues(alpha: 0.35),
+                      size: r.d(22).clamp(18.0, 26.0)),
                   suffixIcon: hasSearch
                       ? IconButton(
                           onPressed: () {
-                            searchController.clear();
-                            onSearchChanged('');
-                            searchFocus.requestFocus();
+                            widget.searchController.clear();
+                            widget.onSearchChanged('');
+                            widget.searchFocus.requestFocus();
                           },
                           icon: Icon(Icons.close,
                               color: Colors.white.withValues(alpha: 0.4),
@@ -109,10 +147,10 @@ class CategorySearchBar extends ConsumerWidget {
                   contentPadding: EdgeInsets.symmetric(vertical: r.h(14)),
                 ),
                 onChanged: (val) {
-                  onSearchChanged(val);
+                  widget.onSearchChanged(val);
                 },
                 onSubmitted: (val) {
-                  searchFocus.unfocus();
+                  widget.searchFocus.unfocus();
                 },
               ),
             ),
@@ -120,7 +158,7 @@ class CategorySearchBar extends ConsumerWidget {
           SizedBox(width: r.w(12)),
           GestureDetector(
             onTap: () {
-              searchFocus.unfocus();
+              widget.searchFocus.unfocus();
               final currentState = ref.read(filterModalProvider);
               if (currentState.isOpen) {
                 ref.read(filterModalProvider.notifier).state =
@@ -129,7 +167,7 @@ class CategorySearchBar extends ConsumerWidget {
                 ref.read(filterModalProvider.notifier).state =
                     FilterModalState(
                   view: FilterView.mainPanel,
-                  contextId: contextId,
+                  contextId: widget.contextId,
                 );
               }
             },
@@ -298,10 +336,10 @@ class FloatingSearchBarDelegate extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  double get minExtent => 68;
+  double get minExtent => 76;
 
   @override
-  double get maxExtent => 68;
+  double get maxExtent => 76;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
