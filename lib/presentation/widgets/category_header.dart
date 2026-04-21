@@ -298,10 +298,10 @@ class FloatingSearchBarDelegate extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  double get minExtent => 64;
+  double get minExtent => 68;
 
   @override
-  double get maxExtent => 64;
+  double get maxExtent => 68;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {

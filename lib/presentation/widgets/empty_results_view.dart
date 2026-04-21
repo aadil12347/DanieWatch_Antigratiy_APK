@@ -17,62 +17,66 @@ class EmptyResultsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Subtle Premium Icon
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
-                shape: BoxShape.circle,
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Subtle Premium Icon
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.03),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: 64,
+                  color: Colors.white.withValues(alpha: 0.15),
+                ),
               ),
-              child: Icon(
-                icon,
-                size: 64,
-                color: Colors.white.withValues(alpha: 0.15),
+              const SizedBox(height: 32),
+              
+              // Beautifully Styled Heading
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.lora(
+                  color: AppColors.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.5,
+                ),
               ),
-            ),
-            const SizedBox(height: 32),
-            
-            // Beautifully Styled Heading
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.lora(
-                color: AppColors.textPrimary,
-                fontSize: 24,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.5,
+              const SizedBox(height: 12),
+              
+              // Short matching sub-message
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 14,
+                  height: 1.6,
+                  letterSpacing: 0.1,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            
-            // Short matching sub-message
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 14,
-                height: 1.6,
-                letterSpacing: 0.1,
+              
+              // Minimalist Red Accent Dash
+              const SizedBox(height: 32),
+              Container(
+                width: 24,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(1),
+                ),
               ),
-            ),
-            
-            // Minimalist Red Accent Dash
-            const SizedBox(height: 32),
-            Container(
-              width: 24,
-              height: 2,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

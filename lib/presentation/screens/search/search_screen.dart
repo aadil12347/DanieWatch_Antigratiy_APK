@@ -62,12 +62,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  void _onSearchChanged(String query, List<ManifestItem> currentItems, bool isGlobal) {
-    if (isGlobal) {
-      ref.read(searchProvider('explore').notifier).search(query);
-    } else {
-      ref.read(searchProvider('explore').notifier).searchInList(query, currentItems);
-    }
+  void _onSearchChanged(String query) {
+    // Always use the unified search method which auto-detects category context
+    ref.read(searchProvider('explore').notifier).search(query);
   }
 
   @override
@@ -80,7 +77,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final hasFilters = searchState.filters.hasActiveFilters;
     final showResults = hasSearch || hasFilters;
 
-    // --- Dynamic Data Sourcing (New requirement) ---
+    // --- Dynamic Data Sourcing ---
     // Switch the base items based on the active top-level category
     final filterCat = searchState.filters.categories;
     AsyncValue<List<ManifestItem>> categoryItems;
@@ -107,14 +104,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         SliverToBoxAdapter(child: Center(child: Text('Error: $err')))
       ], [], searchState),
       data: (items) {
-        // ALWAYS apply filters through FilterUtils when any filter or search is active
-        // This ensures year, genre, region etc. filters always work correctly
+        // Determine the enforced category for FilterUtils
+        // For category pages (Anime, Korean, etc.), enforce category
+        // For Explore and genre pages, don't enforce (search all)
+        String? enforceCategory;
+        const categoryPages = {
+          'Anime', 'Korean', 'K-Drama', 'Bollywood',
+          'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
+        };
+        if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
+          enforceCategory = filterCat.first;
+        }
+
+        // Apply filters through FilterUtils when any filter or search is active
         final itemsToDisplay = showResults
             ? FilterUtils.getFilteredItems(
                 allItems: items,
                 searchState: searchState,
                 index: index,
-                enforceCategory: filterCat.isNotEmpty ? filterCat.first : null,
+                enforceCategory: enforceCategory,
               )
             : items;
 
@@ -164,11 +172,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 delegate: FloatingSearchBarDelegate(
                   searchController: _searchController,
                   searchFocus: _searchFocus,
-                  onSearchChanged: (q) => _onSearchChanged(
-                    q, 
-                    currentCategoryItems, 
-                    activeCategories.isEmpty
-                  ),
+                  onSearchChanged: _onSearchChanged,
                 ),
               ),
               const SliverToBoxAdapter(child: CategoryFilterChips()),

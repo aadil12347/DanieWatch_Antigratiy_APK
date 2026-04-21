@@ -153,10 +153,12 @@ class ManifestSearchResult {
   final int itemId;
   final String mediaType;
   final String title;
+  final double score;
 
   const ManifestSearchResult({
     required this.itemId,
     required this.mediaType,
     required this.title,
+    this.score = 0.0,
   });
 }

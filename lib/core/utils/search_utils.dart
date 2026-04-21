@@ -12,32 +12,60 @@ class FilterUtils {
 
     // 1. Establish the base list
     if (searchState.query.trim().isNotEmpty) {
-      // Searching: build results from global search index
+      // Searching: build results from fuzzy search results (already category-scoped)
+      // Preserve the order from the search results (sorted by relevance score)
+      final resultMap = <String, double>{};
+      for (final r in searchState.results) {
+        final key = '${r.itemId}-${r.mediaType}';
+        resultMap[key] = r.score;
+      }
+
       baseList = searchState.results
           .map((r) => index['${r.itemId}-${r.mediaType}'])
           .whereType<ManifestItem>()
           .toList();
 
-      // IF a category is enforced (e.g. we are on the Bollywood page),
-      // we MUST re-filter the global search results to ensure they belong to this category.
+      // If a category is enforced AND the fuzzy engine didn't already scope
+      // (e.g. genre pages that search the whole index), apply category filter
       if (enforceCategory != null) {
-        baseList = baseList.where((item) {
-          // Hide items with NO original metadata from category pages
-          final hasMetadata = (item.originalLanguage != null &&
-                  item.originalLanguage!.isNotEmpty) ||
-              item.originCountry.isNotEmpty;
-          if (!hasMetadata) return false;
-          return _matchesCategory(item, enforceCategory);
-        }).toList();
+        // Check if this is a genre filter (not a category page)
+        // Genre pages should search ALL items, not scope by genre
+        const categoryPages = {
+          'Anime', 'Korean', 'K-Drama', 'Bollywood',
+          'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
+        };
+
+        if (categoryPages.contains(enforceCategory)) {
+          // Category pages: the fuzzy engine already scoped results,
+          // but apply safety filter for items that may have slipped through
+          baseList = baseList.where((item) {
+            final hasMetadata = (item.originalLanguage != null &&
+                    item.originalLanguage!.isNotEmpty) ||
+                item.originCountry.isNotEmpty;
+            if (!hasMetadata) return false;
+            return _matchesCategory(item, enforceCategory);
+          }).toList();
+        }
+        // Genre filter pages: don't apply category filter (show all results)
       }
+
+      // Sort by fuzzy relevance score (highest first)
+      baseList.sort((a, b) {
+        final scoreA = resultMap['${a.id}-${a.mediaType}'] ?? 0.0;
+        final scoreB = resultMap['${b.id}-${b.mediaType}'] ?? 0.0;
+        return scoreB.compareTo(scoreA);
+      });
+
+      // Apply post-search filters (genre, year, region etc.) but skip sorting
+      // since we want to preserve relevance order
+      return _applyPostFilters(baseList, searchState.filters, enforceCategory);
     } else {
-      // Not searching: use the items provided by the screen (which are usually already category-filtered)
+      // Not searching: use the items provided by the screen (already category-filtered)
       baseList = List.from(allItems);
       
-      // Safety check: if an enforceCategory was passed, ensure everything on the list matches it.
+      // Safety check: if an enforceCategory was passed, ensure everything matches
       if (enforceCategory != null) {
         baseList = baseList.where((item) {
-          // Hide items with NO original metadata from category pages
           final hasMetadata = (item.originalLanguage != null &&
                   item.originalLanguage!.isNotEmpty) ||
               item.originCountry.isNotEmpty;
@@ -49,24 +77,50 @@ class FilterUtils {
 
     final f = searchState.filters;
 
+    // 2. Apply filters and sorting for non-search mode
+    baseList = _applyPostFilters(baseList, f, enforceCategory);
+
+    // 6. Sort By (Default to Latest Release if none specified)
+    final sortBy = f.sortBy;
+    if (sortBy == 'Latest' || sortBy == 'Latest Release') {
+      baseList
+          .sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
+    } else if (sortBy == 'Popularity') {
+      baseList.sort((a, b) => b.voteCount.compareTo(a.voteCount));
+    } else if (sortBy == 'Top Rated' || sortBy == 'Rating (High to Low)') {
+      baseList.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+    } else {
+      // "Perfect" default sorting: Year desc, then Vote Average desc
+      baseList.sort((a, b) {
+        final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+        if (yearCmp != 0) return yearCmp;
+        return b.voteAverage.compareTo(a.voteAverage);
+      });
+    }
+
+    return baseList;
+  }
+
+  /// Apply post-search filters (categories sub-filter, region, language, genre, year)
+  /// without re-sorting (preserves relevance order from fuzzy search)
+  static List<ManifestItem> _applyPostFilters(
+    List<ManifestItem> items,
+    SearchFilters f,
+    String? enforceCategory,
+  ) {
+    var baseList = items;
+
     // 2. Apply Page-Specific Filter Policy
-    // When on a category page (e.g. Bollywood), generic category filters like "Movie" or "TV Shows"
-    // should still work, but other top-level categories like "Anime" or "K-Drama" must be ignored
-    // to prevent empty results due to filter collisions.
     if (f.categories.isNotEmpty) {
       baseList = baseList.where((item) {
-        // If we are on a category page, we allow filtering by "Movie"/"TV Shows"
-        // But we ignore any selected top-level categories that aren't the enforced one.
         final allowedFilters = f.categories.where((cat) {
           if (enforceCategory != null) {
-            // If on a specific category page, only "Movie" and "TV Shows" are valid sub-filters
             return cat == 'Movie' || cat == 'TV Shows' || cat == 'Series' || cat == 'Season';
           }
-          return true; // on global search, all categories are allowed
+          return true;
         });
 
-        if (allowedFilters.isEmpty) return true; // No valid sub-filters, keep everything in baseList
-
+        if (allowedFilters.isEmpty) return true;
         return allowedFilters.any((cat) => _matchesCategory(item, cat));
       }).toList();
     }
@@ -118,7 +172,7 @@ class FilterUtils {
     // 4. Filter by Genre
     if (f.genres.isNotEmpty) {
       final genreMap = {
-        'Action': [28, 12, 10759], // Action, Adventure, Action & Adventure
+        'Action': [28, 12, 10759],
         'Animation': [16],
         'Comedy': [35],
         'Crime': [80],
@@ -131,7 +185,7 @@ class FilterUtils {
         'Music': [10402],
         'Mystery': [9648],
         'Romance': [10749],
-        'Sci-Fi': [878, 14, 10765], // Sci-Fi, Fantasy, Sci-Fi & Fantasy
+        'Sci-Fi': [878, 14, 10765],
         'Science Fiction': [878, 14, 10765],
         'Thriller': [53],
         'War': [10752, 10768],
@@ -140,14 +194,12 @@ class FilterUtils {
       };
       baseList = baseList.where((item) {
         return f.genres.any((genreName) {
-          // 1. Check by ID (Handling both Movie and TV variants)
           final ids = genreMap[genreName];
           final matchesId =
               ids != null && ids.any((id) => item.genreIds.contains(id));
 
           if (matchesId) return true;
 
-          // 2. Check by String label (Fallback if IDs are missing or mismatched)
           final searchLabel = genreName.toLowerCase();
           return item.genres.any((g) {
             final normalized = g.toLowerCase();
@@ -167,24 +219,6 @@ class FilterUtils {
         if (item.releaseYear == null) return false;
         return f.years.contains(item.releaseYear.toString());
       }).toList();
-    }
-
-    // 6. Sort By (Default to Latest Release if none specified)
-    final sortBy = f.sortBy;
-    if (sortBy == 'Latest' || sortBy == 'Latest Release') {
-      baseList
-          .sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
-    } else if (sortBy == 'Popularity') {
-      baseList.sort((a, b) => b.voteCount.compareTo(a.voteCount));
-    } else if (sortBy == 'Top Rated' || sortBy == 'Rating (High to Low)') {
-      baseList.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
-    } else {
-      // "Perfect" default sorting: Year desc, then Vote Average desc
-      baseList.sort((a, b) {
-        final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-        if (yearCmp != 0) return yearCmp;
-        return b.voteAverage.compareTo(a.voteAverage);
-      });
     }
 
     return baseList;

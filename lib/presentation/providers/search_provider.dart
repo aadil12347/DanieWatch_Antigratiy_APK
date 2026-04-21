@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/local/manifest_dao.dart';
+import '../../core/utils/fuzzy_search_engine.dart';
+import 'manifest_provider.dart';
 
 /// Comprehensive filter state
 class SearchFilters {
@@ -77,18 +79,39 @@ class SearchState {
   }
 }
 
-/// Search provider using FTS
+/// Search provider using hybrid FTS + Fuzzy search engine
 class SearchNotifier extends StateNotifier<SearchState> {
   final ManifestDao _dao = ManifestDao();
+  final FuzzySearchEngine _fuzzyEngine;
   Timer? _debounce;
   List<ManifestSearchResult> _unfilteredResults = [];
 
-  SearchNotifier() : super(const SearchState());
+  SearchNotifier(this._fuzzyEngine) : super(const SearchState());
 
   @override
   void dispose() {
     _debounce?.cancel();
     super.dispose();
+  }
+
+  /// Determine the active category context from current filters.
+  /// Returns the category name for category pages, null for Explore/genre pages.
+  String? get _activeCategoryContext {
+    final cats = state.filters.categories;
+    if (cats.isEmpty) return null;
+
+    // Top-level categories that should scope search
+    const categoryPages = {
+      'Anime', 'Korean', 'K-Drama', 'Bollywood',
+      'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
+    };
+
+    for (final cat in cats) {
+      if (categoryPages.contains(cat)) return cat;
+    }
+
+    // Sub-filters like "Movie" / "TV Shows" don't scope search
+    return null;
   }
 
   void search(String query) {
@@ -107,16 +130,44 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     state = state.copyWith(query: query);
 
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
       if (!mounted) return;
 
       state = state.copyWith(isSearching: true);
 
       try {
-        final results = await _dao.searchFts(query);
+        final categoryFilter = _activeCategoryContext;
+
+        // === Primary: Use fuzzy search engine ===
+        List<ManifestSearchResult> results = [];
+
+        if (_fuzzyEngine.isBuilt) {
+          final fuzzyResults = _fuzzyEngine.search(
+            query,
+            categoryFilter: categoryFilter,
+            limit: 80,
+          );
+
+          results = fuzzyResults
+              .map((r) => ManifestSearchResult(
+                    itemId: r.itemId,
+                    mediaType: r.mediaType,
+                    title: r.title,
+                    score: r.score,
+                  ))
+              .toList();
+        }
+
+        // === Fallback: FTS4 if fuzzy engine has no results ===
+        if (results.isEmpty) {
+          final ftsResults = await _dao.searchFts(query);
+          results = ftsResults;
+        }
+
         if (mounted) {
           _unfilteredResults = results;
-          state = state.copyWith(results: _unfilteredResults, isSearching: false);
+          state = state.copyWith(
+              results: _unfilteredResults, isSearching: false);
         }
       } catch (e) {
         if (mounted) {
@@ -127,7 +178,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   void updateFilters(SearchFilters newFilters) {
+    final oldCategories = state.filters.categories;
     state = state.copyWith(filters: newFilters);
+
+    // If the category context changed while a search query is active,
+    // re-run the search with the new category scope
+    if (state.query.trim().isNotEmpty &&
+        newFilters.categories != oldCategories) {
+      search(state.query);
+    }
   }
 
   void clearFilters() {
@@ -152,7 +211,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     );
   }
 
-  /// Search within a specific list of items (for category-isolated search)
+  /// Search within a specific list of items (legacy fallback, uses fuzzy matching)
   void searchInList(String query, List<ManifestItem> items) {
     _debounce?.cancel();
     state = state.copyWith(query: query);
@@ -166,15 +225,17 @@ class SearchNotifier extends StateNotifier<SearchState> {
       if (!mounted) return;
       state = state.copyWith(isSearching: true);
 
-      final search = query.toLowerCase();
-      final List<ManifestSearchResult> results = items
-          .where((item) =>
-              item.title.toLowerCase().contains(search) ||
-              (item.overview?.toLowerCase().contains(search) ?? false))
-          .map((item) => ManifestSearchResult(
-                itemId: item.id,
-                mediaType: item.mediaType,
-                title: item.title,
+      // Build a temporary mini fuzzy engine for this item list
+      final miniEngine = FuzzySearchEngine();
+      miniEngine.buildIndex(items);
+      final fuzzyResults = miniEngine.search(query, limit: 50);
+
+      final List<ManifestSearchResult> results = fuzzyResults
+          .map((r) => ManifestSearchResult(
+                itemId: r.itemId,
+                mediaType: r.mediaType,
+                title: r.title,
+                score: r.score,
               ))
           .toList();
 
@@ -183,9 +244,20 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 }
 
+/// Global fuzzy search engine provider — built from all manifest items
+final fuzzySearchEngineProvider = Provider<FuzzySearchEngine>((ref) {
+  final engine = FuzzySearchEngine();
+  final items = ref.watch(allItemsProvider);
+  if (items.isNotEmpty) {
+    engine.buildIndex(items);
+  }
+  return engine;
+});
+
 final searchProvider =
     StateNotifierProvider.family<SearchNotifier, SearchState, String>((ref, contextId) {
-  return SearchNotifier();
+  final engine = ref.watch(fuzzySearchEngineProvider);
+  return SearchNotifier(engine);
 });
 
 /// Tracks if the global header search is expanded (legacy, kept for app_shell compat)
