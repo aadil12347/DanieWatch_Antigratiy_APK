@@ -60,24 +60,45 @@ class CategorySearchBar extends ConsumerStatefulWidget {
   ConsumerState<CategorySearchBar> createState() => _CategorySearchBarState();
 }
 
-class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
+class _CategorySearchBarState extends ConsumerState<CategorySearchBar>
+    with SingleTickerProviderStateMixin {
   bool _isFocused = false;
+  late AnimationController _glowCtrl;
+  late Animation<double> _glowAnim;
 
   @override
   void initState() {
     super.initState();
     _isFocused = widget.searchFocus.hasFocus;
     widget.searchFocus.addListener(_onFocusChange);
+
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _glowAnim = Tween<double>(begin: 0.15, end: 0.35).animate(
+      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
+    );
+    if (_isFocused) _glowCtrl.repeat(reverse: true);
   }
 
   @override
   void dispose() {
     widget.searchFocus.removeListener(_onFocusChange);
+    _glowCtrl.dispose();
     super.dispose();
   }
 
   void _onFocusChange() {
-    if (mounted) setState(() => _isFocused = widget.searchFocus.hasFocus);
+    if (mounted) {
+      setState(() => _isFocused = widget.searchFocus.hasFocus);
+      if (_isFocused) {
+        _glowCtrl.repeat(reverse: true);
+      } else {
+        _glowCtrl.stop();
+        _glowCtrl.value = 0;
+      }
+    }
   }
 
   @override
@@ -85,8 +106,8 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
     final r = Responsive(context);
     final searchState = ref.watch(searchProvider(widget.contextId));
     final hasSearch = searchState.query.isNotEmpty;
-    final barHeight = r.h(48).clamp(40.0, 56.0);
-    final filterBtnSize = r.d(48).clamp(40.0, 56.0);
+    final barHeight = r.h(48).clamp(42.0, 56.0);
+    final filterBtnSize = r.d(48).clamp(42.0, 56.0);
 
     return Container(
       color: AppColors.background,
@@ -94,73 +115,141 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
       child: Row(
         children: [
           Expanded(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              height: barHeight,
-              decoration: BoxDecoration(
-                color: AppColors.input,
-                borderRadius: BorderRadius.circular(r.w(12)),
-                border: Border.all(
-                  color: _isFocused
-                      ? AppColors.primary.withValues(alpha: 0.7)
-                      : AppColors.border,
-                  width: _isFocused ? 1.4 : 0.8,
-                ),
-                boxShadow: _isFocused
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.35),
-                          blurRadius: 16,
-                          spreadRadius: 0,
-                        ),
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.15),
-                          blurRadius: 32,
-                          spreadRadius: 2,
-                        ),
-                      ]
-                    : [],
-              ),
-              child: TextField(
-                controller: widget.searchController,
-                focusNode: widget.searchFocus,
-                style: TextStyle(color: Colors.white, fontSize: r.f(15).clamp(13.0, 18.0)),
-                decoration: InputDecoration(
-                  hintText: 'Search',
-                  hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      fontSize: r.f(15).clamp(13.0, 18.0)),
-                  prefixIcon: Icon(Icons.search_rounded,
+            child: AnimatedBuilder(
+              animation: _glowAnim,
+              builder: (context, child) {
+                return Container(
+                  height: barHeight,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFF1E1E22),
+                        const Color(0xFF1A1A1E),
+                        _isFocused
+                            ? AppColors.primary.withValues(alpha: 0.06)
+                            : const Color(0xFF18181C),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(r.w(14)),
+                    border: Border.all(
                       color: _isFocused
-                          ? AppColors.primary.withValues(alpha: 0.9)
-                          : Colors.white.withValues(alpha: 0.35),
-                      size: r.d(22).clamp(18.0, 26.0)),
-                  suffixIcon: hasSearch
-                      ? IconButton(
-                          onPressed: () {
-                            widget.searchController.clear();
-                            widget.onSearchChanged('');
-                            widget.searchFocus.requestFocus();
-                          },
-                          icon: Icon(Icons.close,
-                              color: Colors.white.withValues(alpha: 0.4),
-                              size: r.d(20).clamp(16.0, 24.0)),
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: r.h(14)),
+                          ? AppColors.primary.withValues(alpha: 0.6)
+                          : Colors.white.withValues(alpha: 0.06),
+                      width: _isFocused ? 1.2 : 0.8,
+                    ),
+                    boxShadow: _isFocused
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(
+                                  alpha: _glowAnim.value),
+                              blurRadius: 20,
+                              spreadRadius: -2,
+                            ),
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.08),
+                              blurRadius: 40,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                  ),
+                  child: child,
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(r.w(14)),
+                child: TextField(
+                  controller: widget.searchController,
+                  focusNode: widget.searchFocus,
+                  maxLines: 1,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: r.f(14).clamp(13.0, 17.0),
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.1,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Search movies, shows...',
+                    hintStyle: GoogleFonts.inter(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      fontSize: r.f(14).clamp(13.0, 17.0),
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 0.2,
+                    ),
+                    prefixIcon: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      padding: EdgeInsets.only(left: r.w(14), right: r.w(8)),
+                      child: Icon(
+                        Icons.search_rounded,
+                        color: _isFocused
+                            ? AppColors.primary.withValues(alpha: 0.9)
+                            : Colors.white.withValues(alpha: 0.25),
+                        size: r.d(20).clamp(18.0, 24.0),
+                      ),
+                    ),
+                    prefixIconConstraints: BoxConstraints(
+                      minWidth: r.w(44),
+                      minHeight: 0,
+                    ),
+                    suffixIcon: hasSearch
+                        ? GestureDetector(
+                            onTap: () {
+                              widget.searchController.clear();
+                              widget.onSearchChanged('');
+                              widget.searchFocus.requestFocus();
+                            },
+                            child: Container(
+                              margin: EdgeInsets.only(right: r.w(8)),
+                              padding: const EdgeInsets.all(6),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  shape: BoxShape.circle,
+                                ),
+                                padding: const EdgeInsets.all(2),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: r.d(14).clamp(12.0, 18.0),
+                                ),
+                              ),
+                            ),
+                          )
+                        : null,
+                    suffixIconConstraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 0,
+                    ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: barHeight / 2 - 10,
+                      horizontal: 0,
+                    ),
+                    isCollapsed: true,
+                  ),
+                  onChanged: (val) {
+                    widget.onSearchChanged(val);
+                  },
+                  onSubmitted: (val) {
+                    widget.searchFocus.unfocus();
+                  },
                 ),
-                onChanged: (val) {
-                  widget.onSearchChanged(val);
-                },
-                onSubmitted: (val) {
-                  widget.searchFocus.unfocus();
-                },
               ),
             ),
           ),
-          SizedBox(width: r.w(12)),
+          SizedBox(width: r.w(10)),
+          // Premium filter button with gradient
           GestureDetector(
             onTap: () {
               widget.searchFocus.unfocus();
@@ -180,11 +269,26 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar> {
               height: filterBtnSize,
               width: filterBtnSize,
               decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(r.w(12)),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFD42A30),
+                    AppColors.primary,
+                    Color(0xFF8E1519),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(r.w(14)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: Icon(Icons.tune_rounded,
-                  color: Colors.white, size: r.d(22).clamp(18.0, 26.0)),
+                  color: Colors.white, size: r.d(20).clamp(18.0, 24.0)),
             ),
           ),
         ],
@@ -368,6 +472,7 @@ class PinnedHeaderRow extends ConsumerStatefulWidget {
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
   final String contextId;
+  final bool showFilterButton;
 
   const PinnedHeaderRow({
     super.key,
@@ -376,6 +481,7 @@ class PinnedHeaderRow extends ConsumerStatefulWidget {
     required this.searchFocus,
     required this.onSearchChanged,
     this.contextId = 'explore',
+    this.showFilterButton = true,
   });
 
   @override
@@ -383,9 +489,11 @@ class PinnedHeaderRow extends ConsumerStatefulWidget {
 }
 
 class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _expandCtrl;
   late Animation<double> _expandAnim;
+  late AnimationController _glowCtrl;
+  late Animation<double> _glowAnim;
   bool _isSearchOpen = false;
 
   @override
@@ -393,12 +501,21 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
     super.initState();
     _expandCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 350),
     );
     _expandAnim = CurvedAnimation(
       parent: _expandCtrl,
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
+    );
+
+    // Pulsing glow animation for focused search field
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _glowAnim = Tween<double>(begin: 0.15, end: 0.4).animate(
+      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
     );
 
     // If there's already a query, open the search field immediately
@@ -414,6 +531,7 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
   void dispose() {
     widget.searchFocus.removeListener(_onFocusChange);
     _expandCtrl.dispose();
+    _glowCtrl.dispose();
     super.dispose();
   }
 
@@ -421,6 +539,14 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
     if (!mounted) return;
     // Sync focus state for AppShell back-button handling
     ref.read(searchFocusProvider.notifier).state = widget.searchFocus.hasFocus;
+
+    // Manage glow animation
+    if (widget.searchFocus.hasFocus) {
+      _glowCtrl.repeat(reverse: true);
+    } else {
+      _glowCtrl.stop();
+      _glowCtrl.value = 0;
+    }
 
     // When focus is lost (tap outside / back), decide whether to close
     if (!widget.searchFocus.hasFocus && _isSearchOpen) {
@@ -440,6 +566,8 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
 
   void _closeSearch() {
     widget.searchFocus.unfocus();
+    _glowCtrl.stop();
+    _glowCtrl.value = 0;
     _expandCtrl.reverse().then((_) {
       if (mounted) setState(() => _isSearchOpen = false);
     });
@@ -478,44 +606,61 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
                       if (t < 1.0)
                         Opacity(
                           opacity: (1.0 - t * 2.5).clamp(0.0, 1.0),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  widget.title,
-                                  style: GoogleFonts.plusJakartaSans(
-                                    color: AppColors.textPrimary,
-                                    fontSize: r.f(26).clamp(20.0, 32.0),
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.8,
+                          child: Transform.translate(
+                            offset: Offset(-t * 30, 0),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    widget.title,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: AppColors.textPrimary,
+                                      fontSize: r.f(26).clamp(20.0, 32.0),
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.8,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              SizedBox(width: r.w(10)),
-                              // Search icon button
-                              GestureDetector(
-                                onTap: _openSearch,
-                                child: Container(
-                                  height: iconBtnSize,
-                                  width: iconBtnSize,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.surface,
-                                    borderRadius: BorderRadius.circular(r.w(12)),
-                                    border: Border.all(
-                                      color: AppColors.border.withValues(alpha: 0.5),
-                                      width: 0.8,
+                                SizedBox(width: r.w(10)),
+                                // Premium search icon button
+                                GestureDetector(
+                                  onTap: _openSearch,
+                                  child: Container(
+                                    height: iconBtnSize,
+                                    width: iconBtnSize,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Color(0xFF222226),
+                                          Color(0xFF1C1C20),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(r.w(12)),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.08),
+                                        width: 0.8,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.3),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      Icons.search_rounded,
+                                      color: AppColors.textSecondary,
+                                      size: r.d(20).clamp(18.0, 24.0),
                                     ),
                                   ),
-                                  child: Icon(
-                                    Icons.search_rounded,
-                                    color: AppColors.textSecondary,
-                                    size: r.d(20).clamp(18.0, 24.0),
-                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
 
@@ -524,8 +669,8 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
                         Opacity(
                           opacity: (t * 2.0).clamp(0.0, 1.0),
                           child: Transform.translate(
-                            offset: Offset((1.0 - t) * 60, 0),
-                            child: _buildSearchField(r),
+                            offset: Offset((1.0 - t) * 80, 0),
+                            child: _buildPremiumSearchField(r),
                           ),
                         ),
                     ],
@@ -536,35 +681,51 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
               SizedBox(width: r.w(10)),
 
               // ── Filter button (always visible) ──
-              GestureDetector(
-                onTap: () {
-                  widget.searchFocus.unfocus();
-                  final currentState = ref.read(filterModalProvider);
-                  if (currentState.isOpen) {
-                    ref.read(filterModalProvider.notifier).state =
-                        const FilterModalState(view: FilterView.none);
-                  } else {
-                    ref.read(filterModalProvider.notifier).state =
-                        FilterModalState(
-                      view: FilterView.mainPanel,
-                      contextId: widget.contextId,
-                    );
-                  }
-                },
-                child: Container(
-                  height: filterBtnSize,
-                  width: filterBtnSize,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(r.w(12)),
-                  ),
-                  child: Icon(
-                    Icons.tune_rounded,
-                    color: Colors.white,
-                    size: r.d(20).clamp(18.0, 24.0),
+              if (widget.showFilterButton)
+                GestureDetector(
+                  onTap: () {
+                    widget.searchFocus.unfocus();
+                    final currentState = ref.read(filterModalProvider);
+                    if (currentState.isOpen) {
+                      ref.read(filterModalProvider.notifier).state =
+                          const FilterModalState(view: FilterView.none);
+                    } else {
+                      ref.read(filterModalProvider.notifier).state =
+                          FilterModalState(
+                        view: FilterView.mainPanel,
+                        contextId: widget.contextId,
+                      );
+                    }
+                  },
+                  child: Container(
+                    height: filterBtnSize,
+                    width: filterBtnSize,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFD42A30),
+                          AppColors.primary,
+                          Color(0xFF8E1519),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(r.w(12)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.tune_rounded,
+                      color: Colors.white,
+                      size: r.d(20).clamp(18.0, 24.0),
+                    ),
                   ),
                 ),
-              ),
             ],
           );
         },
@@ -572,90 +733,136 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
     );
   }
 
-  Widget _buildSearchField(Responsive r) {
+  Widget _buildPremiumSearchField(Responsive r) {
     final isFocused = widget.searchFocus.hasFocus;
     final hasText = widget.searchController.text.isNotEmpty;
     final barHeight = r.h(44).clamp(38.0, 52.0);
 
-    return Container(
-      height: barHeight,
-      decoration: BoxDecoration(
-        color: AppColors.input,
-        borderRadius: BorderRadius.circular(r.w(12)),
-        border: Border.all(
-          color: isFocused
-              ? AppColors.primary.withValues(alpha: 0.6)
-              : AppColors.border.withValues(alpha: 0.5),
-          width: isFocused ? 1.2 : 0.8,
-        ),
-        boxShadow: isFocused
-            ? [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  spreadRadius: 0,
-                ),
-              ]
-            : [],
-      ),
-      child: Row(
-        children: [
-          // Search icon prefix
-          Padding(
-            padding: EdgeInsets.only(left: r.w(12)),
-            child: Icon(
-              Icons.search_rounded,
+    return AnimatedBuilder(
+      animation: _glowAnim,
+      builder: (context, child) {
+        return Container(
+          height: barHeight,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF1E1E22),
+                const Color(0xFF1A1A1E),
+                isFocused
+                    ? AppColors.primary.withValues(alpha: 0.05)
+                    : const Color(0xFF18181C),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(r.w(14)),
+            border: Border.all(
               color: isFocused
-                  ? AppColors.primary.withValues(alpha: 0.9)
-                  : AppColors.textMuted,
-              size: r.d(20).clamp(18.0, 24.0),
+                  ? AppColors.primary.withValues(alpha: 0.55)
+                  : Colors.white.withValues(alpha: 0.06),
+              width: isFocused ? 1.2 : 0.8,
             ),
+            boxShadow: isFocused
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(
+                          alpha: _glowAnim.value),
+                      blurRadius: 20,
+                      spreadRadius: -2,
+                    ),
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.06),
+                      blurRadius: 40,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
-          SizedBox(width: r.w(8)),
-          // Text input
-          Expanded(
-            child: TextField(
-              controller: widget.searchController,
-              focusNode: widget.searchFocus,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: r.f(15).clamp(13.0, 18.0),
-              ),
-              decoration: InputDecoration(
-                hintText: 'Search movies, shows...',
-                hintStyle: TextStyle(
-                  color: AppColors.textMuted.withValues(alpha: 0.7),
-                  fontSize: r.f(14).clamp(12.0, 17.0),
-                ),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(vertical: r.h(12)),
-                isDense: true,
-              ),
-              onChanged: widget.onSearchChanged,
-              onSubmitted: (_) => widget.searchFocus.unfocus(),
-            ),
-          ),
-          // Close button (only when text present)
-          if (hasText)
-            GestureDetector(
-              onTap: _onCrossTapped,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: r.w(10)),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.close_rounded,
-                    color: AppColors.textSecondary,
-                    size: r.d(16).clamp(14.0, 20.0),
-                  ),
+          child: child,
+        );
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(r.w(14)),
+        child: Row(
+          children: [
+            // Search icon prefix
+            Padding(
+              padding: EdgeInsets.only(left: r.w(14)),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                child: Icon(
+                  Icons.search_rounded,
+                  color: isFocused
+                      ? AppColors.primary.withValues(alpha: 0.9)
+                      : Colors.white.withValues(alpha: 0.25),
+                  size: r.d(20).clamp(18.0, 24.0),
                 ),
               ),
             ),
-        ],
+            SizedBox(width: r.w(10)),
+            // Text input — properly constrained single-line
+            Expanded(
+              child: TextField(
+                controller: widget.searchController,
+                focusNode: widget.searchFocus,
+                maxLines: 1,
+                textAlignVertical: TextAlignVertical.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: r.f(14).clamp(13.0, 17.0),
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.1,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search movies, shows...',
+                  hintStyle: GoogleFonts.inter(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    fontSize: r.f(14).clamp(12.0, 16.0),
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.2,
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(
+                    vertical: barHeight / 2 - 10,
+                  ),
+                  isCollapsed: true,
+                ),
+                onChanged: widget.onSearchChanged,
+                onSubmitted: (_) => widget.searchFocus.unfocus(),
+              ),
+            ),
+            // Close button (only when text present)
+            if (hasText)
+              GestureDetector(
+                onTap: _onCrossTapped,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: r.w(10)),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: Colors.white.withValues(alpha: 0.5),
+                      size: r.d(14).clamp(12.0, 18.0),
+                    ),
+                  ),
+                ),
+              )
+            else
+              SizedBox(width: r.w(12)),
+          ],
+        ),
       ),
     );
   }
@@ -669,6 +876,7 @@ class PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
   final String contextId;
+  final bool showFilterButton;
 
   PinnedHeaderDelegate({
     required this.title,
@@ -676,6 +884,7 @@ class PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.searchFocus,
     required this.onSearchChanged,
     this.contextId = 'explore',
+    this.showFilterButton = true,
   });
 
   @override
@@ -693,12 +902,14 @@ class PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
       searchFocus: searchFocus,
       onSearchChanged: onSearchChanged,
       contextId: contextId,
+      showFilterButton: showFilterButton,
     );
   }
 
   @override
   bool shouldRebuild(covariant PinnedHeaderDelegate oldDelegate) {
-    return title != oldDelegate.title;
+    return title != oldDelegate.title ||
+        showFilterButton != oldDelegate.showFilterButton;
   }
 }
 
@@ -804,6 +1015,7 @@ class CategoryHeader extends ConsumerWidget {
                   child: TextField(
                     controller: searchController,
                     focusNode: searchFocus,
+                    maxLines: 1,
                     style: const TextStyle(color: Colors.white, fontSize: 15),
                     decoration: InputDecoration(
                       hintText: 'Search',

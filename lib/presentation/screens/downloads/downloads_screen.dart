@@ -37,6 +37,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     _updateSub =
         DownloadManager.instance.updateStream.listen(_onDownloadUpdate);
     _searchFocus.addListener(_onFocusChange);
+    _scrollController.addListener(_onScroll);
 
     // Register the controller for Downloads tab (index 3)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -45,16 +46,27 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   void _onFocusChange() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
+    }
+  }
+
+  void _onScroll() {
+    if (_searchFocus.hasFocus) {
+      _searchFocus.unfocus();
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     ref.read(scrollProvider).unregister(3);
     _scrollController.dispose();
     _updateSub?.cancel();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
+    ref.read(searchFocusProvider.notifier).state = false;
     _searchFocus.dispose();
     super.dispose();
   }
@@ -123,6 +135,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.background,
+        resizeToAvoidBottomInset: false,
         body: SafeArea(
           child: GestureDetector(
             onTap: () => _searchFocus.unfocus(),
@@ -130,14 +143,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                // Title scrolls with content
-                const SliverToBoxAdapter(
-                  child: CategoryTitle(title: 'Downloads'),
-                ),
-                // Search bar floats (hides on scroll down, shows on scroll up)
+                // Pinned header row — same style as Explore page
                 SliverPersistentHeader(
-                  floating: true,
-                  delegate: FloatingSearchBarDelegate(
+                  pinned: true,
+                  delegate: PinnedHeaderDelegate(
+                    title: 'Downloads',
                     searchController: _searchController,
                     searchFocus: _searchFocus,
                     onSearchChanged: _onSearchChanged,

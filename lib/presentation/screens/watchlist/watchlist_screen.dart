@@ -34,10 +34,19 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     }
     _searchFocus.addListener(_onFocusChange);
 
+    // Auto-dismiss keyboard on scroll
+    _scrollController.addListener(_onScroll);
+
     // Register the controller for Favorites tab (index 2)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(scrollProvider).register(2, _scrollController);
     });
+  }
+
+  void _onScroll() {
+    if (_searchFocus.hasFocus) {
+      _searchFocus.unfocus();
+    }
   }
 
   void _onFocusChange() {
@@ -50,10 +59,12 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     ref.read(scrollProvider).unregister(2);
     _scrollController.dispose();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
+    ref.read(searchFocusProvider.notifier).state = false;
     _searchFocus.dispose();
     super.dispose();
   }
@@ -70,6 +81,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
@@ -77,21 +89,18 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Title scrolls with content
-              const SliverToBoxAdapter(
-                child: CategoryTitle(title: 'Favourites'),
-              ),
-              // Search bar floats (hides on scroll down, shows on scroll up)
+              // Pinned header row — same style as Explore page
               SliverPersistentHeader(
-                floating: true,
-                delegate: FloatingSearchBarDelegate(
+                pinned: true,
+                delegate: PinnedHeaderDelegate(
+                  title: 'Favourites',
                   searchController: _searchController,
                   searchFocus: _searchFocus,
                   onSearchChanged: _onSearchChanged,
                   contextId: 'watchlist',
                 ),
               ),
-              // Filter chips
+              // Filter chips — scroll normally behind pinned header
               const SliverToBoxAdapter(
                 child: CategoryFilterChips(contextId: 'watchlist'),
               ),
