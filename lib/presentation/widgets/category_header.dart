@@ -169,8 +169,12 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar>
                 child: TextField(
                   controller: widget.searchController,
                   focusNode: widget.searchFocus,
-                  maxLines: 1,
+                  expands: true,
+                  maxLines: null,
+                  minLines: null,
                   textAlignVertical: TextAlignVertical.center,
+                  showCursor: true,
+                  cursorColor: AppColors.primary,
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: r.f(14).clamp(13.0, 17.0),
@@ -232,8 +236,8 @@ class _CategorySearchBarState extends ConsumerState<CategorySearchBar>
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                    isCollapsed: false,
+                    contentPadding: EdgeInsets.symmetric(horizontal: r.w(4)),
+                    isDense: true,
                   ),
                   onChanged: (val) {
                     widget.onSearchChanged(val);
@@ -789,8 +793,12 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
         child: TextField(
           controller: widget.searchController,
           focusNode: widget.searchFocus,
-          maxLines: 1,
+          expands: true,
+          maxLines: null,
+          minLines: null,
           textAlignVertical: TextAlignVertical.center,
+          showCursor: true,
+          cursorColor: AppColors.primary,
           style: GoogleFonts.inter(
             color: Colors.white,
             fontSize: r.f(14).clamp(13.0, 17.0),
@@ -849,8 +857,8 @@ class _PinnedHeaderRowState extends ConsumerState<PinnedHeaderRow>
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
-            isCollapsed: false,
+            contentPadding: EdgeInsets.symmetric(horizontal: r.w(4)),
+            isDense: true,
           ),
           onChanged: widget.onSearchChanged,
           onSubmitted: (_) => widget.searchFocus.unfocus(),
