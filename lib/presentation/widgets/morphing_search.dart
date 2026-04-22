@@ -433,6 +433,7 @@ class _MorphingSearchHeaderRowState
                         ),
                         onChanged: widget.onSearchChanged,
                         onSubmitted: (_) => widget.searchFocus.unfocus(),
+                        onTapOutside: (_) => widget.searchFocus.unfocus(),
                       ),
                     ),
                     // Clear text button removed per design

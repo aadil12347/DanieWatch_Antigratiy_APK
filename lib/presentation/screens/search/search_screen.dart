@@ -37,6 +37,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// Tracks the last tab index we synced to filters, to avoid redundant updates
   int _lastSyncedTabIndex = 0;
 
+
+
   @override
   void initState() {
     super.initState();
@@ -44,7 +46,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     _tabController = TabController(
       length: TopNavbar.items.length,
       vsync: this,
-      initialIndex: 0, // Explore is default
+      initialIndex: 0,
+      animationDuration: Duration.zero, // Instant tab switch — no slide
     );
 
     // Sync tab changes → update search provider filters
@@ -89,6 +92,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   void _onTabChanged() {
     if (_isProgrammatic) return;
+
     // Only sync when the tab has settled (animation complete)
     if (!_tabController.indexIsChanging) {
       final newIndex = _tabController.index;
@@ -145,61 +149,77 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     // That was causing the tab to fight user swipes. External sync is
     // handled once in initState via _syncTabToFiltersOnce().
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
-        child: GestureDetector(
-          onTap: () => _searchFocus.unfocus(),
-          child: Column(
-            children: [
-              // ── Pinned header — always visible ──
-              MorphingSearchHeaderRow(
-                title: activeTitle,
-                searchController: _searchController,
-                searchFocus: _searchFocus,
-                onSearchChanged: _onSearchChanged,
-                contextId: 'explore',
-                showFilterButton: true,
-              ),
-              // Extra padding so cards don't appear too close behind the header
-              Container(
-                height: 6,
-                color: AppColors.background,
-              ),
-              // ── Scrollable content: TopNavbar scrolls away, TabBarView stays ──
-              Expanded(
-                child: NestedScrollView(
-                  controller: _outerScrollController,
-                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                    // Top navbar — scrolls with content (NOT pinned)
-                    SliverToBoxAdapter(
-                      child: TopNavbar(tabController: _tabController),
+    final bool isSearchActive = _searchFocus.hasFocus ||
+        _searchController.text.isNotEmpty;
+
+    return PopScope(
+      canPop: !isSearchActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && isSearchActive) {
+          // Close search instead of navigating back
+          _searchController.clear();
+          _onSearchChanged('');
+          _searchFocus.unfocus();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        resizeToAvoidBottomInset: false,
+        body: SafeArea(
+          child: GestureDetector(
+            onTap: () => _searchFocus.unfocus(),
+            child: Column(
+              children: [
+                // ── Pinned header — always visible ──
+                MorphingSearchHeaderRow(
+                  title: activeTitle,
+                  searchController: _searchController,
+                  searchFocus: _searchFocus,
+                  onSearchChanged: _onSearchChanged,
+                  contextId: 'explore',
+                  showFilterButton: true,
+                ),
+                // Extra padding so cards don't appear too close behind the header
+                Container(
+                  height: 6,
+                  color: AppColors.background,
+                ),
+                // ── Scrollable content: TopNavbar scrolls away, content stays ──
+                Expanded(
+                  child: NestedScrollView(
+                    controller: _outerScrollController,
+                    headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                      // Top navbar — scrolls with content (NOT pinned)
+                      SliverToBoxAdapter(
+                        child: TopNavbar(tabController: _tabController),
+                      ),
+                      // Filter chips — scrolls with content
+                      const SliverToBoxAdapter(
+                        child: CategoryFilterChips(),
+                      ),
+                      // Small gap between navbar area and grid content
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: 8),
+                      ),
+                    ],
+                    // Instant tab switch — no slide animation, pages kept alive
+                    body: TabBarView(
+                      controller: _tabController,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: TopNavbar.items.map((label) {
+                        return _CategoryPage(
+                          key: PageStorageKey('cat_$label'),
+                          categoryLabel: label,
+                          searchController: _searchController,
+                          searchFocus: _searchFocus,
+                          onSearchChanged: _onSearchChanged,
+                        );
+                      }).toList(),
                     ),
-                    // Filter chips — scrolls with content
-                    const SliverToBoxAdapter(
-                      child: CategoryFilterChips(),
-                    ),
-                    // Small gap between navbar area and grid content
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: 8),
-                    ),
-                  ],
-                  body: TabBarView(
-                    controller: _tabController,
-                    children: TopNavbar.items.map((label) {
-                      return _CategoryPage(
-                        key: PageStorageKey('cat_$label'),
-                        categoryLabel: label,
-                        searchController: _searchController,
-                        searchFocus: _searchFocus,
-                        onSearchChanged: _onSearchChanged,
-                      );
-                    }).toList(),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -235,7 +255,6 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
-
     final searchState = ref.watch(searchProvider('explore'));
     final index = ref.watch(manifestIndexProvider);
 
