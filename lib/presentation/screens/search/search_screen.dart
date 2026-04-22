@@ -47,7 +47,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       length: TopNavbar.items.length,
       vsync: this,
       initialIndex: 0,
-      animationDuration: Duration.zero, // Instant tab switch — no slide
+      animationDuration: const Duration(milliseconds: 300), // Smooth red line slide
     );
 
     // Sync tab changes → update search provider filters
