@@ -5,6 +5,7 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../providers/search_provider.dart';
 import '../providers/filter_modal_provider.dart';
+import 'morphing_search.dart';
 
 /// The page title row — scrolls naturally with content.
 class CategoryTitle extends StatelessWidget {
@@ -896,7 +897,7 @@ class PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return PinnedHeaderRow(
+    return MorphingSearchHeaderRow(
       title: title,
       searchController: searchController,
       searchFocus: searchFocus,
