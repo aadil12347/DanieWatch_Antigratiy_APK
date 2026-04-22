@@ -243,7 +243,7 @@ class _MorphingSearchHeaderRowState
 
     return Container(
       color: AppColors.background,
-      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: r.h(5)),
+      padding: EdgeInsets.fromLTRB(hPad, r.h(5), hPad, r.h(12)),
       child: LayoutBuilder(
         builder: (context, box) {
           final filterW =

@@ -27,11 +27,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  final ScrollController _outerScrollController = ScrollController();
 
   late TabController _tabController;
 
   /// Tracks whether we are programmatically changing tabs (to avoid circular updates)
   bool _isProgrammatic = false;
+
+  /// Tracks the last tab index we synced to filters, to avoid redundant updates
+  int _lastSyncedTabIndex = 0;
 
   @override
   void initState() {
@@ -52,17 +56,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     }
     _searchFocus.addListener(_onFocusChange);
 
-    // Register scroll for Explore tab (index 1 in bottom nav)
+    // Register outer scroll controller for scroll-to-top (Explore = bottom nav index 1)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(scrollProvider).register(1, ScrollController());
+      ref.read(scrollProvider).register(1, _outerScrollController);
+      // Handle initial sync from external navigation (e.g. Home "See All")
+      _syncTabToFiltersOnce();
     });
+  }
+
+  /// One-time sync on init for external filter changes (e.g. Home "See All")
+  void _syncTabToFiltersOnce() {
+    final searchState = ref.read(searchProvider('explore'));
+    final cats = searchState.filters.categories;
+    int targetIndex = 0;
+
+    if (cats.isNotEmpty) {
+      var cat = cats.first;
+      if (cat == 'K-Drama') cat = 'Korean';
+      final idx = TopNavbar.items.indexOf(cat);
+      if (idx >= 0) targetIndex = idx;
+    }
+
+    if (_tabController.index != targetIndex) {
+      _isProgrammatic = true;
+      _tabController.animateTo(targetIndex);
+      _lastSyncedTabIndex = targetIndex;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _isProgrammatic = false;
+      });
+    }
   }
 
   void _onTabChanged() {
     if (_isProgrammatic) return;
-    // Fires on both tap and animation completion
+    // Only sync when the tab has settled (animation complete)
     if (!_tabController.indexIsChanging) {
-      _syncFiltersToTab(_tabController.index);
+      final newIndex = _tabController.index;
+      if (newIndex != _lastSyncedTabIndex) {
+        _lastSyncedTabIndex = newIndex;
+        _syncFiltersToTab(newIndex);
+      }
     }
   }
 
@@ -87,6 +120,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     _searchFocus.removeListener(_onFocusChange);
     ref.read(searchFocusProvider.notifier).state = false;
     _searchFocus.dispose();
+    ref.read(scrollProvider).unregister(1);
+    _outerScrollController.dispose();
     super.dispose();
   }
 
@@ -106,8 +141,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             ? searchState.filters.genres.first
             : 'Explore';
 
-    // Sync tab controller to match external filter changes (e.g. from Home screen "See All")
-    _syncTabToFilters(searchState);
+    // NOTE: We do NOT call _syncTabToFilters here in build() anymore.
+    // That was causing the tab to fight user swipes. External sync is
+    // handled once in initState via _syncTabToFiltersOnce().
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -117,7 +153,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           onTap: () => _searchFocus.unfocus(),
           child: Column(
             children: [
-              // Fixed header — pinned above everything
+              // ── Pinned header — always visible ──
               MorphingSearchHeaderRow(
                 title: activeTitle,
                 searchController: _searchController,
@@ -126,24 +162,41 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                 contextId: 'explore',
                 showFilterButton: true,
               ),
-              // Top navbar — pinned below header
-              TopNavbar(tabController: _tabController),
-              // Filter chips — pinned below navbar (only shows user-applied filters)
-              const CategoryFilterChips(),
-              // Padding between header area and content
-              const SizedBox(height: 8),
-              // Swipeable page content
+              // Extra padding so cards don't appear too close behind the header
+              Container(
+                height: 6,
+                color: AppColors.background,
+              ),
+              // ── Scrollable content: TopNavbar scrolls away, TabBarView stays ──
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: TopNavbar.items.map((label) {
-                    return _CategoryPage(
-                      categoryLabel: label,
-                      searchController: _searchController,
-                      searchFocus: _searchFocus,
-                      onSearchChanged: _onSearchChanged,
-                    );
-                  }).toList(),
+                child: NestedScrollView(
+                  controller: _outerScrollController,
+                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                    // Top navbar — scrolls with content (NOT pinned)
+                    SliverToBoxAdapter(
+                      child: TopNavbar(tabController: _tabController),
+                    ),
+                    // Filter chips — scrolls with content
+                    const SliverToBoxAdapter(
+                      child: CategoryFilterChips(),
+                    ),
+                    // Small gap between navbar area and grid content
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: 8),
+                    ),
+                  ],
+                  body: TabBarView(
+                    controller: _tabController,
+                    children: TopNavbar.items.map((label) {
+                      return _CategoryPage(
+                        key: PageStorageKey('cat_$label'),
+                        categoryLabel: label,
+                        searchController: _searchController,
+                        searchFocus: _searchFocus,
+                        onSearchChanged: _onSearchChanged,
+                      );
+                    }).toList(),
+                  ),
                 ),
               ),
             ],
@@ -151,30 +204,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         ),
       ),
     );
-  }
-
-  /// Keep tab controller in sync if filters were changed externally
-  /// (e.g. navigating from Home → See All for a category).
-  void _syncTabToFilters(SearchState searchState) {
-    final cats = searchState.filters.categories;
-    int targetIndex = 0; // default to Explore
-
-    if (cats.isNotEmpty) {
-      var cat = cats.first;
-      // Map alternative names to navbar labels
-      if (cat == 'K-Drama') cat = 'Korean';
-      final idx = TopNavbar.items.indexOf(cat);
-      if (idx >= 0) targetIndex = idx;
-    }
-
-    if (_tabController.index != targetIndex && !_tabController.indexIsChanging) {
-      _isProgrammatic = true;
-      _tabController.animateTo(targetIndex);
-      // Reset flag after animation completes
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _isProgrammatic = false;
-      });
-    }
   }
 }
 
@@ -187,6 +216,7 @@ class _CategoryPage extends ConsumerStatefulWidget {
   final Function(String) onSearchChanged;
 
   const _CategoryPage({
+    super.key,
     required this.categoryLabel,
     required this.searchController,
     required this.searchFocus,
@@ -199,29 +229,8 @@ class _CategoryPage extends ConsumerStatefulWidget {
 
 class _CategoryPageState extends ConsumerState<_CategoryPage>
     with AutomaticKeepAliveClientMixin {
-  final ScrollController _scrollController = ScrollController();
-
   @override
   bool get wantKeepAlive => true;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (widget.searchFocus.hasFocus) {
-      widget.searchFocus.unfocus();
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -239,11 +248,9 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 
     return categoryItems.when(
       loading: () => CustomScrollView(
-        controller: _scrollController,
         slivers: [_buildShimmerGrid()],
       ),
       error: (err, _) => CustomScrollView(
-        controller: _scrollController,
         slivers: [
           SliverToBoxAdapter(child: Center(child: Text('Error: $err'))),
         ],
@@ -271,7 +278,8 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
             : items;
 
         return CustomScrollView(
-          controller: _scrollController,
+          // Let NestedScrollView manage the scroll controller
+          key: PageStorageKey('scroll_${widget.categoryLabel}'),
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: _buildContentSlivers(
             searchState,
