@@ -23,140 +23,80 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  final ScrollController _scrollController = ScrollController();
+
+  late TabController _tabController;
+
+  /// Tracks whether we are programmatically changing tabs (to avoid circular updates)
+  bool _isProgrammatic = false;
 
   @override
   void initState() {
     super.initState();
+
+    _tabController = TabController(
+      length: TopNavbar.items.length,
+      vsync: this,
+      initialIndex: 0, // Explore is default
+    );
+
+    // Sync tab changes → update search provider filters
+    _tabController.addListener(_onTabChanged);
+
     final currentQuery = ref.read(searchProvider('explore')).query;
     if (currentQuery.isNotEmpty) {
       _searchController.text = currentQuery;
     }
     _searchFocus.addListener(_onFocusChange);
 
-    // Auto-dismiss keyboard on scroll
-    _scrollController.addListener(_onScroll);
-
-    // Register the controller for Explore tab (index 1)
+    // Register scroll for Explore tab (index 1 in bottom nav)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(scrollProvider).register(1, _scrollController);
+      ref.read(scrollProvider).register(1, ScrollController());
     });
   }
 
-  void _onScroll() {
-    if (_searchFocus.hasFocus) {
-      _searchFocus.unfocus();
+  void _onTabChanged() {
+    if (_isProgrammatic) return;
+    // Fires on both tap and animation completion
+    if (!_tabController.indexIsChanging) {
+      _syncFiltersToTab(_tabController.index);
     }
+  }
+
+  /// Update search provider filters based on the currently active tab
+  void _syncFiltersToTab(int index) {
+    final label = TopNavbar.items[index];
+    ref.read(searchProvider('explore').notifier).setNavCategory(label);
   }
 
   void _onFocusChange() {
     if (mounted) {
       setState(() {});
-      // Sync focus state to global provider for AppShell navigation handling
       ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
     }
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    ref.read(scrollProvider).unregister(1);
-    _scrollController.dispose();
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
-    // Ensure focus state is cleared when screen is removed
     ref.read(searchFocusProvider.notifier).state = false;
     _searchFocus.dispose();
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
-    // Always use the unified search method which auto-detects category context
     ref.read(searchProvider('explore').notifier).search(query);
   }
 
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider('explore'));
-    final globalItemsAsync = ref.watch(globalItemsProvider);
-    final index = ref.watch(manifestIndexProvider);
-
-    final hasSearch = searchState.query.trim().isNotEmpty;
-    final hasFilters = searchState.filters.hasActiveFilters;
-    final showResults = hasSearch || hasFilters;
-
-    // --- Dynamic Data Sourcing ---
-    // Switch the base items based on the active top-level category
-    final filterCat = searchState.filters.categories;
-    AsyncValue<List<ManifestItem>> categoryItems;
-    
-    if (filterCat.contains('Korean')) {
-      categoryItems = ref.watch(koreanProvider);
-    } else if (filterCat.contains('Anime')) {
-      categoryItems = ref.watch(animeProvider);
-    } else if (filterCat.contains('Bollywood')) {
-      categoryItems = ref.watch(bollywoodProvider);
-    } else if (filterCat.contains('Hollywood')) {
-      categoryItems = ref.watch(hollywoodProvider);
-    } else if (filterCat.contains('Chinese')) {
-      categoryItems = ref.watch(chineseProvider);
-    } else if (filterCat.contains('Punjabi')) {
-      categoryItems = ref.watch(punjabiProvider);
-    } else {
-      categoryItems = globalItemsAsync;
-    }
-
-    return categoryItems.when(
-      loading: () => _buildScaffoldWithContent([_buildShimmerGrid()], [], searchState),
-      error: (err, _) => _buildScaffoldWithContent([
-        SliverToBoxAdapter(child: Center(child: Text('Error: $err')))
-      ], [], searchState),
-      data: (items) {
-        // Determine the enforced category for FilterUtils
-        // For category pages (Anime, Korean, etc.), enforce category
-        // For Explore and genre pages, don't enforce (search all)
-        String? enforceCategory;
-        const categoryPages = {
-          'Anime', 'Korean', 'K-Drama', 'Bollywood',
-          'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
-        };
-        if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
-          enforceCategory = filterCat.first;
-        }
-
-        // Apply filters through FilterUtils when any filter or search is active
-        final itemsToDisplay = showResults
-            ? FilterUtils.getFilteredItems(
-                allItems: items,
-                searchState: searchState,
-                index: index,
-                enforceCategory: enforceCategory,
-              )
-            : items;
-
-        return _buildScaffoldWithContent(
-          _buildContentSlivers(
-            searchState, 
-            hasSearch, 
-            showResults, 
-            itemsToDisplay, 
-            items
-          ),
-          items,
-          searchState,
-        );
-      },
-    );
-  }
-
-  Widget _buildScaffoldWithContent(
-    List<Widget> slivers, 
-    List<ManifestItem> currentCategoryItems,
-    SearchState searchState,
-  ) {
     final activeCategories = searchState.filters.categories;
 
     // Determine the active title
@@ -166,6 +106,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ? searchState.filters.genres.first
             : 'Explore';
 
+    // Sync tab controller to match external filter changes (e.g. from Home screen "See All")
+    _syncTabToFilters(searchState);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false,
@@ -174,8 +117,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           onTap: () => _searchFocus.unfocus(),
           child: Column(
             children: [
-              // Fixed header — outside CustomScrollView to avoid
-              // semantics.parentDataDirty assertion crash
+              // Fixed header — pinned above everything
               MorphingSearchHeaderRow(
                 title: activeTitle,
                 searchController: _searchController,
@@ -184,18 +126,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 contextId: 'explore',
                 showFilterButton: true,
               ),
-              // Scrollable content
+              // Top navbar — pinned below header
+              TopNavbar(tabController: _tabController),
+              // Filter chips — pinned below navbar (only shows user-applied filters)
+              const CategoryFilterChips(),
+              // Padding between header area and content
+              const SizedBox(height: 8),
+              // Swipeable page content
               Expanded(
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    // TopNavbar — scrolls away on swipe up
-                    const SliverToBoxAdapter(child: TopNavbar()),
-                    // Filter chips — scroll normally
-                    const SliverToBoxAdapter(child: CategoryFilterChips()),
-                    ...slivers,
-                  ],
+                child: TabBarView(
+                  controller: _tabController,
+                  children: TopNavbar.items.map((label) {
+                    return _CategoryPage(
+                      categoryLabel: label,
+                      searchController: _searchController,
+                      searchFocus: _searchFocus,
+                      onSearchChanged: _onSearchChanged,
+                    );
+                  }).toList(),
                 ),
               ),
             ],
@@ -203,6 +151,149 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
       ),
     );
+  }
+
+  /// Keep tab controller in sync if filters were changed externally
+  /// (e.g. navigating from Home → See All for a category).
+  void _syncTabToFilters(SearchState searchState) {
+    final cats = searchState.filters.categories;
+    int targetIndex = 0; // default to Explore
+
+    if (cats.isNotEmpty) {
+      var cat = cats.first;
+      // Map alternative names to navbar labels
+      if (cat == 'K-Drama') cat = 'Korean';
+      final idx = TopNavbar.items.indexOf(cat);
+      if (idx >= 0) targetIndex = idx;
+    }
+
+    if (_tabController.index != targetIndex && !_tabController.indexIsChanging) {
+      _isProgrammatic = true;
+      _tabController.animateTo(targetIndex);
+      // Reset flag after animation completes
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _isProgrammatic = false;
+      });
+    }
+  }
+}
+
+/// Individual content page for each category tab.
+/// Each page has its own scroll controller and shows a grid of items.
+class _CategoryPage extends ConsumerStatefulWidget {
+  final String categoryLabel;
+  final TextEditingController searchController;
+  final FocusNode searchFocus;
+  final Function(String) onSearchChanged;
+
+  const _CategoryPage({
+    required this.categoryLabel,
+    required this.searchController,
+    required this.searchFocus,
+    required this.onSearchChanged,
+  });
+
+  @override
+  ConsumerState<_CategoryPage> createState() => _CategoryPageState();
+}
+
+class _CategoryPageState extends ConsumerState<_CategoryPage>
+    with AutomaticKeepAliveClientMixin {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (widget.searchFocus.hasFocus) {
+      widget.searchFocus.unfocus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // Required by AutomaticKeepAliveClientMixin
+
+    final searchState = ref.watch(searchProvider('explore'));
+    final index = ref.watch(manifestIndexProvider);
+
+    final hasSearch = searchState.query.trim().isNotEmpty;
+    final hasFilters = searchState.filters.hasActiveFilters;
+    final showResults = hasSearch || hasFilters;
+
+    // Get the correct data source for this category
+    final categoryItems = _getCategoryItems(widget.categoryLabel);
+
+    return categoryItems.when(
+      loading: () => CustomScrollView(
+        controller: _scrollController,
+        slivers: [_buildShimmerGrid()],
+      ),
+      error: (err, _) => CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          SliverToBoxAdapter(child: Center(child: Text('Error: $err'))),
+        ],
+      ),
+      data: (items) {
+        // Determine enforced category for FilterUtils
+        String? enforceCategory;
+        const categoryPages = {
+          'Anime', 'Korean', 'K-Drama', 'Bollywood',
+          'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
+        };
+        final filterCat = searchState.filters.categories;
+        if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
+          enforceCategory = filterCat.first;
+        }
+
+        // Apply filters when any filter or search is active
+        final itemsToDisplay = showResults
+            ? FilterUtils.getFilteredItems(
+                allItems: items,
+                searchState: searchState,
+                index: index,
+                enforceCategory: enforceCategory,
+              )
+            : items;
+
+        return CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: _buildContentSlivers(
+            searchState,
+            hasSearch,
+            showResults,
+            itemsToDisplay,
+            items,
+          ),
+        );
+      },
+    );
+  }
+
+  AsyncValue<List<ManifestItem>> _getCategoryItems(String label) {
+    if (label == 'Korean') return ref.watch(koreanProvider);
+    if (label == 'Anime') return ref.watch(animeProvider);
+    if (label == 'Bollywood') return ref.watch(bollywoodProvider);
+    if (label == 'Hollywood') return ref.watch(hollywoodProvider);
+    if (label == 'Chinese') return ref.watch(chineseProvider);
+    if (label == 'Punjabi') return ref.watch(punjabiProvider);
+    // Explore — show all items
+    return ref.watch(globalItemsProvider);
   }
 
   List<Widget> _buildContentSlivers(
@@ -242,7 +333,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final gridSpacing = r.w(28).clamp(16.0, 36.0);
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(
-          gridPad, r.h(12), gridPad, MediaQuery.paddingOf(context).bottom + r.h(100)),
+          gridPad, r.h(4), gridPad, MediaQuery.paddingOf(context).bottom + r.h(100)),
       sliver: SliverGrid(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: r.gridColumns,
@@ -270,7 +361,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final gridPad = r.w(28).clamp(16.0, 40.0);
     final gridSpacing = r.w(28).clamp(16.0, 36.0);
     return SliverPadding(
-      padding: EdgeInsets.fromLTRB(gridPad, r.h(12), gridPad, r.h(24)),
+      padding: EdgeInsets.fromLTRB(gridPad, r.h(4), gridPad, r.h(24)),
       sliver: SliverGrid(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: r.gridColumns,

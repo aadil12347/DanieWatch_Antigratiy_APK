@@ -56,12 +56,15 @@ class SearchState {
   final List<ManifestSearchResult> results;
   final bool isSearching;
   final SearchFilters filters;
+  /// Category set via navbar navigation (should NOT appear as filter chip)
+  final String? navCategory;
 
   const SearchState({
     this.query = '',
     this.results = const [],
     this.isSearching = false,
     this.filters = const SearchFilters(),
+    this.navCategory,
   });
 
   SearchState copyWith({
@@ -69,12 +72,16 @@ class SearchState {
     List<ManifestSearchResult>? results,
     bool? isSearching,
     SearchFilters? filters,
+    String? Function()? navCategoryOverride,
   }) {
     return SearchState(
       query: query ?? this.query,
       results: results ?? this.results,
       isSearching: isSearching ?? this.isSearching,
       filters: filters ?? this.filters,
+      navCategory: navCategoryOverride != null
+          ? navCategoryOverride()
+          : this.navCategory,
     );
   }
 }
@@ -185,6 +192,38 @@ class SearchNotifier extends StateNotifier<SearchState> {
     // re-run the search with the new category scope
     if (state.query.trim().isNotEmpty &&
         newFilters.categories != oldCategories) {
+      search(state.query);
+    }
+  }
+
+  /// Set category via navbar navigation — updates filters but marks
+  /// the category as "nav-originated" so filter chips won't display it.
+  void setNavCategory(String? category) {
+    if (category == null || category == 'Explore') {
+      // Clear nav category and reset filters
+      state = state.copyWith(
+        filters: const SearchFilters(),
+        navCategoryOverride: () => null,
+      );
+    } else {
+      // Map navbar labels to filter category values
+      const categoryMap = {
+        'Korean': 'Korean',
+        'Anime': 'Anime',
+        'Bollywood': 'Bollywood',
+        'Hollywood': 'Hollywood',
+        'Chinese': 'Chinese',
+        'Punjabi': 'Punjabi',
+      };
+      final filterCat = categoryMap[category] ?? category;
+      state = state.copyWith(
+        filters: SearchFilters(categories: {filterCat}),
+        navCategoryOverride: () => filterCat,
+      );
+    }
+
+    // Re-run search if query is active
+    if (state.query.trim().isNotEmpty) {
       search(state.query);
     }
   }

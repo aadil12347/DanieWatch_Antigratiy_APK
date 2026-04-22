@@ -311,7 +311,11 @@ class CategoryFilterChips extends ConsumerWidget {
     final labels = <String>[];
     final f = s.filters;
 
-    labels.addAll(f.categories);
+    // Exclude the navbar-navigated category from chip display
+    final navCat = s.navCategory;
+    for (final cat in f.categories) {
+      if (cat != navCat) labels.add(cat);
+    }
     labels.addAll(f.regions);
     labels.addAll(f.genres);
     labels.addAll(f.years);
@@ -946,7 +950,10 @@ class CategoryHeader extends ConsumerWidget {
     final labels = <String>[];
     final f = s.filters;
 
-    labels.addAll(f.categories);
+    final navCat = s.navCategory;
+    for (final cat in f.categories) {
+      if (cat != navCat) labels.add(cat);
+    }
     labels.addAll(f.regions);
     labels.addAll(f.genres);
     labels.addAll(f.years);
