@@ -304,3 +304,6 @@ final searchExpandedProvider = StateProvider<bool>((ref) => false);
 
 /// Tracks if the search field in SearchScreen has active focus
 final searchFocusProvider = StateProvider<bool>((ref) => false);
+
+/// Tracks if the morphing search bar is visually open (expanded)
+final searchBarOpenProvider = StateProvider<bool>((ref) => false);

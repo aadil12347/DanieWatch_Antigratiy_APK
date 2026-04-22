@@ -149,7 +149,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     // That was causing the tab to fight user swipes. External sync is
     // handled once in initState via _syncTabToFiltersOnce().
 
-    final bool isSearchActive = _searchFocus.hasFocus ||
+    final bool isSearchBarOpen = ref.watch(searchBarOpenProvider);
+    final bool isSearchActive = isSearchBarOpen ||
+        _searchFocus.hasFocus ||
         _searchController.text.isNotEmpty;
 
     return PopScope(

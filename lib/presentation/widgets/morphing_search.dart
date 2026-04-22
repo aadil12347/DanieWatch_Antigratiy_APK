@@ -151,6 +151,9 @@ class _MorphingSearchHeaderRowState
       _morphCtrl.value = 1.0;
       _expandCtrl.value = 1.0;
       _closeCtrl.value = 1.0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(searchBarOpenProvider.notifier).state = true;
+      });
     }
     widget.searchFocus.addListener(_onFocusChange);
   }
@@ -187,6 +190,7 @@ class _MorphingSearchHeaderRowState
     if (_animating) return;
     _animating = true;
     setState(() => _isOpen = true);
+    ref.read(searchBarOpenProvider.notifier).state = true;
 
     // Phase 1: Handle disappears (backin curve)
     await _morphCtrl.animateTo(1.0, curve: Curves.easeInBack);
@@ -217,7 +221,10 @@ class _MorphingSearchHeaderRowState
     // Phase 2: Handle reappears
     await _morphCtrl.animateTo(0.0, curve: Curves.easeInOut);
 
-    if (mounted) setState(() => _isOpen = false);
+    if (mounted) {
+      setState(() => _isOpen = false);
+      ref.read(searchBarOpenProvider.notifier).state = false;
+    }
     _animating = false;
   }
 
@@ -241,70 +248,78 @@ class _MorphingSearchHeaderRowState
     final barH = filterSize; // Same height as filter button
     final hPad = r.w(16);
 
-    return Container(
-      color: AppColors.background,
-      padding: EdgeInsets.fromLTRB(hPad, r.h(5), hPad, r.h(12)),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final filterW =
-              widget.showFilterButton ? filterSize + r.w(10) : 0.0;
-          final mainW = box.maxWidth - filterW;
+    return TapRegion(
+      onTapOutside: (_) {
+        // Close search if open, empty, and not animating
+        if (_isOpen && !_animating && widget.searchController.text.isEmpty) {
+          _closeSearch();
+        }
+      },
+      child: Container(
+        color: AppColors.background,
+        padding: EdgeInsets.fromLTRB(hPad, r.h(5), hPad, r.h(12)),
+        child: LayoutBuilder(
+          builder: (context, box) {
+            final filterW =
+                widget.showFilterButton ? filterSize + r.w(10) : 0.0;
+            final mainW = box.maxWidth - filterW;
 
-          return Row(
-            children: [
-              SizedBox(
-                width: mainW,
-                height: barH,
-                child: AnimatedBuilder(
-                  animation:
-                      Listenable.merge([_morphCtrl, _expandCtrl, _glowAnim]),
-                  builder: (context, _) {
-                    final morphT = _morphCtrl.value;
-                    final expandT = _expandCtrl.value;
-                    final searchW =
-                        circleSize + (mainW - circleSize) * expandT;
-                    final titleOp = (1.0 - expandT * 3.0).clamp(0.0, 1.0);
+            return Row(
+              children: [
+                SizedBox(
+                  width: mainW,
+                  height: barH,
+                  child: AnimatedBuilder(
+                    animation:
+                        Listenable.merge([_morphCtrl, _expandCtrl, _glowAnim]),
+                    builder: (context, _) {
+                      final morphT = _morphCtrl.value;
+                      final expandT = _expandCtrl.value;
+                      final searchW =
+                          circleSize + (mainW - circleSize) * expandT;
+                      final titleOp = (1.0 - expandT * 3.0).clamp(0.0, 1.0);
 
-                    return Stack(
-                      alignment: Alignment.centerLeft,
-                      children: [
-                        // Title
-                        if (titleOp > 0)
-                          Opacity(
-                            opacity: titleOp,
-                            child: Transform.translate(
-                              offset: Offset(-expandT * 30, 0),
-                              child: Text(
-                                widget.title,
-                                style: GoogleFonts.plusJakartaSans(
-                                  color: AppColors.textPrimary,
-                                  fontSize: r.f(26).clamp(20.0, 32.0),
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.8,
+                      return Stack(
+                        alignment: Alignment.centerLeft,
+                        children: [
+                          // Title
+                          if (titleOp > 0)
+                            Opacity(
+                              opacity: titleOp,
+                              child: Transform.translate(
+                                offset: Offset(-expandT * 30, 0),
+                                child: Text(
+                                  widget.title,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: AppColors.textPrimary,
+                                    fontSize: r.f(26).clamp(20.0, 32.0),
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.8,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                          // Morphing search
+                          Positioned(
+                            right: 0,
+                            child: _buildMorphContainer(
+                                r, searchW, barH, circleSize, morphT, expandT),
                           ),
-                        // Morphing search
-                        Positioned(
-                          right: 0,
-                          child: _buildMorphContainer(
-                              r, searchW, barH, circleSize, morphT, expandT),
-                        ),
-                      ],
-                    );
-                  },
+                        ],
+                      );
+                    },
+                  ),
                 ),
-              ),
-              if (widget.showFilterButton) ...[
-                SizedBox(width: r.w(10)),
-                _buildFilterBtn(r, filterSize),
+                if (widget.showFilterButton) ...[
+                  SizedBox(width: r.w(10)),
+                  _buildFilterBtn(r, filterSize),
+                ],
               ],
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
