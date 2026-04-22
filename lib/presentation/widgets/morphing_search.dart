@@ -314,7 +314,7 @@ class _MorphingSearchHeaderRowState
     final focused = widget.searchFocus.hasFocus;
     final expanded = expandT > 0.95;
     final hasText = widget.searchController.text.isNotEmpty;
-    final radius = h / 2;
+    final radius = r.w(12);
 
     // Glassmorphism-style decoration
     final borderCol = focused && expanded
@@ -344,6 +344,7 @@ class _MorphingSearchHeaderRowState
             ],
           ),
           borderRadius: BorderRadius.circular(radius),
+          // Rounded square matching filter button
           border: Border.all(color: borderCol, width: bw),
           boxShadow: focused && expanded
               ? [
@@ -434,43 +435,29 @@ class _MorphingSearchHeaderRowState
                         onSubmitted: (_) => widget.searchFocus.unfocus(),
                       ),
                     ),
-                    // Clear text button (when has text)
-                    if (hasText)
-                      GestureDetector(
-                        onTap: _onClearTapped,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          margin: EdgeInsets.only(right: r.w(4)),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(Icons.close_rounded,
-                                color: Colors.white.withValues(alpha: 0.5),
-                                size: 14),
-                          ),
-                        ),
-                      ),
-                    // Animated close X
+                    // Clear text button removed per design
+                    // Animated close X — smaller but with easy touch target
                     AnimatedBuilder(
                       animation: _closeCtrl,
                       builder: (ctx, _) => GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: _onCloseTapped,
-                        child: SizedBox(
-                          width: 30,
-                          height: 30,
-                          child: CustomPaint(
-                            painter: _CloseXPainter(
-                              progress: _closeCtrl.value,
-                              color: Colors.white.withValues(alpha: 0.6),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CustomPaint(
+                              painter: _CloseXPainter(
+                                progress: _closeCtrl.value,
+                                color: Colors.white.withValues(alpha: 0.6),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                    SizedBox(width: r.w(8)),
+                    SizedBox(width: r.w(4)),
                   ],
                 ),
               ),
