@@ -236,14 +236,14 @@ class _MorphingSearchHeaderRowState
   @override
   Widget build(BuildContext context) {
     final r = Responsive(context);
-    final filterSize = r.d(42).clamp(36.0, 50.0);
-    final circleSize = r.d(42).clamp(36.0, 50.0);
-    final barH = r.h(44).clamp(38.0, 52.0);
+    final filterSize = r.d(38).clamp(34.0, 44.0);
+    final circleSize = filterSize; // Match filter button exactly
+    final barH = filterSize; // Same height as filter button
     final hPad = r.w(16);
 
     return Container(
       color: AppColors.background,
-      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: r.h(6)),
+      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: r.h(5)),
       child: LayoutBuilder(
         builder: (context, box) {
           final filterW =

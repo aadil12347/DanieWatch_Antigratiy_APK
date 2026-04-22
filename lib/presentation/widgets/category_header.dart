@@ -897,13 +897,21 @@ class PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return MorphingSearchHeaderRow(
-      title: title,
-      searchController: searchController,
-      searchFocus: searchFocus,
-      onSearchChanged: onSearchChanged,
-      contextId: contextId,
-      showFilterButton: showFilterButton,
+    // ExcludeSemantics + RepaintBoundary prevent the
+    // "!semantics.parentDataDirty" assertion crash that the
+    // AnimatedBuilder/LayoutBuilder/TextField combo triggers inside
+    // SliverPersistentHeader.
+    return ExcludeSemantics(
+      child: RepaintBoundary(
+        child: MorphingSearchHeaderRow(
+          title: title,
+          searchController: searchController,
+          searchFocus: searchFocus,
+          onSearchChanged: onSearchChanged,
+          contextId: contextId,
+          showFilterButton: showFilterButton,
+        ),
+      ),
     );
   }
 

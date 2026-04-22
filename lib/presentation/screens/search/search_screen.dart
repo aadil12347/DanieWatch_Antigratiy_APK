@@ -14,6 +14,7 @@ import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../widgets/top_navbar.dart';
 import '../../providers/scroll_provider.dart';
+import '../../widgets/morphing_search.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -171,25 +172,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: SafeArea(
         child: GestureDetector(
           onTap: () => _searchFocus.unfocus(),
-          child: CustomScrollView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              // TopNavbar — scrolls away on swipe up
-              const SliverToBoxAdapter(child: TopNavbar()),
-              // Pinned header row — always stays visible at top
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: PinnedHeaderDelegate(
-                  title: activeTitle,
-                  searchController: _searchController,
-                  searchFocus: _searchFocus,
-                  onSearchChanged: _onSearchChanged,
+          child: Column(
+            children: [
+              // Fixed header — outside CustomScrollView to avoid
+              // semantics.parentDataDirty assertion crash
+              MorphingSearchHeaderRow(
+                title: activeTitle,
+                searchController: _searchController,
+                searchFocus: _searchFocus,
+                onSearchChanged: _onSearchChanged,
+                contextId: 'explore',
+                showFilterButton: true,
+              ),
+              // Scrollable content
+              Expanded(
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    // TopNavbar — scrolls away on swipe up
+                    const SliverToBoxAdapter(child: TopNavbar()),
+                    // Filter chips — scroll normally
+                    const SliverToBoxAdapter(child: CategoryFilterChips()),
+                    ...slivers,
+                  ],
                 ),
               ),
-              // Filter chips — scroll normally behind pinned header
-              const SliverToBoxAdapter(child: CategoryFilterChips()),
-              ...slivers,
             ],
           ),
         ),
@@ -213,6 +221,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (showResults && itemsToDisplay.isEmpty) {
       return [
         const SliverFillRemaining(
+          hasScrollBody: false,
           child: EmptyResultsView(),
         ),
       ];

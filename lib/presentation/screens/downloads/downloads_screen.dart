@@ -17,6 +17,7 @@ import '../../../core/utils/toast_utils.dart';
 import '../../providers/downloads_selection_provider.dart';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../providers/scroll_provider.dart';
+import '../../widgets/morphing_search.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
@@ -139,21 +140,24 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         body: SafeArea(
           child: GestureDetector(
             onTap: () => _searchFocus.unfocus(),
-            child: CustomScrollView(
-              controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                // Pinned header row — same style as Explore page
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: PinnedHeaderDelegate(
-                    title: 'Downloads',
-                    searchController: _searchController,
-                    searchFocus: _searchFocus,
-                    onSearchChanged: _onSearchChanged,
-                    contextId: 'downloads',
-                  ),
+            child: Column(
+              children: [
+                // Fixed header — outside CustomScrollView to avoid
+                // semantics.parentDataDirty assertion crash
+                MorphingSearchHeaderRow(
+                  title: 'Downloads',
+                  searchController: _searchController,
+                  searchFocus: _searchFocus,
+                  onSearchChanged: _onSearchChanged,
+                  contextId: 'downloads',
+                  showFilterButton: true,
                 ),
+                // Scrollable content
+                Expanded(
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
                 // Filter chips
                 const SliverToBoxAdapter(
                   child: CategoryFilterChips(contextId: 'downloads'),
@@ -161,6 +165,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 // Content
                 if (allDownloads.isEmpty)
                   const SliverFillRemaining(
+                    hasScrollBody: false,
                     child: EmptyResultsView(
                       title: 'No Downloads Yet',
                       message: 'Movies and episodes you download will appear here',
@@ -169,6 +174,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   )
                 else if (downloads.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters))
                   const SliverFillRemaining(
+                    hasScrollBody: false,
                     child: EmptyResultsView(),
                   )
                 else ...[
@@ -212,6 +218,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ],
                   const SliverToBoxAdapter(child: SizedBox(height: 100)),
                 ],
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
