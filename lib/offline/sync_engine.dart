@@ -10,6 +10,7 @@ import '../data/local/manifest_dao.dart';
 import '../data/local/category_storage.dart';
 import '../domain/policies/visibility_policy.dart';
 import '../data/clients/tmdb_client.dart';
+import '../data/repositories/posting_record_repository.dart';
 
 /// Result of a sync operation
 class SyncResult {
@@ -57,8 +58,15 @@ class ManifestSyncEngine {
       // Snapshot the current index before overwriting (for auto-add comparison)
       await CategoryStorage.instance.snapshotCurrentIndex();
 
-      final url = Uri.parse('${Env.githubRawBaseUrl}/index.json');
-      final response = await http.get(url);
+      // ━━━ Fetch index.json + posting_record.json in parallel ━━━
+      final indexUrl = Uri.parse('${Env.githubRawBaseUrl}/index.json');
+      final results = await Future.wait([
+        http.get(indexUrl),
+        PostingRecordRepository.instance.fetch(),
+      ]);
+
+      final response = results[0] as http.Response;
+      // posting_record result is handled by PostingRecordRepository internally
 
       if (response.statusCode != 200) {
         throw Exception('Failed to fetch manifest: ${response.statusCode}');
@@ -83,12 +91,35 @@ class ManifestSyncEngine {
       // ━━━ TMDB Enrichment: cross-reference trending/popular lists ━━━
       items = await _enrichWithTmdb(items);
 
-      // ━━━ Global Sorting: Year (Latest to Oldest) then ID (Newest first) ━━━
+      // ━━━ Posting Record Priority Sort ━━━
+      // Build priority map from posting_record.json batches.
+      // Posts in earlier batches and earlier positions get lower priority values.
+      final priorityMap = await PostingRecordRepository.instance.buildPriorityMap();
+
       items.sort((a, b) {
         final yearA = a.releaseYear ?? 0;
         final yearB = b.releaseYear ?? 0;
+
+        // 1. Year DESC (2026 before 2025)
         if (yearB != yearA) return yearB.compareTo(yearA);
-        return b.id.compareTo(a.id); // Higher ID = newer
+
+        // 2. Within same year: posting_record items first
+        final keyA = '${a.id}-${a.mediaType}';
+        final keyB = '${b.id}-${b.mediaType}';
+        final prA = priorityMap[keyA];
+        final prB = priorityMap[keyB];
+
+        final inPrA = prA != null;
+        final inPrB = prB != null;
+
+        if (inPrA && !inPrB) return -1; // A is PR item, comes first
+        if (!inPrA && inPrB) return 1;  // B is PR item, comes first
+        if (inPrA && inPrB) {
+          return prA.compareTo(prB); // Both PR: batch order preserved
+        }
+
+        // 3. Neither in PR: sort by ID DESC (higher ID = newer)
+        return b.id.compareTo(a.id);
       });
 
       final manifest = Manifest(

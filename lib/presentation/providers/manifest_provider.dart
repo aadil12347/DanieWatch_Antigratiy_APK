@@ -108,84 +108,43 @@ final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
 /// Provides anime only (loads from anime.json)
 final animeProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  final items =
-      await CategoryStorage.instance.loadCategory(CategoryStorage.animeFile);
-  return items
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return CategoryStorage.instance.loadCategory(CategoryStorage.animeFile);
 });
 
 /// Provides Korean content only (loads from korean.json)
 final koreanProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  final items =
-      await CategoryStorage.instance.loadCategory(CategoryStorage.koreanFile);
-  return items
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return CategoryStorage.instance.loadCategory(CategoryStorage.koreanFile);
 });
 
 /// Provides Bollywood/Hindi content (loads from bollywood.json)
 final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  final items =
-      await CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
-  return items
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
 });
 
 /// Provides Hollywood content (filtered from global)
 final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterHollywood(all)
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return VisibilityPolicy.filterHollywood(all);
 });
 
 /// Provides Chinese content (filtered from global)
 final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterChinese(all)
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return VisibilityPolicy.filterChinese(all);
 });
 
 /// Provides Punjabi content (filtered from global)
 final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterPunjabi(all)
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return VisibilityPolicy.filterPunjabi(all);
 });
 
 /// Provides Pakistani content (filtered from global)
 final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterPakistani(all)
-    ..sort((a, b) {
-      final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-      if (yearCmp != 0) return yearCmp;
-      return b.voteAverage.compareTo(a.voteAverage);
-    });
+  return VisibilityPolicy.filterPakistani(all);
 });
 
 
