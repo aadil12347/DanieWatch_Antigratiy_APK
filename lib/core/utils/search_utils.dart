@@ -80,23 +80,17 @@ class FilterUtils {
     // 2. Apply filters and sorting for non-search mode
     baseList = _applyPostFilters(baseList, f, enforceCategory);
 
-    // 6. Sort By (Default to Latest Release if none specified)
+    // 6. Sort — only re-sort when user explicitly chose a sort option.
+    // Default ('Popularity') preserves the posting-record priority order
+    // that was already applied by the provider.
     final sortBy = f.sortBy;
     if (sortBy == 'Latest' || sortBy == 'Latest Release') {
       baseList
           .sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
-    } else if (sortBy == 'Popularity') {
-      baseList.sort((a, b) => b.voteCount.compareTo(a.voteCount));
     } else if (sortBy == 'Top Rated' || sortBy == 'Rating (High to Low)') {
       baseList.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
-    } else {
-      // "Perfect" default sorting: Year desc, then Vote Average desc
-      baseList.sort((a, b) {
-        final yearCmp = (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
-        if (yearCmp != 0) return yearCmp;
-        return b.voteAverage.compareTo(a.voteAverage);
-      });
     }
+    // Default 'Popularity': preserve existing order (posting-record priority)
 
     return baseList;
   }

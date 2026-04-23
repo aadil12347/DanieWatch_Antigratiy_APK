@@ -4,6 +4,32 @@ import '../../domain/models/manifest_item.dart';
 import '../../domain/policies/visibility_policy.dart';
 import '../../offline/sync_engine.dart';
 import '../../data/local/category_storage.dart';
+import '../../data/repositories/posting_record_repository.dart';
+
+/// Apply posting-record priority sort to any list of ManifestItems.
+/// This is the SINGLE source of truth for sort order across all tabs.
+Future<List<ManifestItem>> _applyPostingRecordSort(List<ManifestItem> items) async {
+  final priorityMap = await PostingRecordRepository.instance.buildPriorityMap();
+  items.sort((a, b) {
+    final yearA = a.releaseYear ?? 0;
+    final yearB = b.releaseYear ?? 0;
+    // 1. Year DESC (2026 before 2025)
+    if (yearB != yearA) return yearB.compareTo(yearA);
+    // 2. Within same year: posting_record items first
+    final keyA = '${a.id}-${a.mediaType}';
+    final keyB = '${b.id}-${b.mediaType}';
+    final prA = priorityMap[keyA];
+    final prB = priorityMap[keyB];
+    final inPrA = prA != null;
+    final inPrB = prB != null;
+    if (inPrA && !inPrB) return -1;
+    if (!inPrA && inPrB) return 1;
+    if (inPrA && inPrB) return prA.compareTo(prB);
+    // 3. Neither in PR: sort by ID DESC
+    return b.id.compareTo(a.id);
+  });
+  return items;
+}
 
 /// Provides the Manifest from local cache + background sync.
 class ManifestNotifier extends AsyncNotifier<Manifest?> {
@@ -11,29 +37,22 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
 
   @override
   Future<Manifest?> build() async {
-    // 1. Listen for updates BEFORE reading cache
     _sub = ManifestSyncEngine.instance.onManifestUpdated.listen((manifest) {
       state = AsyncValue.data(manifest);
     });
     ref.onDispose(() => _sub?.cancel());
 
-    // 2. Read from SQLite immediately to have some initial state
     final cached = await ManifestSyncEngine.instance.readCache();
 
-    // 3. Mandatory Background Sync — do not block the UI if we have cache
     if (cached == null) {
-      // Must wait for first sync if nothing is cached
       final result = await ManifestSyncEngine.instance.sync();
       if (result.error != null) {
         throw Exception('Failed to load catalog: ${result.error}');
       }
       return ManifestSyncEngine.instance.readCache();
     } else {
-      // Return cached immediately, then sync in background
       ManifestSyncEngine.instance.sync().then((result) {
-        if (result.error != null) {
-          // Log sync background error but don't disrupt current view
-        }
+        if (result.error != null) {}
       });
       return cached;
     }
@@ -59,9 +78,9 @@ final manifestIndexProvider = Provider<Map<String, ManifestItem>>((ref) {
 
 /// Provides all manifest items from index.json (for Explore page)
 final globalItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  // Watch manifest provider to trigger reload after sync
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.indexFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.indexFile);
+  return _applyPostingRecordSort(items);
 });
 
 /// Synonym for globalItemsProvider for backward compatibility
@@ -105,46 +124,53 @@ final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
   return VisibilityPolicy.filterTv(items);
 });
 
-/// Provides anime only (loads from anime.json)
+/// Provides anime only — loads + applies posting-record sort
 final animeProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.animeFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.animeFile);
+  return _applyPostingRecordSort(items);
 });
 
-/// Provides Korean content only (loads from korean.json)
+/// Provides Korean content — loads + applies posting-record sort
 final koreanProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.koreanFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.koreanFile);
+  return _applyPostingRecordSort(items);
 });
 
-/// Provides Bollywood/Hindi content (loads from bollywood.json)
+/// Provides Bollywood/Hindi — loads + applies posting-record sort
 final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
+  return _applyPostingRecordSort(items);
 });
 
-/// Provides Hollywood content (loads from hollywood.json)
+/// Provides Hollywood — loads + applies posting-record sort
 final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.hollywoodFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.hollywoodFile);
+  return _applyPostingRecordSort(items);
 });
 
-/// Provides Chinese content (loads from chinese.json)
+/// Provides Chinese — loads + applies posting-record sort
 final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.chineseFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.chineseFile);
+  return _applyPostingRecordSort(items);
 });
 
-/// Provides Punjabi content (loads from punjabi.json)
+/// Provides Punjabi — loads + applies posting-record sort
 final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.punjabiFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.punjabiFile);
+  return _applyPostingRecordSort(items);
 });
 
-/// Provides Pakistani content (loads from pakistani.json)
+/// Provides Pakistani — loads + applies posting-record sort
 final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(manifestProvider);
-  return CategoryStorage.instance.loadCategory(CategoryStorage.pakistaniFile);
+  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.pakistaniFile);
+  return _applyPostingRecordSort(items);
 });
 
 
