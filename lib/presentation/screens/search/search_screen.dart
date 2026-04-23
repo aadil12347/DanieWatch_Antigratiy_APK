@@ -261,8 +261,18 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     final index = ref.watch(manifestIndexProvider);
 
     final hasSearch = searchState.query.trim().isNotEmpty;
-    final hasFilters = searchState.filters.hasActiveFilters;
-    final showResults = hasSearch || hasFilters;
+    // Check for user-applied filters BEYOND the nav category.
+    // The nav category alone should NOT trigger FilterUtils re-sorting,
+    // because category providers already supply correctly filtered + sorted data
+    // (with posting-record priority order preserved).
+    final f = searchState.filters;
+    final hasUserFilters = f.regions.isNotEmpty ||
+        f.originalLanguages.isNotEmpty ||
+        f.genres.isNotEmpty ||
+        f.years.isNotEmpty ||
+        f.sortBy != 'Popularity' ||
+        f.categories.any((c) => c != searchState.navCategory);
+    final showResults = hasSearch || hasUserFilters;
 
     // Get the correct data source for this category
     final categoryItems = _getCategoryItems(widget.categoryLabel);

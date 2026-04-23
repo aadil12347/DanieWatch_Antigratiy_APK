@@ -123,28 +123,28 @@ final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
   return CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
 });
 
-/// Provides Hollywood content (filtered from global)
+/// Provides Hollywood content (loads from hollywood.json)
 final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterHollywood(all);
+  ref.watch(manifestProvider);
+  return CategoryStorage.instance.loadCategory(CategoryStorage.hollywoodFile);
 });
 
-/// Provides Chinese content (filtered from global)
+/// Provides Chinese content (loads from chinese.json)
 final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterChinese(all);
+  ref.watch(manifestProvider);
+  return CategoryStorage.instance.loadCategory(CategoryStorage.chineseFile);
 });
 
-/// Provides Punjabi content (filtered from global)
+/// Provides Punjabi content (loads from punjabi.json)
 final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterPunjabi(all);
+  ref.watch(manifestProvider);
+  return CategoryStorage.instance.loadCategory(CategoryStorage.punjabiFile);
 });
 
-/// Provides Pakistani content (filtered from global)
+/// Provides Pakistani content (loads from pakistani.json)
 final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final all = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.filterPakistani(all);
+  ref.watch(manifestProvider);
+  return CategoryStorage.instance.loadCategory(CategoryStorage.pakistaniFile);
 });
 
 

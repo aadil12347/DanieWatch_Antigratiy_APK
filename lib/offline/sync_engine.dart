@@ -187,6 +187,34 @@ class ManifestSyncEngine {
         anime
       );
 
+      // 6. Hollywood (US/UK/EN)
+      final hollywood = VisibilityPolicy.filterHollywood(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.hollywoodFile, 
+        hollywood
+      );
+
+      // 7. Chinese (CN/HK/TW)
+      final chinese = VisibilityPolicy.filterChinese(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.chineseFile, 
+        chinese
+      );
+
+      // 8. Punjabi
+      final punjabi = VisibilityPolicy.filterPunjabi(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.punjabiFile, 
+        punjabi
+      );
+
+      // 9. Pakistani
+      final pakistani = VisibilityPolicy.filterPakistani(allItems);
+      await CategoryStorage.instance.saveCategory(
+        CategoryStorage.pakistaniFile, 
+        pakistani
+      );
+
       dev.log('[SyncEngine] Category files generated successfully');
     } catch (e) {
       dev.log('[SyncEngine] Failed to generate category files: $e', error: e);

@@ -13,6 +13,10 @@ class CategoryStorage {
   static const String bollywoodFile = 'bollywood.json';
   static const String koreanFile = 'korean.json';
   static const String animeFile = 'anime.json';
+  static const String hollywoodFile = 'hollywood.json';
+  static const String chineseFile = 'chinese.json';
+  static const String punjabiFile = 'punjabi.json';
+  static const String pakistaniFile = 'pakistani.json';
 
   Future<File> _getFile(String fileName) async {
     final dir = await getApplicationDocumentsDirectory();
@@ -66,6 +70,10 @@ class CategoryStorage {
       bollywoodFile,
       koreanFile,
       animeFile,
+      hollywoodFile,
+      chineseFile,
+      punjabiFile,
+      pakistaniFile,
     ];
     for (final name in files) {
       final file = await _getFile(name);
