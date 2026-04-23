@@ -55,16 +55,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final manifestAsync = ref.watch(manifestProvider);
     final sectionsAsync = ref.watch(homeSectionsProvider);
-    final trendingAsync = ref.watch(trendingProvider);
+    final carouselAsync = ref.watch(mergedCarouselProvider);
 
     return manifestAsync.when(
-      loading: () => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, trendingAsync) : const _LoadingHome(),
-      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, trendingAsync) : _ErrorHome(error: e.toString()),
+      loading: () => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, carouselAsync) : const _LoadingHome(),
+      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, carouselAsync) : _ErrorHome(error: e.toString()),
       data: (manifest) {
         if (manifest == null || manifest.items.isEmpty) {
           return const _EmptyHome();
         }
-        return _buildHomeContent(manifest, sectionsAsync, trendingAsync);
+        return _buildHomeContent(manifest, sectionsAsync, carouselAsync);
       },
     );
   }
@@ -72,9 +72,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildHomeContent(
     dynamic manifest,
     AsyncValue<List<ContentSection>> sectionsAsync,
-    AsyncValue<List<ManifestItem>> trendingAsync
+    AsyncValue<List<ManifestItem>> carouselAsync
   ) {
-    final trending = trendingAsync.valueOrNull ?? [];
+    final carouselItems = carouselAsync.valueOrNull ?? [];
     final sections = sectionsAsync.valueOrNull ?? [];
 
     return Scaffold(
@@ -194,9 +194,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
 
             // Content sections
-            if (trending.isNotEmpty)
+            if (carouselItems.isNotEmpty)
               SliverToBoxAdapter(
-                child: StackedCarousel(items: trending),
+                child: StackedCarousel(items: carouselItems),
               ),
 
             // Content sections with Continue Watching inserted ABOVE Top 10
