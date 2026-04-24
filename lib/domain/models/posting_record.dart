@@ -29,15 +29,31 @@ class PostingRecord {
 
   /// Build a priority map: key = "tmdbId-type" → priority value.
   /// Lower priority = should appear first within the same year.
-  /// Encoding: (batchIndex * 100000) + positionInBatch
+  /// Encoding: (sortedIndex * 100000) + positionInBatch
+  ///
+  /// Batches are sorted by batch_id DESC (highest first) so that the newest
+  /// batch always gets the lowest priority values and appears on top.
+  /// Within each batch, posts keep their original order.
   Map<String, int> buildPriorityMap() {
     final map = <String, int>{};
-    for (int bIdx = 0; bIdx < batches.length; bIdx++) {
-      final batch = batches[bIdx];
+
+    // Sort batches: highest batch_id first (descending).
+    // Batch 3 on top → Batch 2 → Batch 1 at the bottom.
+    final sorted = List<PostingBatch>.from(batches);
+    sorted.sort((a, b) {
+      // Primary: batch_id descending (highest batch = newest content = top)
+      final idCmp = b.batchId.compareTo(a.batchId);
+      if (idCmp != 0) return idCmp;
+      // Fallback: timestamp descending
+      return b.timestamp.compareTo(a.timestamp);
+    });
+
+    for (int bIdx = 0; bIdx < sorted.length; bIdx++) {
+      final batch = sorted[bIdx];
       for (int pIdx = 0; pIdx < batch.posts.length; pIdx++) {
         final post = batch.posts[pIdx];
         final key = '${post.tmdbId}-${post.type}';
-        // Only store the first occurrence (earlier batch wins)
+        // Only store the first occurrence (latest batch wins)
         if (!map.containsKey(key)) {
           map[key] = (bIdx * 100000) + pIdx;
         }

@@ -93,7 +93,8 @@ class ManifestSyncEngine {
 
       // ━━━ Posting Record Priority Sort ━━━
       // Build priority map from posting_record.json batches.
-      // Posts in earlier batches and earlier positions get lower priority values.
+      // Batches are sorted by batch_id DESC internally, so newest batch content
+      // (highest batch number) gets the lowest priority values and appears first.
       final priorityMap = await PostingRecordRepository.instance.buildPriorityMap();
 
       items.sort((a, b) {

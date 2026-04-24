@@ -16,7 +16,7 @@ Future<List<ManifestItem>> _applyPostingRecordSort(List<ManifestItem> items) asy
     final yearB = b.releaseYear ?? 0;
     // 1. Year DESC (2026 before 2025)
     if (yearB != yearA) return yearB.compareTo(yearA);
-    // 2. Within same year: posting_record items first
+    // 2. Within same year: posting_record items first (latest batch on top)
     final keyA = '${a.id}-${a.mediaType}';
     final keyB = '${b.id}-${b.mediaType}';
     final prA = priorityMap[keyA];
