@@ -465,14 +465,55 @@ class DownloadManager {
   Future<bool> requestPermissions() async {
     if (kIsWeb) return true;
     if (Platform.isAndroid) {
-      // On Android 10+, app-specific external storage needs no permission.
-      // Only request WRITE_EXTERNAL_STORAGE for legacy Android (< 10).
-      // MANAGE_EXTERNAL_STORAGE is intentionally NOT requested to avoid
-      // Play Store policy violations.
-      final status = await Permission.storage.request();
-      return status.isGranted || status.isLimited;
+      final notifStatus = await Permission.notification.request();
+      final storageStatus = await Permission.storage.request();
+      
+      bool isGranted = (storageStatus.isGranted || storageStatus.isLimited) &&
+                       (notifStatus.isGranted || notifStatus.isLimited);
+                       
+      if (!isGranted) {
+        if (storageStatus.isPermanentlyDenied || notifStatus.isPermanentlyDenied) {
+          _showPermissionSettingsDialog();
+        }
+      }
+      return isGranted;
     }
     return true;
+  }
+
+  void _showPermissionSettingsDialog() {
+    final context = AppRouter.rootNavKey.currentContext;
+    if (context == null) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Permissions Required', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Storage and Notification permissions are required to download files. Please enable them in app settings.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Open Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<Directory> getDownloadDirectory() async {

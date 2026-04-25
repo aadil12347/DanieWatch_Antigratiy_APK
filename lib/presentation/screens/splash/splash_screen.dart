@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +12,8 @@ import '../../providers/splash_provider.dart';
 import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/notification_service.dart';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
 
@@ -98,6 +101,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     if (mounted) {
       setState(() => _isLogin = !isFirstRun);
     }
+    
+    // Request permissions on startup
+    if (!kIsWeb && Platform.isAndroid) {
+      await [
+        Permission.notification,
+        Permission.storage,
+      ].request();
+    }
+    
     if (isFirstRun) {
       await prefs.setBool('is_first_run', false);
     }
