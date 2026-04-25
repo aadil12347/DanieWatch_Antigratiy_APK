@@ -478,17 +478,27 @@ class DownloadManager {
   Future<Directory> getDownloadDirectory() async {
     if (kIsWeb) throw UnsupportedError('Downloads not supported on web');
     if (Platform.isAndroid) {
-      // Use app-specific external directory — no MANAGE_EXTERNAL_STORAGE needed.
-      // Files persist until app uninstall; accessible via file manager.
-      final extDir = await getExternalStorageDirectory();
-      if (extDir != null) {
-        final dir = Directory('${extDir.path}/DanieWatch');
-        if (!await dir.exists()) {
-          await dir.create(recursive: true);
+      // Use the device's public Download folder so files are visible in
+      // file manager and persist even after app uninstall.
+      // Path: /storage/emulated/0/Download/DanieWatch
+      final publicDownload = Directory('/storage/emulated/0/Download/DanieWatch');
+      try {
+        if (!await publicDownload.exists()) {
+          await publicDownload.create(recursive: true);
         }
-        return dir;
+        return publicDownload;
+      } catch (_) {
+        // Fallback: try getExternalStorageDirectory if public path fails
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          final dir = Directory('${extDir.path}/DanieWatch');
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return dir;
+        }
       }
-      // Fallback to app documents directory
+      // Final fallback to app documents directory
       final appDir = await getApplicationDocumentsDirectory();
       final dir = Directory('${appDir.path}/DanieWatch');
       if (!await dir.exists()) {

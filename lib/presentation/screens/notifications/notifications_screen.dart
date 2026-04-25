@@ -7,7 +7,6 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../domain/models/local_notification.dart';
 import '../../providers/notification_inbox_provider.dart';
-import '../details/details_screen.dart';
 
 /// Notification inbox screen — accessible from the bell icon on home.
 /// Shows rich notification cards with poster, title, year, and type.
@@ -392,14 +391,7 @@ class _GroupedEntryTile extends StatelessWidget {
       child: InkWell(
         onTap: () {
           if (notification.tmdbId != null && notification.mediaType != null) {
-            Navigator.of(context, rootNavigator: true).push(
-              MaterialPageRoute(
-                builder: (_) => DetailsScreen(
-                  tmdbId: notification.tmdbId!,
-                  mediaType: notification.mediaType!,
-                ),
-              ),
-            );
+            context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
           }
         },
         child: Padding(
@@ -504,14 +496,7 @@ class _NotificationCard extends ConsumerWidget {
 
         // Navigate to detail page if rich notification
         if (isRich && notification.tmdbId != null && notification.mediaType != null) {
-          Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(
-              builder: (_) => DetailsScreen(
-                tmdbId: notification.tmdbId!,
-                mediaType: notification.mediaType!,
-              ),
-            ),
-          );
+          context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
         }
       },
       child: AnimatedContainer(

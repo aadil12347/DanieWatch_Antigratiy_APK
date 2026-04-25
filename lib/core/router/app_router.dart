@@ -112,6 +112,28 @@ final routerProvider = Provider<GoRouter>((ref) {
               pageBuilder: (context, state) => _quickPage(const HomeScreen(), state),
             ),
             _detailsRoute(),
+            GoRoute(
+              path: '/notifications',
+              pageBuilder: (context, state) => _quickPage(const NotificationsScreen(), state),
+            ),
+            GoRoute(
+              path: '/notification-details/:mediaType/:id',
+              pageBuilder: (context, state) {
+                final mediaType = state.pathParameters['mediaType']!;
+                final id = int.parse(state.pathParameters['id']!);
+                return _quickPage(
+                  PopScope(
+                    canPop: false,
+                    onPopInvokedWithResult: (didPop, _) {
+                      if (didPop) return;
+                      context.go('/notifications');
+                    },
+                    child: DetailsScreen(tmdbId: id, mediaType: mediaType),
+                  ),
+                  state,
+                );
+              },
+            ),
           ],
         ),
         // Search Branch
@@ -174,32 +196,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       pageBuilder: (context, state) => _quickPage(const ManageAdminsScreen(), state),
     ),
     GoRoute(
-      path: '/notifications',
-      pageBuilder: (context, state) => _quickPage(const NotificationsScreen(), state),
-    ),
-    GoRoute(
       path: '/notification-settings',
       pageBuilder: (context, state) => _quickPage(const NotificationSettingsScreen(), state),
     ),
-    // Deep link route: notification tap → details → back goes to /notifications
-    GoRoute(
-      path: '/notification-details/:mediaType/:id',
-      pageBuilder: (context, state) {
-        final mediaType = state.pathParameters['mediaType']!;
-        final id = int.parse(state.pathParameters['id']!);
-        return _quickPage(
-          PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, _) {
-              if (didPop) return;
-              context.go('/notifications');
-            },
-            child: DetailsScreen(tmdbId: id, mediaType: mediaType),
-          ),
-          state,
-        );
-      },
-    ),
+
     // Top-level details route for notification card taps within the app
     GoRoute(
       path: '/details/:mediaType/:id',
