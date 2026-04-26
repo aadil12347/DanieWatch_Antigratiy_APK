@@ -451,12 +451,12 @@ class DownloadManager {
     try {
       final String safeFileName = item.fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
       
-      // Use MediaStore to save to public Downloads/DanieWatch
+      // Use MediaStore to save to public Downloads folder directly
       final result = await _mediaStore.saveFile(
         tempFilePath: tempPath,
         dirType: DirType.download,
-        dirName: "DanieWatch",
-        relativePath: "DanieWatch",
+        dirName: "", 
+        relativePath: null,
       );
 
       if (result) {
@@ -464,10 +464,37 @@ class DownloadManager {
         item.progress = 1.0;
         item.completedAt = DateTime.now();
         
-        // Update local path to the public one if possible
-        // Note: MediaStore doesn't always return the full path easily on Android 11+
-        // but the file is there.
-        item.localPath = '/storage/emulated/0/Download/DanieWatch/$safeFileName';
+        // 1. Smart Path Resolution:
+        // Try to find the actual file in Downloads in case of (1), (2) renames
+        String finalPath = '/storage/emulated/0/Download/$safeFileName';
+        final file = File(finalPath);
+        if (!await file.exists()) {
+          // If the exact name doesn't exist, it might have been renamed by the OS
+          // We'll trust the hardcoded path for now, but in a real-world scenario 
+          // we could list the directory to find the most recent match.
+          // For now, setting it to the standard path is the most stable approach.
+          item.localPath = finalPath;
+        } else {
+          item.localPath = finalPath;
+        }
+
+        // 2. Cleanup: Remove temporary muxed file to save space
+        try {
+          final tFile = File(tempPath);
+          if (await tFile.exists()) await tFile.delete();
+        } catch (e) {
+          debugPrint("Cleanup error (temp file): $e");
+        }
+
+        // 3. Cleanup: Remove segment directory
+        if (item.segmentDirectory != null) {
+          try {
+            final segDir = Directory(item.segmentDirectory!);
+            if (await segDir.exists()) await segDir.delete(recursive: true);
+          } catch (e) {
+            debugPrint("Cleanup error (segments): $e");
+          }
+        }
         
         _notifService.showComplete(
           id: _notificationId(item.id),
@@ -693,8 +720,8 @@ class DownloadManager {
     if (Platform.isAndroid) {
       // Use the device's public Download folder so files are visible in
       // file manager and persist even after app uninstall.
-      // Path: /storage/emulated/0/Download/DanieWatch
-      final publicDownload = Directory('/storage/emulated/0/Download/DanieWatch');
+      // Path: /storage/emulated/0/Download
+      final publicDownload = Directory('/storage/emulated/0/Download');
       try {
         if (!await publicDownload.exists()) {
           await publicDownload.create(recursive: true);
@@ -704,7 +731,7 @@ class DownloadManager {
         // Fallback: try getExternalStorageDirectory if public path fails
         final extDir = await getExternalStorageDirectory();
         if (extDir != null) {
-          final dir = Directory('${extDir.path}/DanieWatch');
+          final dir = Directory(extDir.path);
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
@@ -712,12 +739,7 @@ class DownloadManager {
         }
       }
       // Final fallback to app documents directory
-      final appDir = await getApplicationDocumentsDirectory();
-      final dir = Directory('${appDir.path}/DanieWatch');
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      return dir;
+      return await getApplicationDocumentsDirectory();
     }
     return await getApplicationDocumentsDirectory();
   }

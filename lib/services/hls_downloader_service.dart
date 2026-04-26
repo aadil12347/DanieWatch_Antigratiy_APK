@@ -175,10 +175,11 @@ class HlsDownloaderService {
       if (_isCancelled) throw Exception('Download cancelled');
 
       onComplete?.call(outputMp4Path);
-    } catch (e) {
+    } catch (e, stack) {
       _connectivitySub?.cancel();
       if (!_isCancelled) {
         debugPrint('❌ Download error: $e');
+        debugPrint('StackTrace: $stack');
         onError?.call(e.toString());
       }
     } finally {

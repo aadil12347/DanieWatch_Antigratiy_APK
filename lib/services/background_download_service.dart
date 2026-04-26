@@ -5,6 +5,8 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'hls_downloader_service.dart';
 import 'download_notification_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:echo_wifi_lock/echo_wifi_lock.dart';
 
 /// Manages background downloading using a Foreground Service.
 /// This ensures the download continues even if the app is minimized.
@@ -70,6 +72,10 @@ class BackgroundDownloadService {
     DartPluginRegistrant.ensureInitialized();
 
     if (service is AndroidServiceInstance) {
+      // CRITICAL for Android 14+: Set as foreground service IMMEDIATELY on start
+      // to avoid the 5-second crash window.
+      service.setAsForegroundService();
+      
       service.on('setAsForeground').listen((event) {
         service.setAsForegroundService();
       });
@@ -87,6 +93,17 @@ class BackgroundDownloadService {
     final notifService = DownloadNotificationService();
     await notifService.init();
 
+    // Shared locks for background stability
+    final wifiLock = EchoWifiLock();
+
+    // Initial notification info to satisfy OS requirements
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: 'DanieWatch Downloader',
+        content: 'Service is active and ready.',
+      );
+    }
+
     // Listen for download commands
     service.on(_commandStart).listen((data) async {
       if (data == null) return;
@@ -99,6 +116,10 @@ class BackgroundDownloadService {
       final String title = data['title'];
 
       if (downloaders.containsKey(id)) return;
+
+      // Enable locks for background stability
+      WakelockPlus.enable();
+      await wifiLock.acquire(EchoWifiMode.wifiModeFullHighPerf);
 
       final downloader = HlsDownloaderService();
       downloaders[id] = downloader;
@@ -137,6 +158,8 @@ class BackgroundDownloadService {
         service.invoke(_eventComplete, {'id': id, 'path': path});
         downloaders.remove(id);
         if (downloaders.isEmpty) {
+          WakelockPlus.disable();
+          wifiLock.release();
           // service.stopSelf(); // Optional: keep alive if user wants to queue more
         }
       };
@@ -144,6 +167,10 @@ class BackgroundDownloadService {
       downloader.onError = (error) {
         service.invoke(_eventError, {'id': id, 'error': error});
         downloaders.remove(id);
+        if (downloaders.isEmpty) {
+          WakelockPlus.disable();
+          wifiLock.release();
+        }
       };
 
       try {
