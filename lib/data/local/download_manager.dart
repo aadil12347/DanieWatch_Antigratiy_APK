@@ -404,6 +404,13 @@ class DownloadManager {
       final item = _findById(id);
       if (item == null) return;
 
+      // Don't override paused/cancelled status with progress from
+      // segments that were already in-flight when the user tapped pause.
+      if (item.status == DownloadStatus.paused ||
+          item.status == DownloadStatus.canceled) {
+        return;
+      }
+
       item.progress = data['progress'] * 0.96;
       item.completedSegments = data['completed'];
       item.totalSegments = data['total'];
@@ -882,15 +889,8 @@ class DownloadManager {
     item.status = DownloadStatus.paused;
     BackgroundDownloadService().pauseDownload(id);
     
-    // Update notification
-    _notifService.showProgress(
-      id: _notificationId(item.id),
-      title: item.displayName,
-      progress: (item.progress * 100).toInt(),
-      body: 'Paused · ${(item.progress * 100).toInt()}%',
-      payload: item.id,
-      isPaused: true,
-    );
+    // Cancel the progress notification (no lingering 'Paused' notification)
+    _notifService.cancel(_notificationId(item.id));
 
     // Legacy flutter_downloader
     if (item.taskId != null) {
@@ -903,6 +903,11 @@ class DownloadManager {
   }
 
   /// Resume a paused download
+  ///
+  /// If the background service is still alive, we simply flip the pause flag.
+  /// If the service was killed by the OS while paused, we restart the download
+  /// from scratch — the HLS downloader automatically skips segments that are
+  /// already on disk, so this effectively resumes from where it left off.
   Future<void> resumeDownload(String id) async {
     if (kIsWeb) return;
     final item = _findById(id);
@@ -911,10 +916,39 @@ class DownloadManager {
     item.status = DownloadStatus.downloading;
     item.error = null;
 
-    // Background Service
-    BackgroundDownloadService().resumeDownload(id);
+    final service = FlutterBackgroundService();
+    final isRunning = await service.isRunning();
+
+    if (isRunning) {
+      // Fast path: service still alive, downloader instance exists
+      BackgroundDownloadService().resumeDownload(id);
+    } else {
+      // Service was killed — restart the download from scratch.
+      // Already-downloaded segments are skipped automatically.
+      debugPrint('⚠ Service not running on resume — restarting download for $id');
+      if (item.segmentDirectory != null) {
+        // Derive the temp mp4 path from the segment directory
+        // segmentDir = <tmpDir>/.segments_<safeTitle>_<ts>
+        // tempMp4    = <tmpDir>/<safeTitle>_<ts>.mp4
+        final segDirName = item.segmentDirectory!.split('/').last;
+        final baseName = segDirName.replaceFirst('.segments_', '');
+        final parentDir = item.segmentDirectory!.substring(
+            0, item.segmentDirectory!.length - segDirName.length - 1);
+        final tempMp4Path = '$parentDir/$baseName.mp4';
+
+        await BackgroundDownloadService().startDownload(
+          id: item.id,
+          title: item.displayName,
+          videoUrl: item.videoStreamUrl ?? item.url,
+          audioUrl: item.audioStreamUrl,
+          subtitleUrl: item.subtitleStreamUrl,
+          saveDir: item.segmentDirectory!,
+          outputMp4Path: tempMp4Path,
+        );
+      }
+    }
     
-    // Update notification
+    // Show resuming notification
     _notifService.showProgress(
       id: _notificationId(item.id),
       title: item.displayName,
@@ -951,6 +985,7 @@ class DownloadManager {
       await FlutterDownloader.cancel(taskId: item.taskId!);
     }
 
+    // Cancel the per-download notification
     _notifService.cancel(_notificationId(item.id));
 
     // Clean up segment directory if exists
@@ -964,6 +999,9 @@ class DownloadManager {
     _saveDownloads();
     _updateController.add(item);
     onDownloadUpdate?.call(item);
+    
+    // Stop the background service + foreground notification if no more active downloads
+    _stopBackgroundServiceIfIdle();
   }
 
   /// Delete a download item and optionally its file
@@ -971,8 +1009,11 @@ class DownloadManager {
     final item = _findById(id);
     if (item == null) return;
 
-    // Cancel if still active
+    // Cancel if still active (this also cancels notifications & stops service)
     await cancelDownload(id);
+
+    // Also cancel the per-download notification in case it was showing 'complete' or 'failed'
+    _notifService.cancel(_notificationId(id));
 
     if (deleteFile) {
       // Delete the output file
@@ -1063,6 +1104,28 @@ class DownloadManager {
   static int _notificationId(String itemId) {
     final ts = int.tryParse(itemId) ?? itemId.hashCode;
     return ts.abs() % 2147483647;
+  }
+
+  /// The foreground service notification ID used by flutter_background_service.
+  /// Must match the value in BackgroundDownloadService.initialize().
+  static const int _foregroundServiceNotifId = 888;
+
+  /// Stop the background service and dismiss the foreground notification
+  /// if there are no more active (downloading/pending/converting) downloads.
+  void _stopBackgroundServiceIfIdle() {
+    final hasActive = _downloads.any((d) =>
+        d.status == DownloadStatus.downloading ||
+        d.status == DownloadStatus.pending ||
+        d.status == DownloadStatus.converting);
+
+    if (!hasActive) {
+      debugPrint('🛑 No active downloads — stopping background service');
+      // Stop the background service (which dismisses its own foreground notif)
+      FlutterBackgroundService().invoke('stopService');
+      // Also explicitly cancel the foreground service notification in case
+      // stopSelf() doesn't dismiss it immediately on some OEMs
+      _notifService.cancel(_foregroundServiceNotifId);
+    }
   }
 
   Future<void> _loadDownloads() async {

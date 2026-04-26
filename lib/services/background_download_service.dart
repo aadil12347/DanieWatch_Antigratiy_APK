@@ -46,9 +46,7 @@ void _onStart(ServiceInstance service) async {
     });
   }
 
-  service.on('stopService').listen((event) {
-    service.stopSelf();
-  });
+
 
   final Map<String, HlsDownloaderService> downloaders = {};
 
@@ -63,8 +61,8 @@ void _onStart(ServiceInstance service) async {
   // Update notification to show service is ready
   if (service is AndroidServiceInstance) {
     service.setForegroundNotificationInfo(
-      title: 'DanieWatch Downloader',
-      content: 'Ready to download.',
+      title: 'DanieWatch Downloading . . .',
+      content: 'Preparing download...',
     );
   }
 
@@ -111,12 +109,12 @@ void _onStart(ServiceInstance service) async {
         'speed': speed,
       });
 
-      // Update foreground notification
+      // Update the foreground service notification
       if (service is AndroidServiceInstance) {
         final pct = (progress * 100).toInt();
         service.setForegroundNotificationInfo(
-          title: 'Downloading $title',
-          content: '$pct% completed',
+          title: 'DanieWatch Downloading . . .',
+          content: '$title — $pct% completed',
         );
       }
     };
@@ -125,8 +123,8 @@ void _onStart(ServiceInstance service) async {
       service.invoke(_eventConversionStarted, {'id': id});
       if (service is AndroidServiceInstance) {
         service.setForegroundNotificationInfo(
-          title: 'Finalizing $title',
-          content: 'Muxing segments...',
+          title: 'DanieWatch Downloading . . .',
+          content: '$title — Converting to MP4...',
         );
       }
     };
@@ -187,17 +185,57 @@ void _onStart(ServiceInstance service) async {
   service.on(_commandPause).listen((data) {
     final id = data?['id'];
     downloaders[id]?.pause();
+    // Update foreground notification to show paused state
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: 'DanieWatch',
+        content: 'Download Paused',
+      );
+    }
   });
 
   service.on(_commandResume).listen((data) {
     final id = data?['id'];
     downloaders[id]?.resume();
+    // Update foreground notification to show resuming
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: 'DanieWatch Downloading . . .',
+        content: 'Resuming download...',
+      );
+    }
   });
 
   service.on(_commandCancel).listen((data) {
     final id = data?['id'];
     downloaders[id]?.cancel();
     downloaders.remove(id);
+    if (downloaders.isEmpty) {
+      try {
+        WakelockPlus.disable();
+        wifiLock?.release();
+      } catch (_) {}
+      Future.delayed(const Duration(seconds: 1), () {
+        if (downloaders.isEmpty) {
+          debugPrint('🛑 All downloads cancelled — stopping service');
+          service.stopSelf();
+        }
+      });
+    }
+  });
+
+  // Allow UI isolate to request service stop
+  service.on('stopService').listen((_) {
+    // Cancel all active downloads first
+    for (final entry in downloaders.entries.toList()) {
+      entry.value.cancel();
+    }
+    downloaders.clear();
+    try {
+      WakelockPlus.disable();
+      wifiLock?.release();
+    } catch (_) {}
+    service.stopSelf();
   });
 }
 
@@ -218,7 +256,7 @@ class BackgroundDownloadService {
       'download_service_channel',
       'Download Service',
       description: 'Keeps downloads running in the background',
-      importance: Importance.low,
+      importance: Importance.min,
     );
 
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -235,7 +273,7 @@ class BackgroundDownloadService {
         autoStart: false,
         isForegroundMode: true,
         notificationChannelId: 'download_service_channel',
-        initialNotificationTitle: 'DanieWatch Downloader',
+        initialNotificationTitle: 'DanieWatch Downloading . . .',
         initialNotificationContent: 'Preparing download...',
         foregroundServiceNotificationId: 888,
       ),
