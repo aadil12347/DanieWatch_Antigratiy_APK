@@ -32,11 +32,19 @@ void downloadCallback(String id, int status, int progress) {
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
-  // Handle background notification actions
-  // This runs in a separate isolate. For now, we'll just log it.
-  // Full background support would require IPC to the main isolate.
+  // This callback runs in a SEPARATE background isolate.
+  // Route actions to the background service isolate via IPC.
+  final actionId = response.actionId;
+  final payload = response.payload;
+  if (actionId == null || payload == null) return;
+
   debugPrint(
-      'Notification background action: ${response.actionId} for payload: ${response.payload}');
+      '🔔 Notification action from UI callback: $actionId for $payload');
+
+  FlutterBackgroundService().invoke('onNotifAction', {
+    'action': actionId,
+    'id': payload,
+  });
 }
 
 enum DownloadStatus {
@@ -398,6 +406,7 @@ class DownloadManager {
   void _listenToBackgroundService() {
     final service = FlutterBackgroundService();
     
+    // ── Progress updates (UI sync only, no notifications from here) ──
     service.on('progress').listen((data) {
       if (data == null) return;
       final id = data['id'];
@@ -418,11 +427,13 @@ class DownloadManager {
       item.downloadSpeed = data['speed'];
       item.status = DownloadStatus.downloading;
 
+      // Background isolate handles all notifications — no UI-side notifs here
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);
     });
 
+    // ── Conversion started ──
     service.on('conversionStarted').listen((data) {
       if (data == null) return;
       final item = _findById(data['id']);
@@ -431,22 +442,39 @@ class DownloadManager {
       item.status = DownloadStatus.converting;
       item.progress = 0.97;
 
-      // Foreground service notification handles conversion status
-
       _updateController.add(item);
       onDownloadUpdate?.call(item);
     });
 
+    // ── Download complete ──
     service.on('complete').listen((data) async {
       if (data == null) return;
       final id = data['id'];
-      final tempPath = data['path'];
+      final path = data['path'];
+      final finalizedInBg = data['finalizedInBackground'] == true;
       final item = _findById(id);
       if (item == null) return;
 
-      await _finalizeDownload(item, tempPath);
+      if (finalizedInBg) {
+        // Background isolate already moved the file and updated prefs.
+        // Just update in-memory state for the UI.
+        item.status = DownloadStatus.completed;
+        item.progress = 1.0;
+        item.completedAt = DateTime.now();
+        item.localPath = path;
+
+        _updateController.add(item);
+        onDownloadComplete?.call(item);
+        _completeController.add(item);
+        _saveDownloads();
+        _stopBackgroundServiceIfIdle();
+      } else {
+        // Fallback: finalize from UI isolate (shouldn't happen normally)
+        await _finalizeDownload(item, path);
+      }
     });
 
+    // ── Download error ──
     service.on('error').listen((data) {
       if (data == null) return;
       final item = _findById(data['id']);
@@ -455,16 +483,61 @@ class DownloadManager {
       item.status = DownloadStatus.failed;
       item.error = data['error'];
 
-      _notifService.showFailed(
-        id: _notificationId(item.id),
-        title: 'Download Failed',
-        error: '${item.displayName} — ${item.error ?? "Unknown error"}',
-        payload: item.id,
-      );
+      // Background isolate handles the failure notification
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
+      _stopBackgroundServiceIfIdle();
+    });
+
+    // ── Notification action: Pause (from background notification button) ──
+    service.on('notifPause').listen((data) {
+      if (data == null) return;
+      final item = _findById(data['id']);
+      if (item == null) return;
+
+      item.status = DownloadStatus.paused;
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    });
+
+    // ── Notification action: Resume (from background notification button) ──
+    service.on('notifResume').listen((data) {
+      if (data == null) return;
+      final item = _findById(data['id']);
+      if (item == null) return;
+
+      item.status = DownloadStatus.downloading;
+      item.error = null;
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    });
+
+    // ── Notification action: Cancel (from background notification button) ──
+    service.on('notifCancel').listen((data) {
+      if (data == null) return;
+      final item = _findById(data['id']);
+      if (item == null) return;
+
+      item.status = DownloadStatus.canceled;
+
+      // Clean up segment directory
+      if (item.segmentDirectory != null) {
+        try {
+          final segDir = Directory(item.segmentDirectory!);
+          segDir.exists().then((exists) {
+            if (exists) segDir.delete(recursive: true);
+          });
+        } catch (_) {}
+      }
+
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+      _stopBackgroundServiceIfIdle();
     });
   }
 
@@ -511,12 +584,8 @@ class DownloadManager {
         }
       }
       
-      _notifService.showComplete(
-        id: _notificationId(item.id),
-        title: 'Download Completed',
-        body: item.displayName,
-        payload: item.id,
-      );
+      // Background isolate handles completion notification
+      // No need to show notification from UI isolate
     } catch (e) {
       debugPrint('Finalization error: $e');
       item.status = DownloadStatus.failed;
@@ -819,7 +888,7 @@ class DownloadManager {
     _updateController.add(item);
     onDownloadUpdate?.call(item);
 
-    // Foreground service notification handles download status
+    // Background isolate handles all notifications and file finalization
 
     await BackgroundDownloadService().startDownload(
       id: item.id,
@@ -829,6 +898,7 @@ class DownloadManager {
       subtitleUrl: item.subtitleStreamUrl,
       saveDir: segmentDir,
       outputMp4Path: tempMp4Path,
+      fileName: item.fileName,
     );
     
     return item;
@@ -913,6 +983,7 @@ class DownloadManager {
           subtitleUrl: item.subtitleStreamUrl,
           saveDir: item.segmentDirectory!,
           outputMp4Path: tempMp4Path,
+          fileName: item.fileName,
         );
       }
     }
