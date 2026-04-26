@@ -174,17 +174,6 @@ class HlsDownloaderService {
 
       if (_isCancelled) throw Exception('Download cancelled');
 
-      // ── Phase 4: Cleanup segment folder ────────────────
-      try {
-        final segDir = Directory(saveDirectory);
-        if (await segDir.exists()) {
-          await segDir.delete(recursive: true);
-        }
-      } catch (e) {
-        debugPrint('⚠ Cleanup warning: $e');
-      }
-
-      _connectivitySub?.cancel();
       onComplete?.call(outputMp4Path);
     } catch (e) {
       _connectivitySub?.cancel();
@@ -192,6 +181,20 @@ class HlsDownloaderService {
         debugPrint('❌ Download error: $e');
         onError?.call(e.toString());
       }
+    } finally {
+      // Always try to cleanup segments if we are NOT in a state that allows resume
+      // For now, let's just ensure cleanup on completion or fatal error
+      if (!_isCancelled) {
+         try {
+          final segDir = Directory(saveDirectory);
+          if (await segDir.exists()) {
+            await segDir.delete(recursive: true);
+          }
+        } catch (e) {
+          debugPrint('⚠ Cleanup warning: $e');
+        }
+      }
+      _connectivitySub?.cancel();
     }
   }
 

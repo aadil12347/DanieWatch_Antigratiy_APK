@@ -14,6 +14,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/services/notification_service.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
 
@@ -104,10 +105,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     
     // Request permissions on startup
     if (!kIsWeb && Platform.isAndroid) {
-      await [
-        Permission.notification,
-        Permission.storage,
-      ].request();
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      final sdkInt = androidInfo.version.sdkInt;
+      
+      if (sdkInt >= 33) {
+        await [
+          Permission.notification,
+          Permission.videos,
+          Permission.photos,
+        ].request();
+      } else {
+        await [
+          Permission.notification,
+          Permission.storage,
+        ].request();
+      }
     }
     
     if (isFirstRun) {

@@ -15,6 +15,7 @@ import '../../services/hls_downloader_service.dart';
 import '../../services/m3u8_parser.dart';
 import '../../services/download_notification_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 /// Port name for isolate communication
 const String _downloadPortName = 'downloader_send_port';
@@ -462,27 +463,46 @@ class DownloadManager {
     return '.mp4';
   }
 
-  Future<bool> requestPermissions() async {
+  Future<bool> requestPermissions([BuildContext? context]) async {
     if (kIsWeb) return true;
     if (Platform.isAndroid) {
-      final notifStatus = await Permission.notification.request();
-      final storageStatus = await Permission.storage.request();
-      
-      bool isGranted = (storageStatus.isGranted || storageStatus.isLimited) &&
-                       (notifStatus.isGranted || notifStatus.isLimited);
-                       
-      if (!isGranted) {
-        if (storageStatus.isPermanentlyDenied || notifStatus.isPermanentlyDenied) {
-          _showPermissionSettingsDialog();
-        }
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      final sdkInt = androidInfo.version.sdkInt;
+
+      // 1. Notification Permission (All versions Android 13+)
+      if (sdkInt >= 33) {
+        await Permission.notification.request();
       }
-      return isGranted;
+
+      // 2. Storage/Media Permission
+      PermissionStatus status;
+      if (sdkInt >= 33) {
+        // Android 13+ Granular Permissions
+        // We primarily need videos for this app
+        final statuses = await [
+          Permission.videos,
+          Permission.photos,
+        ].request();
+        
+        status = statuses[Permission.videos] ?? PermissionStatus.denied;
+      } else {
+        // Android 12 and below
+        status = await Permission.storage.request();
+      }
+      
+      if (status.isPermanentlyDenied) {
+        _showPermissionSettingsDialog(context);
+        return false;
+      }
+      
+      return status.isGranted || status.isLimited;
     }
     return true;
   }
 
-  void _showPermissionSettingsDialog() {
-    final context = AppRouter.rootNavKey.currentContext;
+  void _showPermissionSettingsDialog(BuildContext? providedContext) {
+    final context = providedContext ?? AppRouter.rootNavKey.currentContext;
     if (context == null) return;
     showDialog(
       context: context,
@@ -565,8 +585,9 @@ class DownloadManager {
     StreamVariant? variant,
     AudioTrack? audioTrack,
     SubtitleTrack? subtitleTrack,
+    BuildContext? context,
   }) async {
-    final hasPermission = await requestPermissions();
+    final hasPermission = await requestPermissions(context);
     if (!hasPermission) return null;
 
     final qualityLbl = variant?.badgeLabel;
@@ -576,11 +597,19 @@ class DownloadManager {
     final audioUrl = audioTrack?.url;
     final subtitleUrl = subtitleTrack?.url;
 
-    final dir = await getDownloadDirectory();
+    // Use internal cache for segments to avoid permission/Scoped Storage issues
+    final tempDir = await getTemporaryDirectory();
+    final publicDir = await getDownloadDirectory();
+    
     final safeTitle = _buildSafeTitle(title, season, episode, qualityLbl);
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final outputPath = '${dir.path}/${safeTitle}_$ts.mp4';
-    final segmentDir = '${dir.path}/.segments_${safeTitle}_$ts';
+    
+    // Internal paths for working
+    final tempMp4Path = '${tempDir.path}/${safeTitle}_$ts.mp4';
+    final segmentDir = '${tempDir.path}/.segments_${safeTitle}_$ts';
+    
+    // Public path for the final destination
+    final publicMp4Path = '${publicDir.path}/${safeTitle}.mp4';
 
     final item = DownloadItem(
       id: ts.toString(),
@@ -597,10 +626,13 @@ class DownloadManager {
       qualityLabel: qualityLbl,
       audioLabel: audioLbl,
       subtitleLabel: subLbl,
-      localPath: outputPath,
+      localPath: publicMp4Path, // The user-visible path
       segmentDirectory: segmentDir,
       totalBytes: variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0,
     );
+
+    // Store the internal path temporarily to handle the move later
+    // We'll use a local variable in _runSegmentDownload for the service call
 
     _downloads.insert(0, item);
     await _saveDownloads();
@@ -715,20 +747,39 @@ class DownloadManager {
       _saveDownloads();
     };
 
-    service.onComplete = (mp4Path) {
-      item.status = DownloadStatus.completed;
-      item.localPath = mp4Path;
-      item.progress = 1.0;
-      item.completedAt = DateTime.now();
+    service.onComplete = (tempMp4Path) async {
+      try {
+        // Move from internal cache to public download folder
+        final finalFile = File(tempMp4Path);
+        if (await finalFile.exists()) {
+          final publicFile = File(item.localPath!);
+          
+          // Ensure public directory exists
+          final publicDir = publicFile.parent;
+          if (!await publicDir.exists()) {
+            await publicDir.create(recursive: true);
+          }
+
+          // Move the file
+          await finalFile.copy(publicFile.path);
+          await finalFile.delete(); // Delete the temp one
+          
+          item.status = DownloadStatus.completed;
+          item.progress = 1.0;
+          item.completedAt = DateTime.now();
+          item.totalBytes = await publicFile.length();
+          item.downloadedBytes = item.totalBytes;
+        } else {
+          throw Exception('Internal MP4 file not found after conversion');
+        }
+      } catch (e) {
+        debugPrint('Error moving file to public storage: $e');
+        item.status = DownloadStatus.failed;
+        item.error = 'Failed to save to public storage: $e';
+      }
+
       item.segmentDirectory = null;
       _activeHlsDownloads.remove(item.id);
-
-      // Get final file size
-      final file = File(mp4Path);
-      if (file.existsSync()) {
-        item.totalBytes = file.lengthSync();
-        item.downloadedBytes = item.totalBytes;
-      }
 
       _notifService.showComplete(
           id: _notificationId(item.id), title: item.displayName, payload: item.id);
@@ -738,12 +789,17 @@ class DownloadManager {
       _saveDownloads();
     };
 
+    // Calculate temp output path again or pass it down
+    final tempDir = await getTemporaryDirectory();
+    final safeTitle = _buildSafeTitle(item.title, item.season, item.episode, item.qualityLabel);
+    final tempMp4Path = '${tempDir.path}/${safeTitle}_${item.id}.mp4';
+
     service.startDownload(
       videoM3u8Url: item.videoStreamUrl ?? item.url,
       audioM3u8Url: item.audioStreamUrl,
       subtitleM3u8Url: item.subtitleStreamUrl,
       saveDirectory: item.segmentDirectory!,
-      outputMp4Path: item.localPath!,
+      outputMp4Path: tempMp4Path,
     );
   }
 
@@ -935,9 +991,10 @@ class DownloadManager {
     required int season,
     required int episode,
     String? posterUrl,
+    BuildContext? context,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
-    final hasPermission = await requestPermissions();
+    final hasPermission = await requestPermissions(context);
     if (!hasPermission) {
       throw Exception('Storage permission denied');
     }

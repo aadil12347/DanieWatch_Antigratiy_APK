@@ -129,6 +129,7 @@ class _DownloadModalState extends State<DownloadModal> {
       season: widget.season,
       episode: widget.episode,
       posterUrl: widget.posterUrl,
+      context: context,
     );
 
     Future.delayed(const Duration(seconds: 1), () {
@@ -161,6 +162,7 @@ class _DownloadModalState extends State<DownloadModal> {
             season: widget.season,
             episode: widget.episode,
             posterUrl: widget.posterUrl,
+            context: context,
           );
           Future.delayed(const Duration(seconds: 1), () {
             if (mounted) Navigator.pop(context);
@@ -185,6 +187,7 @@ class _DownloadModalState extends State<DownloadModal> {
             season: widget.season,
             episode: widget.episode,
             posterUrl: widget.posterUrl,
+            context: context,
           );
           Future.delayed(const Duration(seconds: 1), () {
             if (mounted) Navigator.pop(context);
