@@ -410,6 +410,16 @@ class DownloadManager {
       item.downloadSpeed = data['speed'];
       item.status = DownloadStatus.downloading;
 
+      // Update the per-download notification in the notification bar
+      final pct = (item.progress * 100).toInt().clamp(0, 100);
+      _notifService.showProgress(
+        id: _notificationId(item.id),
+        title: item.displayName,
+        progress: pct,
+        body: '${item.formattedDownloadedBytes} · $pct% · ${item.formattedSpeed}',
+        payload: item.id,
+      );
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
     });
@@ -421,6 +431,15 @@ class DownloadManager {
       
       item.status = DownloadStatus.converting;
       item.progress = 0.97;
+
+      _notifService.showProgress(
+        id: _notificationId(item.id),
+        title: item.displayName,
+        progress: 97,
+        body: 'Converting to MP4…',
+        payload: item.id,
+      );
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
     });
@@ -442,6 +461,14 @@ class DownloadManager {
 
       item.status = DownloadStatus.failed;
       item.error = data['error'];
+
+      _notifService.showFailed(
+        id: _notificationId(item.id),
+        title: item.displayName,
+        error: item.error,
+        payload: item.id,
+      );
+
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
