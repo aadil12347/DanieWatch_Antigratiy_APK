@@ -18,7 +18,7 @@ import '../../services/download_notification_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:media_store_plus/media_store_plus.dart';
+
 import '../../services/background_download_service.dart';
 
 /// Port name for isolate communication
@@ -301,7 +301,7 @@ class DownloadManager {
   final Map<String, HlsDownloaderService> _activeHlsDownloads = {};
   final DownloadNotificationService _notifService =
       DownloadNotificationService();
-  final MediaStore _mediaStore = MediaStore();
+
 
   List<DownloadItem> get downloads => List.unmodifiable(_downloads);
 
@@ -336,11 +336,6 @@ class DownloadManager {
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
-    // Initialize MediaStore (MUST be called once before any saveFile)
-    if (Platform.isAndroid) {
-      await MediaStore.ensureInitialized();
-      MediaStore.appFolder = 'DanieWatch';
-    }
     
     // Initialize background service
     await BackgroundDownloadService().initialize();
@@ -485,81 +480,54 @@ class DownloadManager {
     try {
       final String safeFileName = item.fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
       
-      // Rename the temp file to the clean final name before saving via MediaStore
-      // This ensures the file appears with the correct name in the Downloads folder.
-      String cleanTempPath = tempPath;
+      // Destination: root Download folder (no subfolder)
+      final String finalPath = '/storage/emulated/0/Download/$safeFileName';
+      
+      final tempFile = File(tempPath);
+      if (!await tempFile.exists()) {
+        throw Exception('Muxed file not found at $tempPath');
+      }
+
+      // Copy to public Downloads, then delete the temp file
+      await tempFile.copy(finalPath);
+
+      // Verify the copy landed
+      final destFile = File(finalPath);
+      if (!await destFile.exists()) {
+        throw Exception('File copy to Downloads failed');
+      }
+
+      item.status = DownloadStatus.completed;
+      item.progress = 1.0;
+      item.completedAt = DateTime.now();
+      item.localPath = finalPath;
+
+      // Cleanup: Remove temp muxed file
       try {
-        final tempFile = File(tempPath);
-        if (await tempFile.exists()) {
-          final parentDir = tempFile.parent.path;
-          cleanTempPath = p.join(parentDir, safeFileName);
-          await tempFile.rename(cleanTempPath);
-        }
+        if (await tempFile.exists()) await tempFile.delete();
       } catch (e) {
-        debugPrint("Rename error: $e");
-        // Fallback to original tempPath if rename fails
-        cleanTempPath = tempPath;
+        debugPrint('Cleanup error (temp file): $e');
       }
 
-      // Use MediaStore to save to public Downloads folder directly
-      final result = await _mediaStore.saveFile(
-        tempFilePath: cleanTempPath,
-        dirType: DirType.download,
-        dirName: DirName.download, 
-        relativePath: null,
+      // Cleanup: Remove segment directory
+      if (item.segmentDirectory != null) {
+        try {
+          final segDir = Directory(item.segmentDirectory!);
+          if (await segDir.exists()) await segDir.delete(recursive: true);
+        } catch (e) {
+          debugPrint('Cleanup error (segments): $e');
+        }
+      }
+      
+      _notifService.showComplete(
+        id: _notificationId(item.id),
+        title: item.displayName,
+        payload: item.id
       );
-
-      if (result != null) {
-        item.status = DownloadStatus.completed;
-        item.progress = 1.0;
-        item.completedAt = DateTime.now();
-        
-        // 1. Smart Path Resolution:
-        // Try to find the actual file in Downloads in case of (1), (2) renames
-        String finalPath = '/storage/emulated/0/Download/$safeFileName';
-        final file = File(finalPath);
-        if (!await file.exists()) {
-          // If the exact name doesn't exist, it might have been renamed by the OS
-          // We'll trust the hardcoded path for now, but in a real-world scenario 
-          // we could list the directory to find the most recent match.
-          // For now, setting it to the standard path is the most stable approach.
-          item.localPath = finalPath;
-        } else {
-          item.localPath = finalPath;
-        }
-
-        // 2. Cleanup: Remove temporary muxed file(s) to save space
-        for (final path in {tempPath, cleanTempPath}) {
-          try {
-            final tFile = File(path);
-            if (await tFile.exists()) await tFile.delete();
-          } catch (e) {
-            debugPrint("Cleanup error (temp file $path): $e");
-          }
-        }
-
-        // 3. Cleanup: Remove segment directory
-        if (item.segmentDirectory != null) {
-          try {
-            final segDir = Directory(item.segmentDirectory!);
-            if (await segDir.exists()) await segDir.delete(recursive: true);
-          } catch (e) {
-            debugPrint("Cleanup error (segments): $e");
-          }
-        }
-        
-        _notifService.showComplete(
-          id: _notificationId(item.id),
-          title: item.displayName,
-          payload: item.id
-        );
-      } else {
-        throw Exception("MediaStore failed to save file");
-      }
     } catch (e) {
-      debugPrint("Finalization error: $e");
+      debugPrint('Finalization error: $e');
       item.status = DownloadStatus.failed;
-      item.error = "Failed to save file: $e";
+      item.error = 'Failed to save file: $e';
     }
 
     _updateController.add(item);

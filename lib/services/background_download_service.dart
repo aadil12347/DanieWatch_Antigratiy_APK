@@ -140,6 +140,14 @@ void _onStart(ServiceInstance service) async {
           WakelockPlus.disable();
           wifiLock?.release();
         } catch (_) {}
+        // Stop the foreground service after a brief delay so the
+        // "Muxing segments" notification is dismissed cleanly.
+        Future.delayed(const Duration(seconds: 2), () {
+          if (downloaders.isEmpty) {
+            debugPrint('🛑 All downloads done — stopping service');
+            service.stopSelf();
+          }
+        });
       }
     };
 
@@ -152,6 +160,12 @@ void _onStart(ServiceInstance service) async {
           WakelockPlus.disable();
           wifiLock?.release();
         } catch (_) {}
+        Future.delayed(const Duration(seconds: 2), () {
+          if (downloaders.isEmpty) {
+            debugPrint('🛑 All downloads done (after error) — stopping service');
+            service.stopSelf();
+          }
+        });
       }
     };
 
