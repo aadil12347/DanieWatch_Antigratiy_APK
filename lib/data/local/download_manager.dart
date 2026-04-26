@@ -10,6 +10,7 @@ import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path/path.dart' as p;
 import 'dart:convert';
 import '../../services/hls_downloader_service.dart';
 import '../../services/m3u8_parser.dart';
@@ -451,15 +452,31 @@ class DownloadManager {
     try {
       final String safeFileName = item.fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
       
+      // Rename the temp file to the clean final name before saving via MediaStore
+      // This ensures the file appears with the correct name in the Downloads folder.
+      String cleanTempPath = tempPath;
+      try {
+        final tempFile = File(tempPath);
+        if (await tempFile.exists()) {
+          final parentDir = tempFile.parent.path;
+          cleanTempPath = p.join(parentDir, safeFileName);
+          await tempFile.rename(cleanTempPath);
+        }
+      } catch (e) {
+        debugPrint("Rename error: $e");
+        // Fallback to original tempPath if rename fails
+        cleanTempPath = tempPath;
+      }
+
       // Use MediaStore to save to public Downloads folder directly
       final result = await _mediaStore.saveFile(
-        tempFilePath: tempPath,
+        tempFilePath: cleanTempPath,
         dirType: DirType.download,
-        dirName: "", 
+        dirName: DirName.download, 
         relativePath: null,
       );
 
-      if (result) {
+      if (result != null) {
         item.status = DownloadStatus.completed;
         item.progress = 1.0;
         item.completedAt = DateTime.now();
