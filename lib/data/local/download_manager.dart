@@ -16,6 +16,9 @@ import '../../services/m3u8_parser.dart';
 import '../../services/download_notification_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:media_store_plus/media_store_plus.dart';
+import '../../services/background_download_service.dart';
 
 /// Port name for isolate communication
 const String _downloadPortName = 'downloader_send_port';
@@ -297,6 +300,7 @@ class DownloadManager {
   final Map<String, HlsDownloaderService> _activeHlsDownloads = {};
   final DownloadNotificationService _notifService =
       DownloadNotificationService();
+  final MediaStore _mediaStore = MediaStore();
 
   List<DownloadItem> get downloads => List.unmodifiable(_downloads);
 
@@ -330,6 +334,11 @@ class DownloadManager {
     await _notifService.init(
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+    
+    // Initialize background service
+    await BackgroundDownloadService().initialize();
+    _listenToBackgroundService();
+    
     await _loadDownloads();
 
     // Reset interrupted downloads to paused (so user can resume)
@@ -382,6 +391,101 @@ class DownloadManager {
     });
 
     await FlutterDownloader.registerCallback(downloadCallback);
+  }
+
+  void _listenToBackgroundService() {
+    final service = FlutterBackgroundService();
+    
+    service.on('progress').listen((data) {
+      if (data == null) return;
+      final id = data['id'];
+      final item = _findById(id);
+      if (item == null) return;
+
+      item.progress = data['progress'] * 0.96;
+      item.completedSegments = data['completed'];
+      item.totalSegments = data['total'];
+      item.downloadedBytes = data['bytes'];
+      item.downloadSpeed = data['speed'];
+      item.status = DownloadStatus.downloading;
+
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+    });
+
+    service.on('conversionStarted').listen((data) {
+      if (data == null) return;
+      final item = _findById(data['id']);
+      if (item == null) return;
+      
+      item.status = DownloadStatus.converting;
+      item.progress = 0.97;
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+    });
+
+    service.on('complete').listen((data) async {
+      if (data == null) return;
+      final id = data['id'];
+      final tempPath = data['path'];
+      final item = _findById(id);
+      if (item == null) return;
+
+      await _finalizeDownload(item, tempPath);
+    });
+
+    service.on('error').listen((data) {
+      if (data == null) return;
+      final item = _findById(data['id']);
+      if (item == null) return;
+
+      item.status = DownloadStatus.failed;
+      item.error = data['error'];
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    });
+  }
+
+  Future<void> _finalizeDownload(DownloadItem item, String tempPath) async {
+    try {
+      final String safeFileName = item.fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+      
+      // Use MediaStore to save to public Downloads/DanieWatch
+      final result = await _mediaStore.saveFile(
+        tempFilePath: tempPath,
+        dirType: DirType.download,
+        dirName: "DanieWatch",
+        relativePath: "DanieWatch",
+      );
+
+      if (result) {
+        item.status = DownloadStatus.completed;
+        item.progress = 1.0;
+        item.completedAt = DateTime.now();
+        
+        // Update local path to the public one if possible
+        // Note: MediaStore doesn't always return the full path easily on Android 11+
+        // but the file is there.
+        item.localPath = '/storage/emulated/0/Download/DanieWatch/$safeFileName';
+        
+        _notifService.showComplete(
+          id: _notificationId(item.id),
+          title: item.displayName,
+          payload: item.id
+        );
+      } else {
+        throw Exception("MediaStore failed to save file");
+      }
+    } catch (e) {
+      debugPrint("Finalization error: $e");
+      item.status = DownloadStatus.failed;
+      item.error = "Failed to save file: $e";
+    }
+
+    _updateController.add(item);
+    onDownloadComplete?.call(item);
+    _saveDownloads();
   }
 
   void _unbindPort() {
@@ -490,15 +594,63 @@ class DownloadManager {
         // Android 12 and below
         status = await Permission.storage.request();
       }
+
+      // 3. Optional: Request Manage External Storage for Android 11+ if standard fails
+      if (sdkInt >= 30) {
+        final manageStatus = await Permission.manageExternalStorage.status;
+        if (!manageStatus.isGranted) {
+           // We'll prompt the user if they want better reliability
+           // But for now just request it if we really need it
+        }
+      }
       
       if (status.isPermanentlyDenied) {
         _showPermissionSettingsDialog(context);
         return false;
       }
       
+      // If we are on Android 11+ and don't have manage storage, 
+      // we can still proceed with MediaStore, but it might be less reliable for FFmpeg.
       return status.isGranted || status.isLimited;
     }
     return true;
+  }
+
+  Future<void> requestManageStorage([BuildContext? context]) async {
+    if (Platform.isAndroid) {
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      if (androidInfo.version.sdkInt >= 30) {
+        if (await Permission.manageExternalStorage.isGranted) return;
+        
+        final ctx = context ?? AppRouter.rootNavKey.currentContext;
+        if (ctx != null) {
+          final proceed = await showDialog<bool>(
+            context: ctx,
+            builder: (context) => AlertDialog(
+              backgroundColor: AppColors.surfaceElevated,
+              title: const Text('Full Storage Access', style: TextStyle(color: Colors.white)),
+              content: const Text(
+                'For 100% reliable background downloads on your Android version, DanieWatch needs "All Files Access". This prevents downloads from failing during video processing.',
+                style: TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Skip')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text('Enable'),
+                ),
+              ],
+            ),
+          );
+          
+          if (proceed == true) {
+            await Permission.manageExternalStorage.request();
+          }
+        }
+      }
+    }
   }
 
   void _showPermissionSettingsDialog(BuildContext? providedContext) {
@@ -609,7 +761,7 @@ class DownloadManager {
     final segmentDir = '${tempDir.path}/.segments_${safeTitle}_$ts';
     
     // Public path for the final destination
-    final publicMp4Path = '${publicDir.path}/${safeTitle}.mp4';
+    final publicMp4Path = '${publicDir.path}/$safeTitle.mp4';
 
     final item = DownloadItem(
       id: ts.toString(),
@@ -644,11 +796,20 @@ class DownloadManager {
       id: _notificationId(item.id),
       title: item.displayName,
       progress: 0,
-      body: 'Starting download…',
+      body: 'Starting background download…',
       payload: item.id,
     );
 
-    _runSegmentDownload(item);
+    await BackgroundDownloadService().startDownload(
+      id: item.id,
+      title: item.displayName,
+      videoUrl: item.videoStreamUrl ?? item.url,
+      audioUrl: item.audioStreamUrl,
+      subtitleUrl: item.subtitleStreamUrl,
+      saveDir: segmentDir,
+      outputMp4Path: tempMp4Path,
+    );
+    
     return item;
   }
 
@@ -665,272 +826,89 @@ class DownloadManager {
     return result;
   }
 
-  /// Run the segment download in the background.
-  Future<void> _runSegmentDownload(DownloadItem item) async {
-    final service = HlsDownloaderService();
-    _activeHlsDownloads[item.id] = service;
-
-    int lastNotifPct = -1;
-    int lastNotifTime = 0;
-
-    service.onProgress =
-        (progress, completedSegs, totalSegs, downloadedBytes, bytesPerSecond) {
-      if (item.status == DownloadStatus.canceled) return;
-
-      // Map segment progress 0.0–1.0 to 0–96%
-      item.progress = progress * 0.96;
-      item.completedSegments = completedSegs;
-      item.totalSegments = totalSegs;
-      item.downloadedBytes = downloadedBytes;
-      item.downloadSpeed = bytesPerSecond;
-
-      if (item.status != DownloadStatus.paused) {
-        item.status = DownloadStatus.downloading;
-      }
-
-      final pct = (item.progress * 100).toInt();
-      final now = DateTime.now().millisecondsSinceEpoch;
-
-      // Throttle notification updates
-      if (pct != lastNotifPct || (now - lastNotifTime) > 1000) {
-        lastNotifPct = pct;
-        lastNotifTime = now;
-
-        final speedStr = item.formattedSpeed;
-        _notifService.showProgress(
-          id: _notificationId(item.id),
-          title: item.displayName,
-          progress: pct,
-          body: '$pct%${speedStr.isNotEmpty ? " · $speedStr" : ""}',
-          payload: item.id,
-          isPaused: item.status == DownloadStatus.paused,
-        );
-      }
-
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-    };
-
-    service.onConversionStarted = () {
-      item.status = DownloadStatus.converting;
-      item.progress = 0.97;
-      item.downloadSpeed = 0;
-
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: 97,
-        body: '97% · Finalizing...',
-        payload: item.id,
-      );
-
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-    };
-
-    service.onError = (error) {
-      item.status = DownloadStatus.failed;
-      item.error = _parseError(error);
-      _activeHlsDownloads.remove(item.id);
-
-      _notifService.showFailed(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        error: item.error,
-        payload: item.id,
-      );
-
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-    };
-
-    service.onComplete = (tempMp4Path) async {
-      try {
-        // Move from internal cache to public download folder
-        final finalFile = File(tempMp4Path);
-        if (await finalFile.exists()) {
-          final publicFile = File(item.localPath!);
-          
-          // Ensure public directory exists
-          final publicDir = publicFile.parent;
-          if (!await publicDir.exists()) {
-            await publicDir.create(recursive: true);
-          }
-
-          // Move the file
-          await finalFile.copy(publicFile.path);
-          await finalFile.delete(); // Delete the temp one
-          
-          item.status = DownloadStatus.completed;
-          item.progress = 1.0;
-          item.completedAt = DateTime.now();
-          item.totalBytes = await publicFile.length();
-          item.downloadedBytes = item.totalBytes;
-        } else {
-          throw Exception('Internal MP4 file not found after conversion');
-        }
-      } catch (e) {
-        debugPrint('Error moving file to public storage: $e');
-        item.status = DownloadStatus.failed;
-        item.error = 'Failed to save to public storage: $e';
-      }
-
-      item.segmentDirectory = null;
-      _activeHlsDownloads.remove(item.id);
-
-      _notifService.showComplete(
-          id: _notificationId(item.id), title: item.displayName, payload: item.id);
-      _updateController.add(item);
-      onDownloadComplete?.call(item);
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-    };
-
-    // Calculate temp output path again or pass it down
-    final tempDir = await getTemporaryDirectory();
-    final safeTitle = _buildSafeTitle(item.title, item.season, item.episode, item.qualityLabel);
-    final tempMp4Path = '${tempDir.path}/${safeTitle}_${item.id}.mp4';
-
-    service.startDownload(
-      videoM3u8Url: item.videoStreamUrl ?? item.url,
-      audioM3u8Url: item.audioStreamUrl,
-      subtitleM3u8Url: item.subtitleStreamUrl,
-      saveDirectory: item.segmentDirectory!,
-      outputMp4Path: tempMp4Path,
-    );
-  }
-
-  String _parseError(String error) {
-    if (error.contains('403')) {
-      return 'Access denied (403) — stream may have expired';
-    }
-    if (error.contains('404')) return 'Stream not found (404)';
-    if (error.contains('Connection timed')) return 'Connection timed out';
-    if (error.contains('Invalid')) return 'Invalid stream format';
-    if (error.contains('No segments')) return 'No segments found in stream';
-    if (error.contains('MP4 conversion')) {
-      return 'Conversion failed — tap retry';
-    }
-    return 'Download failed — tap retry';
-  }
-
   // ═══════════════════════════════════════════════════════════
-  //  PAUSE / RESUME / CANCEL
+  //  PAUSE / RESUME / CANCEL / DELETE
   // ═══════════════════════════════════════════════════════════
 
+  /// Pause a running download
   Future<void> pauseDownload(String id) async {
     if (kIsWeb) return;
     final item = _findById(id);
     if (item == null) return;
 
-    // Segment-based download
-    if (_activeHlsDownloads.containsKey(item.id)) {
-      _activeHlsDownloads[item.id]?.pause();
-      item.status = DownloadStatus.paused;
-      _saveDownloads();
-
-      // Update notification to show 'Resume'
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: (item.progress * 100).toInt(),
-        body: 'Paused · ${(item.progress * 100).toInt()}%',
-        payload: item.id,
-        isPaused: true,
-      );
-
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-      return;
-    }
+    // Background Service
+    item.status = DownloadStatus.paused;
+    BackgroundDownloadService().pauseDownload(id);
+    
+    // Update notification
+    _notifService.showProgress(
+      id: _notificationId(item.id),
+      title: item.displayName,
+      progress: (item.progress * 100).toInt(),
+      body: 'Paused · ${(item.progress * 100).toInt()}%',
+      payload: item.id,
+      isPaused: true,
+    );
 
     // Legacy flutter_downloader
     if (item.taskId != null) {
       await FlutterDownloader.pause(taskId: item.taskId!);
-      item.status = DownloadStatus.paused;
-      _saveDownloads();
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
     }
+
+    _saveDownloads();
+    _updateController.add(item);
+    onDownloadUpdate?.call(item);
   }
 
+  /// Resume a paused download
   Future<void> resumeDownload(String id) async {
     if (kIsWeb) return;
     final item = _findById(id);
     if (item == null) return;
 
-    // If there's an active service, just unpause it
-    if (_activeHlsDownloads.containsKey(item.id)) {
-      _activeHlsDownloads[item.id]?.resume();
-      item.status = DownloadStatus.downloading;
-      _saveDownloads();
+    item.status = DownloadStatus.downloading;
+    item.error = null;
 
-      // Update notification to show 'Pause'
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: (item.progress * 100).toInt(),
-        body: 'Downloading · ${(item.progress * 100).toInt()}%',
-        payload: item.id,
-        isPaused: false,
-      );
-
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-      return;
-    }
-
-    // If paused/failed with a segment directory, restart the download service
-    // (it will auto-skip already completed segments)
-    if (item.segmentDirectory != null && item.localPath != null) {
-      item.status = DownloadStatus.downloading;
-      item.error = null;
-      await _saveDownloads();
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: (item.progress * 100).toInt(),
-        body: 'Resuming download…',
-        payload: item.id,
-      );
-
-      _runSegmentDownload(item);
-      return;
-    }
+    // Background Service
+    BackgroundDownloadService().resumeDownload(id);
+    
+    // Update notification
+    _notifService.showProgress(
+      id: _notificationId(item.id),
+      title: item.displayName,
+      progress: (item.progress * 100).toInt(),
+      body: 'Resuming · ${(item.progress * 100).toInt()}%',
+      payload: item.id,
+      isPaused: false,
+    );
 
     // Legacy flutter_downloader
     if (item.taskId != null) {
       final taskId = await FlutterDownloader.resume(taskId: item.taskId!);
       item.taskId = taskId;
-      item.status = DownloadStatus.downloading;
-      _saveDownloads();
-      onDownloadUpdate?.call(item);
     }
+
+    _saveDownloads();
+    _updateController.add(item);
+    onDownloadUpdate?.call(item);
   }
 
+  /// Cancel a running download
   Future<void> cancelDownload(String id) async {
     if (kIsWeb) return;
     final item = _findById(id);
     if (item == null) return;
 
-    // Cancel active segment download
-    if (_activeHlsDownloads.containsKey(item.id)) {
-      _activeHlsDownloads[item.id]?.cancel();
-      _activeHlsDownloads.remove(item.id);
-    }
-
+    item.status = DownloadStatus.canceled;
+    
+    // Background Service
+    BackgroundDownloadService().cancelDownload(id);
+    
     // Legacy flutter_downloader
     if (item.taskId != null) {
       await FlutterDownloader.cancel(taskId: item.taskId!);
     }
 
-    item.status = DownloadStatus.canceled;
     _notifService.cancel(_notificationId(item.id));
 
     // Clean up segment directory if exists
@@ -944,36 +922,21 @@ class DownloadManager {
     _saveDownloads();
     _updateController.add(item);
     onDownloadUpdate?.call(item);
-    if (item.status == DownloadStatus.completed) {
-      _completeController.add(item);
-    }
   }
 
+  /// Delete a download item and optionally its file
   Future<void> deleteDownload(String id, {bool deleteFile = true}) async {
     final item = _findById(id);
     if (item == null) return;
 
-    _notifService.cancel(_notificationId(item.id));
-
     // Cancel if still active
-    if (_activeHlsDownloads.containsKey(item.id)) {
-      _activeHlsDownloads[item.id]?.cancel();
-      _activeHlsDownloads.remove(item.id);
-    }
+    await cancelDownload(id);
 
     if (deleteFile) {
       // Delete the output file
       if (item.localPath != null && !kIsWeb) {
         final file = File(item.localPath!);
         if (await file.exists()) await file.delete();
-      }
-
-      // Delete segment directory if exists
-      if (item.segmentDirectory != null && !kIsWeb) {
-        try {
-          final segDir = Directory(item.segmentDirectory!);
-          if (await segDir.exists()) await segDir.delete(recursive: true);
-        } catch (_) {}
       }
     }
 
@@ -1055,12 +1018,8 @@ class DownloadManager {
   }
 
   /// Generate a collision-resistant notification ID from the download item ID.
-  /// item.id is a millisecond timestamp string, so we parse it and truncate
-  /// to a positive 32-bit int. This avoids hashCode collisions where different
-  /// items could receive the same notification ID.
   static int _notificationId(String itemId) {
     final ts = int.tryParse(itemId) ?? itemId.hashCode;
-    // Ensure positive 32-bit int for Android notification ID
     return ts.abs() % 2147483647;
   }
 
@@ -1099,7 +1058,6 @@ class DownloadManager {
   void _showDeleteConfirmationGlobal(DownloadItem item) {
     final context = AppRouter.rootNavKey.currentContext;
     if (context == null) {
-      // App is killed or no context; just cancel fallback
       cancelDownload(item.id);
       return;
     }
@@ -1172,7 +1130,6 @@ class DownloadManager {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      // Storage toggle
                       GestureDetector(
                         onTap: () {
                           setModalState(() {
