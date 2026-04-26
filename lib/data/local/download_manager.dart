@@ -335,6 +335,12 @@ class DownloadManager {
     await _notifService.init(
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+
+    // Initialize MediaStore (MUST be called once before any saveFile)
+    if (Platform.isAndroid) {
+      await MediaStore.ensureInitialized();
+      MediaStore.appFolder = 'DanieWatch';
+    }
     
     // Initialize background service
     await BackgroundDownloadService().initialize();
@@ -522,12 +528,14 @@ class DownloadManager {
           item.localPath = finalPath;
         }
 
-        // 2. Cleanup: Remove temporary muxed file to save space
-        try {
-          final tFile = File(tempPath);
-          if (await tFile.exists()) await tFile.delete();
-        } catch (e) {
-          debugPrint("Cleanup error (temp file): $e");
+        // 2. Cleanup: Remove temporary muxed file(s) to save space
+        for (final path in {tempPath, cleanTempPath}) {
+          try {
+            final tFile = File(path);
+            if (await tFile.exists()) await tFile.delete();
+          } catch (e) {
+            debugPrint("Cleanup error (temp file $path): $e");
+          }
         }
 
         // 3. Cleanup: Remove segment directory
