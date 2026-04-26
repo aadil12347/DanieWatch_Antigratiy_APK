@@ -108,6 +108,7 @@ class DownloadNotificationService {
   Future<void> showComplete({
     required int id,
     required String title,
+    String? body,
     String? payload,
   }) async {
     if (!_initialized) return;
@@ -126,7 +127,7 @@ class DownloadNotificationService {
     await _plugin.show(
       id,
       '✅ $title',
-      'Download complete',
+      body ?? 'Download complete',
       const NotificationDetails(android: androidDetails),
       payload: payload,
     );

@@ -418,15 +418,6 @@ class DownloadManager {
       item.downloadSpeed = data['speed'];
       item.status = DownloadStatus.downloading;
 
-      // Update the per-download notification in the notification bar
-      final pct = (item.progress * 100).toInt().clamp(0, 100);
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: pct,
-        body: '${item.formattedDownloadedBytes} · $pct% · ${item.formattedSpeed}',
-        payload: item.id,
-      );
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);
@@ -440,13 +431,7 @@ class DownloadManager {
       item.status = DownloadStatus.converting;
       item.progress = 0.97;
 
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: 97,
-        body: 'Converting to MP4…',
-        payload: item.id,
-      );
+      // Foreground service notification handles conversion status
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);
@@ -472,8 +457,8 @@ class DownloadManager {
 
       _notifService.showFailed(
         id: _notificationId(item.id),
-        title: item.displayName,
-        error: item.error,
+        title: 'Download Failed',
+        error: '${item.displayName} — ${item.error ?? "Unknown error"}',
         payload: item.id,
       );
 
@@ -528,8 +513,9 @@ class DownloadManager {
       
       _notifService.showComplete(
         id: _notificationId(item.id),
-        title: item.displayName,
-        payload: item.id
+        title: 'Download Completed',
+        body: item.displayName,
+        payload: item.id,
       );
     } catch (e) {
       debugPrint('Finalization error: $e');
@@ -560,24 +546,17 @@ class DownloadManager {
       item.status = DownloadStatus.completed;
       item.completedAt = DateTime.now();
       _notifService.showComplete(
-          id: _notificationId(item.id), title: item.displayName, payload: item.id);
+          id: _notificationId(item.id), title: 'Download Completed', body: item.displayName, payload: item.id);
       onDownloadComplete?.call(item);
     } else if (status == DownloadTaskStatus.failed.index) {
       item.status = DownloadStatus.failed;
       item.error = 'Download failed';
       _notifService.showFailed(
-          id: _notificationId(item.id), title: item.displayName, payload: item.id);
+          id: _notificationId(item.id), title: 'Download Failed', error: item.displayName, payload: item.id);
     } else if (status == DownloadTaskStatus.canceled.index) {
       item.status = DownloadStatus.canceled;
-      _notifService.cancel(_notificationId(item.id));
     } else if (status == DownloadTaskStatus.running.index) {
       item.status = DownloadStatus.downloading;
-      _notifService.showProgress(
-        id: _notificationId(item.id),
-        title: item.displayName,
-        progress: progress,
-        payload: item.id,
-      );
     } else if (status == DownloadTaskStatus.paused.index) {
       item.status = DownloadStatus.paused;
     }
@@ -840,14 +819,7 @@ class DownloadManager {
     _updateController.add(item);
     onDownloadUpdate?.call(item);
 
-    // Show initial notification
-    _notifService.showProgress(
-      id: _notificationId(item.id),
-      title: item.displayName,
-      progress: 0,
-      body: 'Starting background download…',
-      payload: item.id,
-    );
+    // Foreground service notification handles download status
 
     await BackgroundDownloadService().startDownload(
       id: item.id,
@@ -888,9 +860,6 @@ class DownloadManager {
     // Background Service
     item.status = DownloadStatus.paused;
     BackgroundDownloadService().pauseDownload(id);
-    
-    // Cancel the progress notification (no lingering 'Paused' notification)
-    _notifService.cancel(_notificationId(item.id));
 
     // Legacy flutter_downloader
     if (item.taskId != null) {
@@ -948,15 +917,7 @@ class DownloadManager {
       }
     }
     
-    // Show resuming notification
-    _notifService.showProgress(
-      id: _notificationId(item.id),
-      title: item.displayName,
-      progress: (item.progress * 100).toInt(),
-      body: 'Resuming · ${(item.progress * 100).toInt()}%',
-      payload: item.id,
-      isPaused: false,
-    );
+    // Foreground service notification handles resuming status
 
     // Legacy flutter_downloader
     if (item.taskId != null) {
@@ -985,8 +946,7 @@ class DownloadManager {
       await FlutterDownloader.cancel(taskId: item.taskId!);
     }
 
-    // Cancel the per-download notification
-    _notifService.cancel(_notificationId(item.id));
+    // Foreground service notification is dismissed by _stopBackgroundServiceIfIdle
 
     // Clean up segment directory if exists
     if (item.segmentDirectory != null) {
@@ -1012,7 +972,7 @@ class DownloadManager {
     // Cancel if still active (this also cancels notifications & stops service)
     await cancelDownload(id);
 
-    // Also cancel the per-download notification in case it was showing 'complete' or 'failed'
+    // Cancel any lingering completion/failure notification
     _notifService.cancel(_notificationId(id));
 
     if (deleteFile) {

@@ -121,12 +121,6 @@ void _onStart(ServiceInstance service) async {
 
     downloader.onConversionStarted = () {
       service.invoke(_eventConversionStarted, {'id': id});
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: 'DanieWatch Downloading . . .',
-          content: '$title — Converting to MP4...',
-        );
-      }
     };
 
     downloader.onComplete = (path) {
@@ -134,10 +128,8 @@ void _onStart(ServiceInstance service) async {
       service.invoke(_eventComplete, {'id': id, 'path': path});
       downloaders.remove(id);
       if (downloaders.isEmpty) {
-        try {
-          WakelockPlus.disable();
+        WakelockPlus.disable().catchError((_) {});
           wifiLock?.release();
-        } catch (_) {}
         // Stop the foreground service after a brief delay so the
         // "Muxing segments" notification is dismissed cleanly.
         Future.delayed(const Duration(seconds: 2), () {
@@ -154,10 +146,8 @@ void _onStart(ServiceInstance service) async {
       service.invoke(_eventError, {'id': id, 'error': error});
       downloaders.remove(id);
       if (downloaders.isEmpty) {
-        try {
-          WakelockPlus.disable();
+        WakelockPlus.disable().catchError((_) {});
           wifiLock?.release();
-        } catch (_) {}
         Future.delayed(const Duration(seconds: 2), () {
           if (downloaders.isEmpty) {
             debugPrint('🛑 All downloads done (after error) — stopping service');
@@ -211,10 +201,8 @@ void _onStart(ServiceInstance service) async {
     downloaders[id]?.cancel();
     downloaders.remove(id);
     if (downloaders.isEmpty) {
-      try {
-        WakelockPlus.disable();
+      WakelockPlus.disable().catchError((_) {});
         wifiLock?.release();
-      } catch (_) {}
       Future.delayed(const Duration(seconds: 1), () {
         if (downloaders.isEmpty) {
           debugPrint('🛑 All downloads cancelled — stopping service');
@@ -231,10 +219,8 @@ void _onStart(ServiceInstance service) async {
       entry.value.cancel();
     }
     downloaders.clear();
-    try {
-      WakelockPlus.disable();
+    WakelockPlus.disable().catchError((_) {});
       wifiLock?.release();
-    } catch (_) {}
     service.stopSelf();
   });
 }
