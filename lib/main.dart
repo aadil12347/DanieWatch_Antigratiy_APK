@@ -15,6 +15,7 @@ import 'data/local/download_manager.dart';
 import 'core/utils/restart_widget.dart';
 import 'pip/pip_controller.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/deep_link_service.dart';
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -97,6 +98,9 @@ Future<void> main() async {
 
     // Initialize Firebase and Notifications
     await NotificationService.instance.initialize();
+
+    // Initialize Deep Link Service (catches cold-start links)
+    await DeepLinkService.instance.initialize();
 
     // Remove splash screen just before running the app
     FlutterNativeSplash.remove();

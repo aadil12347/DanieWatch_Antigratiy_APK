@@ -363,13 +363,32 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         const SizedBox(width: 12),
 
         // Download Button (movies only)
-        if (content.isMovie)
+        if (content.isMovie) ...[
           _AnimatedActionButton(
             icon: Icons.download_rounded,
             onTap: hasWatch ? () => _handleDownload(watchLink!) : null,
             isActive: false,
           ),
+          const SizedBox(width: 12),
+        ],
+
+        // Share Button
+        _AnimatedActionButton(
+          icon: Icons.share_rounded,
+          onTap: () => _handleQuickShare(content),
+          isActive: false,
+        ),
       ],
+    );
+  }
+
+  /// Quick share via the action button — opens the system share sheet directly.
+  void _handleQuickShare(ContentDetail content) {
+    HapticFeedback.lightImpact();
+    final mediaType = content.isTv ? 'tv' : 'movie';
+    final bloggerLink = 'https://daniewatchapp.blogspot.com/?type=$mediaType&id=${content.id}';
+    Share.share(
+      'Check out "${content.title}" on DanieWatch! 🎬\n\n$bloggerLink',
     );
   }
 
@@ -709,29 +728,138 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Share Tab ────────────────────────────────────────────────────────────
   Widget _buildShareTab(ContentDetail content) {
-    final deepLink = 'https://daniewatch.app/${content.isTv ? 'tv' : 'movie'}/${content.id}';
-    return Column(
-      children: [
-        _buildEmptyTab(Icons.share_rounded, 'Share with friends'),
-        const SizedBox(height: 16),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildShareAction(Icons.copy_rounded, 'Copy Link', () {
-                Clipboard.setData(ClipboardData(text: deepLink));
-                CustomToast.show(context, 'Link copied!', type: ToastType.success, icon: Icons.check_rounded);
-              }),
-              const SizedBox(width: 48),
-              _buildShareAction(Icons.send_rounded, 'Share', () {
-                Share.share('Check out ${content.title} on DanieWatch!\n\n$deepLink');
-              }),
+    final mediaType = content.isTv ? 'tv' : 'movie';
+    final bloggerLink = 'https://daniewatchapp.blogspot.com/?type=$mediaType&id=${content.id}';
+    final deepLink = 'daniewatch://$mediaType/${content.id}';
+    final shareText = 'Check out "${content.title}" on DanieWatch! 🎬\n\n$bloggerLink';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.surface,
+              AppColors.surfaceElevated.withValues(alpha: 0.6),
             ],
           ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
-      ],
+        child: Column(
+          children: [
+            // ── Preview Card ──
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Poster Thumbnail
+                  if (content.posterUrl != null && content.posterUrl!.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: CachedNetworkImage(
+                        imageUrl: content.posterUrl!.startsWith('http')
+                            ? content.posterUrl!
+                            : 'https://image.tmdb.org/t/p/w200${content.posterUrl}',
+                        width: 56,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          width: 56, height: 80,
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.movie, color: AppColors.textMuted, size: 24),
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 56, height: 80,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.movie, color: AppColors.textMuted, size: 24),
+                    ),
+                  const SizedBox(width: 14),
+                  // Title & Share Message
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          content.title,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Share this ${content.isTv ? 'series' : 'movie'} with friends',
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Divider ──
+            Container(
+              height: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+
+            // ── Action Buttons ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Row(
+                children: [
+                  // Copy Deep Link
+                  Expanded(
+                    child: _ShareCardButton(
+                      icon: Icons.link_rounded,
+                      label: 'Copy Link',
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        Clipboard.setData(ClipboardData(text: bloggerLink));
+                        CustomToast.show(context, 'Link copied!', type: ToastType.success, icon: Icons.check_rounded);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Share
+                  Expanded(
+                    child: _ShareCardButton(
+                      icon: Icons.share_rounded,
+                      label: 'Share',
+                      isPrimary: true,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        Share.share(shareText);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1376,6 +1504,70 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pill-shaped button used inside the share tab card.
+class _ShareCardButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isPrimary;
+
+  const _ShareCardButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isPrimary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isPrimary
+              ? AppColors.primary
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: isPrimary
+              ? null
+              : Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: isPrimary
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                color: isPrimary
+                    ? Colors.white
+                    : AppColors.textSecondary,
+                size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isPrimary
+                    ? Colors.white
+                    : AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

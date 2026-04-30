@@ -12,6 +12,7 @@ import '../../providers/splash_provider.dart';
 import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/notification_service.dart';
+import '../../../core/services/deep_link_service.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -191,13 +192,36 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
             context.go('/notifications');
           }
         } else {
-          // Normal app launch
-          if (AppRouter.rootNavKey.currentContext != null) {
-            AppRouter.rootNavKey.currentContext!.go('/home');
-          } else if (context.mounted) {
-            context.go('/home');
+          // Check for pending deep link (user clicked a shared link)
+          final pendingDeepLink = await DeepLinkService.consumePendingLink();
+          if (!mounted || _hasNavigated) return;
+
+          if (pendingDeepLink != null) {
+            debugPrint('🔗 Splash: Navigating to pending deep link: $pendingDeepLink');
+            if (AppRouter.rootNavKey.currentContext != null) {
+              AppRouter.rootNavKey.currentContext!.go('/home');
+              // Push the details page on top of home after a brief delay
+              Future.delayed(const Duration(milliseconds: 200), () {
+                AppRouter.rootNavKey.currentContext?.push(pendingDeepLink);
+              });
+            } else if (context.mounted) {
+              context.go('/home');
+              Future.delayed(const Duration(milliseconds: 200), () {
+                if (context.mounted) context.push(pendingDeepLink);
+              });
+            }
+          } else {
+            // Normal app launch
+            if (AppRouter.rootNavKey.currentContext != null) {
+              AppRouter.rootNavKey.currentContext!.go('/home');
+            } else if (context.mounted) {
+              context.go('/home');
+            }
           }
         }
+
+        // Mark DeepLinkService as ready for future incoming links
+        DeepLinkService.instance.setAppReady();
         // Fetch new posters in background for next launch
         fetchAndCachePosters();
       } catch (e) {

@@ -96,6 +96,14 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="io.supabase.daniewatch" android:host="login-callback"/>
             </intent-filter>
+
+            <!-- Deep link support for content sharing (daniewatch://movie/123, daniewatch://tv/456) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="daniewatch"/>
+            </intent-filter>
         </activity>
 
         <activity
