@@ -589,7 +589,7 @@ class DownloadManager {
     } catch (e) {
       debugPrint('Finalization error: $e');
       item.status = DownloadStatus.failed;
-      item.error = 'Failed to save file: $e';
+      item.error = 'Failed to save file. Please check your storage.';
     }
 
     _updateController.add(item);
@@ -1111,7 +1111,7 @@ class DownloadManager {
       onDownloadUpdate?.call(item);
     } catch (e) {
       item.status = DownloadStatus.failed;
-      item.error = e.toString();
+      item.error = 'Download failed. Please try again.';
       _saveDownloads();
       onDownloadUpdate?.call(item);
     }

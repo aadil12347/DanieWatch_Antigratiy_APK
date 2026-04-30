@@ -7,6 +7,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'hls_downloader_service.dart';
+import '../core/utils/error_sanitizer.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:echo_wifi_lock/echo_wifi_lock.dart';
 
@@ -566,20 +567,21 @@ void _onStart(ServiceInstance service) async {
 
     downloader.onError = (error) async {
       debugPrint('❌ Download error for $id: $error');
+      final cleanError = ErrorSanitizer.sanitize(error);
 
       // Update SharedPreferences from background isolate
       // Status index: failed = 4 (matching DownloadStatus.failed)
       await updateDownloadStatusInPrefs(
         id,
         statusIndex: 4, // DownloadStatus.failed
-        error: error,
+        error: cleanError,
       );
 
       // Show failure notification
-      await showFailedNotification(id, title, error);
+      await showFailedNotification(id, title, cleanError);
 
       // Notify UI isolate
-      service.invoke(_eventError, {'id': id, 'error': error});
+      service.invoke(_eventError, {'id': id, 'error': cleanError});
 
       downloaders.remove(id);
       downloadTitles.remove(id);
@@ -609,8 +611,9 @@ void _onStart(ServiceInstance service) async {
       );
     } catch (e) {
       debugPrint('❌ Download threw exception for $id: $e');
-      service.invoke(_eventError, {'id': id, 'error': e.toString()});
-      await showFailedNotification(id, title, e.toString());
+      final cleanError = ErrorSanitizer.sanitize(e);
+      service.invoke(_eventError, {'id': id, 'error': cleanError});
+      await showFailedNotification(id, title, cleanError);
       downloaders.remove(id);
       downloadTitles.remove(id);
       downloadPausedState.remove(id);

@@ -14,6 +14,7 @@ import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../providers/search_provider.dart';
 import '../../../core/utils/toast_utils.dart';
+import '../../../core/utils/error_sanitizer.dart';
 import '../../providers/downloads_selection_provider.dart';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../providers/scroll_provider.dart';
@@ -457,7 +458,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       return 'Paused · $pct% · $mb';
     }
     if (item.status == DownloadStatus.failed) {
-      return item.error ?? 'Failed';
+      return ErrorSanitizer.sanitize(item.error ?? 'Failed');
     }
     if (item.status == DownloadStatus.converting) {
       return '$pct% · $mb · Finalizing...';

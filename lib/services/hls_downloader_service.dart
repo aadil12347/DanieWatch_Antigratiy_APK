@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
+import '../core/utils/error_sanitizer.dart';
 
 /// Robust HLS segment downloader with:
 ///  - 3 parallel workers
@@ -46,6 +47,14 @@ class HlsDownloaderService {
   int _completedSegments = 0;
   int _totalSegments = 0;
   int _downloadedBytes = 0;
+
+  // ── CDN Refresh State ──────────────────────────────────
+  int _playlistRefreshCount = 0;
+  static const int _maxPlaylistRefreshes = 2;
+  String? _videoPlaylistUrl;
+  String? _audioPlaylistUrl;
+  String? _subtitlePlaylistUrl;
+  String? _saveDirectory;
 
   // ── Speed tracking ─────────────────────────────────────
   int _bytesPerSecond = 0;
@@ -121,6 +130,11 @@ class HlsDownloaderService {
     _completedSegments = 0;
     _totalSegments = 0;
     _downloadedBytes = 0;
+    _playlistRefreshCount = 0;
+    _videoPlaylistUrl = videoM3u8Url;
+    _audioPlaylistUrl = audioM3u8Url;
+    _subtitlePlaylistUrl = subtitleM3u8Url;
+    _saveDirectory = saveDirectory;
 
     _startConnectivityMonitor();
 
@@ -180,7 +194,7 @@ class HlsDownloaderService {
       if (!_isCancelled) {
         debugPrint('❌ Download error: $e');
         debugPrint('StackTrace: $stack');
-        onError?.call(e.toString());
+        onError?.call(ErrorSanitizer.sanitize(e));
       }
     } finally {
       // Always try to cleanup segments if we are NOT in a state that allows resume
@@ -346,14 +360,91 @@ class HlsDownloaderService {
         _completedSegments++;
         _reportProgress();
         return;
+      } on DioException catch (e) {
+        final statusCode = e.response?.statusCode;
+        debugPrint(
+            '⚠ ${p.basename(seg.localPath)} attempt ${attempt + 1} failed (HTTP $statusCode): $e');
+
+        // CDN token expired — try refreshing the playlist
+        if ((statusCode == 404 || statusCode == 403) &&
+            _playlistRefreshCount < _maxPlaylistRefreshes &&
+            attempt < _maxRetries - 1) {
+          final newUrl = await _refreshSegmentUrl(seg);
+          if (newUrl != null) {
+            seg = _SegmentTask(
+              url: newUrl,
+              localPath: seg.localPath,
+              isTsSegment: seg.isTsSegment,
+            );
+            // Don't count this as a retry — continue loop with fresh URL
+            continue;
+          }
+        }
+
+        if (attempt == _maxRetries - 1) {
+          throw Exception(
+              'Download failed after $_maxRetries attempts');
+        }
       } catch (e) {
         debugPrint(
             '⚠ ${p.basename(seg.localPath)} attempt ${attempt + 1} failed: $e');
         if (attempt == _maxRetries - 1) {
           throw Exception(
-              'Failed to download ${p.basename(seg.localPath)} after $_maxRetries attempts: $e');
+              'Download failed after $_maxRetries attempts');
         }
       }
+    }
+  }
+
+  /// Re-fetch the M3U8 playlist to get fresh CDN URLs when a 404/403 occurs.
+  /// Returns a new URL for the failed segment, or null if refresh failed.
+  Future<String?> _refreshSegmentUrl(_SegmentTask failedSeg) async {
+    _playlistRefreshCount++;
+    debugPrint(
+        '🔄 Refreshing playlist (attempt $_playlistRefreshCount/$_maxPlaylistRefreshes) for expired CDN URL');
+
+    try {
+      // Determine which playlist this segment belongs to based on prefix
+      final baseName = p.basename(failedSeg.localPath);
+      String? playlistUrl;
+      String prefix;
+
+      if (baseName.startsWith('a_')) {
+        playlistUrl = _audioPlaylistUrl;
+        prefix = 'a';
+      } else if (baseName.startsWith('s_')) {
+        playlistUrl = _subtitlePlaylistUrl;
+        prefix = 's';
+      } else {
+        playlistUrl = _videoPlaylistUrl;
+        prefix = 'v';
+      }
+
+      if (playlistUrl == null || _saveDirectory == null) return null;
+
+      final freshSegments =
+          await _parseMediaPlaylist(playlistUrl, _saveDirectory!, prefix);
+
+      // Find the matching segment by index (local path pattern)
+      // Extract segment index from the local path
+      final indexMatch = RegExp(r'_seg_(\d+)\.').firstMatch(baseName);
+      if (indexMatch != null) {
+        final segIndex = int.parse(indexMatch.group(1)!);
+        // Find the segment in the fresh list with matching index
+        final tsSegments =
+            freshSegments.where((s) => s.isTsSegment).toList();
+        if (segIndex < tsSegments.length) {
+          final freshUrl = tsSegments[segIndex].url;
+          debugPrint('✅ Got fresh CDN URL for segment $segIndex');
+          return freshUrl;
+        }
+      }
+
+      debugPrint('⚠ Could not match segment index in refreshed playlist');
+      return null;
+    } catch (e) {
+      debugPrint('❌ Playlist refresh failed: $e');
+      return null;
     }
   }
 

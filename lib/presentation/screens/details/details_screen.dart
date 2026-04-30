@@ -1153,7 +1153,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showToastError('Failed to start download: $e');
+        _showToastError('Failed to start download. Please try again.');
       }
     }
   }

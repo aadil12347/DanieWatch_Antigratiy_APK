@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../services/m3u8_parser.dart';
+import '../../core/utils/error_sanitizer.dart';
 import '../providers/download_modal_provider.dart';
 
 // ── What the user selected ────────────────────────────────
@@ -145,7 +146,7 @@ class _QualitySelectorContentState
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _error = ErrorSanitizer.sanitize(e);
           _internalLoading = false;
         });
       }
