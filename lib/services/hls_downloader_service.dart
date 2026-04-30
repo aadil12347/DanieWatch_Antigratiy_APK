@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
@@ -21,17 +22,30 @@ class HlsDownloaderService {
   static const int _maxRetries = 3;
   static const List<int> _retryDelaysMs = [0, 2000, 5000];
 
-  final Dio _dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 60),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-            '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        'Accept': '*/*',
+  late final Dio _dio;
+
+  HlsDownloaderService() {
+    _dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 60),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+              '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          'Accept': '*/*',
+        },
+      ),
+    );
+    // Bypass expired/invalid SSL certificates from CDN servers
+    _dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        client.badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+        return client;
       },
-    ),
-  );
+    );
+  }
 
   // ── Callbacks ──────────────────────────────────────────
   Function(double progress, int completedSegments, int totalSegments,
@@ -508,6 +522,12 @@ class HlsDownloaderService {
 
   // ══════════════════════════════════════════════════════════
   //  PHASE 3: Mux video + audio → single .mp4
+  //
+  //  Strategy for proper A/V sync:
+  //  1. Concatenate all video .ts segments → single video_all.ts
+  //  2. Concatenate all audio .ts segments → single audio_all.ts
+  //  3. Mux the two intermediate files together with timestamp
+  //     correction flags to ensure perfect sync.
   // ══════════════════════════════════════════════════════════
   Future<void> _muxToMp4(
     List<_SegmentTask> videoSegments,
@@ -519,67 +539,107 @@ class HlsDownloaderService {
     final videoTs = videoSegments.where((s) => s.isTsSegment).toList();
     if (videoTs.isEmpty) throw Exception('No video segments to convert');
 
-    // Build video concat file
-    final videoListPath = p.join(saveDir, 'video_list.txt');
-    await File(videoListPath).writeAsString(
-      videoTs
-          .map((s) =>
-              "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
-          .join('\n'),
-    );
-
     final audioTs = audioSegments.where((s) => s.isTsSegment).toList();
     final subSegments = subtitleSegments.where((s) => s.isTsSegment).toList();
-    
-    final List<String> inputs = [];
-    final List<String> maps = [];
-    
-    // 1. Video
-    inputs.add('-f concat -safe 0 -i "$videoListPath"');
-    maps.add('-map 0:v');
+    final hasSeparateAudio = audioTs.isNotEmpty;
 
-    // 2. Audio (Optional)
-    if (audioTs.isNotEmpty) {
-      final audioListPath = p.join(saveDir, 'audio_list.txt');
-      await File(audioListPath).writeAsString(
-        audioTs
+    // ── Helper: write a concat list file ──────────────────
+    Future<String> writeConcatList(List<_SegmentTask> segs, String name) async {
+      final listPath = p.join(saveDir, '${name}_list.txt');
+      await File(listPath).writeAsString(
+        segs
             .map((s) =>
                 "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
             .join('\n'),
       );
-      inputs.add('-f concat -safe 0 -i "$audioListPath"');
-      maps.add('-map ${inputs.length - 1}:a');
+      return listPath;
+    }
+
+    // ── Helper: run an FFmpeg concat into a single .ts ────
+    Future<String> concatToSingleTs(String listPath, String name) async {
+      final outPath = p.join(saveDir, '${name}_all.ts');
+      final cmd = '-f concat -safe 0 -i "$listPath" -c copy -y "$outPath"';
+      debugPrint('▶ FFmpeg concat $name: $cmd');
+      final session = await FFmpegKit.execute(cmd);
+      final rc = await session.getReturnCode();
+      if (!ReturnCode.isSuccess(rc)) {
+        final logs = await session.getAllLogsAsString();
+        debugPrint('✗ FFmpeg $name concat failed: $logs');
+        throw Exception('Failed to concatenate $name segments');
+      }
+      return outPath;
+    }
+
+    if (!hasSeparateAudio) {
+      // ── Simple case: video .ts already contains audio ───
+      // Just concat + remux in one step
+      final videoListPath = await writeConcatList(videoTs, 'video');
+      final List<String> inputs = ['-f concat -safe 0 -i "$videoListPath"'];
+      final List<String> maps = ['-map 0:v', '-map 0:a?'];
+
+      if (subSegments.isNotEmpty) {
+        final subListPath = await writeConcatList(subSegments, 'sub');
+        inputs.add('-f concat -safe 0 -i "$subListPath"');
+        maps.add('-map 1:s');
+      }
+
+      final codecArgs = subSegments.isNotEmpty ? '-c:s mov_text' : '';
+      final command =
+          '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy $codecArgs -y "$outputMp4Path"';
+
+      debugPrint('▶ FFmpeg (simple mux): $command');
+      final session = await FFmpegKit.execute(command);
+      final returnCode = await session.getReturnCode();
+      if (!ReturnCode.isSuccess(returnCode)) {
+        final logs = await session.getAllLogsAsString();
+        debugPrint('✗ FFmpeg failed: $logs');
+        throw Exception('MP4 conversion failed');
+      }
     } else {
-      // If no separate audio, use audio from video stream
-      maps.add('-map 0:a?');
-    }
+      // ── Separate audio: 3-step approach for perfect sync ─
+      // Step 1: Concat video segments → video_all.ts
+      final videoListPath = await writeConcatList(videoTs, 'video');
+      final videoAllTs = await concatToSingleTs(videoListPath, 'video');
 
-    // 3. Subtitles (Optional)
-    if (subSegments.isNotEmpty) {
-       final subListPath = p.join(saveDir, 'sub_list.txt');
-       await File(subListPath).writeAsString(
-        subSegments
-            .map((s) =>
-                "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
-            .join('\n'),
-      );
-      inputs.add('-f concat -safe 0 -i "$subListPath"');
-      maps.add('-map ${inputs.length - 1}:s');
-    }
+      // Step 2: Concat audio segments → audio_all.ts
+      final audioListPath = await writeConcatList(audioTs, 'audio');
+      final audioAllTs = await concatToSingleTs(audioListPath, 'audio');
 
-    // Construct final command
-    // -c:s mov_text is essential for subtitles in MP4 container
-    final String codecArgs = subSegments.isNotEmpty ? '-c:s mov_text' : '';
-    final String command = '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy $codecArgs -y "$outputMp4Path"';
+      // Step 3: Mux video_all.ts + audio_all.ts → output.mp4
+      //  -fflags +genpts  : regenerate presentation timestamps
+      //  -async 1          : correct audio sync drift
+      //  -shortest         : output only as long as shortest stream
+      final List<String> inputs = [
+        '-fflags +genpts -i "$videoAllTs"',
+        '-fflags +genpts -i "$audioAllTs"',
+      ];
+      final List<String> maps = ['-map 0:v', '-map 1:a'];
 
-    debugPrint('▶ FFmpeg: $command');
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
+      if (subSegments.isNotEmpty) {
+        final subListPath = await writeConcatList(subSegments, 'sub');
+        final subAllTs = await concatToSingleTs(subListPath, 'sub');
+        inputs.add('-i "$subAllTs"');
+        maps.add('-map 2:s');
+      }
 
-    if (!ReturnCode.isSuccess(returnCode)) {
-      final logs = await session.getAllLogsAsString();
-      debugPrint('✗ FFmpeg failed: $logs');
-      throw Exception('MP4 conversion failed');
+      final codecArgs = subSegments.isNotEmpty ? '-c:s mov_text' : '';
+      final command =
+          '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy $codecArgs -async 1 -shortest -y "$outputMp4Path"';
+
+      debugPrint('▶ FFmpeg (synced mux): $command');
+      final session = await FFmpegKit.execute(command);
+      final returnCode = await session.getReturnCode();
+      if (!ReturnCode.isSuccess(returnCode)) {
+        final logs = await session.getAllLogsAsString();
+        debugPrint('✗ FFmpeg failed: $logs');
+        throw Exception('MP4 conversion failed');
+      }
+
+      // Cleanup intermediate files
+      try {
+        await File(videoAllTs).delete();
+        await File(audioAllTs).delete();
+      } catch (_) {}
     }
 
     debugPrint('✅ MP4 created: $outputMp4Path');

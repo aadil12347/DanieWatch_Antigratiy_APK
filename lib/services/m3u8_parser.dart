@@ -4,7 +4,9 @@
 // Extracts ALL quality variants, audio tracks, and subtitles.
 // ─────────────────────────────────────────────────────────
 
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
 // ── Quality variant (video stream) ───────────────────────
 class StreamVariant {
@@ -187,16 +189,29 @@ class PlaylistInfo {
 
 // ── Parser ────────────────────────────────────────────────
 class M3u8Parser {
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 15),
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  ));
+  late final Dio _dio;
+
+  M3u8Parser() {
+    _dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    ));
+    // Bypass expired/invalid SSL certificates from CDN servers
+    _dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        client.badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+        return client;
+      },
+    );
+  }
 
   /// Fetch and parse a master or media playlist
   Future<PlaylistInfo> parse(String m3u8Url) async {

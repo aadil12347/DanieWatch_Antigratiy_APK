@@ -67,6 +67,20 @@ class ErrorSanitizer {
       return 'Too many requests. Please wait a moment and try again.';
     }
 
+    // ── SSL / Certificate ────────────────────────────────
+    // Must be checked BEFORE generic DioException patterns,
+    // because DioException wraps HandshakeException/SSL errors.
+    if (_matchesAny(raw, [
+      'certificate',
+      'handshake',
+      'ssl',
+      'tls',
+      'bad_certificate',
+      'certificate_verify_failed',
+    ])) {
+      return 'Secure connection failed. Please check your network settings.';
+    }
+
     // ── DioException patterns ────────────────────────────
     if (raw.contains('dioexception')) {
       if (raw.contains('cancel')) {
@@ -76,17 +90,6 @@ class ErrorSanitizer {
         return 'Server returned an unexpected response.';
       }
       return 'Network error occurred. Please try again.';
-    }
-
-    // ── SSL / Certificate ────────────────────────────────
-    if (_matchesAny(raw, [
-      'certificate',
-      'handshake',
-      'ssl',
-      'tls',
-      'bad_certificate',
-    ])) {
-      return 'Secure connection failed. Please check your network settings.';
     }
 
     // ── Storage / File System ────────────────────────────
