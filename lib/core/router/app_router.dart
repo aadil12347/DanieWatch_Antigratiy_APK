@@ -76,14 +76,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       final location = state.uri.toString();
 
       // ── Intercept HTTPS deep links from Android App Links ──────────
-      // When the OS delivers an HTTPS URL, GoRouter receives the full URL
-      // (e.g. https://aadil12347.github.io/daniewatch-app.github.io/movie/123).
-      // Convert it to the internal route so GoRouter can match it.
+      // Handles both new Vercel URLs (daniewatchapp.vercel.app/movie/123)
+      // and legacy GitHub Pages URLs for backward compatibility.
       if (location.startsWith('https://') || location.startsWith('http://')) {
         final uri = Uri.tryParse(location);
         if (uri != null) {
           final segments = uri.pathSegments.toList();
-          // Strip the repo subpath prefix if present
+          // Strip legacy GitHub Pages repo subpath prefix if present
           if (segments.isNotEmpty && segments.first == 'daniewatch-app.github.io') {
             segments.removeAt(0);
           }

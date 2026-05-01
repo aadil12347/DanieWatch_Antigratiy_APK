@@ -105,7 +105,18 @@
                 <data android:scheme="daniewatch"/>
             </intent-filter>
 
-            <!-- HTTPS App Links for clickable share links on WhatsApp/Telegram/etc -->
+            <!-- HTTPS App Links — New Vercel domain (primary share links) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="daniewatch-app.vercel.app"
+                      android:pathPrefix="/movie"/>
+                <data android:pathPrefix="/tv"/>
+            </intent-filter>
+
+            <!-- HTTPS App Links — Legacy GitHub Pages (backward compatibility) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>

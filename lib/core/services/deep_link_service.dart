@@ -11,8 +11,9 @@ import '../router/app_router.dart';
 ///
 /// Supported link formats:
 ///   Custom scheme:  `daniewatch://movie/123`  or  `daniewatch://tv/81355`
-///   HTTPS links:    `https://daniewatch-app.github.io/movie/123`
-///                   `https://daniewatch-app.github.io/tv/81355`
+///   HTTPS links:    `https://daniewatch-app.vercel.app/movie/123`
+///                   `https://daniewatch-app.vercel.app/tv/81355`
+///   Legacy HTTPS:   `https://aadil12347.github.io/daniewatch-app.github.io/movie/123`
 ///
 /// The HTTPS format is used for sharing because messaging apps (WhatsApp,
 /// Telegram, etc.) only render `https://` URLs as clickable links.
@@ -28,9 +29,11 @@ class DeepLinkService {
   static const String _pendingLinkKey = 'pending_deep_link';
 
   /// The HTTPS host used for share links (must match AndroidManifest intent-filter).
-  static const String shareHost = 'aadil12347.github.io';
-  /// The repo subpath on GitHub Pages.
-  static const String _repoPath = 'daniewatch-app.github.io';
+  static const String shareHost = 'daniewatch-app.vercel.app';
+
+  /// Legacy GitHub Pages host (for backward compatibility with old shared links).
+  static const String _legacyHost = 'aadil12347.github.io';
+  static const String _legacyRepoPath = 'daniewatch-app.github.io';
 
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
@@ -48,7 +51,7 @@ class DeepLinkService {
   /// Build a share-friendly HTTPS link for a given media type and TMDB id.
   /// This format is clickable on WhatsApp, Telegram, Instagram, etc.
   static String buildShareLink(String mediaType, int tmdbId) {
-    return 'https://$shareHost/$_repoPath/$mediaType/$tmdbId';
+    return 'https://$shareHost/$mediaType/$tmdbId';
   }
 
   /// Initialize the service. Should be called once during app startup.
@@ -96,12 +99,17 @@ class DeepLinkService {
         id = uri.pathSegments[1];
       }
     } else if (uri.scheme == 'https' && uri.host == shareHost) {
-      // HTTPS link: https://aadil12347.github.io/daniewatch-app.github.io/movie/123
-      // uri.pathSegments = ['daniewatch-app.github.io', 'movie', '123']
-      // Strip the repo subpath prefix, then parse media type + id
+      // New Vercel link: https://daniewatch-app.vercel.app/movie/123
+      // uri.pathSegments = ['movie', '123']
       final segments = uri.pathSegments.toList();
-      // Remove the leading repo path segment if present
-      if (segments.isNotEmpty && segments.first == _repoPath) {
+      if (segments.length >= 2) {
+        mediaType = segments[0];
+        id = segments[1];
+      }
+    } else if (uri.scheme == 'https' && uri.host == _legacyHost) {
+      // Legacy GitHub Pages: https://aadil12347.github.io/daniewatch-app.github.io/movie/123
+      final segments = uri.pathSegments.toList();
+      if (segments.isNotEmpty && segments.first == _legacyRepoPath) {
         segments.removeAt(0);
       }
       if (segments.length >= 2) {
