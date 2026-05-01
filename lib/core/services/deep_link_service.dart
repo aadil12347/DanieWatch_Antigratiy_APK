@@ -7,12 +7,15 @@ import 'package:flutter/widgets.dart';
 
 import '../router/app_router.dart';
 
-/// Singleton service that handles incoming deep links from the `daniewatch://` scheme.
+/// Singleton service that handles incoming deep links.
 ///
-/// Deep link format: `daniewatch://<mediaType>/<tmdbId>`
-/// Examples:
-///   - `daniewatch://movie/123`
-///   - `daniewatch://tv/81355`
+/// Supported link formats:
+///   Custom scheme:  `daniewatch://movie/123`  or  `daniewatch://tv/81355`
+///   HTTPS links:    `https://daniewatch-app.github.io/movie/123`
+///                   `https://daniewatch-app.github.io/tv/81355`
+///
+/// The HTTPS format is used for sharing because messaging apps (WhatsApp,
+/// Telegram, etc.) only render `https://` URLs as clickable links.
 ///
 /// If the user is logged in and the app is ready, the service navigates immediately.
 /// If the user is NOT logged in (splash still showing), the link is saved to
@@ -23,6 +26,11 @@ class DeepLinkService {
   static final DeepLinkService instance = DeepLinkService._();
 
   static const String _pendingLinkKey = 'pending_deep_link';
+
+  /// The HTTPS host used for share links (must match AndroidManifest intent-filter).
+  static const String shareHost = 'aadil12347.github.io';
+  /// The repo subpath on GitHub Pages.
+  static const String _repoPath = 'daniewatch-app.github.io';
 
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
@@ -35,6 +43,12 @@ class DeepLinkService {
   void setAppReady() {
     _isAppReady = true;
     debugPrint('🔗 DeepLinkService: App is now ready for deep link navigation');
+  }
+
+  /// Build a share-friendly HTTPS link for a given media type and TMDB id.
+  /// This format is clickable on WhatsApp, Telegram, Instagram, etc.
+  static String buildShareLink(String mediaType, int tmdbId) {
+    return 'https://$shareHost/$_repoPath/$mediaType/$tmdbId';
   }
 
   /// Initialize the service. Should be called once during app startup.
@@ -66,24 +80,34 @@ class DeepLinkService {
 
   /// Parse and handle an incoming URI.
   Future<void> _handleIncomingLink(Uri uri) async {
-    // URI format: daniewatch://movie/123 or daniewatch://tv/81355
-    // uri.host = 'movie' or 'tv'
-    // uri.pathSegments = ['123'] or ['81355']
-    //
-    // Also handle: daniewatch:///movie/123  (triple slash)
-    // In that case: uri.host = '' and uri.pathSegments = ['movie', '123']
-
     String? mediaType;
     String? id;
 
-    if (uri.host.isNotEmpty && uri.pathSegments.isNotEmpty) {
-      // daniewatch://movie/123 → host='movie', pathSegments=['123']
-      mediaType = uri.host;
-      id = uri.pathSegments.first;
-    } else if (uri.pathSegments.length >= 2) {
-      // daniewatch:///movie/123 → pathSegments=['movie', '123']
-      mediaType = uri.pathSegments[0];
-      id = uri.pathSegments[1];
+    if (uri.scheme == 'daniewatch') {
+      // Custom scheme: daniewatch://movie/123
+      // uri.host = 'movie', uri.pathSegments = ['123']
+      // Or triple slash: daniewatch:///movie/123
+      // uri.host = '', uri.pathSegments = ['movie', '123']
+      if (uri.host.isNotEmpty && uri.pathSegments.isNotEmpty) {
+        mediaType = uri.host;
+        id = uri.pathSegments.first;
+      } else if (uri.pathSegments.length >= 2) {
+        mediaType = uri.pathSegments[0];
+        id = uri.pathSegments[1];
+      }
+    } else if (uri.scheme == 'https' && uri.host == shareHost) {
+      // HTTPS link: https://aadil12347.github.io/daniewatch-app.github.io/movie/123
+      // uri.pathSegments = ['daniewatch-app.github.io', 'movie', '123']
+      // Strip the repo subpath prefix, then parse media type + id
+      final segments = uri.pathSegments.toList();
+      // Remove the leading repo path segment if present
+      if (segments.isNotEmpty && segments.first == _repoPath) {
+        segments.removeAt(0);
+      }
+      if (segments.length >= 2) {
+        mediaType = segments[0];
+        id = segments[1];
+      }
     }
 
     if (mediaType == null || id == null) {

@@ -104,6 +104,17 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="daniewatch"/>
             </intent-filter>
+
+            <!-- HTTPS App Links for clickable share links on WhatsApp/Telegram/etc -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="aadil12347.github.io"
+                      android:pathPrefix="/daniewatch-app.github.io/movie"/>
+                <data android:pathPrefix="/daniewatch-app.github.io/tv"/>
+            </intent-filter>
         </activity>
 
         <activity

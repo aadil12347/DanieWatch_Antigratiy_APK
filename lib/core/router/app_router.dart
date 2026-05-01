@@ -73,6 +73,55 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
+      final location = state.uri.toString();
+
+      // ── Intercept HTTPS deep links from Android App Links ──────────
+      // When the OS delivers an HTTPS URL, GoRouter receives the full URL
+      // (e.g. https://aadil12347.github.io/daniewatch-app.github.io/movie/123).
+      // Convert it to the internal route so GoRouter can match it.
+      if (location.startsWith('https://') || location.startsWith('http://')) {
+        final uri = Uri.tryParse(location);
+        if (uri != null) {
+          final segments = uri.pathSegments.toList();
+          // Strip the repo subpath prefix if present
+          if (segments.isNotEmpty && segments.first == 'daniewatch-app.github.io') {
+            segments.removeAt(0);
+          }
+          if (segments.length >= 2) {
+            final mediaType = segments[0].toLowerCase();
+            final id = segments[1];
+            if ((mediaType == 'movie' || mediaType == 'tv') && int.tryParse(id) != null) {
+              return '/details/$mediaType/$id';
+            }
+          }
+        }
+        // Unrecognised HTTPS link — go home instead of showing error
+        return '/home';
+      }
+
+      // ── Intercept custom scheme deep links (daniewatch://movie/123) ──
+      if (location.startsWith('daniewatch://')) {
+        final uri = Uri.tryParse(location);
+        if (uri != null) {
+          String? mediaType;
+          String? id;
+          if (uri.host.isNotEmpty && uri.pathSegments.isNotEmpty) {
+            mediaType = uri.host;
+            id = uri.pathSegments.first;
+          } else if (uri.pathSegments.length >= 2) {
+            mediaType = uri.pathSegments[0];
+            id = uri.pathSegments[1];
+          }
+          if (mediaType != null && id != null) {
+            final normalized = mediaType.toLowerCase();
+            if ((normalized == 'movie' || normalized == 'tv') && int.tryParse(id) != null) {
+              return '/details/$normalized/$id';
+            }
+          }
+        }
+        return '/home';
+      }
+
       final authState = ref.read(authStateProvider);
       final user = authState.valueOrNull;
       

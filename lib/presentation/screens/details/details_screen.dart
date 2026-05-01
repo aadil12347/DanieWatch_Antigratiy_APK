@@ -20,6 +20,7 @@ import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
 import '../../../services/video_extractor_service.dart';
+import '../../../core/services/deep_link_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
@@ -386,9 +387,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   void _handleQuickShare(ContentDetail content) {
     HapticFeedback.lightImpact();
     final mediaType = content.isTv ? 'tv' : 'movie';
-    final deepLink = 'daniewatch://$mediaType/${content.id}';
+    final shareLink = DeepLinkService.buildShareLink(mediaType, content.id);
     Share.share(
-      'Check out "${content.title}" on DanieWatch! 🎬\n\n$deepLink',
+      'Check out "${content.title}" on DanieWatch! 🎬\n\n$shareLink',
     );
   }
 
@@ -729,7 +730,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   // ─── Share Tab ────────────────────────────────────────────────────────────
   Widget _buildShareTab(ContentDetail content) {
     final mediaType = content.isTv ? 'tv' : 'movie';
-    final deepLink = 'daniewatch://$mediaType/${content.id}';
+    final deepLink = DeepLinkService.buildShareLink(mediaType, content.id);
     final shareText = 'Check out "${content.title}" on DanieWatch! 🎬\n\n$deepLink';
 
     return Padding(
