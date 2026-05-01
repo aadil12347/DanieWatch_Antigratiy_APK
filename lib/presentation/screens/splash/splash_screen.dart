@@ -194,7 +194,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         } else {
           // Check for pending deep link (user clicked a shared link)
           final pendingDeepLink = await DeepLinkService.consumePendingLink();
-          if (!mounted || _hasNavigated) return;
+          if (!mounted) return;
 
           if (pendingDeepLink != null) {
             debugPrint('🔗 Splash: Navigating to pending deep link: $pendingDeepLink');

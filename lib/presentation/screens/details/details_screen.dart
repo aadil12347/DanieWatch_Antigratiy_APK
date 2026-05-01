@@ -386,9 +386,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   void _handleQuickShare(ContentDetail content) {
     HapticFeedback.lightImpact();
     final mediaType = content.isTv ? 'tv' : 'movie';
-    final bloggerLink = 'https://daniewatchapp.blogspot.com/?type=$mediaType&id=${content.id}';
+    final deepLink = 'daniewatch://$mediaType/${content.id}';
     Share.share(
-      'Check out "${content.title}" on DanieWatch! 🎬\n\n$bloggerLink',
+      'Check out "${content.title}" on DanieWatch! 🎬\n\n$deepLink',
     );
   }
 
@@ -729,9 +729,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   // ─── Share Tab ────────────────────────────────────────────────────────────
   Widget _buildShareTab(ContentDetail content) {
     final mediaType = content.isTv ? 'tv' : 'movie';
-    final bloggerLink = 'https://daniewatchapp.blogspot.com/?type=$mediaType&id=${content.id}';
     final deepLink = 'daniewatch://$mediaType/${content.id}';
-    final shareText = 'Check out "${content.title}" on DanieWatch! 🎬\n\n$bloggerLink';
+    final shareText = 'Check out "${content.title}" on DanieWatch! 🎬\n\n$deepLink';
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -836,7 +835,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       label: 'Copy Link',
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        Clipboard.setData(ClipboardData(text: bloggerLink));
+                        Clipboard.setData(ClipboardData(text: deepLink));
                         CustomToast.show(context, 'Link copied!', type: ToastType.success, icon: Icons.check_rounded);
                       },
                     ),
