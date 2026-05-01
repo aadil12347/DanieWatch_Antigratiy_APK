@@ -275,7 +275,7 @@ class HlsDownloaderService {
         continue;
       }
 
-      // Handle EXT-X-MAP (initialization segment)
+      // Handle EXT-X-MAP (initialization segment for fMP4)
       if (line.startsWith('#EXT-X-MAP:')) {
         final uriMatch = RegExp(r'URI="([^"]+)"').firstMatch(line);
         if (uriMatch != null) {
@@ -283,6 +283,7 @@ class HlsDownloaderService {
           segments.add(_SegmentTask(
             url: mapUrl,
             localPath: p.join(saveDir, '${prefix}_init_$segIndex.mp4'),
+            isInitSegment: true,
           ));
         }
         continue;
@@ -523,11 +524,21 @@ class HlsDownloaderService {
   // ══════════════════════════════════════════════════════════
   //  PHASE 3: Mux video + audio → single .mp4
   //
-  //  Strategy for proper A/V sync:
-  //  1. Concatenate all video .ts segments → single video_all.ts
-  //  2. Concatenate all audio .ts segments → single audio_all.ts
-  //  3. Mux the two intermediate files together with timestamp
-  //     correction flags to ensure perfect sync.
+  //  Strategy: BINARY CONCATENATION + FFmpeg REMUX
+  //
+  //  Why this works (and why the old concat demuxer didn't):
+  //  - Online HLS players read segment bytes SEQUENTIALLY,
+  //    producing a single continuous byte stream. The PTS
+  //    timestamps inside each MPEG-TS packet are already
+  //    perfectly sequential — the player just feeds bytes.
+  //  - FFmpeg's concat demuxer (-f concat) opens each file
+  //    INDIVIDUALLY and recalculates timestamps, introducing
+  //    drift between video and audio streams.
+  //  - Binary concatenation (raw byte append) reproduces
+  //    EXACTLY what the online player does. The combined
+  //    file has identical timestamps to the live stream.
+  //  - FFmpeg is only used for the final remux (container
+  //    conversion to MP4), which is a trivial copy operation.
   // ══════════════════════════════════════════════════════════
   Future<void> _muxToMp4(
     List<_SegmentTask> videoSegments,
@@ -536,113 +547,146 @@ class HlsDownloaderService {
     String saveDir,
     String outputMp4Path,
   ) async {
-    final videoTs = videoSegments.where((s) => s.isTsSegment).toList();
-    if (videoTs.isEmpty) throw Exception('No video segments to convert');
+    final videoMedia = videoSegments.where((s) => s.isTsSegment).toList();
+    if (videoMedia.isEmpty) throw Exception('No video segments to convert');
 
-    final audioTs = audioSegments.where((s) => s.isTsSegment).toList();
-    final subSegments = subtitleSegments.where((s) => s.isTsSegment).toList();
-    final hasSeparateAudio = audioTs.isNotEmpty;
+    final videoInits = videoSegments.where((s) => s.isInitSegment).toList();
+    final audioMedia = audioSegments.where((s) => s.isTsSegment).toList();
+    final audioInits = audioSegments.where((s) => s.isInitSegment).toList();
+    final subMedia = subtitleSegments.where((s) => s.isTsSegment).toList();
+    final subInits = subtitleSegments.where((s) => s.isInitSegment).toList();
+    final hasSeparateAudio = audioMedia.isNotEmpty;
 
-    // ── Helper: write a concat list file ──────────────────
-    Future<String> writeConcatList(List<_SegmentTask> segs, String name) async {
-      final listPath = p.join(saveDir, '${name}_list.txt');
-      await File(listPath).writeAsString(
-        segs
-            .map((s) =>
-                "file '${s.localPath.replaceAll('\\', '/').replaceAll("'", "'\\''")}'")
-            .join('\n'),
-      );
-      return listPath;
-    }
+    // ── Helper: Binary-concat segments into a single file ──
+    // This is the exact same thing an HLS player does internally:
+    // read segment bytes one after another into a continuous stream.
+    Future<String> binaryConcat(
+      List<_SegmentTask> initSegs,
+      List<_SegmentTask> mediaSegs,
+      String name,
+    ) async {
+      final outPath = p.join(saveDir, '${name}_combined.ts');
+      final sink = File(outPath).openWrite();
 
-    // ── Helper: run an FFmpeg concat into a single .ts ────
-    Future<String> concatToSingleTs(String listPath, String name) async {
-      final outPath = p.join(saveDir, '${name}_all.ts');
-      final cmd = '-f concat -safe 0 -i "$listPath" -c copy -y "$outPath"';
-      debugPrint('▶ FFmpeg concat $name: $cmd');
-      final session = await FFmpegKit.execute(cmd);
-      final rc = await session.getReturnCode();
-      if (!ReturnCode.isSuccess(rc)) {
-        final logs = await session.getAllLogsAsString();
-        debugPrint('✗ FFmpeg $name concat failed: $logs');
-        throw Exception('Failed to concatenate $name segments');
+      // Prepend init segment(s) for fMP4 streams
+      for (final seg in initSegs) {
+        final f = File(seg.localPath);
+        if (await f.exists()) {
+          sink.add(await f.readAsBytes());
+        }
       }
+
+      // Append all media segments in order
+      for (final seg in mediaSegs) {
+        final f = File(seg.localPath);
+        if (await f.exists()) {
+          sink.add(await f.readAsBytes());
+        }
+      }
+
+      await sink.flush();
+      await sink.close();
+
+      final size = await File(outPath).length();
+      debugPrint('📦 Binary concat $name: ${mediaSegs.length} segments → ${(size / (1024 * 1024)).toStringAsFixed(1)} MB');
       return outPath;
     }
 
-    if (!hasSeparateAudio) {
-      // ── Simple case: video .ts already contains audio ───
-      // Just concat + remux in one step
-      final videoListPath = await writeConcatList(videoTs, 'video');
-      final List<String> inputs = ['-f concat -safe 0 -i "$videoListPath"'];
-      final List<String> maps = ['-map 0:v', '-map 0:a?'];
+    // ── Step 1: Binary-concat all streams ──────────────────
+    final videoCombined = await binaryConcat(videoInits, videoMedia, 'video');
 
-      if (subSegments.isNotEmpty) {
-        final subListPath = await writeConcatList(subSegments, 'sub');
-        inputs.add('-f concat -safe 0 -i "$subListPath"');
-        maps.add('-map 1:s');
-      }
-
-      final codecArgs = subSegments.isNotEmpty ? '-c:s mov_text' : '';
-      final command =
-          '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy $codecArgs -y "$outputMp4Path"';
-
-      debugPrint('▶ FFmpeg (simple mux): $command');
-      final session = await FFmpegKit.execute(command);
-      final returnCode = await session.getReturnCode();
-      if (!ReturnCode.isSuccess(returnCode)) {
-        final logs = await session.getAllLogsAsString();
-        debugPrint('✗ FFmpeg failed: $logs');
-        throw Exception('MP4 conversion failed');
-      }
-    } else {
-      // ── Separate audio: 3-step approach for perfect sync ─
-      // Step 1: Concat video segments → video_all.ts
-      final videoListPath = await writeConcatList(videoTs, 'video');
-      final videoAllTs = await concatToSingleTs(videoListPath, 'video');
-
-      // Step 2: Concat audio segments → audio_all.ts
-      final audioListPath = await writeConcatList(audioTs, 'audio');
-      final audioAllTs = await concatToSingleTs(audioListPath, 'audio');
-
-      // Step 3: Mux video_all.ts + audio_all.ts → output.mp4
-      //  -fflags +genpts  : regenerate presentation timestamps
-      //  -async 1          : correct audio sync drift
-      //  -shortest         : output only as long as shortest stream
-      final List<String> inputs = [
-        '-fflags +genpts -i "$videoAllTs"',
-        '-fflags +genpts -i "$audioAllTs"',
-      ];
-      final List<String> maps = ['-map 0:v', '-map 1:a'];
-
-      if (subSegments.isNotEmpty) {
-        final subListPath = await writeConcatList(subSegments, 'sub');
-        final subAllTs = await concatToSingleTs(subListPath, 'sub');
-        inputs.add('-i "$subAllTs"');
-        maps.add('-map 2:s');
-      }
-
-      final codecArgs = subSegments.isNotEmpty ? '-c:s mov_text' : '';
-      final command =
-          '${inputs.join(' ')} ${maps.join(' ')} -c:v copy -c:a copy $codecArgs -async 1 -shortest -y "$outputMp4Path"';
-
-      debugPrint('▶ FFmpeg (synced mux): $command');
-      final session = await FFmpegKit.execute(command);
-      final returnCode = await session.getReturnCode();
-      if (!ReturnCode.isSuccess(returnCode)) {
-        final logs = await session.getAllLogsAsString();
-        debugPrint('✗ FFmpeg failed: $logs');
-        throw Exception('MP4 conversion failed');
-      }
-
-      // Cleanup intermediate files
-      try {
-        await File(videoAllTs).delete();
-        await File(audioAllTs).delete();
-      } catch (_) {}
+    String? audioCombined;
+    if (hasSeparateAudio) {
+      audioCombined = await binaryConcat(audioInits, audioMedia, 'audio');
     }
 
+    String? subCombined;
+    if (subMedia.isNotEmpty) {
+      subCombined = await binaryConcat(subInits, subMedia, 'sub');
+    }
+
+    // ── Step 2: FFmpeg remux (simple container conversion) ─
+    final List<String> inputs = ['-i "$videoCombined"'];
+    final List<String> maps = ['-map 0:v'];
+    int inputIdx = 1;
+
+    if (hasSeparateAudio) {
+      inputs.add('-i "$audioCombined"');
+      maps.add('-map $inputIdx:a');
+      inputIdx++;
+    } else {
+      maps.add('-map 0:a?');
+    }
+
+    if (subCombined != null) {
+      inputs.add('-i "$subCombined"');
+      maps.add('-map $inputIdx:s');
+      inputIdx++;
+    }
+
+    final codecArgs = subCombined != null ? '-c:s mov_text' : '';
+
+    // ── Attempt 1: Stream-copy remux ──────────────────────
+    final copyCommand =
+        '-fflags +genpts+igndts '
+        '${inputs.join(' ')} ${maps.join(' ')} '
+        '-c:v copy -c:a copy $codecArgs '
+        '-avoid_negative_ts make_zero '
+        '-movflags +faststart '
+        '-shortest -y "$outputMp4Path"';
+
+    debugPrint('▶ FFmpeg (binary-concat remux): $copyCommand');
+    final copySession = await FFmpegKit.execute(copyCommand);
+    final copyRc = await copySession.getReturnCode();
+
+    if (ReturnCode.isSuccess(copyRc)) {
+      final outFile = File(outputMp4Path);
+      final outSize = await outFile.exists() ? await outFile.length() : 0;
+      if (outSize > 1024 * 100) {
+        debugPrint('✅ MP4 created (copy): $outputMp4Path (${(outSize / (1024 * 1024)).toStringAsFixed(1)} MB)');
+        _cleanupIntermediateFiles([videoCombined, audioCombined, subCombined]);
+        return;
+      }
+      debugPrint('⚠ Output too small ($outSize bytes) — trying audio re-encode');
+    } else {
+      final logs = await copySession.getAllLogsAsString();
+      debugPrint('⚠ Copy remux failed — trying audio re-encode. Logs: $logs');
+    }
+
+    // ── Attempt 2: Re-encode audio as fallback ────────────
+    final reencodeCommand =
+        '-fflags +genpts+igndts '
+        '${inputs.join(' ')} ${maps.join(' ')} '
+        '-c:v copy -c:a aac -b:a 192k '
+        '-af "aresample=async=1:first_pts=0" '
+        '$codecArgs '
+        '-avoid_negative_ts make_zero '
+        '-movflags +faststart '
+        '-shortest -y "$outputMp4Path"';
+
+    debugPrint('▶ FFmpeg (audio re-encode fallback): $reencodeCommand');
+    final reencodeSession = await FFmpegKit.execute(reencodeCommand);
+    final reencodeRc = await reencodeSession.getReturnCode();
+    if (!ReturnCode.isSuccess(reencodeRc)) {
+      final logs = await reencodeSession.getAllLogsAsString();
+      debugPrint('✗ FFmpeg re-encode also failed: $logs');
+      _cleanupIntermediateFiles([videoCombined, audioCombined, subCombined]);
+      throw Exception('MP4 conversion failed');
+    }
+
+    _cleanupIntermediateFiles([videoCombined, audioCombined, subCombined]);
     debugPrint('✅ MP4 created: $outputMp4Path');
+  }
+
+  /// Cleanup intermediate binary-concat files
+  void _cleanupIntermediateFiles(List<String?> paths) {
+    for (final path in paths) {
+      if (path == null) continue;
+      try {
+        final f = File(path);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
   }
 
   // ── Helpers ────────────────────────────────────────────
@@ -662,10 +706,12 @@ class _SegmentTask {
   final String url;
   final String localPath;
   final bool isTsSegment;
+  final bool isInitSegment;
 
   _SegmentTask({
     required this.url,
     required this.localPath,
     this.isTsSegment = false,
+    this.isInitSegment = false,
   });
 }
