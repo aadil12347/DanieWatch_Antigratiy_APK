@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/download_modal_provider.dart';
+import '../../providers/actor_modal_provider.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/quality_selector_sheet.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -430,7 +431,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 letterSpacing: -0.8)),
         const SizedBox(height: 12),
         SizedBox(
-          height: 100,
+          height: 160,
           child: ListView.builder(
             physics: const ClampingScrollPhysics(),
             scrollDirection: Axis.horizontal,
@@ -443,52 +444,84 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
               return Padding(
                 padding:
-                    EdgeInsets.only(right: index < cast.length - 1 ? 16 : 0),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.border, width: 1),
-                      ),
-                      child: ClipOval(
-                        child: imageUrl != null
-                            ? CachedNetworkImage(
-                                imageUrl: imageUrl,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(
-                                  color: AppColors.surfaceElevated,
-                                  child: const Icon(Icons.person,
-                                      color: AppColors.textMuted, size: 28),
-                                ),
-                                errorWidget: (_, __, ___) => Container(
-                                  color: AppColors.surfaceElevated,
-                                  child: const Icon(Icons.person,
-                                      color: AppColors.textMuted, size: 28),
-                                ),
-                              )
-                            : Container(
-                                color: AppColors.surfaceElevated,
-                                child: const Icon(Icons.person,
-                                    color: AppColors.textMuted, size: 28),
-                              ),
-                      ),
+                    EdgeInsets.only(right: index < cast.length - 1 ? 12 : 0),
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    ref.read(actorModalProvider.notifier).state =
+                        ActorModalState(
+                      isOpen: true,
+                      actorId: actor.id,
+                      actorName: actor.name,
+                      characterName: actor.character,
+                      profilePath: actor.profilePath,
+                    );
+                  },
+                  child: SizedBox(
+                    width: 85,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border:
+                                Border.all(color: AppColors.border, width: 1),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(11),
+                            child: imageUrl != null
+                                ? CachedNetworkImage(
+                                    imageUrl: imageUrl,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.person,
+                                          color: AppColors.textMuted,
+                                          size: 32),
+                                    ),
+                                    errorWidget: (_, __, ___) => Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.person,
+                                          color: AppColors.textMuted,
+                                          size: 32),
+                                    ),
+                                  )
+                                : Container(
+                                    color: AppColors.surfaceElevated,
+                                    child: const Icon(Icons.person,
+                                        color: AppColors.textMuted, size: 32),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          actor.name,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                        if (actor.character != null &&
+                            actor.character!.isNotEmpty) ...[                         
+                          const SizedBox(height: 2),
+                          Text(
+                            actor.character!,
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 10),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      width: 70,
-                      child: Text(
-                        actor.name,
-                        style: const TextStyle(
-                            color: AppColors.textSecondary, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               );
             },

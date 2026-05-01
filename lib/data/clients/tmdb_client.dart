@@ -186,4 +186,27 @@ class TmdbClient {
       return [];
     }
   }
+
+  /// Fetch person/actor details (biography, birthday, gender, place_of_birth, etc.)
+  Future<Map<String, dynamic>?> getPersonDetails(int personId) async {
+    try {
+      final res = await _dio.get('/person/$personId');
+      return res.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      dev.log('[TMDB] Person $personId error: ${e.message}');
+      return null;
+    }
+  }
+
+  /// Fetch combined credits (movies + TV) for a person
+  Future<List<Map<String, dynamic>>> getPersonCombinedCredits(int personId) async {
+    try {
+      final res = await _dio.get('/person/$personId/combined_credits');
+      final cast = res.data['cast'] as List?;
+      return cast?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Person credits $personId error: ${e.message}');
+      return [];
+    }
+  }
 }

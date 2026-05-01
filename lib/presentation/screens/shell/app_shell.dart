@@ -9,9 +9,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/search_provider.dart';
 import '../../providers/download_modal_provider.dart';
 import '../../providers/filter_modal_provider.dart';
+import '../../providers/actor_modal_provider.dart';
 import '../../widgets/quality_selector_sheet.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/main_filter_panel_sheet.dart';
+import '../../widgets/actor_modal_content.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/filter_selector_sheet.dart';
 import 'dart:async';
@@ -53,16 +55,12 @@ class _AppShellState extends ConsumerState<AppShell> {
   ];
 
   static void closeModals(WidgetRef ref) {
-    // 1. Close "More" if open (this is local state in AppShell, but we can't easily reach it from static)
-    // Actually, for consistency, we'll keep _isMoreOpen in AppShell for now,
-    // and let its own PopScope handle that if needed, or better, move it to a provider.
-    // Let's only close the providers for now.
-
     ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
     ref.read(filterModalProvider.notifier).state =
         const FilterModalState(view: FilterView.none);
     ref.read(confirmationModalProvider.notifier).state =
         const ConfirmationModalState();
+    ref.read(actorModalProvider.notifier).state = const ActorModalState();
   }
 
   void _onTap(int index) {
@@ -144,6 +142,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         const FilterModalState(view: FilterView.none);
     ref.read(confirmationModalProvider.notifier).state =
         const ConfirmationModalState();
+    ref.read(actorModalProvider.notifier).state = const ActorModalState();
   }
 
   @override
@@ -155,8 +154,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     final downloadState = ref.watch(downloadModalProvider);
     final filterState = ref.watch(filterModalProvider);
     final confirmState = ref.watch(confirmationModalProvider);
+    final actorState = ref.watch(actorModalProvider);
     final isOtherModalOpen =
-        downloadState.isOpen || filterState.isOpen || confirmState.isOpen;
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen;
     final isModalOpen = isOtherModalOpen;
 
     return PopScope(
@@ -334,17 +334,21 @@ class _AppShellState extends ConsumerState<AppShell> {
                                                           _closeAllModals();
                                                         },
                                                       )
-                                                    : (filterState.view == FilterView.optionsList
-                                                        ? FilterSelectorContent(
-                                                            title: filterState.title,
-                                                            currentValue: filterState.currentValue,
-                                                            options: filterState.options,
-                                                            onChanged: filterState.onChanged ?? (_) {},
-                                                            onCancel: _closeAllModals,
+                                                    : actorState.isOpen
+                                                        ? const ActorModalContent(
+                                                            key: ValueKey('actor_modal'),
                                                           )
-                                                        : const MainFilterPanelContent(
-                                                            key: ValueKey('filter_main'),
-                                                          )),
+                                                        : (filterState.view == FilterView.optionsList
+                                                            ? FilterSelectorContent(
+                                                                title: filterState.title,
+                                                                currentValue: filterState.currentValue,
+                                                                options: filterState.options,
+                                                                onChanged: filterState.onChanged ?? (_) {},
+                                                                onCancel: _closeAllModals,
+                                                              )
+                                                            : const MainFilterPanelContent(
+                                                                key: ValueKey('filter_main'),
+                                                              )),
                                       )
                                     : Column(
                                         key: const ValueKey('navbar_column'),
@@ -452,8 +456,9 @@ class ShellPopScope extends ConsumerWidget {
     final downloadState = ref.watch(downloadModalProvider);
     final filterState = ref.watch(filterModalProvider);
     final confirmState = ref.watch(confirmationModalProvider);
+    final actorState = ref.watch(actorModalProvider);
     final isModalOpen =
-        downloadState.isOpen || filterState.isOpen || confirmState.isOpen;
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen;
 
     return PopScope(
       canPop: !isModalOpen,
@@ -465,6 +470,9 @@ class ShellPopScope extends ConsumerWidget {
           } else if (confirmState.isOpen) {
             ref.read(confirmationModalProvider.notifier).state =
                 const ConfirmationModalState();
+          } else if (actorState.isOpen) {
+            ref.read(actorModalProvider.notifier).state =
+                const ActorModalState();
           } else if (filterState.isOpen) {
             if (filterState.view == FilterView.optionsList &&
                 filterState.isSubMenu) {
