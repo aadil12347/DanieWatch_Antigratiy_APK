@@ -150,6 +150,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
     final isSearchExpanded = ref.watch(searchExpandedProvider);
+    final hideNavBar = location.startsWith('/notifications');
 
     final downloadState = ref.watch(downloadModalProvider);
     final filterState = ref.watch(filterModalProvider);
@@ -190,7 +191,15 @@ class _AppShellState extends ConsumerState<AppShell> {
           return;
         }
 
-        // 5. Double back to exit (only on Home tab with no modals)
+        // 4b. If on Home branch but at a sub-page (e.g. /notifications),
+        //     navigate back to /home instead of showing exit prompt.
+        final currentLocation = GoRouterState.of(context).uri.toString();
+        if (currentLocation != '/home') {
+          context.go('/home');
+          return;
+        }
+
+        // 5. Double back to exit (only on Home tab at /home root)
         final now = DateTime.now();
         if (_lastBackPressed == null ||
             now.difference(_lastBackPressed!) > const Duration(seconds: 3)) {
@@ -220,7 +229,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 ),
               ),
             // Floating Bottom Nav Bar or Download/Filter Modal
-            if (!isSearchExpanded)
+            if (!isSearchExpanded && !hideNavBar)
               Builder(builder: (context) {
                 final r = Responsive(context);
                 final navBottom = MediaQuery.paddingOf(context).bottom + r.h(24);

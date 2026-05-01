@@ -153,7 +153,9 @@ class DeepLinkService {
     debugPrint('🔗 DeepLinkService: Navigating to $route');
     final context = AppRouter.rootNavKey.currentContext;
     if (context != null) {
-      context.push(route);
+      // Use `go` (not `push`) so the top-level /details route is matched,
+      // which has a PopScope that navigates back to /home on system back.
+      context.go(route);
     } else {
       debugPrint('🔗 DeepLinkService: No context available, saving as pending');
       _savePendingLink(route);

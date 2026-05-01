@@ -248,13 +248,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       pageBuilder: (context, state) => _quickPage(const NotificationSettingsScreen(), state),
     ),
 
-    // Top-level details route for notification card taps within the app
+    // Top-level details route for deep links and notification card taps
     GoRoute(
       path: '/details/:mediaType/:id',
       pageBuilder: (context, state) {
         final mediaType = state.pathParameters['mediaType']!;
         final id = int.parse(state.pathParameters['id']!);
-        return _quickPage(DetailsScreen(tmdbId: id, mediaType: mediaType), state);
+        return _quickPage(
+          PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              context.go('/home');
+            },
+            child: DetailsScreen(tmdbId: id, mediaType: mediaType),
+          ),
+          state,
+        );
       },
     ),
     GoRoute(
