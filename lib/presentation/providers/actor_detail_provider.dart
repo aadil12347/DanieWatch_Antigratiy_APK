@@ -129,7 +129,7 @@ final actorFilmographyProvider = FutureProvider.family<List<ManifestItem>, int>(
       final mediaType = credit['media_type']?.toString() ?? 'movie';
       final normalizedType = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
 
-      final key = '${normalizedType}_$tmdbId';
+      final key = '$tmdbId-$normalizedType';
       if (seen.contains(key)) continue;
 
       if (manifestIndex.containsKey(key)) {

@@ -423,15 +423,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Actors',
+        Text('Cast',
             style: GoogleFonts.plusJakartaSans(
                 color: AppColors.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.8)),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 160,
+          height: 110,
           child: ListView.builder(
             physics: const ClampingScrollPhysics(),
             scrollDirection: Axis.horizontal,
@@ -444,7 +444,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
               return Padding(
                 padding:
-                    EdgeInsets.only(right: index < cast.length - 1 ? 12 : 0),
+                    EdgeInsets.only(right: index < cast.length - 1 ? 14 : 0),
                 child: GestureDetector(
                   onTap: () {
                     HapticFeedback.lightImpact();
@@ -458,62 +458,72 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     );
                   },
                   child: SizedBox(
-                    width: 85,
+                    width: 68,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        // Avatar with subtle ring
                         Container(
-                          width: 80,
-                          height: 100,
+                          width: 58,
+                          height: 58,
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border:
-                                Border.all(color: AppColors.border, width: 1),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.border.withValues(alpha: 0.6),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(11),
+                          child: ClipOval(
                             child: imageUrl != null
                                 ? CachedNetworkImage(
                                     imageUrl: imageUrl,
                                     fit: BoxFit.cover,
                                     placeholder: (_, __) => Container(
                                       color: AppColors.surfaceElevated,
-                                      child: const Icon(Icons.person,
-                                          color: AppColors.textMuted,
-                                          size: 32),
+                                      child: const Icon(Icons.person_rounded,
+                                          color: AppColors.textMuted, size: 24),
                                     ),
                                     errorWidget: (_, __, ___) => Container(
                                       color: AppColors.surfaceElevated,
-                                      child: const Icon(Icons.person,
-                                          color: AppColors.textMuted,
-                                          size: 32),
+                                      child: const Icon(Icons.person_rounded,
+                                          color: AppColors.textMuted, size: 24),
                                     ),
                                   )
                                 : Container(
                                     color: AppColors.surfaceElevated,
-                                    child: const Icon(Icons.person,
-                                        color: AppColors.textMuted, size: 32),
+                                    child: const Icon(Icons.person_rounded,
+                                        color: AppColors.textMuted, size: 24),
                                   ),
                           ),
                         ),
                         const SizedBox(height: 8),
+                        // Actor name
                         Text(
                           actor.name,
-                          style: const TextStyle(
+                          style: GoogleFonts.inter(
                               color: AppColors.textPrimary,
-                              fontSize: 12,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                         ),
+                        // Character name
                         if (actor.character != null &&
-                            actor.character!.isNotEmpty) ...[                         
-                          const SizedBox(height: 2),
+                            actor.character!.isNotEmpty) ...[
+                          const SizedBox(height: 1),
                           Text(
                             actor.character!,
-                            style: const TextStyle(
-                                color: AppColors.textMuted, fontSize: 10),
+                            style: GoogleFonts.inter(
+                                color: AppColors.textMuted,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w400),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
