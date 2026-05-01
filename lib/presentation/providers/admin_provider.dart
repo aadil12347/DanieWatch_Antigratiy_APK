@@ -50,8 +50,12 @@ class NotificationEntriesNotifier extends FamilyAsyncNotifier<List<NotificationE
   }
 
   /// Optimistically add an entry — shows instantly, syncs in background.
+  /// Handles duplicates: if an entry with the same tmdb_id already exists
+  /// in this category, it removes the old one and re-adds at the top.
   Future<bool> addEntry(NotificationEntry entry) async {
     final current = state.valueOrNull ?? [];
+    // Remove any existing entry with same tmdb_id to prevent duplicates (move to top)
+    final deduped = current.where((e) => e.tmdbId != entry.tmdbId).toList();
     // Optimistic: add to top of list with a temp ID
     final tempEntry = NotificationEntry(
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
@@ -65,10 +69,18 @@ class NotificationEntriesNotifier extends FamilyAsyncNotifier<List<NotificationE
       category: entry.category,
       createdAt: DateTime.now(),
     );
-    state = AsyncData([tempEntry, ...current]);
+    state = AsyncData([tempEntry, ...deduped]);
 
-    // Background sync
+    // Background sync — delete old duplicate then insert new
     try {
+      // Remove existing entry with same tmdb_id in this category (no-op if none)
+      try {
+        await _supabase
+            .from('notification_entries')
+            .delete()
+            .eq('tmdb_id', entry.tmdbId)
+            .eq('category', entry.category);
+      } catch (_) {}
       await AdminService.instance.addEntry(entry);
       // Re-fetch to get real IDs
       ref.invalidateSelf();

@@ -181,10 +181,25 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
       }
     }
 
+    // Pre-load existing entries to mark already-added posts with green tick
+    final addedPostKeys = <String>{};
+    try {
+      final existingData = await Supabase.instance.client
+          .from('notification_entries')
+          .select('tmdb_id, media_type')
+          .eq('category', widget.category);
+      for (final row in existingData) {
+        final id = row['tmdb_id'];
+        final type = row['media_type'] ?? '';
+        if (id is int) addedPostKeys.add('$id-$type');
+      }
+    } catch (e) {
+      debugPrint('[BatchPicker] Error loading existing entries: $e');
+    }
+
     int totalAdded = 0;
     final expandedBatches = <int>{};
     final addingBatches = <int>{};
-    final addedPostKeys = <String>{};
     final addingSingleKeys = <String>{};
 
     if (!mounted) return;
@@ -306,7 +321,25 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                                     Expanded(child: Text(post.title, style: GoogleFonts.inter(color: isAdded ? const Color(0xFF22C55E) : AppColors.textSecondary, fontSize: 12, fontWeight: isAdded ? FontWeight.w600 : FontWeight.w400), maxLines: 1, overflow: TextOverflow.ellipsis)),
                                     if (post.year > 0) Padding(padding: const EdgeInsets.only(right: 6), child: Text('${post.year}', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 10))),
                                     if (isAdded)
-                                      const Padding(padding: EdgeInsets.all(7), child: Icon(Icons.check_circle_rounded, color: Color(0xFF22C55E), size: 18))
+                                      IconButton(
+                                        icon: const Icon(Icons.check_circle_rounded, color: Color(0xFF22C55E), size: 18),
+                                        visualDensity: VisualDensity.compact, padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                        tooltip: 'Already added · Tap to move to top',
+                                        onPressed: () async {
+                                          setSheetState(() => addingSingleKeys.add(postKey));
+                                          final entry = _buildEntryFromPost(post, manifestItem);
+                                          try {
+                                            final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
+                                            await notifier.addEntry(entry);
+                                            setSheetState(() => addingSingleKeys.remove(postKey));
+                                            if (mounted) CustomToast.show(context, '${post.title} moved to top!', type: ToastType.success);
+                                          } catch (e) {
+                                            setSheetState(() => addingSingleKeys.remove(postKey));
+                                            if (mounted) CustomToast.show(context, 'Error moving to top', type: ToastType.error);
+                                          }
+                                        },
+                                      )
                                     else if (isSingleAdding)
                                       const Padding(padding: EdgeInsets.all(7), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
                                     else
