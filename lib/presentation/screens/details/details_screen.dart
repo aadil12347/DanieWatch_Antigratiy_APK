@@ -388,9 +388,33 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     HapticFeedback.lightImpact();
     final mediaType = content.isTv ? 'tv' : 'movie';
     final shareLink = DeepLinkService.buildShareLink(mediaType, content.id);
+    final year = _getShareYear(content);
+    final typeLabel = content.isTv ? 'Season' : 'Movie';
+    final yearSuffix = year != null ? ' ($year)' : '';
     Share.share(
-      'Check out "${content.title}" on DanieWatch! 🎬\n\n$shareLink',
+      '${content.title}$yearSuffix\n$typeLabel\n$shareLink',
     );
+  }
+
+  /// Get the appropriate year for sharing:
+  /// - Movies: release year
+  /// - TV shows: latest season's air date year
+  String? _getShareYear(ContentDetail content) {
+    if (content.isMovie) {
+      return content.releaseYear?.toString();
+    }
+    // For TV: try to get the latest season's air date year
+    if (content.tmdbSeasons != null && content.tmdbSeasons!.isNotEmpty) {
+      final sortedSeasons = content.tmdbSeasons!
+          .where((s) => s.seasonNumber > 0 && s.airDate != null && s.airDate!.length >= 4)
+          .toList()
+        ..sort((a, b) => b.seasonNumber.compareTo(a.seasonNumber));
+      if (sortedSeasons.isNotEmpty) {
+        return sortedSeasons.first.airDate!.substring(0, 4);
+      }
+    }
+    // Fallback to the show's first air date year
+    return content.releaseYear?.toString();
   }
 
   // ─── Actors Section ────────────────────────────────────────────────────────
@@ -731,7 +755,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   Widget _buildShareTab(ContentDetail content) {
     final mediaType = content.isTv ? 'tv' : 'movie';
     final deepLink = DeepLinkService.buildShareLink(mediaType, content.id);
-    final shareText = 'Check out "${content.title}" on DanieWatch! 🎬\n\n$deepLink';
+    final year = _getShareYear(content);
+    final typeLabel = content.isTv ? 'Season' : 'Movie';
+    final yearSuffix = year != null ? ' ($year)' : '';
+    final shareText = '${content.title}$yearSuffix\n$typeLabel\n$deepLink';
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
