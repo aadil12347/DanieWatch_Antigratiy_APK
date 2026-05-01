@@ -44,6 +44,34 @@ class NotificationEntry {
     );
   }
 
+  NotificationEntry copyWith({
+    String? id,
+    int? tmdbId,
+    String? mediaType,
+    String? title,
+    String? posterUrl,
+    String? backdropUrl,
+    int? releaseYear,
+    double? voteAverage,
+    String? category,
+    String? addedBy,
+    DateTime? createdAt,
+  }) {
+    return NotificationEntry(
+      id: id ?? this.id,
+      tmdbId: tmdbId ?? this.tmdbId,
+      mediaType: mediaType ?? this.mediaType,
+      title: title ?? this.title,
+      posterUrl: posterUrl ?? this.posterUrl,
+      backdropUrl: backdropUrl ?? this.backdropUrl,
+      releaseYear: releaseYear ?? this.releaseYear,
+      voteAverage: voteAverage ?? this.voteAverage,
+      category: category ?? this.category,
+      addedBy: addedBy ?? this.addedBy,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   Map<String, dynamic> toInsertJson() {
     return {
       'tmdb_id': tmdbId,

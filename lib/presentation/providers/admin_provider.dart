@@ -4,8 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/models/notification_entry.dart';
 import '../../domain/models/app_notification.dart';
 import '../../domain/models/manifest_item.dart';
+import '../../domain/models/posting_record.dart';
 import '../../core/services/notification_service.dart';
 import '../../data/local/category_storage.dart';
+import '../../data/repositories/posting_record_repository.dart';
 
 final _supabase = Supabase.instance.client;
 
@@ -105,6 +107,25 @@ class NotificationEntriesNotifier extends FamilyAsyncNotifier<List<NotificationE
     // Background sync
     try {
       await AdminService.instance.removeEntries(entryIds);
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+
+  /// Optimistically update an entry's title.
+  Future<bool> updateEntryTitle(String entryId, String newTitle) async {
+    final current = state.valueOrNull ?? [];
+    // Optimistic: update title instantly
+    state = AsyncData(
+      current.map((e) => e.id == entryId ? e.copyWith(title: newTitle) : e).toList(),
+    );
+
+    // Background sync
+    try {
+      await AdminService.instance.updateEntry(entryId, title: newTitle);
       return true;
     } catch (e) {
       // Rollback
@@ -264,6 +285,16 @@ final categoryNotificationHistoryProvider =
   }
 });
 
+// ─── Posting Record Batches Provider ──────────────────────────────────────
+/// Provides the list of batches from posting_record.json, sorted newest-first.
+final postingRecordBatchesProvider = FutureProvider<List<PostingBatch>>((ref) async {
+  final record = await PostingRecordRepository.instance.fetch();
+  if (record == null) return [];
+  final sorted = List<PostingBatch>.from(record.batches);
+  sorted.sort((a, b) => b.batchId.compareTo(a.batchId));
+  return sorted;
+});
+
 // ─── Admin Actions Service ────────────────────────────────────────────────
 class AdminService {
   static final AdminService instance = AdminService._();
@@ -403,6 +434,68 @@ class AdminService {
       return addedCount;
     } catch (e) {
       debugPrint('[AutoAdd] Error: $e');
+      return 0;
+    }
+  }
+
+  /// Add an entire batch of posts to a notification category.
+  /// Looks up each post's full data from the manifest items list.
+  /// Returns the count of newly added entries (skips duplicates).
+  Future<int> addBatchToCategory({
+    required PostingBatch batch,
+    required String category,
+    required List<ManifestItem> allItems,
+  }) async {
+    try {
+      // Build lookup map from allItems: key = "tmdbId-type"
+      final itemMap = <String, ManifestItem>{};
+      for (final item in allItems) {
+        itemMap['${item.id}-${item.mediaType}'] = item;
+      }
+
+      // Check which ones are already in DB to avoid duplicates
+      final existingData = await _supabase
+          .from('notification_entries')
+          .select('tmdb_id')
+          .eq('category', category);
+      final existingTmdbIds = <int>{};
+      for (final row in existingData) {
+        final id = row['tmdb_id'];
+        if (id is int) existingTmdbIds.add(id);
+      }
+
+      int addedCount = 0;
+      for (final post in batch.posts) {
+        if (existingTmdbIds.contains(post.tmdbId)) continue;
+
+        // Look up full item data from manifest
+        final key = '${post.tmdbId}-${post.type}';
+        final manifestItem = itemMap[key];
+
+        final entry = NotificationEntry(
+          id: '',
+          tmdbId: post.tmdbId,
+          mediaType: post.type,
+          title: manifestItem?.title ?? post.title,
+          posterUrl: manifestItem?.posterUrl,
+          backdropUrl: manifestItem?.backdropUrl,
+          releaseYear: manifestItem?.releaseYear ?? post.year,
+          voteAverage: manifestItem?.voteAverage ?? 0,
+          category: category,
+          createdAt: DateTime.now(),
+        );
+
+        try {
+          await _supabase.from('notification_entries').insert(entry.toInsertJson());
+          addedCount++;
+        } catch (e) {
+          debugPrint('[BatchAdd] Failed to insert ${post.title}: $e');
+        }
+      }
+
+      return addedCount;
+    } catch (e) {
+      debugPrint('[BatchAdd] Error: $e');
       return 0;
     }
   }

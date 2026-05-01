@@ -12,6 +12,7 @@ import '../../providers/admin_provider.dart';
 import '../../providers/manifest_provider.dart';
 import '../../../domain/models/notification_entry.dart';
 import '../../../domain/models/app_notification.dart';
+import '../../../domain/models/posting_record.dart';
 
 /// Unified screen for managing entries AND sending notifications.
 /// Supports both "Latest Released" (manual) and "Recently Added" (auto-add).
@@ -28,6 +29,11 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
   bool _isSelectionMode = false;
   bool _isSending = false;
   bool _isAutoAdding = false;
+
+  // Inline title editing
+  String? _editingEntryId;
+  final TextEditingController _editController = TextEditingController();
+  final FocusNode _editFocusNode = FocusNode();
 
   bool get _isRecentlyAdded => widget.category == 'recently_released';
   String get _title => _isRecentlyAdded ? 'Recently Added' : 'Latest Released';
@@ -102,20 +108,309 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
     }
   }
 
-  /// Auto-add items by comparing old vs new index
-  Future<void> _autoAddItems() async {
+  @override
+  void dispose() {
+    _editController.dispose();
+    _editFocusNode.dispose();
+    super.dispose();
+  }
+
+  /// Start inline title editing for an entry
+  void _startEditingTitle(NotificationEntry entry) {
+    setState(() {
+      _editingEntryId = entry.id;
+      _editController.text = entry.title;
+    });
+    // Focus after frame so the TextField is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _editFocusNode.requestFocus();
+    });
+  }
+
+  /// Save the edited title and exit inline editing
+  Future<void> _saveEditedTitle(String entryId, String originalTitle) async {
+    final newTitle = _editController.text.trim();
+    setState(() => _editingEntryId = null);
+
+    if (newTitle.isEmpty || newTitle == originalTitle) return;
+
+    final notifier = ref.read(notificationEntriesProvider(widget.category).notifier);
+    final success = await notifier.updateEntryTitle(entryId, newTitle);
+    if (mounted) {
+      CustomToast.show(
+        context,
+        success ? 'Title updated' : 'Failed to update title',
+        type: success ? ToastType.success : ToastType.error,
+      );
+    }
+  }
+
+  /// Show batch picker bottom sheet for adding a whole batch at once
+  Future<void> _showBatchPickerSheet() async {
     setState(() => _isAutoAdding = true);
-    final count = await AdminService.instance.autoAddRecentlyAdded();
+    // Pre-fetch batches before showing sheet
+    await ref.read(postingRecordBatchesProvider.future).catchError((_) => <PostingBatch>[]);
+    if (!mounted) return;
     setState(() => _isAutoAdding = false);
 
-    if (mounted) {
-      if (count > 0) {
-        CustomToast.show(context, '$count new items added!', type: ToastType.success);
-        ref.invalidate(notificationEntriesProvider(widget.category));
-      } else {
-        CustomToast.show(context, 'No new items found', type: ToastType.info);
-      }
+    int totalAdded = 0;
+    // Track per-batch state at sheet level so it survives rebuilds
+    final expandedBatches = <int>{};
+    final addingBatches = <int>{};
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            height: MediaQuery.of(ctx).size.height * 0.8,
+            decoration: const BoxDecoration(
+              color: AppColors.surfaceElevated,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _accentColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.layers_rounded, color: _accentColor, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Add by Batch',
+                              style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              totalAdded > 0
+                                  ? '$totalAdded items added · Tap a batch to add all its posts'
+                                  : 'Tap a batch to add all its posts at once',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: totalAdded > 0 ? const Color(0xFF22C55E) : AppColors.textSecondary,
+                                fontWeight: totalAdded > 0 ? FontWeight.w600 : FontWeight.w400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text('Done', style: GoogleFonts.inter(color: _accentColor, fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(color: Colors.white10, height: 1),
+                Expanded(
+                  child: Consumer(
+                    builder: (ctx, ref, _) {
+                      final batchesAsync = ref.watch(postingRecordBatchesProvider);
+                      return batchesAsync.when(
+                        loading: () => Center(child: CircularProgressIndicator(color: _accentColor)),
+                        error: (e, _) => Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 48),
+                              const SizedBox(height: 12),
+                              Text('Failed to load batches\n$e', textAlign: TextAlign.center, style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        data: (batches) {
+                          if (batches.isEmpty) {
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.inbox_rounded, color: AppColors.textMuted, size: 48),
+                                  const SizedBox(height: 12),
+                                  Text('No batches found', style: GoogleFonts.inter(color: AppColors.textMuted)),
+                                ],
+                              ),
+                            );
+                          }
+                          return ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            itemCount: batches.length,
+                            itemBuilder: (ctx, index) {
+                              final batch = batches[index];
+                              final isExpanded = expandedBatches.contains(batch.batchId);
+                              final isAdding = addingBatches.contains(batch.batchId);
+                              return _buildBatchCard(batch, isExpanded, isAdding, setSheetState, expandedBatches, addingBatches, (count) {
+                                totalAdded += count;
+                                setSheetState(() {});
+                              });
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    // Refresh entries if any were added
+    if (totalAdded > 0) {
+      ref.invalidate(notificationEntriesProvider(widget.category));
     }
+  }
+
+  Widget _buildBatchCard(PostingBatch batch, bool isExpanded, bool isAdding, StateSetter setSheetState, Set<int> expandedBatches, Set<int> addingBatches, void Function(int) onAdded) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _accentColor.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        children: [
+          // Batch header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 10, 10),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '#${batch.batchId}',
+                    style: GoogleFonts.inter(color: _accentColor, fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        batch.date.isNotEmpty ? batch.date : batch.dateKey,
+                        style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${batch.totalInBatch} titles',
+                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                // Expand/collapse posts
+                IconButton(
+                  icon: Icon(
+                    isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    color: AppColors.textMuted, size: 22,
+                  ),
+                  onPressed: () => setSheetState(() {
+                    if (isExpanded) {
+                      expandedBatches.remove(batch.batchId);
+                    } else {
+                      expandedBatches.add(batch.batchId);
+                    }
+                  }),
+                  visualDensity: VisualDensity.compact,
+                ),
+                const SizedBox(width: 4),
+                // Add batch button
+                SizedBox(
+                  height: 34,
+                  child: ElevatedButton.icon(
+                    onPressed: isAdding
+                        ? null
+                        : () async {
+                            setSheetState(() => addingBatches.add(batch.batchId));
+                            final allItems = ref.read(allItemsProvider);
+                            final count = await AdminService.instance.addBatchToCategory(
+                              batch: batch,
+                              category: widget.category,
+                              allItems: allItems,
+                            );
+                            setSheetState(() => addingBatches.remove(batch.batchId));
+                            if (mounted) {
+                              if (count > 0) {
+                                CustomToast.show(context, '$count items added from Batch #${batch.batchId}!', type: ToastType.success);
+                                onAdded(count);
+                              } else {
+                                CustomToast.show(context, 'No new items (all duplicates)', type: ToastType.info);
+                              }
+                            }
+                          },
+                    icon: isAdding
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.add_rounded, size: 16),
+                    label: Text(isAdding ? 'Adding...' : 'Add All', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _accentColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Expandable post list
+          if (isExpanded) ...[
+            const Divider(color: Colors.white10, height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+              child: Column(
+                children: batch.posts.map((post) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Icon(post.type == 'tv' ? Icons.tv_rounded : Icons.movie_rounded,
+                            color: AppColors.textMuted, size: 14),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            post.title,
+                            style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 12),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (post.year > 0)
+                          Text('${post.year}', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   /// Send notifications for all entries in this category
@@ -487,7 +782,7 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                 tooltip: 'Sent History',
                 onPressed: () => _showHistorySheet(context),
               ),
-              // Auto-Add button (only for Recently Added)
+              // Batch-Add button (only for Recently Added)
               if (_isRecentlyAdded)
                 _isAutoAdding
                     ? const Padding(
@@ -495,9 +790,9 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                         child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0891B2))),
                       )
                     : IconButton(
-                        icon: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF0891B2)),
-                        tooltip: 'Auto-Add New Items',
-                        onPressed: _autoAddItems,
+                        icon: const Icon(Icons.layers_rounded, color: Color(0xFF0891B2)),
+                        tooltip: 'Add by Batch',
+                        onPressed: _showBatchPickerSheet,
                       ),
               // Send button
               _isSending
@@ -535,7 +830,7 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                     Text('No entries yet', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
                     const SizedBox(height: 8),
                     Text(
-                      _isRecentlyAdded ? 'Tap ✨ to auto-add or + to add manually' : 'Tap + to add content',
+                      _isRecentlyAdded ? 'Tap batch icon to add by batch or + to add manually' : 'Tap + to add content',
                       style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
                     ),
                   ],
@@ -621,8 +916,43 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(entry.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                  // Inline editable title
+                  if (_editingEntryId == entry.id)
+                    TextField(
+                      controller: _editController,
+                      focusNode: _editFocusNode,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                      maxLines: 1,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: _accentColor.withValues(alpha: 0.5)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: _accentColor.withValues(alpha: 0.5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: _accentColor),
+                        ),
+                      ),
+                      onSubmitted: (_) => _saveEditedTitle(entry.id, entry.title),
+                      onTapOutside: (_) => _saveEditedTitle(entry.id, entry.title),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: _isSelectionMode ? null : () => _startEditingTitle(entry),
+                      child: Text(
+                        entry.title,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   const SizedBox(height: 5),
                   Row(children: [
                     _infoBadge(entry.mediaType == 'tv' ? 'TV' : 'Movie'),
@@ -696,7 +1026,7 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.notifications_off_outlined, color: AppColors.textMuted, size: 48),
+                              const Icon(Icons.notifications_off_outlined, color: AppColors.textMuted, size: 48),
                               const SizedBox(height: 12),
                               Text('No notifications sent yet', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14)),
                             ],
@@ -751,7 +1081,7 @@ class _ManageEntriesScreenState extends ConsumerState<ManageEntriesScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Icon(Icons.schedule_rounded, color: AppColors.textMuted, size: 14),
+              const Icon(Icons.schedule_rounded, color: AppColors.textMuted, size: 14),
               const SizedBox(width: 4),
               Text(timeStr, style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11)),
             ],
