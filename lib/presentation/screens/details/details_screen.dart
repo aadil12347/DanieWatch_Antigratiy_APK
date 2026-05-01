@@ -431,7 +431,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 letterSpacing: -0.8)),
         const SizedBox(height: 14),
         SizedBox(
-          height: 110,
+          height: 140,
           child: ListView.builder(
             physics: const ClampingScrollPhysics(),
             scrollDirection: Axis.horizontal,
@@ -444,7 +444,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
               return Padding(
                 padding:
-                    EdgeInsets.only(right: index < cast.length - 1 ? 14 : 0),
+                    EdgeInsets.only(right: index < cast.length - 1 ? 10 : 0),
                 child: GestureDetector(
                   onTap: () {
                     HapticFeedback.lightImpact();
@@ -458,15 +458,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     );
                   },
                   child: SizedBox(
-                    width: 68,
+                    width: 76,
                     child: Column(
                       children: [
-                        // Avatar with subtle ring
+                        // Avatar — rounded square, portrait ratio
                         Container(
-                          width: 58,
-                          height: 58,
+                          width: 76,
+                          height: 96,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: AppColors.border.withValues(alpha: 0.6),
                               width: 1.5,
@@ -479,7 +479,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                               ),
                             ],
                           ),
-                          child: ClipOval(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
                             child: imageUrl != null
                                 ? CachedNetworkImage(
                                     imageUrl: imageUrl,
@@ -487,22 +488,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                                     placeholder: (_, __) => Container(
                                       color: AppColors.surfaceElevated,
                                       child: const Icon(Icons.person_rounded,
-                                          color: AppColors.textMuted, size: 24),
+                                          color: AppColors.textMuted, size: 28),
                                     ),
                                     errorWidget: (_, __, ___) => Container(
                                       color: AppColors.surfaceElevated,
                                       child: const Icon(Icons.person_rounded,
-                                          color: AppColors.textMuted, size: 24),
+                                          color: AppColors.textMuted, size: 28),
                                     ),
                                   )
                                 : Container(
                                     color: AppColors.surfaceElevated,
                                     child: const Icon(Icons.person_rounded,
-                                        color: AppColors.textMuted, size: 24),
+                                        color: AppColors.textMuted, size: 28),
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         // Actor name
                         Text(
                           actor.name,
