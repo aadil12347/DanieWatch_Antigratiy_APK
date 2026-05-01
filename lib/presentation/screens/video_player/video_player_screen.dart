@@ -1231,9 +1231,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                           ),
                                         ),
                                         clipBehavior: Clip.hardEdge,
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          child: StickyDropdownModal<int>(
+                                        child: StickyDropdownModal<int>(
                                             items: widget.seasons ?? [],
                                             value: tempSeason,
                                             onChanged: (result) {
@@ -1260,10 +1258,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                   ),
                                                 ],
                                               ),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      ),
                                       const SizedBox(height: 12),
                                       // Search Bar
                                       Container(

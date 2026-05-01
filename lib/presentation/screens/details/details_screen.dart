@@ -988,72 +988,49 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   Widget _buildSeasonSearchRow(ContentDetail content) {
     final seasonNums = content.seasonNumbers;
-    final tmdbSeasons = content.tmdbSeasons;
+
+    // Ensure _selectedSeason is valid
+    final currentSeason = seasonNums.contains(_selectedSeason)
+        ? _selectedSeason
+        : seasonNums.first;
 
     return Row(
       children: [
-        // Season dropdown
+        // Season dropdown button
         Container(
+          height: 44,
           decoration: BoxDecoration(
             color: AppColors.input,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border, width: 0.5),
           ),
           clipBehavior: Clip.hardEdge,
-          child: Material(
-            color: Colors.transparent,
-            child: StickyDropdownModal<int>(
-              items: seasonNums,
-              value: seasonNums.contains(_selectedSeason) ? _selectedSeason : seasonNums.first,
-              onChanged: (result) {
-                if (result != _selectedSeason) {
-                  setState(() => _selectedSeason = result);
-                }
-              },
-              itemLabelBuilder: (seasonNum) {
-                String label = 'Season $seasonNum';
-                if (tmdbSeasons != null) {
-                  final match = tmdbSeasons!
-                      .where((s) => s.seasonNumber == seasonNum)
-                      .firstOrNull;
-                  if (match?.name != null &&
-                      match!.name!.isNotEmpty &&
-                      match.name != 'Season $seasonNum') {
-                    label = match.name!;
-                  }
-                }
-                return label;
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      (() {
-                        final val = seasonNums.contains(_selectedSeason)
-                            ? _selectedSeason
-                            : seasonNums.first;
-                        String label = 'Season $val';
-                        if (tmdbSeasons != null) {
-                          final match = tmdbSeasons!
-                              .where((s) => s.seasonNumber == val)
-                              .firstOrNull;
-                          if (match?.name != null &&
-                              match!.name!.isNotEmpty &&
-                              match.name != 'Season $val') {
-                            label = match.name!;
-                          }
-                        }
-                        return label;
-                      })(),
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+          child: StickyDropdownModal<int>(
+            items: seasonNums,
+            value: currentSeason,
+            onChanged: (result) {
+              if (result != _selectedSeason) {
+                setState(() => _selectedSeason = result);
+              }
+            },
+            itemLabelBuilder: (seasonNum) => 'Season $seasonNum',
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Season $currentSeason',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.textSecondary, size: 20),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.textSecondary, size: 20),
+                ],
               ),
             ),
           ),
