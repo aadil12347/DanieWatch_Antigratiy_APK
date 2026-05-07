@@ -1,0 +1,244 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+/// Gesture states for the premium poster interaction system.
+enum PosterTouchState {
+  /// No interaction — card at rest.
+  idle,
+  /// Finger is down, waiting to determine intent (< 200ms, < 8px movement).
+  pressing,
+  /// User moved finger > 8px — scrolling/swiping, cancel all effects.
+  dragging,
+  /// User held finger stationary > 200ms — "lift" the card.
+  longHolding,
+}
+
+/// Premium touch interaction handler modeled after Netflix/Apple TV+/Spotify.
+///
+/// Wraps a child widget and provides:
+/// - Scale-down (0.96) on press
+/// - Scale-up (1.03) + shadow on long-hold
+/// - Haptic feedback on state transitions
+/// - Clean tap navigation (only fires on stationary taps < 200ms OR on long-hold release)
+/// - Scroll-aware cancellation
+class PosterTouchHandler extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final ValueChanged<bool>? onLongHold;
+  final Color? glowColor;
+  final BorderRadius borderRadius;
+
+  const PosterTouchHandler({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onLongHold,
+    this.glowColor,
+    this.borderRadius = const BorderRadius.all(Radius.circular(20)),
+  });
+
+  @override
+  State<PosterTouchHandler> createState() => PosterTouchHandlerState();
+}
+
+class PosterTouchHandlerState extends State<PosterTouchHandler>
+    with SingleTickerProviderStateMixin {
+  PosterTouchState _state = PosterTouchState.idle;
+
+  Offset? _startPosition;
+  Timer? _longPressTimer;
+  late AnimationController _scaleController;
+  late Animation<double> _scaleAnimation;
+
+  // The scale values for each state
+  static const double _pressScale = 0.96;
+  static const double _liftScale = 1.03;
+  static const double _normalScale = 1.0;
+
+  // Movement threshold (matches Flutter's kTouchSlop)
+  static const double _touchSlop = 8.0;
+
+  // Time before transitioning to long-hold
+  static const Duration _longPressDelay = Duration(milliseconds: 200);
+
+  double _targetScale = _normalScale;
+  bool _isScrolling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scaleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _scaleAnimation = Tween<double>(begin: _normalScale, end: _normalScale)
+        .animate(CurvedAnimation(
+      parent: _scaleController,
+      curve: Curves.easeOutCubic,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    _scaleController.dispose();
+    super.dispose();
+  }
+
+  void _animateScale(double target, {Duration? duration}) {
+    if (_targetScale == target) return;
+    _targetScale = target;
+
+    _scaleAnimation = Tween<double>(
+      begin: _scaleAnimation.value,
+      end: target,
+    ).animate(CurvedAnimation(
+      parent: _scaleController..duration = duration ?? const Duration(milliseconds: 150),
+      curve: target > _normalScale ? Curves.easeOutBack : Curves.easeOutCubic,
+    ));
+    _scaleController.forward(from: 0.0);
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_isScrolling) return;
+
+    _startPosition = event.position;
+    setState(() => _state = PosterTouchState.pressing);
+
+    // Subtle press-down
+    _animateScale(_pressScale);
+    HapticFeedback.selectionClick();
+
+    // Start long-press timer
+    _longPressTimer?.cancel();
+    _longPressTimer = Timer(_longPressDelay, () {
+      if (_state == PosterTouchState.pressing && mounted) {
+        setState(() => _state = PosterTouchState.longHolding);
+        _animateScale(_liftScale, duration: const Duration(milliseconds: 250));
+        HapticFeedback.mediumImpact();
+        widget.onLongHold?.call(true);
+      }
+    });
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (_state == PosterTouchState.idle || _state == PosterTouchState.dragging) return;
+
+    final distance = (event.position - (_startPosition ?? event.position)).distance;
+    if (distance > _touchSlop) {
+      _longPressTimer?.cancel();
+      if (_state == PosterTouchState.longHolding) {
+        widget.onLongHold?.call(false);
+      }
+      setState(() => _state = PosterTouchState.dragging);
+      _animateScale(_normalScale);
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _longPressTimer?.cancel();
+
+    final previousState = _state;
+    setState(() => _state = PosterTouchState.idle);
+    _animateScale(_normalScale);
+
+    switch (previousState) {
+      case PosterTouchState.pressing:
+        // Quick tap — navigate
+        widget.onTap?.call();
+        break;
+      case PosterTouchState.longHolding:
+        // Long hold release — also navigate
+        widget.onLongHold?.call(false);
+        widget.onTap?.call();
+        break;
+      case PosterTouchState.dragging:
+        // Was scrolling — do nothing
+        break;
+      case PosterTouchState.idle:
+        break;
+    }
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _longPressTimer?.cancel();
+    if (_state == PosterTouchState.longHolding) {
+      widget.onLongHold?.call(false);
+    }
+    setState(() => _state = PosterTouchState.idle);
+    _animateScale(_normalScale);
+  }
+
+  /// Called by parent scroll containers to cancel active touch states.
+  void cancelTouch() {
+    _longPressTimer?.cancel();
+    if (_state == PosterTouchState.longHolding) {
+      widget.onLongHold?.call(false);
+    }
+    if (_state != PosterTouchState.idle) {
+      setState(() => _state = PosterTouchState.idle);
+      _animateScale(_normalScale);
+    }
+  }
+
+  /// Track parent scroll state to avoid activating press during scroll.
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      _isScrolling = true;
+      cancelTouch();
+    } else if (notification is ScrollEndNotification) {
+      _isScrolling = false;
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLifted = _state == PosterTouchState.longHolding;
+    final glowColor = widget.glowColor ?? Colors.white;
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: Listener(
+        onPointerDown: _onPointerDown,
+        onPointerMove: _onPointerMove,
+        onPointerUp: _onPointerUp,
+        onPointerCancel: _onPointerCancel,
+        child: AnimatedBuilder(
+          animation: _scaleAnimation,
+          builder: (context, child) {
+            return Transform.scale(
+              scale: _scaleAnimation.value,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                decoration: BoxDecoration(
+                  borderRadius: widget.borderRadius,
+                  boxShadow: isLifted
+                      ? [
+                          BoxShadow(
+                            color: glowColor.withValues(alpha: 0.3),
+                            blurRadius: 24,
+                            spreadRadius: -4,
+                            offset: const Offset(0, 12),
+                          ),
+                          BoxShadow(
+                            color: glowColor.withValues(alpha: 0.15),
+                            blurRadius: 48,
+                            spreadRadius: -8,
+                            offset: const Offset(0, 20),
+                          ),
+                        ]
+                      : [],
+                ),
+                child: child,
+              ),
+            );
+          },
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}

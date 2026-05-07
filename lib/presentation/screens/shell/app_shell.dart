@@ -20,6 +20,9 @@ import 'dart:async';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../widgets/confirmation_modal_content.dart';
 import '../../providers/scroll_provider.dart';
+import '../../providers/poster_color_provider.dart';
+import '../../widgets/animated_poster_gradient.dart';
+import '../../../core/services/poster_color_service.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -219,6 +222,25 @@ class _AppShellState extends ConsumerState<AppShell> {
         body: Stack(
           children: [
             widget.navigationShell,
+            // Touch-reactive ambient gradient (subtle glow when touching posters)
+            Consumer(
+              builder: (context, ref, _) {
+                final touchedPalette = ref.watch(touchedPosterGradientProvider);
+                if (touchedPalette == null || touchedPalette.isFallback) {
+                  return const SizedBox.shrink();
+                }
+                return Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedPosterGradient(
+                      palette: touchedPalette,
+                      fullHeight: false,
+                      opacity: 0.4,
+                      duration: const Duration(milliseconds: 400),
+                    ),
+                  ),
+                );
+              },
+            ),
             // Barrier to dismiss modal when tapping outside
             if (isModalOpen)
               Positioned.fill(

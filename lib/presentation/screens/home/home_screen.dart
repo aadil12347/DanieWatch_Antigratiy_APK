@@ -22,6 +22,8 @@ import '../../providers/delete_mode_provider.dart';
 import '../../providers/notification_inbox_provider.dart';
 
 import '../../providers/scroll_provider.dart';
+import '../../providers/poster_color_provider.dart';
+import '../../widgets/animated_poster_gradient.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -76,11 +78,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ) {
     final carouselItems = carouselAsync.valueOrNull ?? [];
     final sections = sectionsAsync.valueOrNull ?? [];
+    final activeGradient = ref.watch(activeGradientProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const CustomDrawer(),
-      body: GestureDetector(
+      body: Stack(
+        children: [
+          // Dynamic gradient background from carousel
+          Positioned.fill(
+            child: AnimatedPosterGradient(
+              palette: activeGradient,
+              fullHeight: false,
+              duration: const Duration(milliseconds: 800),
+            ),
+          ),
+          // Main content
+          GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
           // Exit delete mode if user clicks anywhere on the screen
@@ -244,6 +258,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ),
       ),
+      ),
+        ], // Stack children
       ),
     );
   }

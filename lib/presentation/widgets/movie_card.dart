@@ -12,7 +12,10 @@ import '../../data/clients/tmdb_client.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/active_card_provider.dart';
+import '../providers/poster_color_provider.dart';
+import '../../core/services/poster_color_service.dart';
 import '../../core/utils/toast_utils.dart';
+import 'poster_touch_handler.dart';
 
 /// Movie/TV poster card — used in grids and horizontal rows.
 class MovieCard extends ConsumerStatefulWidget {
@@ -37,32 +40,53 @@ class MovieCard extends ConsumerStatefulWidget {
 
 class _MovieCardState extends ConsumerState<MovieCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _pinchController;
-  late Animation<double> _pinchAnimation;
+  late AnimationController _hoverController;
 
   String get _cardKey => '${widget.item.mediaType}_${widget.item.id}';
 
   @override
   void initState() {
     super.initState();
-    _pinchController = AnimationController(
+    _hoverController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 150),
       reverseDuration: const Duration(milliseconds: 100),
-    );
-    _pinchAnimation = Tween<double>(begin: 1.0, end: 0.96).animate(
-      CurvedAnimation(parent: _pinchController, curve: Curves.easeOutCubic),
     );
   }
 
   @override
   void dispose() {
-    _pinchController.dispose();
+    _hoverController.dispose();
     super.dispose();
   }
 
-  void _activateHover() {
-    ref.read(activeCardProvider.notifier).state = _cardKey;
+  void _navigate() {
+    if (widget.onTap != null) {
+      widget.onTap!();
+    } else {
+      context.push('/details/${widget.item.mediaType}/${widget.item.id}');
+    }
+  }
+
+  void _onLongHoldChanged(bool active) {
+    if (active) {
+      ref.read(activeCardProvider.notifier).state = _cardKey;
+      _hoverController.forward();
+
+      // Update touched poster gradient
+      final posterUrl = widget.item.effectivePosterUrl ?? '';
+      if (posterUrl.isNotEmpty) {
+        PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
+          if (mounted) {
+            ref.read(touchedPosterGradientProvider.notifier).state = palette;
+          }
+        });
+      }
+    } else {
+      ref.read(activeCardProvider.notifier).state = null;
+      _hoverController.reverse();
+      ref.read(touchedPosterGradientProvider.notifier).state = null;
+    }
   }
 
   @override
@@ -74,11 +98,11 @@ class _MovieCardState extends ConsumerState<MovieCard>
     final activeKey = ref.watch(activeCardProvider);
     final isActive = activeKey == _cardKey;
 
-    // Drive the pinch from active state
-    if (isActive && !_pinchController.isCompleted) {
-      _pinchController.forward();
-    } else if (!isActive && _pinchController.value > 0) {
-      _pinchController.reverse();
+    // Sync hover animation with active state (for external changes)
+    if (isActive && !_hoverController.isCompleted) {
+      _hoverController.forward();
+    } else if (!isActive && _hoverController.value > 0) {
+      _hoverController.reverse();
     }
 
     final watchlistAsync = ref.watch(watchlistProvider);
@@ -88,29 +112,26 @@ class _MovieCardState extends ConsumerState<MovieCard>
       orElse: () => false,
     );
 
-    return GestureDetector(
-      onTap: widget.onTap ??
-          () => context.push('/details/${item.mediaType}/${item.id}'),
-      onLongPress: () => _activateHover(),
-      child: AnimatedBuilder(
-        animation: _pinchAnimation,
-        builder: (context, child) {
-          return Transform.scale(
-            scale: _pinchAnimation.value,
-            child: child,
-          );
-        },
-        child: SizedBox(
-          width: widget.width,
-          height: widget.height,
-          child: _buildCardContent(
-            item: item,
-            posterUrl: posterUrl,
-            logoUrl: logoUrl,
-            isInWatchlist: isInWatchlist,
-            isHovering: isActive,
-            hoverAnimation: _pinchController,
-          ),
+    // Get extracted glow color for the touch handler
+    final colorAsync = posterUrl.isNotEmpty
+        ? ref.watch(posterColorProvider(posterUrl))
+        : null;
+    final glowColor = colorAsync?.valueOrNull?.dominant;
+
+    return PosterTouchHandler(
+      onTap: _navigate,
+      onLongHold: _onLongHoldChanged,
+      glowColor: glowColor,
+      child: SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: _buildCardContent(
+          item: item,
+          posterUrl: posterUrl,
+          logoUrl: logoUrl,
+          isInWatchlist: isInWatchlist,
+          isHovering: isActive,
+          hoverAnimation: _hoverController,
         ),
       ),
     );
@@ -609,4 +630,3 @@ class _RankNumber extends StatelessWidget {
     );
   }
 }
-

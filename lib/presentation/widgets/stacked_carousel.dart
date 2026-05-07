@@ -6,8 +6,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
+import '../../core/services/poster_color_service.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/detail_provider.dart';
+import '../providers/poster_color_provider.dart';
 
 class StackedCarousel extends ConsumerStatefulWidget {
   final List<ManifestItem> items;
@@ -32,6 +34,10 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     _positions = List.generate(_displayItems.length, (index) => index - maxDist);
     _updateActiveIndex();
     _startAutoPlay();
+    // Pre-warm poster colors for smooth gradient transitions
+    _preWarmColors();
+    // Set initial gradient
+    _updateGradientForActiveItem();
   }
 
   @override
@@ -80,6 +86,28 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     if (_activeIndex == -1 && _displayItems.isNotEmpty) {
       _activeIndex = 0;
     }
+    _updateGradientForActiveItem();
+  }
+
+  /// Pre-warm color extraction for all carousel items.
+  void _preWarmColors() {
+    final urls = _displayItems
+        .map((item) => item.effectivePosterUrl ?? '')
+        .where((url) => url.isNotEmpty)
+        .toList();
+    PosterColorService.instance.preWarm(urls);
+  }
+
+  /// Update the app-wide gradient to match the current active carousel item.
+  void _updateGradientForActiveItem() {
+    if (_activeIndex < 0 || _activeIndex >= _displayItems.length) return;
+    final posterUrl = _displayItems[_activeIndex].effectivePosterUrl ?? '';
+    if (posterUrl.isEmpty) return;
+    PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
+      if (mounted) {
+        ref.read(activeGradientProvider.notifier).state = palette;
+      }
+    });
   }
 
   /// Implements JS: getPos = (current, active) => { diff = current - active; if (abs(diff) > maxDist) return -current; return diff; }

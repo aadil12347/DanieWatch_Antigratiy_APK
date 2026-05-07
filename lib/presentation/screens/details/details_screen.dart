@@ -27,6 +27,9 @@ import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/play_loader_overlay.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
+import '../../widgets/animated_poster_gradient.dart';
+import '../../providers/poster_color_provider.dart';
+import '../../../core/services/poster_color_service.dart';
 import '../video_player/video_player_screen.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
@@ -89,9 +92,27 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   Widget _buildDetailPage(ContentDetail content, bool isInWatchlist) {
+    // Extract poster gradient colors
+    final posterUrl = content.posterUrl ?? content.backdropUrl ?? '';
+    final colorAsync = posterUrl.isNotEmpty
+        ? ref.watch(posterColorProvider(posterUrl))
+        : null;
+    final palette = colorAsync?.valueOrNull ?? PosterColorPalette.fallback;
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: CustomAppBar(
+      body: Stack(
+        children: [
+          // Dynamic gradient background from poster
+          Positioned.fill(
+            child: AnimatedPosterGradient(
+              palette: palette,
+              fullHeight: true,
+              duration: const Duration(milliseconds: 500),
+            ),
+          ),
+          // Main content
+          CustomAppBar(
         showBackButton: true,
         child: CustomScrollView(
           physics: const ClampingScrollPhysics(),
@@ -169,6 +190,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
           ],
         ),
+      ),
+        ], // Stack children
       ),
     );
   }
