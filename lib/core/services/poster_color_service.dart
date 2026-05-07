@@ -1,128 +1,108 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
-/// Represents a cinema-grade color palette extracted from a poster image.
-/// All colors are pre-processed to work as dark-mode backgrounds.
+/// 3-color palette extracted from poster images.
 class PosterColorPalette {
-  final Color dominant;
-  final Color accent;
-  final Color muted;
+  final Color primary;
+  final Color secondary;
+  final Color tertiary;
 
   const PosterColorPalette({
-    required this.dominant,
-    required this.accent,
-    required this.muted,
+    required this.primary,
+    required this.secondary,
+    required this.tertiary,
   });
 
-  /// Fallback palette when extraction fails — blends into the dark theme.
   static const fallback = PosterColorPalette(
-    dominant: Color(0xFF1A1A19),
-    accent: Color(0xFF27272A),
-    muted: Color(0xFF141413),
+    primary: Color(0xFF0D0D0D),
+    secondary: Color(0xFF080808),
+    tertiary: Color(0xFF050505),
   );
 
-  /// Whether this palette is the fallback (no real colors extracted).
   bool get isFallback =>
-      dominant == fallback.dominant &&
-      accent == fallback.accent &&
-      muted == fallback.muted;
+      primary == fallback.primary &&
+      secondary == fallback.secondary &&
+      tertiary == fallback.tertiary;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is PosterColorPalette &&
-          dominant == other.dominant &&
-          accent == other.accent &&
-          muted == other.muted;
+          primary == other.primary &&
+          secondary == other.secondary &&
+          tertiary == other.tertiary;
 
   @override
-  int get hashCode => Object.hash(dominant, accent, muted);
+  int get hashCode => Object.hash(primary, secondary, tertiary);
 }
 
-/// Service that extracts dominant colors from poster images and processes
-/// them through a "cinema filter" for use as dark-mode backgrounds.
+/// Extracts 3 rich, vivid colors from poster images.
 class PosterColorService {
   PosterColorService._();
   static final instance = PosterColorService._();
 
-  /// In-memory cache: imageUrl → palette
   final Map<String, PosterColorPalette> _cache = {};
 
-  /// Extract colors from a network image URL.
-  /// Returns cached result if available.
   Future<PosterColorPalette> extractFromUrl(String imageUrl) async {
     if (imageUrl.isEmpty) return PosterColorPalette.fallback;
 
-    // Check cache first
     final cached = _cache[imageUrl];
     if (cached != null) return cached;
 
     try {
-      // Use a small image size for fast extraction
-      final paletteGenerator = await PaletteGenerator.fromImageProvider(
+      final generator = await PaletteGenerator.fromImageProvider(
         ResizeImage(
           NetworkImage(imageUrl),
-          width: 100,
+          width: 150,
           policy: ResizeImagePolicy.fit,
         ),
-        maximumColorCount: 16,
-        timeout: const Duration(seconds: 5),
+        maximumColorCount: 24,
+        timeout: const Duration(seconds: 8),
       );
 
-      final palette = _processPalette(paletteGenerator);
+      final palette = _buildPalette(generator);
       _cache[imageUrl] = palette;
       return palette;
     } catch (_) {
-      // Cache fallback too to avoid retrying failed URLs
       _cache[imageUrl] = PosterColorPalette.fallback;
       return PosterColorPalette.fallback;
     }
   }
 
-  /// Process raw palette into cinema-grade background colors.
-  PosterColorPalette _processPalette(PaletteGenerator generator) {
-    // Pick dominant color — prefer vibrant, then dominant, then darkMuted
-    final Color rawDominant = generator.vibrantColor?.color ??
-        generator.dominantColor?.color ??
-        generator.darkVibrantColor?.color ??
-        PosterColorPalette.fallback.dominant;
+  PosterColorPalette _buildPalette(PaletteGenerator gen) {
+    final Color rawPrimary = gen.vibrantColor?.color ??
+        gen.dominantColor?.color ??
+        gen.darkVibrantColor?.color ??
+        PosterColorPalette.fallback.primary;
 
-    // Pick accent — prefer lightVibrant, then mutedColor
-    final Color rawAccent = generator.lightVibrantColor?.color ??
-        generator.mutedColor?.color ??
-        generator.darkMutedColor?.color ??
-        PosterColorPalette.fallback.accent;
+    final Color rawSecondary = gen.darkVibrantColor?.color ??
+        gen.darkMutedColor?.color ??
+        gen.mutedColor?.color ??
+        PosterColorPalette.fallback.secondary;
 
-    // Pick muted — prefer darkMuted, then muted
-    final Color rawMuted = generator.darkMutedColor?.color ??
-        generator.mutedColor?.color ??
-        PosterColorPalette.fallback.muted;
+    final Color rawTertiary = gen.lightVibrantColor?.color ??
+        gen.lightMutedColor?.color ??
+        gen.dominantColor?.color ??
+        PosterColorPalette.fallback.tertiary;
 
     return PosterColorPalette(
-      dominant: _cinemaFilter(rawDominant, darkenAmount: 0.40),
-      accent: _cinemaFilter(rawAccent, darkenAmount: 0.30),
-      muted: _cinemaFilter(rawMuted, darkenAmount: 0.50),
+      primary: _richDarken(rawPrimary, 0.20),
+      secondary: _richDarken(rawSecondary, 0.12),
+      tertiary: _richDarken(rawTertiary, 0.08),
     );
   }
 
-  /// Cinema filter: reduces saturation and darkens the color so it works
-  /// as a background behind white text without eye strain.
-  Color _cinemaFilter(Color color, {double darkenAmount = 0.4}) {
+  /// Keep full saturation, only darken for background use.
+  Color _richDarken(Color color, double targetLightness) {
     final hsl = HSLColor.fromColor(color);
-
-    // Reduce saturation to 60-70% of original
-    final desaturated = hsl.withSaturation((hsl.saturation * 0.65).clamp(0.0, 1.0));
-
-    // Darken significantly for background use
-    final darkened = desaturated.withLightness(
-      (desaturated.lightness * (1.0 - darkenAmount)).clamp(0.05, 0.35),
-    );
-
-    return darkened.toColor();
+    return HSLColor.fromAHSL(
+      1.0,
+      hsl.hue,
+      hsl.saturation.clamp(0.5, 1.0),
+      targetLightness.clamp(0.05, 0.25),
+    ).toColor();
   }
 
-  /// Pre-warm the cache for a list of URLs (e.g., carousel items).
   Future<void> preWarm(List<String> urls) async {
     await Future.wait(
       urls.where((url) => url.isNotEmpty && !_cache.containsKey(url))
@@ -130,6 +110,5 @@ class PosterColorService {
     );
   }
 
-  /// Clear the cache.
   void clearCache() => _cache.clear();
 }

@@ -41,6 +41,7 @@ class MovieCard extends ConsumerStatefulWidget {
 class _MovieCardState extends ConsumerState<MovieCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _hoverController;
+  bool _isPressing = false;
 
   String get _cardKey => '${widget.item.mediaType}_${widget.item.id}';
 
@@ -85,7 +86,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
     } else {
       ref.read(activeCardProvider.notifier).state = null;
       _hoverController.reverse();
-      ref.read(touchedPosterGradientProvider.notifier).state = null;
+      // Don't reset gradient — keep last color until a new card is touched
     }
   }
 
@@ -116,22 +117,50 @@ class _MovieCardState extends ConsumerState<MovieCard>
     final colorAsync = posterUrl.isNotEmpty
         ? ref.watch(posterColorProvider(posterUrl))
         : null;
-    final glowColor = colorAsync?.valueOrNull?.dominant;
+    final glowColor = colorAsync?.valueOrNull?.primary;
 
-    return PosterTouchHandler(
-      onTap: _navigate,
-      onLongHold: _onLongHoldChanged,
-      glowColor: glowColor,
-      child: SizedBox(
-        width: widget.width,
-        height: widget.height,
-        child: _buildCardContent(
-          item: item,
-          posterUrl: posterUrl,
-          logoUrl: logoUrl,
-          isInWatchlist: isInWatchlist,
-          isHovering: isActive,
-          hoverAnimation: _hoverController,
+    // Update gradient immediately on ANY touch
+    return Listener(
+      onPointerDown: (_) {
+        setState(() => _isPressing = true);
+        if (posterUrl.isNotEmpty) {
+          PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
+            if (mounted) {
+              ref.read(touchedPosterGradientProvider.notifier).state = palette;
+            }
+          });
+        }
+      },
+      onPointerUp: (_) => setState(() => _isPressing = false),
+      onPointerCancel: (_) => setState(() => _isPressing = false),
+      child: PosterTouchHandler(
+        onTap: _navigate,
+        onLongHold: _onLongHoldChanged,
+        glowColor: glowColor,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: _isPressing && glowColor != null
+                ? [
+                    BoxShadow(
+                      color: glowColor.withValues(alpha: 0.5),
+                      blurRadius: 24,
+                      spreadRadius: 4,
+                    ),
+                  ]
+                : [],
+          ),
+          child: _buildCardContent(
+            item: item,
+            posterUrl: posterUrl,
+            logoUrl: logoUrl,
+            isInWatchlist: isInWatchlist,
+            isHovering: isActive,
+            hoverAnimation: _hoverController,
+          ),
         ),
       ),
     );

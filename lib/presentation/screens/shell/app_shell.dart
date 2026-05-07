@@ -221,26 +221,21 @@ class _AppShellState extends ConsumerState<AppShell> {
         extendBody: true,
         body: Stack(
           children: [
-            widget.navigationShell,
-            // Touch-reactive ambient gradient (subtle glow when touching posters)
+            // Ambient gradient background (BEHIND all content)
             Consumer(
               builder: (context, ref, _) {
                 final touchedPalette = ref.watch(touchedPosterGradientProvider);
-                if (touchedPalette == null || touchedPalette.isFallback) {
-                  return const SizedBox.shrink();
+                if (touchedPalette == null) {
+                  return Container(color: Colors.black);
                 }
-                return Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedPosterGradient(
-                      palette: touchedPalette,
-                      fullHeight: false,
-                      opacity: 0.4,
-                      duration: const Duration(milliseconds: 400),
-                    ),
-                  ),
+                return AnimatedPosterGradient(
+                  palette: touchedPalette,
+                  duration: const Duration(milliseconds: 600),
                 );
               },
             ),
+            // Main content ON TOP of gradient
+            widget.navigationShell,
             // Barrier to dismiss modal when tapping outside
             if (isModalOpen)
               Positioned.fill(

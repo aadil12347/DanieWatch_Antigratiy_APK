@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 /// Gesture states for the premium poster interaction system.
 enum PosterTouchState {
@@ -19,7 +18,7 @@ enum PosterTouchState {
 /// Wraps a child widget and provides:
 /// - Scale-down (0.96) on press
 /// - Scale-up (1.03) + shadow on long-hold
-/// - Haptic feedback on state transitions
+/// - NO haptic feedback (visual-only subtle effects)
 /// - Clean tap navigation (only fires on stationary taps < 200ms OR on long-hold release)
 /// - Scroll-aware cancellation
 class PosterTouchHandler extends StatefulWidget {
@@ -52,11 +51,11 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
   late Animation<double> _scaleAnimation;
 
   // The scale values for each state
-  static const double _pressScale = 0.96;
-  static const double _liftScale = 1.03;
+  static const double _pressScale = 0.97;
+  static const double _liftScale = 1.02;
   static const double _normalScale = 1.0;
 
-  // Movement threshold (matches Flutter's kTouchSlop)
+  // Movement threshold
   static const double _touchSlop = 8.0;
 
   // Time before transitioning to long-hold
@@ -106,9 +105,8 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     _startPosition = event.position;
     setState(() => _state = PosterTouchState.pressing);
 
-    // Subtle press-down
+    // Subtle press-down — NO haptic
     _animateScale(_pressScale);
-    HapticFeedback.selectionClick();
 
     // Start long-press timer
     _longPressTimer?.cancel();
@@ -116,7 +114,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
       if (_state == PosterTouchState.pressing && mounted) {
         setState(() => _state = PosterTouchState.longHolding);
         _animateScale(_liftScale, duration: const Duration(milliseconds: 250));
-        HapticFeedback.mediumImpact();
+        // NO haptic — visual only
         widget.onLongHold?.call(true);
       }
     });
@@ -218,16 +216,10 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
                   boxShadow: isLifted
                       ? [
                           BoxShadow(
-                            color: glowColor.withValues(alpha: 0.3),
-                            blurRadius: 24,
+                            color: glowColor.withValues(alpha: 0.25),
+                            blurRadius: 20,
                             spreadRadius: -4,
-                            offset: const Offset(0, 12),
-                          ),
-                          BoxShadow(
-                            color: glowColor.withValues(alpha: 0.15),
-                            blurRadius: 48,
-                            spreadRadius: -8,
-                            offset: const Offset(0, 20),
+                            offset: const Offset(0, 8),
                           ),
                         ]
                       : [],

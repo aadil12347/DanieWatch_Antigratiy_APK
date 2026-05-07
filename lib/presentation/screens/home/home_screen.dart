@@ -81,20 +81,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final activeGradient = ref.watch(activeGradientProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       drawer: const CustomDrawer(),
-      body: Stack(
-        children: [
-          // Dynamic gradient background from carousel
-          Positioned.fill(
-            child: AnimatedPosterGradient(
-              palette: activeGradient,
-              fullHeight: false,
-              duration: const Duration(milliseconds: 800),
-            ),
-          ),
-          // Main content
-          GestureDetector(
+      body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
           // Exit delete mode if user clicks anywhere on the screen
@@ -257,9 +246,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ],
         ),
-      ),
-      ),
-        ], // Stack children
+        ),
       ),
     );
   }

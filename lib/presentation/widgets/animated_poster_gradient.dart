@@ -1,25 +1,18 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/services/poster_color_service.dart';
-import '../../core/theme/app_theme.dart';
 
-/// A cinematic animated gradient background driven by a [PosterColorPalette].
-///
-/// Smoothly transitions between palettes using [ColorTween] animations.
-/// Designed to sit behind content as a Stack layer.
+/// Cinematic 3-color animated gradient with subtle breathing movement.
 class AnimatedPosterGradient extends StatefulWidget {
   final PosterColorPalette palette;
   final Duration duration;
   final double opacity;
-  /// If true, the gradient covers the full height. If false, it fades out
-  /// at roughly 45% height (for home page use).
-  final bool fullHeight;
 
   const AnimatedPosterGradient({
     super.key,
     required this.palette,
     this.duration = const Duration(milliseconds: 800),
     this.opacity = 1.0,
-    this.fullHeight = true,
   });
 
   @override
@@ -27,104 +20,87 @@ class AnimatedPosterGradient extends StatefulWidget {
 }
 
 class _AnimatedPosterGradientState extends State<AnimatedPosterGradient>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late ColorTween _dominantTween;
-  late ColorTween _accentTween;
-  late ColorTween _mutedTween;
-  late Animation<double> _curvedAnimation;
+    with TickerProviderStateMixin {
+  late AnimationController _colorController;
+  late Animation<double> _colorCurve;
+  late AnimationController _breatheController;
+
+  late ColorTween _primaryTween;
+  late ColorTween _secondaryTween;
+  late ColorTween _tertiaryTween;
 
   PosterColorPalette _currentPalette = PosterColorPalette.fallback;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
-    _curvedAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    );
+
+    _colorController = AnimationController(vsync: this, duration: widget.duration);
+    _colorCurve = CurvedAnimation(parent: _colorController, curve: Curves.easeInOut);
 
     _currentPalette = widget.palette;
-    _dominantTween = ColorTween(
-      begin: widget.palette.dominant,
-      end: widget.palette.dominant,
-    );
-    _accentTween = ColorTween(
-      begin: widget.palette.accent,
-      end: widget.palette.accent,
-    );
-    _mutedTween = ColorTween(
-      begin: widget.palette.muted,
-      end: widget.palette.muted,
-    );
+    _primaryTween = ColorTween(begin: widget.palette.primary, end: widget.palette.primary);
+    _secondaryTween = ColorTween(begin: widget.palette.secondary, end: widget.palette.secondary);
+    _tertiaryTween = ColorTween(begin: widget.palette.tertiary, end: widget.palette.tertiary);
+
+    // Slow breathing animation — makes gradient feel alive
+    _breatheController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat(reverse: true);
   }
 
   @override
   void didUpdateWidget(AnimatedPosterGradient oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.palette != widget.palette) {
-      _dominantTween = ColorTween(
-        begin: _dominantTween.evaluate(_curvedAnimation) ?? _currentPalette.dominant,
-        end: widget.palette.dominant,
+      _primaryTween = ColorTween(
+        begin: _primaryTween.evaluate(_colorCurve) ?? _currentPalette.primary,
+        end: widget.palette.primary,
       );
-      _accentTween = ColorTween(
-        begin: _accentTween.evaluate(_curvedAnimation) ?? _currentPalette.accent,
-        end: widget.palette.accent,
+      _secondaryTween = ColorTween(
+        begin: _secondaryTween.evaluate(_colorCurve) ?? _currentPalette.secondary,
+        end: widget.palette.secondary,
       );
-      _mutedTween = ColorTween(
-        begin: _mutedTween.evaluate(_curvedAnimation) ?? _currentPalette.muted,
-        end: widget.palette.muted,
+      _tertiaryTween = ColorTween(
+        begin: _tertiaryTween.evaluate(_colorCurve) ?? _currentPalette.tertiary,
+        end: widget.palette.tertiary,
       );
       _currentPalette = widget.palette;
-      _controller.forward(from: 0.0);
-    }
-
-    if (oldWidget.duration != widget.duration) {
-      _controller.duration = widget.duration;
+      _colorController.forward(from: 0.0);
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _colorController.dispose();
+    _breatheController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _curvedAnimation,
+      animation: Listenable.merge([_colorCurve, _breatheController]),
       builder: (context, _) {
-        final dominant = _dominantTween.evaluate(_curvedAnimation) ??
-            _currentPalette.dominant;
-        final accent = _accentTween.evaluate(_curvedAnimation) ??
-            _currentPalette.accent;
-        final muted = _mutedTween.evaluate(_curvedAnimation) ??
-            _currentPalette.muted;
+        final p = _primaryTween.evaluate(_colorCurve) ?? _currentPalette.primary;
+        final s = _secondaryTween.evaluate(_colorCurve) ?? _currentPalette.secondary;
+        final t = _tertiaryTween.evaluate(_colorCurve) ?? _currentPalette.tertiary;
 
-        return AnimatedOpacity(
-          duration: const Duration(milliseconds: 400),
+        // Breathing — subtle alignment shift
+        final b = _breatheController.value;
+        final beginX = -0.3 + (b * 0.2);
+        final beginY = -1.0 + (b * 0.15);
+
+        return Opacity(
           opacity: widget.opacity,
           child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: widget.fullHeight
-                    ? Alignment.bottomCenter
-                    : const Alignment(0.0, 0.4),
-                colors: [
-                  dominant.withValues(alpha: 0.7),
-                  accent.withValues(alpha: 0.4),
-                  muted.withValues(alpha: 0.2),
-                  AppColors.background,
-                ],
-                stops: widget.fullHeight
-                    ? const [0.0, 0.3, 0.6, 1.0]
-                    : const [0.0, 0.25, 0.5, 1.0],
+                begin: Alignment(beginX, beginY),
+                end: Alignment(-beginX * 0.4, 1.0 - (b * 0.1)),
+                colors: [p, s, t, const Color(0xFF0A0A0A)],
+                stops: const [0.0, 0.3, 0.6, 1.0],
               ),
             ),
           ),
