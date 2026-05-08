@@ -16,8 +16,8 @@ enum PosterTouchState {
 /// Premium touch interaction handler modeled after Netflix/Apple TV+/Spotify.
 ///
 /// Wraps a child widget and provides:
-/// - Scale-down (0.96) on press
-/// - Scale-up (1.03) + shadow on long-hold
+/// - Scale-down (0.97) on press
+/// - Single smooth glow that fades in on touch and fades out on release
 /// - NO haptic feedback (visual-only subtle effects)
 /// - Clean tap navigation (only fires on stationary taps < 200ms OR on long-hold release)
 /// - Scroll-aware cancellation
@@ -42,14 +42,19 @@ class PosterTouchHandler extends StatefulWidget {
 }
 
 class PosterTouchHandlerState extends State<PosterTouchHandler>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   PosterTouchState _state = PosterTouchState.idle;
 
   Offset? _startPosition;
   Timer? _longPressTimer;
   DateTime? _pointerDownTime;
+
+  // Scale animation
   late AnimationController _scaleController;
   late Animation<double> _scaleAnimation;
+
+  // Single glow animation — one smooth fade in/out
+  late AnimationController _glowController;
 
   // The scale values for each state
   static const double _pressScale = 0.97;
@@ -77,12 +82,20 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
       parent: _scaleController,
       curve: Curves.easeOutCubic,
     ));
+
+    // Single glow controller: fades in fast, fades out smoothly
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180), // fade-in
+      reverseDuration: const Duration(milliseconds: 600), // fade-out — slow smooth vanish
+    );
   }
 
   @override
   void dispose() {
     _longPressTimer?.cancel();
     _scaleController.dispose();
+    _glowController.dispose();
     super.dispose();
   }
 
@@ -100,6 +113,14 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     _scaleController.forward(from: 0.0);
   }
 
+  void _showGlow() {
+    _glowController.forward();
+  }
+
+  void _hideGlow() {
+    _glowController.reverse();
+  }
+
   void _onPointerDown(PointerDownEvent event) {
     if (_isScrolling) return;
 
@@ -109,14 +130,13 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
     // Subtle press-down — NO haptic
     _animateScale(_pressScale);
+    _showGlow();
 
     // Start long-press timer
     _longPressTimer?.cancel();
     _longPressTimer = Timer(_longPressDelay, () {
       if (_state == PosterTouchState.pressing && mounted) {
         setState(() => _state = PosterTouchState.longHolding);
-        // Keep pinch scale — no lift effect
-        // NO haptic — visual only
         widget.onLongHold?.call(true);
       }
     });
@@ -133,6 +153,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
       }
       setState(() => _state = PosterTouchState.dragging);
       _animateScale(_normalScale);
+      // Keep glow on while finger is still on the card
     }
   }
 
@@ -147,6 +168,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
     setState(() => _state = PosterTouchState.idle);
     _animateScale(_normalScale);
+    _hideGlow();
 
     switch (previousState) {
       case PosterTouchState.pressing:
@@ -175,6 +197,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     }
     setState(() => _state = PosterTouchState.idle);
     _animateScale(_normalScale);
+    _hideGlow();
   }
 
   /// Called by parent scroll containers to cancel active touch states.
@@ -186,6 +209,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     if (_state != PosterTouchState.idle) {
       setState(() => _state = PosterTouchState.idle);
       _animateScale(_normalScale);
+      _hideGlow();
     }
   }
 
@@ -202,9 +226,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
   @override
   Widget build(BuildContext context) {
-    final isLifted = _state == PosterTouchState.longHolding;
-    final isPressing = _state == PosterTouchState.pressing;
-    final isActive = isLifted || isPressing;
     final glowColor = widget.glowColor ?? Colors.white;
 
     return NotificationListener<ScrollNotification>(
@@ -215,52 +236,29 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerCancel,
         child: AnimatedBuilder(
-          animation: _scaleAnimation,
+          animation: Listenable.merge([_scaleAnimation, _glowController]),
           builder: (context, child) {
+            final glowOpacity = _glowController.value;
             return Transform.scale(
               scale: _scaleAnimation.value,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  borderRadius: widget.borderRadius,
-                  boxShadow: isLifted
-                      ? [
-                          // Core intense glow — tight and bright
+              child: Container(
+                decoration: glowOpacity > 0.01
+                    ? BoxDecoration(
+                        borderRadius: widget.borderRadius,
+                        boxShadow: [
                           BoxShadow(
-                            color: glowColor.withValues(alpha: 0.55),
-                            blurRadius: 16,
-                            spreadRadius: 2,
+                            color: glowColor.withValues(alpha: 0.50 * glowOpacity),
+                            blurRadius: 20,
+                            spreadRadius: 3,
                           ),
-                          // Mid-range all-sides glow
                           BoxShadow(
-                            color: glowColor.withValues(alpha: 0.35),
-                            blurRadius: 30,
-                            spreadRadius: 4,
+                            color: glowColor.withValues(alpha: 0.20 * glowOpacity),
+                            blurRadius: 40,
+                            spreadRadius: 6,
                           ),
-                          // Wide ambient halo
-                          BoxShadow(
-                            color: glowColor.withValues(alpha: 0.15),
-                            blurRadius: 50,
-                            spreadRadius: 8,
-                          ),
-                        ]
-                      : isPressing
-                          ? [
-                              // Quick press glow — visible from all sides
-                              BoxShadow(
-                                color: glowColor.withValues(alpha: 0.40),
-                                blurRadius: 14,
-                                spreadRadius: 1,
-                              ),
-                              BoxShadow(
-                                color: glowColor.withValues(alpha: 0.20),
-                                blurRadius: 28,
-                                spreadRadius: 3,
-                              ),
-                            ]
-                          : [],
-                ),
+                        ],
+                      )
+                    : null,
                 child: child,
               ),
             );

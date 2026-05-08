@@ -41,7 +41,6 @@ class MovieCard extends ConsumerStatefulWidget {
 class _MovieCardState extends ConsumerState<MovieCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _hoverController;
-  bool _isPressing = false;
 
   String get _cardKey => '${widget.item.mediaType}_${widget.item.id}';
 
@@ -108,54 +107,20 @@ class _MovieCardState extends ConsumerState<MovieCard>
         : null;
     final glowColor = colorAsync?.valueOrNull?.primary;
 
-    // Local press state for card glow effect only
-    return Listener(
-      onPointerDown: (_) {
-        setState(() => _isPressing = true);
-      },
-      onPointerUp: (_) => setState(() => _isPressing = false),
-      onPointerCancel: (_) => setState(() => _isPressing = false),
-      child: PosterTouchHandler(
-        onTap: _navigate,
-        onLongHold: _onLongHoldChanged,
-        glowColor: glowColor,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          width: widget.width,
-          height: widget.height,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: _isPressing && glowColor != null
-                ? [
-                    // Core bright glow
-                    BoxShadow(
-                      color: glowColor.withValues(alpha: 0.50),
-                      blurRadius: 16,
-                      spreadRadius: 2,
-                    ),
-                    // Mid-range glow from all sides
-                    BoxShadow(
-                      color: glowColor.withValues(alpha: 0.30),
-                      blurRadius: 30,
-                      spreadRadius: 4,
-                    ),
-                    // Wide ambient halo
-                    BoxShadow(
-                      color: glowColor.withValues(alpha: 0.12),
-                      blurRadius: 50,
-                      spreadRadius: 8,
-                    ),
-                  ]
-                : [],
-          ),
-          child: _buildCardContent(
-            item: item,
-            posterUrl: posterUrl,
-            logoUrl: logoUrl,
-            isInWatchlist: isInWatchlist,
-            isHovering: isActive,
-            hoverAnimation: _hoverController,
-          ),
+    return PosterTouchHandler(
+      onTap: _navigate,
+      onLongHold: _onLongHoldChanged,
+      glowColor: glowColor,
+      child: SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: _buildCardContent(
+          item: item,
+          posterUrl: posterUrl,
+          logoUrl: logoUrl,
+          isInWatchlist: isInWatchlist,
+          isHovering: isActive,
+          hoverAnimation: _hoverController,
         ),
       ),
     );
