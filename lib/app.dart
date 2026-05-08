@@ -23,7 +23,13 @@ class DanieWatchApp extends ConsumerWidget {
       theme: AppTheme.dark,
       routerConfig: router,
       builder: (context, child) {
-        return child ?? const SizedBox();
+        return GestureDetector(
+          onTap: () {
+            // Dismiss keyboard when tapping outside text fields
+            FocusManager.instance.primaryFocus?.unfocus();
+          },
+          child: child ?? const SizedBox(),
+        );
       },
     );
   }

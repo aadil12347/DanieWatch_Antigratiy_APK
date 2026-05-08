@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +22,14 @@ class _AdminSupportInboxScreenState
   String _statusFilter = 'all';
   bool _selectionMode = false;
   final Set<String> _selectedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadHiddenTicketIds(ref, isAdmin: true);
+    });
+  }
 
   static const _categoryFilters = [
     {'value': 'all', 'label': 'All Categories'},
@@ -164,6 +173,63 @@ class _AdminSupportInboxScreenState
     }
   }
 
+  Future<void> _deleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Delete $count ticket${count > 1 ? 's' : ''}?',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        content: Text(
+          'These tickets will be removed from your admin view only.',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textMuted,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: GoogleFonts.inter(
+              color: const Color(0xFFEF4444),
+              fontWeight: FontWeight.w600,
+            )),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final service = ref.read(supportServiceProvider);
+    await service.hideTickets(_selectedIds.toList(), isAdmin: true);
+
+    final current = ref.read(hiddenAdminTicketIdsProvider);
+    ref.read(hiddenAdminTicketIdsProvider.notifier).state = {...current, ..._selectedIds};
+
+    if (mounted) {
+      CustomToast.show(context, 'Deleted $count ticket${count > 1 ? 's' : ''}', type: ToastType.success);
+      setState(() {
+        _selectedIds.clear();
+        _selectionMode = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ticketsAsync = ref.watch(allTicketsProvider);
@@ -220,6 +286,7 @@ class _AdminSupportInboxScreenState
                         }
                       },
                       onLongPress: () {
+                        HapticFeedback.mediumImpact();
                         setState(() {
                           _selectionMode = true;
                           _selectedIds.add(filtered[index].id);
@@ -399,6 +466,16 @@ class _AdminSupportInboxScreenState
               label: 'Reply All',
               color: const Color(0xFF059669),
               onTap: _showBulkReplyDialog,
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Delete
+          Expanded(
+            child: _BulkActionButton(
+              icon: Icons.delete_outline_rounded,
+              label: 'Delete',
+              color: const Color(0xFFEF4444),
+              onTap: _deleteSelected,
             ),
           ),
           const SizedBox(width: 10),

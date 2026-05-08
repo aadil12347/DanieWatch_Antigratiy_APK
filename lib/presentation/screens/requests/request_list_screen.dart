@@ -1,22 +1,132 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/toast_utils.dart';
 import '../../../domain/models/support_ticket.dart';
 import '../../providers/support_provider.dart';
 
-class RequestListScreen extends ConsumerWidget {
+class RequestListScreen extends ConsumerStatefulWidget {
   const RequestListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RequestListScreen> createState() => _RequestListScreenState();
+}
+
+class _RequestListScreenState extends ConsumerState<RequestListScreen> {
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Load hidden ticket IDs from SharedPreferences
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadHiddenTicketIds(ref, isAdmin: false);
+    });
+  }
+
+  void _toggleSelection(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_selectedIds.isEmpty) _selectionMode = false;
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll(List<SupportTicket> tickets) {
+    setState(() {
+      if (_selectedIds.length == tickets.length) {
+        _selectedIds.clear();
+        _selectionMode = false;
+      } else {
+        _selectedIds.addAll(tickets.map((t) => t.id));
+      }
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Delete $count ticket${count > 1 ? 's' : ''}?',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        content: Text(
+          'These tickets will be removed from your view. This won\'t affect the admin\'s view.',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textMuted,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: GoogleFonts.inter(
+              color: const Color(0xFFEF4444),
+              fontWeight: FontWeight.w600,
+            )),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final service = ref.read(supportServiceProvider);
+    await service.hideTickets(_selectedIds.toList(), isAdmin: false);
+
+    // Update the provider state to trigger re-filter
+    final current = ref.read(hiddenUserTicketIdsProvider);
+    ref.read(hiddenUserTicketIdsProvider.notifier).state = {...current, ..._selectedIds};
+
+    if (mounted) {
+      CustomToast.show(context, 'Deleted $count ticket${count > 1 ? 's' : ''}', type: ToastType.success);
+      setState(() {
+        _selectedIds.clear();
+        _selectionMode = false;
+      });
+    }
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectedIds.clear();
+      _selectionMode = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final ticketsAsync = ref.watch(userTicketsProvider);
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
+        if (_selectionMode) {
+          _exitSelectionMode();
+          return;
+        }
         if (context.canPop()) {
           context.pop();
         } else {
@@ -26,24 +136,54 @@ class RequestListScreen extends ConsumerWidget {
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-            onPressed: () {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                context.go('/profile');
-              }
-            },
-          ),
-          title: Text(
-            'My Requests',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
-          ),
+          leading: _selectionMode
+              ? IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: _exitSelectionMode,
+                )
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/profile');
+                    }
+                  },
+                ),
+          title: _selectionMode
+              ? Text(
+                  '${_selectedIds.length} selected',
+                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+                )
+              : Text(
+                  'My Requests',
+                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+                ),
           backgroundColor: Colors.transparent,
           elevation: 0,
+          actions: _selectionMode
+              ? [
+                  ticketsAsync.whenOrNull(
+                    data: (tickets) => IconButton(
+                      icon: Icon(
+                        _selectedIds.length == tickets.length
+                            ? Icons.deselect_rounded
+                            : Icons.select_all_rounded,
+                      ),
+                      tooltip: 'Select all',
+                      onPressed: () => _selectAll(tickets),
+                    ),
+                  ) ?? const SizedBox(),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
+                    tooltip: 'Delete selected',
+                    onPressed: _deleteSelected,
+                  ),
+                ]
+              : null,
         ),
-        floatingActionButton: _buildFAB(context),
+        floatingActionButton: _selectionMode ? null : _buildFAB(context),
         body: ticketsAsync.when(
           loading: () => const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
@@ -58,7 +198,25 @@ class RequestListScreen extends ConsumerWidget {
             return ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
               itemCount: tickets.length,
-              itemBuilder: (context, index) => _TicketCard(ticket: tickets[index]),
+              itemBuilder: (context, index) => _TicketCard(
+                ticket: tickets[index],
+                selectionMode: _selectionMode,
+                isSelected: _selectedIds.contains(tickets[index].id),
+                onTap: () {
+                  if (_selectionMode) {
+                    _toggleSelection(tickets[index].id);
+                  } else {
+                    context.push('/requests/chat/${tickets[index].id}');
+                  }
+                },
+                onLongPress: () {
+                  if (!_selectionMode) {
+                    HapticFeedback.mediumImpact();
+                    setState(() => _selectionMode = true);
+                  }
+                  _toggleSelection(tickets[index].id);
+                },
+              ),
             );
           },
         ),
@@ -164,8 +322,18 @@ class RequestListScreen extends ConsumerWidget {
 
 class _TicketCard extends StatelessWidget {
   final SupportTicket ticket;
+  final bool selectionMode;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _TicketCard({required this.ticket});
+  const _TicketCard({
+    required this.ticket,
+    required this.selectionMode,
+    required this.isSelected,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -175,39 +343,69 @@ class _TicketCard extends StatelessWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          onTap: () => context.push('/requests/chat/${ticket.id}'),
+          onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(16),
           splashColor: ticket.categoryColor.withValues(alpha: 0.08),
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
+              color: isSelected
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.08)
+                  : AppColors.surfaceElevated,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: ticket.unreadByUser
-                    ? ticket.categoryColor.withValues(alpha: 0.4)
-                    : Colors.white.withValues(alpha: 0.04),
+                color: isSelected
+                    ? const Color(0xFFEF4444).withValues(alpha: 0.5)
+                    : ticket.unreadByUser
+                        ? ticket.categoryColor.withValues(alpha: 0.4)
+                        : Colors.white.withValues(alpha: 0.04),
+                width: isSelected ? 1.5 : 1,
               ),
             ),
             child: Row(
               children: [
-                // Category icon
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        ticket.categoryColor.withValues(alpha: 0.2),
-                        ticket.categoryColor.withValues(alpha: 0.05),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                // Selection checkbox or category icon
+                if (selectionMode)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 24,
+                    height: 24,
+                    margin: const EdgeInsets.only(right: 14),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected
+                          ? const Color(0xFFEF4444)
+                          : Colors.transparent,
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFFEF4444)
+                            : AppColors.textMuted,
+                        width: 2,
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    child: isSelected
+                        ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
+                        : null,
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          ticket.categoryColor.withValues(alpha: 0.2),
+                          ticket.categoryColor.withValues(alpha: 0.05),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(ticket.categoryIcon, color: ticket.categoryColor, size: 20),
                   ),
-                  child: Icon(ticket.categoryIcon, color: ticket.categoryColor, size: 20),
-                ),
-                const SizedBox(width: 14),
+                if (!selectionMode) const SizedBox(width: 14),
                 // Content
                 Expanded(
                   child: Column(

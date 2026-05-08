@@ -328,6 +328,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 8),
           Consumer(
             builder: (context, ref, _) {
+              final isAdminVal = isAdmin;
+              if (isAdminVal) {
+                final adminUnread = ref.watch(adminUnreadCountProvider);
+                return SettingsTile(
+                  icon: Icons.inbox_rounded,
+                  title: 'Support Inbox',
+                  infoText: 'View & manage user support tickets',
+                  accentColor: const Color(0xFF059669),
+                  trailing: adminUnread > 0
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF059669).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$adminUnread',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF059669),
+                            ),
+                          ),
+                        )
+                      : null,
+                  onTap: () => context.push('/admin-console/support-inbox'),
+                );
+              }
               final unreadCount = ref.watch(userUnreadCountProvider);
               return SettingsTile(
                 icon: Icons.support_agent_rounded,

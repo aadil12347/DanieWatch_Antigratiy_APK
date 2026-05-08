@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/support_ticket.dart';
 import '../../domain/models/support_message.dart';
 
@@ -268,36 +269,68 @@ class SupportService {
       default: return status;
     }
   }
+
+  /// Hide tickets locally (only from this user's view)
+  Future<void> hideTickets(List<String> ticketIds, {required bool isAdmin}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = isAdmin ? 'hidden_tickets_admin' : 'hidden_tickets_user';
+    final existing = prefs.getStringList(key) ?? [];
+    final updated = {...existing, ...ticketIds}.toList();
+    await prefs.setStringList(key, updated);
+  }
+
+  /// Get hidden ticket IDs for this role
+  Future<Set<String>> getHiddenTicketIds({required bool isAdmin}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = isAdmin ? 'hidden_tickets_admin' : 'hidden_tickets_user';
+    return (prefs.getStringList(key) ?? []).toSet();
+  }
 }
 
 // ─── Providers ────────────────────────────────────────────────────────────
 
 final supportServiceProvider = Provider<SupportService>((_) => SupportService.instance);
 
-/// Stream of current user's tickets (real-time)
+/// Hidden ticket IDs provider (triggers re-filter when updated)
+final hiddenUserTicketIdsProvider = StateProvider<Set<String>>((ref) => {});
+final hiddenAdminTicketIdsProvider = StateProvider<Set<String>>((ref) => {});
+
+/// Initialize hidden ticket IDs from SharedPreferences
+Future<void> loadHiddenTicketIds(WidgetRef ref, {required bool isAdmin}) async {
+  final service = ref.read(supportServiceProvider);
+  final hiddenIds = await service.getHiddenTicketIds(isAdmin: isAdmin);
+  if (isAdmin) {
+    ref.read(hiddenAdminTicketIdsProvider.notifier).state = hiddenIds;
+  } else {
+    ref.read(hiddenUserTicketIdsProvider.notifier).state = hiddenIds;
+  }
+}
+
+/// Stream of current user's tickets (real-time) with hidden filter
 final userTicketsProvider = StreamProvider<List<SupportTicket>>((ref) {
   final user = _supabase.auth.currentUser;
   if (user == null) return Stream.value([]);
+  final hiddenIds = ref.watch(hiddenUserTicketIdsProvider);
 
   return _supabase
       .from('support_tickets')
       .stream(primaryKey: ['id'])
       .eq('user_id', user.id)
       .order('last_message_at', ascending: false)
-      .map((data) => data.map((e) => SupportTicket.fromJson(e)).toList());
+      .map((data) => data
+          .map((e) => SupportTicket.fromJson(e))
+          .where((t) => !hiddenIds.contains(t.id))
+          .toList());
 });
 
-/// Stream of ALL tickets for admin (real-time) — with profile join
+/// Stream of ALL tickets for admin (real-time) — with profile join and hidden filter
 final allTicketsProvider = StreamProvider<List<SupportTicket>>((ref) {
-  // Use stream for real-time, but we need profiles too
-  // Stream doesn't support joins, so we'll do a periodic refresh approach
-  // combined with real-time updates
+  final hiddenIds = ref.watch(hiddenAdminTicketIdsProvider);
   return _supabase
       .from('support_tickets')
       .stream(primaryKey: ['id'])
       .order('last_message_at', ascending: false)
       .asyncMap((tickets) async {
-        // Fetch profiles for all unique user_ids
         final userIds = tickets.map((t) => t['user_id'] as String).toSet().toList();
         if (userIds.isEmpty) return <SupportTicket>[];
 
@@ -319,9 +352,10 @@ final allTicketsProvider = StreamProvider<List<SupportTicket>>((ref) {
               t['profiles'] = profile;
             }
             return SupportTicket.fromJson(t);
-          }).toList();
+          }).where((t) => !hiddenIds.contains(t.id)).toList();
         } catch (e) {
-          return tickets.map((t) => SupportTicket.fromJson(t)).toList();
+          return tickets.map((t) => SupportTicket.fromJson(t))
+              .where((t) => !hiddenIds.contains(t.id)).toList();
         }
       });
 });
