@@ -3,6 +3,7 @@ import '../../../core/utils/responsive.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/physics.dart';
 import 'package:go_router/go_router.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -258,22 +259,31 @@ class _AppShellState extends ConsumerState<AppShell> {
                         padding: EdgeInsets.symmetric(horizontal: navHPad),
                         child: LiquidGlass(
                           borderRadius: navRadius,
-                          intensity: GlassIntensity.medium,
+                          intensity: isOtherModalOpen ? GlassIntensity.heavy : GlassIntensity.medium,
                           enableAnimatedBorder: true,
                           enableTouchRipple: false,
                           child: AnimatedSize(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOutCubic,
+                            duration: const Duration(milliseconds: 450),
+                            curve: Curves.easeOutCubic,
                             alignment: Alignment.bottomCenter,
                             child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 150),
-                              switchInCurve: Curves.easeOut,
-                              switchOutCurve: Curves.easeIn,
+                              duration: const Duration(milliseconds: 400),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
                               transitionBuilder: (child, animation) {
                                 return FadeTransition(
-                                  opacity: animation,
-                                  child: ScaleTransition(
-                                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
+                                  opacity: CurvedAnimation(
+                                    parent: animation,
+                                    curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
+                                  ),
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, 0.06),
+                                      end: Offset.zero,
+                                    ).animate(CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                    )),
                                     child: child,
                                   ),
                                 );
@@ -420,15 +430,9 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
 
     _pillController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 700),
     );
-    _pillAnimation = Tween<double>(
-      begin: widget.currentIndex.toDouble(),
-      end: widget.currentIndex.toDouble(),
-    ).animate(CurvedAnimation(
-      parent: _pillController,
-      curve: Curves.easeOutBack,
-    ));
+    _pillAnimation = AlwaysStoppedAnimation(widget.currentIndex.toDouble());
 
     _rippleController = AnimationController(
       vsync: this,
@@ -448,11 +452,16 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
       _pillAnimation = Tween<double>(
         begin: _previousIndex.toDouble(),
         end: widget.currentIndex.toDouble(),
-      ).animate(CurvedAnimation(
-        parent: _pillController,
-        curve: Curves.easeOutBack,
-      ));
-      _pillController.forward(from: 0);
+      ).animate(_pillController);
+      // Soft spring physics for liquid water-like flowing motion
+      const spring = SpringDescription(
+        mass: 1.2,
+        stiffness: 120,
+        damping: 14,
+      );
+      _pillController.animateWith(
+        SpringSimulation(spring, 0, 1, 0),
+      );
     }
   }
 
@@ -515,27 +524,27 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
                           widthFactor: 0.25, // 1/4 of total width
                           child: Center(
                             child: Container(
-                              width: widget.tabWidth * 0.85,
-                              height: widget.navHeight - 26,
+                              width: widget.tabWidth * 1.25,
+                              height: widget.navHeight - 10,
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(20),
                                 gradient: LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    AppColors.primary.withValues(alpha: 0.18),
-                                    AppColors.primary.withValues(alpha: 0.06),
+                                    Colors.white.withValues(alpha: 0.18),
+                                    Colors.white.withValues(alpha: 0.06),
                                   ],
                                 ),
                                 border: Border.all(
-                                  color: AppColors.primary.withValues(alpha: 0.22),
-                                  width: 0.5,
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  width: 0.6,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primary.withValues(alpha: 0.12),
-                                    blurRadius: 12,
-                                    spreadRadius: -2,
+                                    color: Colors.white.withValues(alpha: 0.08),
+                                    blurRadius: 20,
+                                    spreadRadius: 0,
                                   ),
                                 ],
                               ),
@@ -592,7 +601,7 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
                   key: ValueKey('icon_${index}_$isSelected'),
                   color: isSelected
                       ? AppColors.primary
-                      : Colors.white.withValues(alpha: 0.55),
+                      : Colors.white.withValues(alpha: 0.78),
                   size: iconSize,
                 ),
               ),
@@ -603,7 +612,7 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
                 style: GoogleFonts.inter(
                   color: isSelected
                       ? AppColors.primary
-                      : Colors.white.withValues(alpha: 0.4),
+                      : Colors.white.withValues(alpha: 0.65),
                   fontSize: labelSize,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   letterSpacing: -0.2,

@@ -66,9 +66,9 @@ class _LiquidGlassState extends State<LiquidGlass>
       case GlassIntensity.medium:
         return 10;
       case GlassIntensity.heavy:
-        return 16;
-      case GlassIntensity.ultra:
         return 22;
+      case GlassIntensity.ultra:
+        return 30;
     }
   }
 
@@ -81,9 +81,9 @@ class _LiquidGlassState extends State<LiquidGlass>
       case GlassIntensity.medium:
         return Colors.white.withValues(alpha: 0.06);
       case GlassIntensity.heavy:
-        return Colors.white.withValues(alpha: 0.08);
+        return Colors.white.withValues(alpha: 0.14);
       case GlassIntensity.ultra:
-        return Colors.white.withValues(alpha: 0.10);
+        return Colors.white.withValues(alpha: 0.20);
     }
   }
 
