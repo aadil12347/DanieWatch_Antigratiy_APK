@@ -324,7 +324,7 @@ class _HeroGradientSection extends ConsumerWidget {
           children: [
             // Personalized Header
             Padding(
-              padding: EdgeInsets.fromLTRB(r.w(16), r.h(44), r.w(16), r.h(20)),
+              padding: EdgeInsets.fromLTRB(r.w(16), r.h(44), r.w(16), r.h(8)),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -422,7 +422,7 @@ class _HeroGradientSection extends ConsumerWidget {
             if (carouselItems.isNotEmpty)
               StackedCarousel(items: carouselItems),
             // Extra padding so gradient extends a bit below carousel
-            const SizedBox(height: 40),
+            const SizedBox(height: 12),
           ],
         ),
       ],

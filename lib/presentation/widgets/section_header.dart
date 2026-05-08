@@ -27,7 +27,7 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final r = Responsive(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(r.w(16), r.h(32), r.w(16), r.h(16)),
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(20), r.w(16), r.h(12)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,

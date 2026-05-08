@@ -205,10 +205,10 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
             ),
           ),
         ),
-        SizedBox(height: r.h(24)),
+        SizedBox(height: r.h(12)),
         // Active Item Info Display — always fetch TMDB logo
         Container(
-          height: r.h(60),
+          height: r.h(44),
           padding: EdgeInsets.symmetric(horizontal: r.w(32)),
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
