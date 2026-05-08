@@ -216,10 +216,10 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
                   boxShadow: isLifted
                       ? [
                           BoxShadow(
-                            color: glowColor.withValues(alpha: 0.25),
-                            blurRadius: 20,
-                            spreadRadius: -4,
-                            offset: const Offset(0, 8),
+                            color: glowColor.withValues(alpha: 0.15),
+                            blurRadius: 10,
+                            spreadRadius: -2,
+                            offset: const Offset(0, 3),
                           ),
                         ]
                       : [],

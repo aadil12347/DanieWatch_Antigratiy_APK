@@ -183,9 +183,9 @@ class _MovieCardState extends ConsumerState<MovieCard>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 12.0,
-                            offset: const Offset(0, 6.0),
+                            color: Colors.black.withValues(alpha: 0.18),
+                            blurRadius: 4.0,
+                            offset: const Offset(0, 2.0),
                           ),
                         ],
                       ),
