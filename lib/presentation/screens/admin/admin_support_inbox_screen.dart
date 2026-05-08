@@ -217,10 +217,10 @@ class _AdminSupportInboxScreenState
     if (confirmed != true || !mounted) return;
 
     final service = ref.read(supportServiceProvider);
-    await service.hideTickets(_selectedIds.toList(), isAdmin: true);
+    await service.deleteTickets(_selectedIds.toList());
 
-    final current = ref.read(hiddenAdminTicketIdsProvider);
-    ref.read(hiddenAdminTicketIdsProvider.notifier).state = {...current, ..._selectedIds};
+    // Invalidate the provider to refresh the list from Supabase
+    ref.invalidate(allTicketsProvider);
 
     if (mounted) {
       CustomToast.show(context, 'Deleted $count ticket${count > 1 ? 's' : ''}', type: ToastType.success);

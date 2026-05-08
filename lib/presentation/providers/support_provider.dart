@@ -51,6 +51,21 @@ class SupportService {
 
       // 3. Notify all admins about the new ticket
       try {
+        // Fetch user's display name for the notification title
+        String userName = 'User';
+        try {
+          final profile = await _supabase
+              .from('profiles')
+              .select('full_name, username')
+              .eq('id', user.id)
+              .maybeSingle();
+          if (profile != null) {
+            userName = (profile['full_name'] as String?)?.isNotEmpty == true
+                ? profile['full_name'] as String
+                : (profile['username'] as String?) ?? 'User';
+          }
+        } catch (_) {}
+
         final preview = description.length > 80
             ? '${description.substring(0, 80)}...'
             : description;
@@ -60,8 +75,8 @@ class SupportService {
             'type': 'support_admin_notify',
             'sender_id': user.id,
             'ticket_id': ticket.id,
-            'title': '🆕 New Support Request',
-            'body': '$subject: $preview',
+            'title': '🆕 $userName',
+            'body': subject,
             'data': {
               'type': 'support_ticket',
               'ticket_id': ticket.id,
@@ -134,16 +149,29 @@ class SupportService {
             },
           );
         } else {
-          // User sending → notify all admins via topic-based push
-          // This targets the 'daniewatch_support_admin' topic that all admins subscribe to
+          // User sending → notify all admins individually
+          // Fetch user's display name for the notification title
+          String userName = 'User';
+          try {
+            final profile = await _supabase
+                .from('profiles')
+                .select('full_name, username')
+                .eq('id', user.id)
+                .maybeSingle();
+            if (profile != null) {
+              userName = (profile['full_name'] as String?)?.isNotEmpty == true
+                  ? profile['full_name'] as String
+                  : (profile['username'] as String?) ?? 'User';
+            }
+          } catch (_) {}
+
           await _supabase.functions.invoke(
             'send-push-notification',
             body: {
               'type': 'support_admin_notify',
-              'topic': 'daniewatch_support_admin',
               'sender_id': user.id,
               'ticket_id': ticketId,
-              'title': '📩 New Support Message',
+              'title': '💬 $userName',
               'body': preview,
               'data': {
                 'type': 'support_ticket',
@@ -296,7 +324,23 @@ class SupportService {
     }
   }
 
-  /// Hide tickets locally (only from this user's view)
+  /// Delete tickets from the database permanently
+  Future<void> deleteTickets(List<String> ticketIds) async {
+    try {
+      // Delete messages first (foreign key constraint)
+      for (final id in ticketIds) {
+        await _supabase.from('support_messages').delete().eq('ticket_id', id);
+      }
+      // Delete the tickets themselves
+      for (final id in ticketIds) {
+        await _supabase.from('support_tickets').delete().eq('id', id);
+      }
+    } catch (e) {
+      debugPrint('Error deleting tickets: $e');
+    }
+  }
+
+  /// Hide tickets locally (only from this user's view) — legacy fallback
   Future<void> hideTickets(List<String> ticketIds, {required bool isAdmin}) async {
     final prefs = await SharedPreferences.getInstance();
     final key = isAdmin ? 'hidden_tickets_admin' : 'hidden_tickets_user';

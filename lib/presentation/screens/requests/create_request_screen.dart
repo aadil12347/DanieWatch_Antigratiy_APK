@@ -73,7 +73,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
     if (ticket != null) {
       CustomToast.show(context, 'Request submitted!', type: ToastType.success);
       // Navigate to the chat screen, replacing this screen
-      context.go('/requests/chat/${ticket.id}');
+      context.push('/requests/chat/${ticket.id}');
     } else {
       setState(() => _isSubmitting = false);
       CustomToast.show(context, 'Failed to submit request', type: ToastType.error);
@@ -183,10 +183,9 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
   Widget _buildCategorySelector() {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: _categoryError
               ? AppColors.error.withValues(alpha: 0.8)
@@ -194,55 +193,67 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
           width: _categoryError ? 1.5 : 1,
         ),
       ),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: _categories.map((cat) {
-          final isSelected = _selectedCategory == cat['value'];
-          final color = cat['color'] as Color;
-          return GestureDetector(
-            onTap: () {
+      child: DropdownButtonHideUnderline(
+        child: ButtonTheme(
+          alignedDropdown: true,
+          child: DropdownButton<String>(
+            value: _selectedCategory,
+            isExpanded: true,
+            dropdownColor: AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            icon: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: _selectedCategory != null
+                  ? AppColors.textSecondary
+                  : AppColors.textHint,
+            ),
+            hint: Text(
+              'Select a category',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppColors.textHint,
+              ),
+            ),
+            items: _categories.map((cat) {
+              final color = cat['color'] as Color;
+              return DropdownMenuItem<String>(
+                value: cat['value'] as String,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        cat['icon'] as IconData,
+                        size: 16,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      cat['label'] as String,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
               setState(() {
-                _selectedCategory = cat['value'] as String;
+                _selectedCategory = value;
                 _categoryError = false;
               });
             },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? color.withValues(alpha: 0.2)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSelected
-                      ? color.withValues(alpha: 0.5)
-                      : Colors.transparent,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    cat['icon'] as IconData,
-                    size: 16,
-                    color: isSelected ? color : AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    cat['label'] as String,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                      color: isSelected ? color : AppColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
+          ),
+        ),
       ),
     );
   }

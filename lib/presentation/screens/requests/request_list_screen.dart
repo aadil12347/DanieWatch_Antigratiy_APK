@@ -67,7 +67,7 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
           ),
         ),
         content: Text(
-          'These tickets will be removed from your view. This won\'t affect the admin\'s view.',
+          'This will permanently delete ${count > 1 ? 'these tickets' : 'this ticket'} and all messages. This cannot be undone.',
           style: GoogleFonts.inter(
             fontSize: 14,
             color: AppColors.textMuted,
@@ -93,11 +93,10 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
     if (confirmed != true || !mounted) return;
 
     final service = ref.read(supportServiceProvider);
-    await service.hideTickets(_selectedIds.toList(), isAdmin: false);
+    await service.deleteTickets(_selectedIds.toList());
 
-    // Update the provider state to trigger re-filter
-    final current = ref.read(hiddenUserTicketIdsProvider);
-    ref.read(hiddenUserTicketIdsProvider.notifier).state = {...current, ..._selectedIds};
+    // Invalidate the provider to refresh the list from Supabase
+    ref.invalidate(userTicketsProvider);
 
     if (mounted) {
       CustomToast.show(context, 'Deleted $count ticket${count > 1 ? 's' : ''}', type: ToastType.success);
