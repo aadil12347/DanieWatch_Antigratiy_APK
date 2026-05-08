@@ -22,7 +22,6 @@ import '../../widgets/confirmation_modal_content.dart';
 import '../../providers/scroll_provider.dart';
 import '../../providers/poster_color_provider.dart';
 import '../../widgets/animated_poster_gradient.dart';
-import '../../../core/services/poster_color_service.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -221,15 +220,16 @@ class _AppShellState extends ConsumerState<AppShell> {
         extendBody: true,
         body: Stack(
           children: [
-            // Ambient gradient background (BEHIND all content)
+            // Ambient gradient background (ONLY on Home tab, driven by carousel)
             Consumer(
               builder: (context, ref, _) {
-                final touchedPalette = ref.watch(touchedPosterGradientProvider);
-                if (touchedPalette == null) {
+                final isHome = widget.navigationShell.currentIndex == 0;
+                if (!isHome) {
                   return Container(color: Colors.black);
                 }
+                final activePalette = ref.watch(activeGradientProvider);
                 return AnimatedPosterGradient(
-                  palette: touchedPalette,
+                  palette: activePalette,
                   duration: const Duration(milliseconds: 600),
                 );
               },

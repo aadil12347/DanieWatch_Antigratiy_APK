@@ -13,7 +13,7 @@ import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/active_card_provider.dart';
 import '../providers/poster_color_provider.dart';
-import '../../core/services/poster_color_service.dart';
+
 import '../../core/utils/toast_utils.dart';
 import 'poster_touch_handler.dart';
 
@@ -73,20 +73,9 @@ class _MovieCardState extends ConsumerState<MovieCard>
     if (active) {
       ref.read(activeCardProvider.notifier).state = _cardKey;
       _hoverController.forward();
-
-      // Update touched poster gradient
-      final posterUrl = widget.item.effectivePosterUrl ?? '';
-      if (posterUrl.isNotEmpty) {
-        PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
-          if (mounted) {
-            ref.read(touchedPosterGradientProvider.notifier).state = palette;
-          }
-        });
-      }
     } else {
       ref.read(activeCardProvider.notifier).state = null;
       _hoverController.reverse();
-      // Don't reset gradient — keep last color until a new card is touched
     }
   }
 
@@ -119,17 +108,10 @@ class _MovieCardState extends ConsumerState<MovieCard>
         : null;
     final glowColor = colorAsync?.valueOrNull?.primary;
 
-    // Update gradient immediately on ANY touch
+    // Local press state for card glow effect only
     return Listener(
       onPointerDown: (_) {
         setState(() => _isPressing = true);
-        if (posterUrl.isNotEmpty) {
-          PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
-            if (mounted) {
-              ref.read(touchedPosterGradientProvider.notifier).state = palette;
-            }
-          });
-        }
       },
       onPointerUp: (_) => setState(() => _isPressing = false),
       onPointerCancel: (_) => setState(() => _isPressing = false),

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
-/// 3-color palette extracted from poster images.
+/// Single dominant color palette extracted from poster images.
+/// Only the most dominant color is used; the rest fall back to the default dark background.
 class PosterColorPalette {
   final Color primary;
   final Color secondary;
@@ -13,11 +14,15 @@ class PosterColorPalette {
     required this.tertiary,
   });
 
+  /// Default dark background palette (near-black).
   static const fallback = PosterColorPalette(
     primary: Color(0xFF0D0D0D),
     secondary: Color(0xFF080808),
     tertiary: Color(0xFF050505),
   );
+
+  /// The default dark background color used as the secondary/tertiary.
+  static const _defaultDark = Color(0xFF0A0A0A);
 
   bool get isFallback =>
       primary == fallback.primary &&
@@ -36,7 +41,7 @@ class PosterColorPalette {
   int get hashCode => Object.hash(primary, secondary, tertiary);
 }
 
-/// Extracts 3 rich, vivid colors from poster images.
+/// Extracts the single most dominant color from poster images.
 class PosterColorService {
   PosterColorService._();
   static final instance = PosterColorService._();
@@ -70,25 +75,18 @@ class PosterColorService {
   }
 
   PosterColorPalette _buildPalette(PaletteGenerator gen) {
-    final Color rawPrimary = gen.vibrantColor?.color ??
-        gen.dominantColor?.color ??
+    // Use the single most dominant (most found) color in the image.
+    // Prefer dominantColor first since it's the most frequently occurring.
+    final Color rawDominant = gen.dominantColor?.color ??
+        gen.vibrantColor?.color ??
         gen.darkVibrantColor?.color ??
         PosterColorPalette.fallback.primary;
 
-    final Color rawSecondary = gen.darkVibrantColor?.color ??
-        gen.darkMutedColor?.color ??
-        gen.mutedColor?.color ??
-        PosterColorPalette.fallback.secondary;
-
-    final Color rawTertiary = gen.lightVibrantColor?.color ??
-        gen.lightMutedColor?.color ??
-        gen.dominantColor?.color ??
-        PosterColorPalette.fallback.tertiary;
-
     return PosterColorPalette(
-      primary: _richDarken(rawPrimary, 0.20),
-      secondary: _richDarken(rawSecondary, 0.12),
-      tertiary: _richDarken(rawTertiary, 0.08),
+      primary: _richDarken(rawDominant, 0.20),
+      // Secondary and tertiary are the default dark background
+      secondary: PosterColorPalette._defaultDark,
+      tertiary: PosterColorPalette._defaultDark,
     );
   }
 
