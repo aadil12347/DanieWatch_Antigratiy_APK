@@ -203,6 +203,8 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
   @override
   Widget build(BuildContext context) {
     final isLifted = _state == PosterTouchState.longHolding;
+    final isPressing = _state == PosterTouchState.pressing;
+    final isActive = isLifted || isPressing;
     final glowColor = widget.glowColor ?? Colors.white;
 
     return NotificationListener<ScrollNotification>(
@@ -218,20 +220,46 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
             return Transform.scale(
               scale: _scaleAnimation.value,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
+                duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOutCubic,
                 decoration: BoxDecoration(
                   borderRadius: widget.borderRadius,
                   boxShadow: isLifted
                       ? [
+                          // Core intense glow — tight and bright
+                          BoxShadow(
+                            color: glowColor.withValues(alpha: 0.55),
+                            blurRadius: 16,
+                            spreadRadius: 2,
+                          ),
+                          // Mid-range all-sides glow
+                          BoxShadow(
+                            color: glowColor.withValues(alpha: 0.35),
+                            blurRadius: 30,
+                            spreadRadius: 4,
+                          ),
+                          // Wide ambient halo
                           BoxShadow(
                             color: glowColor.withValues(alpha: 0.15),
-                            blurRadius: 10,
-                            spreadRadius: -2,
-                            offset: const Offset(0, 3),
+                            blurRadius: 50,
+                            spreadRadius: 8,
                           ),
                         ]
-                      : [],
+                      : isPressing
+                          ? [
+                              // Quick press glow — visible from all sides
+                              BoxShadow(
+                                color: glowColor.withValues(alpha: 0.40),
+                                blurRadius: 14,
+                                spreadRadius: 1,
+                              ),
+                              BoxShadow(
+                                color: glowColor.withValues(alpha: 0.20),
+                                blurRadius: 28,
+                                spreadRadius: 3,
+                              ),
+                            ]
+                          : [],
                 ),
                 child: child,
               ),

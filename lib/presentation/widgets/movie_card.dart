@@ -127,10 +127,23 @@ class _MovieCardState extends ConsumerState<MovieCard>
             borderRadius: BorderRadius.circular(12),
             boxShadow: _isPressing && glowColor != null
                 ? [
+                    // Core bright glow
                     BoxShadow(
-                      color: glowColor.withValues(alpha: 0.25),
-                      blurRadius: 12,
-                      spreadRadius: 1,
+                      color: glowColor.withValues(alpha: 0.50),
+                      blurRadius: 16,
+                      spreadRadius: 2,
+                    ),
+                    // Mid-range glow from all sides
+                    BoxShadow(
+                      color: glowColor.withValues(alpha: 0.30),
+                      blurRadius: 30,
+                      spreadRadius: 4,
+                    ),
+                    // Wide ambient halo
+                    BoxShadow(
+                      color: glowColor.withValues(alpha: 0.12),
+                      blurRadius: 50,
+                      spreadRadius: 8,
                     ),
                   ]
                 : [],
