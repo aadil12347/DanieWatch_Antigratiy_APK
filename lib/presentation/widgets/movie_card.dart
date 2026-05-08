@@ -203,37 +203,13 @@ class _MovieCardState extends ConsumerState<MovieCard>
                       else
                         _placeholder(),
 
-                      // Hover Overlay (simple darken)
-                      if (hoverAnimation != null)
-                        AnimatedBuilder(
-                          animation: hoverAnimation,
-                          builder: (context, _) {
-                            if (hoverAnimation.value == 0.0) {
-                              return const SizedBox.shrink();
-                            }
-                            return Positioned.fill(
-                              child: ColoredBox(
-                                color: Colors.black.withValues(alpha: 0.5 * hoverAnimation.value),
-                              ),
-                            );
-                          },
-                        ),
+
 
                       // Save Button (top-right)
                       Positioned(
                         top: 6,
                         right: 6,
-                        child: AnimatedBuilder(
-                          animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-                          builder: (context, child) {
-                            final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-                            return Opacity(
-                              opacity: opacity,
-                              child: child,
-                            );
-                          },
-                          child: _SaveButton(item: item),
-                        ),
+                        child: _SaveButton(item: item),
                       ),
 
                       // Language Badge (top-left)
@@ -241,48 +217,10 @@ class _MovieCardState extends ConsumerState<MovieCard>
                         Positioned(
                           top: 6,
                           left: 6,
-                          child: AnimatedBuilder(
-                            animation: hoverAnimation ?? const AlwaysStoppedAnimation(0),
-                            builder: (context, child) {
-                              final opacity = 1.0 - (hoverAnimation?.value ?? 0.0);
-                              return Opacity(
-                                opacity: opacity,
-                                child: child,
-                              );
-                            },
-                            child: _LanguageBadge(text: item.language.first),
-                          ),
+                          child: _LanguageBadge(text: item.language.first),
                         ),
 
-                      // Logo/Title Overlay
-                      if (hoverAnimation != null)
-                        AnimatedBuilder(
-                          animation: hoverAnimation,
-                          builder: (context, _) {
-                            if (hoverAnimation.value == 0.0) {
-                              return const SizedBox.shrink();
-                            }
-                            final slideOff = (1.0 - hoverAnimation.value) * 120;
 
-                            return Positioned(
-                              bottom: -slideOff + 24,
-                              left: 12,
-                              right: 12,
-                              child: Opacity(
-                                opacity: hoverAnimation.value,
-                                child: (logoUrl != null && logoUrl.isNotEmpty)
-                                    ? CachedNetworkImage(
-                                        imageUrl: logoUrl,
-                                        height: 50,
-                                        fit: BoxFit.contain,
-                                        errorWidget: (_, __, ___) =>
-                                            _titleOverlayText(item.title),
-                                      )
-                                    : _titleOverlayText(item.title),
-                              ),
-                            );
-                          },
-                        ),
                     ],
                   ),
                 ),

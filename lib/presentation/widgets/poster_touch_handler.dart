@@ -47,12 +47,12 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
   Offset? _startPosition;
   Timer? _longPressTimer;
+  DateTime? _pointerDownTime;
   late AnimationController _scaleController;
   late Animation<double> _scaleAnimation;
 
   // The scale values for each state
   static const double _pressScale = 0.97;
-  static const double _liftScale = 1.02;
   static const double _normalScale = 1.0;
 
   // Movement threshold
@@ -60,6 +60,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
   // Time before transitioning to long-hold
   static const Duration _longPressDelay = Duration(milliseconds: 200);
+  static const Duration _tapThreshold = Duration(seconds: 1);
 
   double _targetScale = _normalScale;
   bool _isScrolling = false;
@@ -103,6 +104,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     if (_isScrolling) return;
 
     _startPosition = event.position;
+    _pointerDownTime = DateTime.now();
     setState(() => _state = PosterTouchState.pressing);
 
     // Subtle press-down — NO haptic
@@ -113,7 +115,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     _longPressTimer = Timer(_longPressDelay, () {
       if (_state == PosterTouchState.pressing && mounted) {
         setState(() => _state = PosterTouchState.longHolding);
-        _animateScale(_liftScale, duration: const Duration(milliseconds: 250));
+        // Keep pinch scale — no lift effect
         // NO haptic — visual only
         widget.onLongHold?.call(true);
       }
@@ -138,6 +140,11 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     _longPressTimer?.cancel();
 
     final previousState = _state;
+    final holdDuration = _pointerDownTime != null
+        ? DateTime.now().difference(_pointerDownTime!)
+        : Duration.zero;
+    _pointerDownTime = null;
+
     setState(() => _state = PosterTouchState.idle);
     _animateScale(_normalScale);
 
@@ -147,9 +154,11 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
         widget.onTap?.call();
         break;
       case PosterTouchState.longHolding:
-        // Long hold release — also navigate
+        // Long hold release — only navigate if held < 1 second
         widget.onLongHold?.call(false);
-        widget.onTap?.call();
+        if (holdDuration < _tapThreshold) {
+          widget.onTap?.call();
+        }
         break;
       case PosterTouchState.dragging:
         // Was scrolling — do nothing
