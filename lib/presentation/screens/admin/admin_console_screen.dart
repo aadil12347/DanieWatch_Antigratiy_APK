@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../providers/admin_provider.dart';
+import '../../providers/support_provider.dart';
 
 /// Admin Controls Hub — redesigned with 3 main action cards.
 class AdminConsoleScreen extends ConsumerWidget {
@@ -128,6 +129,26 @@ class AdminConsoleScreen extends ConsumerWidget {
               subtitle: 'Send custom message with optional image',
               gradient: const [Color(0xFFD97706), Color(0xFFB45309)],
               onTap: () => context.push('/admin-console/admin-message'),
+            ),
+
+            const SizedBox(height: 32),
+
+            // ── Support Section ─────────────────────────────────
+            _buildSectionTitle('SUPPORT'),
+            const SizedBox(height: 12),
+
+            Consumer(
+              builder: (context, ref, _) {
+                final unreadCount = ref.watch(adminUnreadCountProvider);
+                return _ActionCard(
+                  icon: Icons.support_agent_rounded,
+                  title: 'Support Inbox',
+                  subtitle: 'View & reply to user requests',
+                  gradient: const [Color(0xFF059669), Color(0xFF047857)],
+                  badge: unreadCount > 0 ? '$unreadCount' : null,
+                  onTap: () => context.push('/admin-console/support-inbox'),
+                );
+              },
             ),
 
             const SizedBox(height: 32),

@@ -16,8 +16,12 @@ import '../../presentation/screens/admin/admin_console_screen.dart';
 import '../../presentation/screens/admin/manage_entries_screen.dart';
 import '../../presentation/screens/admin/admin_message_screen.dart';
 import '../../presentation/screens/admin/manage_admins_screen.dart';
+import '../../presentation/screens/admin/admin_support_inbox_screen.dart';
 import '../../presentation/screens/profile/notification_settings_screen.dart';
 import '../../presentation/screens/notifications/notifications_screen.dart';
+import '../../presentation/screens/requests/request_list_screen.dart';
+import '../../presentation/screens/requests/create_request_screen.dart';
+import '../../presentation/screens/requests/request_chat_screen.dart';
 import '../../presentation/providers/auth_provider.dart';
 import '../../presentation/providers/manifest_provider.dart';
 
@@ -246,6 +250,26 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/notification-settings',
       pageBuilder: (context, state) => _quickPage(const NotificationSettingsScreen(), state),
+    ),
+    // ── Support Request Routes ──────────────────────────────────
+    GoRoute(
+      path: '/requests',
+      pageBuilder: (context, state) => _quickPage(const RequestListScreen(), state),
+    ),
+    GoRoute(
+      path: '/requests/new',
+      pageBuilder: (context, state) => _quickPage(const CreateRequestScreen(), state),
+    ),
+    GoRoute(
+      path: '/requests/chat/:ticketId',
+      pageBuilder: (context, state) {
+        final ticketId = state.pathParameters['ticketId']!;
+        return _quickPage(RequestChatScreen(ticketId: ticketId), state);
+      },
+    ),
+    GoRoute(
+      path: '/admin-console/support-inbox',
+      pageBuilder: (context, state) => _quickPage(const AdminSupportInboxScreen(), state),
     ),
 
     // Top-level details route for deep links and notification card taps

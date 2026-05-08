@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/admin_provider.dart';
+import '../../providers/support_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/settings_tile.dart';
 import '../../../domain/models/user_profile.dart';
@@ -325,19 +326,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           // Content section
           _buildSectionHeader('CONTENT', AppColors.textMuted),
           const SizedBox(height: 8),
-          SettingsTile(
-            icon: Icons.file_download_outlined,
-            title: 'Downloads',
-            infoText: 'Manage your saved offline content',
-            accentColor: const Color(0xFF0891B2),
-            onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
-          ),
-          SettingsTile(
-            icon: Icons.send_outlined,
-            title: 'Requests',
-            infoText: 'Submit content requests or report issues',
-            accentColor: const Color(0xFF059669),
-            onTap: () => CustomToast.show(context, 'Coming soon', type: ToastType.info),
+          Consumer(
+            builder: (context, ref, _) {
+              final unreadCount = ref.watch(userUnreadCountProvider);
+              return SettingsTile(
+                icon: Icons.support_agent_rounded,
+                title: 'Requests',
+                infoText: 'Submit content requests or report issues',
+                accentColor: const Color(0xFF059669),
+                trailing: unreadCount > 0
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF059669).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$unreadCount',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF059669),
+                          ),
+                        ),
+                      )
+                    : null,
+                onTap: () => context.push('/requests'),
+              );
+            },
           ),
           SettingsTile(
             icon: Icons.history_rounded,

@@ -1,0 +1,266 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../domain/models/support_ticket.dart';
+import '../../domain/models/support_message.dart';
+
+final _supabase = Supabase.instance.client;
+
+// ─── Support Service (mutations) ──────────────────────────────────────────
+
+class SupportService {
+  SupportService._();
+  static final instance = SupportService._();
+
+  /// Create a new ticket with an initial message
+  Future<SupportTicket?> createTicket({
+    required String subject,
+    required String description,
+    required String category,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      // 1. Insert the ticket
+      final ticketData = await _supabase.from('support_tickets').insert({
+        'user_id': user.id,
+        'subject': subject,
+        'description': description,
+        'category': category,
+        'status': 'new',
+        'last_message_at': DateTime.now().toIso8601String(),
+        'last_message_preview': description.length > 100
+            ? '${description.substring(0, 100)}...'
+            : description,
+        'last_message_by': user.id,
+        'unread_by_admin': true,
+        'unread_by_user': false,
+      }).select().single();
+
+      final ticket = SupportTicket.fromJson(ticketData);
+
+      // 2. Insert the initial message
+      await _supabase.from('support_messages').insert({
+        'ticket_id': ticket.id,
+        'sender_id': user.id,
+        'body': description,
+        'is_admin': false,
+      });
+
+      return ticket;
+    } catch (e) {
+      debugPrint('Error creating ticket: $e');
+      return null;
+    }
+  }
+
+  /// Send a message in a ticket
+  Future<bool> sendMessage({
+    required String ticketId,
+    required String body,
+    required bool isAdmin,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return false;
+
+    try {
+      // 1. Insert message
+      await _supabase.from('support_messages').insert({
+        'ticket_id': ticketId,
+        'sender_id': user.id,
+        'body': body,
+        'is_admin': isAdmin,
+      });
+
+      // 2. Update ticket metadata
+      final preview = body.length > 100 ? '${body.substring(0, 100)}...' : body;
+      await _supabase.from('support_tickets').update({
+        'last_message_at': DateTime.now().toIso8601String(),
+        'last_message_preview': preview,
+        'last_message_by': user.id,
+        'unread_by_admin': !isAdmin,
+        'unread_by_user': isAdmin,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', ticketId);
+
+      return true;
+    } catch (e) {
+      debugPrint('Error sending message: $e');
+      return false;
+    }
+  }
+
+  /// Update ticket status (admin only)
+  Future<bool> updateTicketStatus(String ticketId, String newStatus) async {
+    try {
+      await _supabase.from('support_tickets').update({
+        'status': newStatus,
+        'updated_at': DateTime.now().toIso8601String(),
+        'unread_by_user': true,
+      }).eq('id', ticketId);
+
+      // Insert a system-like message about the status change
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final statusLabel = _statusLabel(newStatus);
+        await _supabase.from('support_messages').insert({
+          'ticket_id': ticketId,
+          'sender_id': user.id,
+          'body': '📋 Ticket status changed to "$statusLabel"',
+          'is_admin': true,
+        });
+
+        // Update last message preview
+        await _supabase.from('support_tickets').update({
+          'last_message_at': DateTime.now().toIso8601String(),
+          'last_message_preview': 'Status changed to $statusLabel',
+          'last_message_by': user.id,
+        }).eq('id', ticketId);
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error updating ticket status: $e');
+      return false;
+    }
+  }
+
+  /// Bulk update status for multiple tickets
+  Future<bool> bulkUpdateStatus(List<String> ticketIds, String newStatus) async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) return false;
+
+      for (final ticketId in ticketIds) {
+        await updateTicketStatus(ticketId, newStatus);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error bulk updating: $e');
+      return false;
+    }
+  }
+
+  /// Bulk reply to multiple tickets
+  Future<bool> bulkReply(List<String> ticketIds, String message) async {
+    try {
+      for (final ticketId in ticketIds) {
+        await sendMessage(ticketId: ticketId, body: message, isAdmin: true);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error bulk replying: $e');
+      return false;
+    }
+  }
+
+  /// Mark ticket as read
+  Future<void> markTicketRead(String ticketId, {required bool isAdmin}) async {
+    try {
+      if (isAdmin) {
+        await _supabase.from('support_tickets').update({
+          'unread_by_admin': false,
+        }).eq('id', ticketId);
+      } else {
+        await _supabase.from('support_tickets').update({
+          'unread_by_user': false,
+        }).eq('id', ticketId);
+      }
+    } catch (e) {
+      debugPrint('Error marking ticket read: $e');
+    }
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'new': return 'New';
+      case 'pending': return 'Pending';
+      case 'completed': return 'Completed';
+      case 'rejected': return 'Rejected';
+      default: return status;
+    }
+  }
+}
+
+// ─── Providers ────────────────────────────────────────────────────────────
+
+final supportServiceProvider = Provider<SupportService>((_) => SupportService.instance);
+
+/// Stream of current user's tickets (real-time)
+final userTicketsProvider = StreamProvider<List<SupportTicket>>((ref) {
+  final user = _supabase.auth.currentUser;
+  if (user == null) return Stream.value([]);
+
+  return _supabase
+      .from('support_tickets')
+      .stream(primaryKey: ['id'])
+      .eq('user_id', user.id)
+      .order('last_message_at', ascending: false)
+      .map((data) => data.map((e) => SupportTicket.fromJson(e)).toList());
+});
+
+/// Stream of ALL tickets for admin (real-time) — with profile join
+final allTicketsProvider = StreamProvider<List<SupportTicket>>((ref) {
+  // Use stream for real-time, but we need profiles too
+  // Stream doesn't support joins, so we'll do a periodic refresh approach
+  // combined with real-time updates
+  return _supabase
+      .from('support_tickets')
+      .stream(primaryKey: ['id'])
+      .order('last_message_at', ascending: false)
+      .asyncMap((tickets) async {
+        // Fetch profiles for all unique user_ids
+        final userIds = tickets.map((t) => t['user_id'] as String).toSet().toList();
+        if (userIds.isEmpty) return <SupportTicket>[];
+
+        try {
+          final profiles = await _supabase
+              .from('profiles')
+              .select('id, username, avatar_url, email')
+              .inFilter('id', userIds);
+
+          final profileMap = <String, Map<String, dynamic>>{};
+          for (final p in profiles) {
+            profileMap[p['id'] as String] = p;
+          }
+
+          return tickets.map((t) {
+            final userId = t['user_id'] as String;
+            final profile = profileMap[userId];
+            if (profile != null) {
+              t['profiles'] = profile;
+            }
+            return SupportTicket.fromJson(t);
+          }).toList();
+        } catch (e) {
+          return tickets.map((t) => SupportTicket.fromJson(t)).toList();
+        }
+      });
+});
+
+/// Stream of messages for a specific ticket (real-time)
+final ticketMessagesProvider = StreamProvider.family<List<SupportMessage>, String>((ref, ticketId) {
+  return _supabase
+      .from('support_messages')
+      .stream(primaryKey: ['id'])
+      .eq('ticket_id', ticketId)
+      .order('created_at', ascending: true)
+      .map((data) => data.map((e) => SupportMessage.fromJson(e)).toList());
+});
+
+/// Count of unread tickets for admin
+final adminUnreadCountProvider = Provider<int>((ref) {
+  final ticketsAsync = ref.watch(allTicketsProvider);
+  return ticketsAsync.whenOrNull(
+    data: (tickets) => tickets.where((t) => t.unreadByAdmin).length,
+  ) ?? 0;
+});
+
+/// Count of unread tickets for user
+final userUnreadCountProvider = Provider<int>((ref) {
+  final ticketsAsync = ref.watch(userTicketsProvider);
+  return ticketsAsync.whenOrNull(
+    data: (tickets) => tickets.where((t) => t.unreadByUser).length,
+  ) ?? 0;
+});
