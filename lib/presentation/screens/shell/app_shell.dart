@@ -20,6 +20,7 @@ import 'dart:async';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../widgets/confirmation_modal_content.dart';
 import '../../providers/scroll_provider.dart';
+import '../../widgets/floating_blob_background.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -257,182 +258,231 @@ class _AppShellState extends ConsumerState<AppShell> {
                         padding: EdgeInsets.symmetric(horizontal: navHPad),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(navRadius),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeInOutCubic,
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(navRadius),
-                                border: Border.all(
-                                  color: AppColors.surface.withValues(alpha: 0.15),
-                                  width: 1,
+                          child: Stack(
+                            children: [
+                              // Floating blob background behind glass
+                              Positioned.fill(
+                                child: CompactBlobBackground(
+                                  colors: [
+                                    AppColors.primary.withValues(alpha: 0.5),
+                                    AppColors.primary.withValues(alpha: 0.3),
+                                  ],
+                                  opacity: 0.15,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.2),
-                                    blurRadius: 20,
-                                    spreadRadius: -5,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
                               ),
-                              child: AnimatedSize(
-                                duration: const Duration(milliseconds: 200),
-                                curve: Curves.easeInOutCubic,
-                                alignment: Alignment.bottomCenter,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 150),
-                                  switchInCurve: Curves.easeOut,
-                                  switchOutCurve: Curves.easeIn,
-                                  transitionBuilder: (child, animation) {
-                                    return FadeTransition(
-                                      opacity: animation,
-                                      child: ScaleTransition(
-                                        scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
-                                        child: child,
+                              // Liquid glass surface
+                              BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  curve: Curves.easeInOutCubic,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.white.withValues(alpha: 0.09),
+                                        Colors.white.withValues(alpha: 0.04),
+                                        Colors.white.withValues(alpha: 0.06),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(navRadius),
+                                    border: Border.all(
+                                      color: AppColors.glassBorder,
+                                      width: 0.8,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.35),
+                                        blurRadius: 30,
+                                        spreadRadius: -5,
+                                        offset: const Offset(0, 12),
                                       ),
-                                    );
-                                  },
-                                  child: isOtherModalOpen
-                                    ? Material(
-                                        color: Colors.transparent,
-                                        child: downloadState.isOpen
-                                                ? QualitySelectorContent(
-                                                    m3u8Url:
-                                                        downloadState.m3u8Url ??
-                                                            '',
-                                                    title: downloadState.title ??
-                                                        'Download',
-                                                    onSelected: downloadState
-                                                            .onSelected ??
-                                                        (_) {},
-                                                    onCancel: () {
-                                                      downloadState.onCancel?.call();
-                                                      _closeAllModals();
-                                                    },
-                                                  )
-                                                : confirmState.isOpen
-                                                    ? ConfirmationModalContent(
-                                                        title: confirmState.title,
-                                                        message:
-                                                            confirmState.message,
-                                                        confirmLabel: confirmState
-                                                            .confirmLabel,
-                                                        showDeviceDeleteToggle:
-                                                            confirmState
-                                                                .showDeviceDeleteToggle,
-                                                        onConfirm: (also) {
-                                                          confirmState.onConfirm
-                                                              ?.call(also);
-                                                          ref
-                                                              .read(
-                                                                  confirmationModalProvider
-                                                                      .notifier)
-                                                              .state = const ConfirmationModalState();
-                                                        },
+                                      BoxShadow(
+                                        color: AppColors.primary.withValues(alpha: 0.06),
+                                        blurRadius: 40,
+                                        spreadRadius: -10,
+                                      ),
+                                    ],
+                                  ),
+                                  child: AnimatedSize(
+                                    duration: const Duration(milliseconds: 200),
+                                    curve: Curves.easeInOutCubic,
+                                    alignment: Alignment.bottomCenter,
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 150),
+                                      switchInCurve: Curves.easeOut,
+                                      switchOutCurve: Curves.easeIn,
+                                      transitionBuilder: (child, animation) {
+                                        return FadeTransition(
+                                          opacity: animation,
+                                          child: ScaleTransition(
+                                            scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      child: isOtherModalOpen
+                                        ? Material(
+                                            color: Colors.transparent,
+                                            child: downloadState.isOpen
+                                                    ? QualitySelectorContent(
+                                                        m3u8Url:
+                                                            downloadState.m3u8Url ??
+                                                                '',
+                                                        title: downloadState.title ??
+                                                            'Download',
+                                                        onSelected: downloadState
+                                                                .onSelected ??
+                                                            (_) {},
                                                         onCancel: () {
-                                                          confirmState.onCancel?.call();
+                                                          downloadState.onCancel?.call();
                                                           _closeAllModals();
                                                         },
                                                       )
-                                                    : actorState.isOpen
-                                                        ? const ActorModalContent(
-                                                            key: ValueKey('actor_modal'),
+                                                    : confirmState.isOpen
+                                                        ? ConfirmationModalContent(
+                                                            title: confirmState.title,
+                                                            message:
+                                                                confirmState.message,
+                                                            confirmLabel: confirmState
+                                                                .confirmLabel,
+                                                            showDeviceDeleteToggle:
+                                                                confirmState
+                                                                    .showDeviceDeleteToggle,
+                                                            onConfirm: (also) {
+                                                              confirmState.onConfirm
+                                                                  ?.call(also);
+                                                              ref
+                                                                  .read(
+                                                                      confirmationModalProvider
+                                                                          .notifier)
+                                                                  .state = const ConfirmationModalState();
+                                                            },
+                                                            onCancel: () {
+                                                              confirmState.onCancel?.call();
+                                                              _closeAllModals();
+                                                            },
                                                           )
-                                                        : (filterState.view == FilterView.optionsList
-                                                            ? FilterSelectorContent(
-                                                                title: filterState.title,
-                                                                currentValue: filterState.currentValue,
-                                                                options: filterState.options,
-                                                                onChanged: filterState.onChanged ?? (_) {},
-                                                                onCancel: _closeAllModals,
+                                                        : actorState.isOpen
+                                                            ? const ActorModalContent(
+                                                                key: ValueKey('actor_modal'),
                                                               )
-                                                            : const MainFilterPanelContent(
-                                                                key: ValueKey('filter_main'),
-                                                              )),
-                                      )
-                                    : Column(
-                                        key: const ValueKey('navbar_column'),
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Main navbar row (always visible)
-                                          Container(
-                                            height: navHeight,
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: r.w(12)),
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.spaceEvenly,
-                                              children: List.generate(4, (index) {
-                                                final isSelected = _isTabSelected(index);
-                                                return GestureDetector(
-                                                  onTap: () => _onTap(index),
-                                                  behavior: HitTestBehavior.opaque,
-                                                  child: Container(
-                                                    key: ValueKey('tab_$index'),
-                                                    width: tabWidth,
-                                                    alignment: Alignment.center,
-                                                    child: Column(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Stack(
-                                                          alignment: Alignment.center,
+                                                            : (filterState.view == FilterView.optionsList
+                                                                ? FilterSelectorContent(
+                                                                    title: filterState.title,
+                                                                    currentValue: filterState.currentValue,
+                                                                    options: filterState.options,
+                                                                    onChanged: filterState.onChanged ?? (_) {},
+                                                                    onCancel: _closeAllModals,
+                                                                  )
+                                                                : const MainFilterPanelContent(
+                                                                    key: ValueKey('filter_main'),
+                                                                  )),
+                                          )
+                                        : Column(
+                                            key: const ValueKey('navbar_column'),
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Main navbar row with liquid glass tab pills
+                                              Container(
+                                                height: navHeight,
+                                                padding: EdgeInsets.symmetric(
+                                                    horizontal: r.w(12)),
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.spaceEvenly,
+                                                  children: List.generate(4, (index) {
+                                                    final isSelected = _isTabSelected(index);
+                                                    return GestureDetector(
+                                                      onTap: () => _onTap(index),
+                                                      behavior: HitTestBehavior.opaque,
+                                                      child: Container(
+                                                        key: ValueKey('tab_$index'),
+                                                        width: tabWidth,
+                                                        alignment: Alignment.center,
+                                                        child: Column(
+                                                          mainAxisSize: MainAxisSize.min,
                                                           children: [
-                                                            AnimatedOpacity(
-                                                              duration: const Duration(milliseconds: 150),
-                                                              opacity: isSelected ? 1.0 : 0.0,
-                                                              child: Icon(
-                                                                _activeIcons[index],
-                                                                color: AppColors.primary,
-                                                                size: iconSize,
+                                                            // Liquid glass pill behind active icon
+                                                            AnimatedContainer(
+                                                              duration: const Duration(milliseconds: 250),
+                                                              curve: Curves.easeOutCubic,
+                                                              padding: EdgeInsets.symmetric(
+                                                                horizontal: isSelected ? 14 : 8,
+                                                                vertical: isSelected ? 6 : 4,
+                                                              ),
+                                                              decoration: BoxDecoration(
+                                                                color: isSelected
+                                                                    ? AppColors.primary.withValues(alpha: 0.15)
+                                                                    : Colors.transparent,
+                                                                borderRadius: BorderRadius.circular(14),
+                                                                border: isSelected
+                                                                    ? Border.all(
+                                                                        color: AppColors.primary.withValues(alpha: 0.25),
+                                                                        width: 0.6,
+                                                                      )
+                                                                    : null,
+                                                              ),
+                                                              child: Stack(
+                                                                alignment: Alignment.center,
+                                                                children: [
+                                                                  AnimatedOpacity(
+                                                                    duration: const Duration(milliseconds: 150),
+                                                                    opacity: isSelected ? 1.0 : 0.0,
+                                                                    child: Icon(
+                                                                      _activeIcons[index],
+                                                                      color: AppColors.primary,
+                                                                      size: iconSize,
+                                                                    ),
+                                                                  ),
+                                                                  AnimatedOpacity(
+                                                                    duration: const Duration(milliseconds: 150),
+                                                                    opacity: isSelected ? 0.0 : 1.0,
+                                                                    child: Icon(
+                                                                      _icons[index],
+                                                                      color: Colors.white.withValues(alpha: 0.6),
+                                                                      size: iconSize,
+                                                                    ),
+                                                                  ),
+                                                                ],
                                                               ),
                                                             ),
-                                                            AnimatedOpacity(
-                                                              duration: const Duration(milliseconds: 150),
-                                                              opacity: isSelected ? 0.0 : 1.0,
-                                                              child: Icon(
-                                                                _icons[index],
-                                                                color: AppColors.textPrimary,
-                                                                size: iconSize,
+                                                            SizedBox(height: r.h(2)),
+                                                            FittedBox(
+                                                              fit: BoxFit.scaleDown,
+                                                              child: AnimatedDefaultTextStyle(
+                                                                duration: const Duration(milliseconds: 150),
+                                                                style: GoogleFonts.inter(
+                                                                  color: isSelected
+                                                                      ? AppColors.primary
+                                                                      : Colors.white.withValues(alpha: 0.5),
+                                                                  fontSize: labelSize,
+                                                                  fontWeight: isSelected
+                                                                      ? FontWeight.w600
+                                                                      : FontWeight.w500,
+                                                                  letterSpacing: -0.2,
+                                                                ),
+                                                                child: Text(
+                                                                  _labels[index],
+                                                                  maxLines: 1,
+                                                                ),
                                                               ),
                                                             ),
                                                           ],
                                                         ),
-                                                        SizedBox(height: r.h(2)),
-                                                        FittedBox(
-                                                          fit: BoxFit.scaleDown,
-                                                          child: AnimatedDefaultTextStyle(
-                                                            duration: const Duration(milliseconds: 150),
-                                                            style: GoogleFonts.inter(
-                                                              color: isSelected
-                                                                  ? AppColors.primary
-                                                                  : AppColors.textPrimary,
-                                                              fontSize: labelSize,
-                                                              fontWeight: isSelected
-                                                                  ? FontWeight.w600
-                                                                  : FontWeight.w500,
-                                                              letterSpacing: -0.2,
-                                                            ),
-                                                            child: Text(
-                                                              _labels[index],
-                                                              maxLines: 1,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-                                              }),
-                                            ),
+                                                      ),
+                                                    );
+                                                  }),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
                       ),

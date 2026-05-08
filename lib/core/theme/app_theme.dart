@@ -40,6 +40,15 @@ class AppColors {
   static const gradientStart = Color(0x00000000);
   static const gradientEnd = Color(0xFF000000);
   static const heroDimGradient = Color(0x99000000);
+
+  // Liquid Glass tokens (iOS-style)
+  static const glassLight = Color(0x12FFFFFF);     // 7% white
+  static const glassMedium = Color(0x1AFFFFFF);    // 10% white
+  static const glassHeavy = Color(0x26FFFFFF);     // 15% white
+  static const glassBorder = Color(0x30FFFFFF);    // 19% white
+  static const glassHighlight = Color(0x40FFFFFF); // 25% white
+  static const glassShadow = Color(0x20000000);    // inner shadow
+  static const glassSpecular = Color(0x50FFFFFF);  // specular edge highlight
 }
 
 class AppTheme {
