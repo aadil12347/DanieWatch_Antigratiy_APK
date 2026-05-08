@@ -168,57 +168,73 @@ class _AdminSupportInboxScreenState
   Widget build(BuildContext context) {
     final ticketsAsync = ref.watch(allTicketsProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(ticketsAsync),
-      body: Column(
-        children: [
-          // Filter bar
-          _buildFilterBar(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_selectionMode) {
+          setState(() {
+            _selectionMode = false;
+            _selectedIds.clear();
+          });
+        } else if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/admin-console');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: _buildAppBar(ticketsAsync),
+        body: Column(
+          children: [
+            // Filter bar
+            _buildFilterBar(),
 
-          // Ticket list
-          Expanded(
-            child: ticketsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+            // Ticket list
+            Expanded(
+              child: ticketsAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+                error: (e, _) => Center(
+                  child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted)),
+                ),
+                data: (tickets) {
+                  final filtered = _applyFilters(tickets);
+                  if (filtered.isEmpty) {
+                    return _buildEmptyState();
+                  }
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) => _AdminTicketCard(
+                      ticket: filtered[index],
+                      isSelected: _selectedIds.contains(filtered[index].id),
+                      selectionMode: _selectionMode,
+                      onTap: () {
+                        if (_selectionMode) {
+                          _toggleSelection(filtered[index].id);
+                        } else {
+                          context.push('/requests/chat/${filtered[index].id}');
+                        }
+                      },
+                      onLongPress: () {
+                        setState(() {
+                          _selectionMode = true;
+                          _selectedIds.add(filtered[index].id);
+                        });
+                      },
+                    ),
+                  );
+                },
               ),
-              error: (e, _) => Center(
-                child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted)),
-              ),
-              data: (tickets) {
-                final filtered = _applyFilters(tickets);
-                if (filtered.isEmpty) {
-                  return _buildEmptyState();
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) => _AdminTicketCard(
-                    ticket: filtered[index],
-                    isSelected: _selectedIds.contains(filtered[index].id),
-                    selectionMode: _selectionMode,
-                    onTap: () {
-                      if (_selectionMode) {
-                        _toggleSelection(filtered[index].id);
-                      } else {
-                        context.push('/requests/chat/${filtered[index].id}');
-                      }
-                    },
-                    onLongPress: () {
-                      setState(() {
-                        _selectionMode = true;
-                        _selectedIds.add(filtered[index].id);
-                      });
-                    },
-                  ),
-                );
-              },
             ),
-          ),
 
-          // Bulk action bar
-          if (_selectionMode && _selectedIds.isNotEmpty) _buildBulkActionBar(),
-        ],
+            // Bulk action bar
+            if (_selectionMode && _selectedIds.isNotEmpty) _buildBulkActionBar(),
+          ],
+        ),
       ),
     );
   }
@@ -236,7 +252,11 @@ class _AdminSupportInboxScreenState
               _selectedIds.clear();
             });
           } else {
-            context.pop();
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/admin-console');
+            }
           }
         },
       ),

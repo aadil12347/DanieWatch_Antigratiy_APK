@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/support_message.dart';
 import '../../../domain/models/support_ticket.dart';
@@ -22,30 +24,36 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isSending = false;
-  late AnimationController _inputAnimController;
+  int _lastMessageCount = 0;
+  bool _hasMarkedInitialRead = false;
 
   @override
   void initState() {
     super.initState();
-    _inputAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    // Mark ticket as read after a small delay
-    Future.delayed(const Duration(milliseconds: 500), _markAsRead);
+    // Mark ticket + messages as read once after a small delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        _markAsRead();
+        _hasMarkedInitialRead = true;
+      }
+    });
   }
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
-    _inputAnimController.dispose();
     super.dispose();
   }
 
   Future<void> _markAsRead() async {
     final isAdmin = ref.read(isAdminProvider).valueOrNull ?? false;
     await ref.read(supportServiceProvider).markTicketRead(
+      widget.ticketId,
+      isAdmin: isAdmin,
+    );
+    // Mark messages from the other party as read (blue ticks)
+    await ref.read(supportServiceProvider).markMessagesRead(
       widget.ticketId,
       isAdmin: isAdmin,
     );
@@ -110,34 +118,54 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(ticket, isAdmin),
-      body: Column(
-        children: [
-          // Status banner
-          if (ticket != null && ticket.isClosed) _buildStatusBanner(ticket),
+    // NOTE: markAsRead is handled in _buildMessageList when count changes
+    // Do NOT call it here — it causes infinite rebuild loops.
 
-          // Messages
-          Expanded(
-            child: messagesAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(isAdmin ? '/admin-console/support-inbox' : '/requests');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: _buildAppBar(ticket, isAdmin),
+        body: Column(
+          children: [
+            // Status banner
+            if (ticket != null && ticket.isClosed) _buildStatusBanner(ticket),
+
+            // Messages
+            Expanded(
+              child: messagesAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+                error: (e, _) => Center(
+                  child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted)),
+                ),
+                data: (messages) {
+                  // Only scroll + mark read when new messages actually arrive
+                  if (messages.length != _lastMessageCount) {
+                    _lastMessageCount = messages.length;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _scrollToBottom();
+                      if (_hasMarkedInitialRead) _markAsRead();
+                    });
+                  }
+                  return _buildMessageList(messages, isAdmin, ticket);
+                },
               ),
-              error: (e, _) => Center(
-                child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted)),
-              ),
-              data: (messages) {
-                // Auto-scroll on new messages
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-                return _buildMessageList(messages, isAdmin, ticket);
-              },
             ),
-          ),
 
-          // Input area
-          _buildInputArea(ticket, isAdmin),
-        ],
+            // Input area
+            _buildInputArea(ticket, isAdmin),
+          ],
+        ),
       ),
     );
   }
@@ -247,10 +275,7 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
           Container(
             width: 10,
             height: 10,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 10),
           Text(
@@ -309,6 +334,10 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
     bool isAdmin,
     SupportTicket? ticket,
   ) {
+    // Get current user's avatar for user messages
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentUserAvatar = currentUser?.userMetadata?['avatar_url'] as String?;
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -328,13 +357,28 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
         // Is this message from the current user's perspective?
         final isMyMessage = isAdmin ? message.isAdmin : !message.isAdmin;
 
+        // Avatar URL: admin uses app logo, user uses their profile pic
+        String? avatarUrl;
+        if (!isMyMessage) {
+          // Messages from the other party
+          if (message.isAdmin) {
+            avatarUrl = null; // Will show app logo icon
+          } else {
+            avatarUrl = ticket?.userAvatarUrl;
+          }
+        }
+
         return Column(
           children: [
             if (showDate) _buildDateSeparator(message.createdAt),
             _ChatBubble(
               message: message,
               isMyMessage: isMyMessage,
-              isAdmin: message.isAdmin,
+              isAdminMessage: message.isAdmin,
+              avatarUrl: isMyMessage ? null : avatarUrl,
+              showAvatar: !isMyMessage,
+              currentUserAvatar: isMyMessage ? (isAdmin ? null : currentUserAvatar) : null,
+              userAvatarUrl: ticket?.userAvatarUrl,
             ),
           ],
         );
@@ -451,30 +495,22 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
 
   Widget _buildInputArea(SupportTicket? ticket, bool isAdmin) {
     final isClosed = ticket?.isClosed ?? false;
-
-    // Admin can always reopen/reply even when closed
     final isDisabled = isClosed && !isAdmin;
 
     return Container(
       padding: EdgeInsets.fromLTRB(
-        16, 12, 16,
-        MediaQuery.of(context).padding.bottom + 12,
+        12, 8, 8,
+        MediaQuery.of(context).padding.bottom + 8,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated.withValues(alpha: 0.95),
+        color: AppColors.background,
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.04)),
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: isDisabled
-              ? _buildDisabledInput(ticket!)
-              : _buildActiveInput(),
-        ),
-      ),
+      child: isDisabled
+          ? _buildDisabledInput(ticket!)
+          : _buildActiveInput(),
     );
   }
 
@@ -509,15 +545,18 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
   }
 
   Widget _buildActiveInput() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Text field
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
             child: TextField(
               controller: _messageController,
               style: GoogleFonts.inter(
@@ -532,9 +571,10 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+                  horizontal: 16,
+                  vertical: 10,
                 ),
+                isDense: true,
               ),
               onSubmitted: (_) => _sendMessage(),
               textInputAction: TextInputAction.send,
@@ -542,47 +582,45 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
               minLines: 1,
             ),
           ),
-          // Send button
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: GestureDetector(
-              onTap: _sendMessage,
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF059669), Color(0xFF047857)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF059669).withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: _isSending
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
+        ),
+        const SizedBox(width: 8),
+        // Send button
+        GestureDetector(
+          onTap: _sendMessage,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF059669), Color(0xFF047857)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF059669).withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
+            child: _isSending
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(
+                    Icons.send_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -592,17 +630,25 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
 class _ChatBubble extends StatelessWidget {
   final SupportMessage message;
   final bool isMyMessage;
-  final bool isAdmin;
+  final bool isAdminMessage;
+  final String? avatarUrl;
+  final bool showAvatar;
+  final String? currentUserAvatar;
+  final String? userAvatarUrl;
 
   const _ChatBubble({
     required this.message,
     required this.isMyMessage,
-    required this.isAdmin,
+    required this.isAdminMessage,
+    this.avatarUrl,
+    this.showAvatar = false,
+    this.currentUserAvatar,
+    this.userAvatarUrl,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isStatusMessage = message.body.startsWith('📋');
+    final isStatusMessage = message.body.startsWith('\u{1F4CB}');
 
     if (isStatusMessage) {
       return _buildStatusMessage(context);
@@ -615,27 +661,12 @@ class _ChatBubble extends StatelessWidget {
             isMyMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Avatar for received messages
           if (!isMyMessage) ...[
-            // Admin avatar
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF7C3AED), Color(0xFF5B21B6)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.shield_rounded,
-                size: 14,
-                color: Colors.white,
-              ),
-            ),
+            _buildAvatar(),
             const SizedBox(width: 8),
           ],
+          // Bubble
           Flexible(
             child: Container(
               constraints: BoxConstraints(
@@ -661,11 +692,12 @@ class _ChatBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (!isMyMessage && isAdmin)
+                  // Sender label for received admin messages
+                  if (!isMyMessage && isAdminMessage)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        'Admin',
+                        'DanieWatch Support',
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -673,6 +705,7 @@ class _ChatBubble extends StatelessWidget {
                         ),
                       ),
                     ),
+                  // Message body
                   Text(
                     message.body,
                     style: GoogleFonts.inter(
@@ -682,15 +715,25 @@ class _ChatBubble extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: Text(
-                      message.timeFormatted,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: AppColors.textHint,
+                  // Time + read ticks row
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Spacer(),
+                      Text(
+                        message.timeFormatted,
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: AppColors.textHint,
+                        ),
                       ),
-                    ),
+                      // WhatsApp-style ticks — only on own messages
+                      if (isMyMessage) ...[
+                        const SizedBox(width: 4),
+                        _buildTicks(),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -699,6 +742,79 @@ class _ChatBubble extends StatelessWidget {
           if (isMyMessage) const SizedBox(width: 4),
         ],
       ),
+    );
+  }
+
+  /// Build avatar widget
+  Widget _buildAvatar() {
+    if (isAdminMessage) {
+      // Admin avatar: app logo style
+      return Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7C3AED), Color(0xFF5B21B6)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(
+          Icons.headset_mic_rounded,
+          size: 16,
+          color: Colors.white,
+        ),
+      );
+    } else {
+      // User avatar: profile pic or fallback
+      return Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: AppColors.surface,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: avatarUrl != null && avatarUrl!.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: avatarUrl!,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => const Icon(
+                  Icons.person_rounded,
+                  size: 16,
+                  color: AppColors.textHint,
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.person_rounded,
+                  size: 16,
+                  color: AppColors.textHint,
+                ),
+              )
+            : const Icon(
+                Icons.person_rounded,
+                size: 16,
+                color: AppColors.textHint,
+              ),
+      );
+    }
+  }
+
+  /// WhatsApp-style tick indicators
+  Widget _buildTicks() {
+    final isRead = message.status == MessageStatus.read;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Double tick icon
+        Icon(
+          Icons.done_all_rounded,
+          size: 14,
+          color: isRead ? const Color(0xFF34B7F1) : AppColors.textHint,
+        ),
+      ],
     );
   }
 

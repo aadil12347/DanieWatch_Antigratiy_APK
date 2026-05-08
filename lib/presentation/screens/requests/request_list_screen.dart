@@ -13,38 +13,55 @@ class RequestListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ticketsAsync = ref.watch(userTicketsProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => context.pop(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/profile');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/profile');
+              }
+            },
+          ),
+          title: Text(
+            'My Requests',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         ),
-        title: Text(
-          'My Requests',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+        floatingActionButton: _buildFAB(context),
+        body: ticketsAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
+          error: (e, _) => Center(
+            child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted)),
+          ),
+          data: (tickets) {
+            if (tickets.isEmpty) {
+              return _buildEmptyState(context);
+            }
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+              itemCount: tickets.length,
+              itemBuilder: (context, index) => _TicketCard(ticket: tickets[index]),
+            );
+          },
         ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      floatingActionButton: _buildFAB(context),
-      body: ticketsAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-        error: (e, _) => Center(
-          child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted)),
-        ),
-        data: (tickets) {
-          if (tickets.isEmpty) {
-            return _buildEmptyState(context);
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            itemCount: tickets.length,
-            itemBuilder: (context, index) => _TicketCard(ticket: tickets[index]),
-          );
-        },
       ),
     );
   }

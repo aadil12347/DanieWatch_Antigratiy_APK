@@ -8,6 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
 import '../router/app_router.dart';
@@ -199,15 +200,19 @@ class NotificationService {
       // 9. Handle notification taps when app is in background (not killed)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         debugPrint('Notification opened app from background: ${message.messageId}');
+        final isSupportTicket = message.data['type'] == 'support_ticket';
+        final ticketId = message.data['ticket_id']?.toString();
         final tmdbId = message.data['tmdb_id']?.toString();
         highlightTmdbId = tmdbId;
-        // Navigate to notifications page after a brief delay (app coming from background)
         Future.delayed(const Duration(milliseconds: 500), () {
           try {
             final ctx = AppRouter.rootNavKey.currentContext;
             if (ctx != null) {
-              GoRouter.of(ctx).go('/notifications');
-              debugPrint('📱 Navigated to /notifications from background tap');
+              if (isSupportTicket && ticketId != null) {
+                GoRouter.of(ctx).go('/requests/chat/$ticketId');
+              } else {
+                GoRouter.of(ctx).go('/notifications');
+              }
             }
           } catch (e) {
             debugPrint('⚠️ Background tap navigation failed: $e');
@@ -219,32 +224,65 @@ class NotificationService {
       final initialMessage = await _messaging!.getInitialMessage();
       if (initialMessage != null) {
         debugPrint('App opened from terminated by notification: ${initialMessage.messageId}');
-        final tmdbId = initialMessage.data['tmdb_id']?.toString();
-        highlightTmdbId = tmdbId;
-        pendingNotificationPayload = {
-          'navigate_to': 'notifications',
-          'highlight_tmdb_id': tmdbId,
-        };
+        final isSupportTicket = initialMessage.data['type'] == 'support_ticket';
+        final ticketId = initialMessage.data['ticket_id']?.toString();
+        if (isSupportTicket && ticketId != null) {
+          pendingNotificationPayload = {
+            'navigate_to': 'support_chat',
+            'ticket_id': ticketId,
+          };
+        } else {
+          final tmdbId = initialMessage.data['tmdb_id']?.toString();
+          highlightTmdbId = tmdbId;
+          pendingNotificationPayload = {
+            'navigate_to': 'notifications',
+            'highlight_tmdb_id': tmdbId,
+          };
+        }
       }
 
       _initialized = true;
       debugPrint('✅ NotificationService initialized successfully');
 
-      // Log the FCM token for debugging
+      // Save FCM token to Supabase profile for targeted push
       try {
         final token = await _messaging!
             .getToken()
             .timeout(const Duration(seconds: 10));
         debugPrint('📱 FCM Token: $token');
+        if (token != null) {
+          _saveFcmTokenToProfile(token);
+        }
       } catch (e) {
         debugPrint('⚠️ Could not get FCM token: $e');
       }
+
+      // Listen for token refresh and update profile
+      _messaging!.onTokenRefresh.listen((newToken) {
+        debugPrint('📱 FCM Token refreshed');
+        _saveFcmTokenToProfile(newToken);
+      });
     } catch (e, stackTrace) {
       // Don't crash the app if notifications fail to initialize
       debugPrint(
           '⚠️ NotificationService initialization failed (app will continue without notifications): $e');
       debugPrint('Stack trace: $stackTrace');
       _initialized = false;
+    }
+  }
+
+  /// Save FCM token to the user's Supabase profile for targeted push
+  Future<void> _saveFcmTokenToProfile(String token) async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+      await Supabase.instance.client
+          .from('profiles')
+          .update({'fcm_token': token})
+          .eq('id', user.id);
+      debugPrint('✅ FCM token saved to profile');
+    } catch (e) {
+      debugPrint('⚠️ Failed to save FCM token to profile: $e');
     }
   }
 
@@ -266,31 +304,51 @@ class NotificationService {
         }
 
         if (data != null) {
-          // Set highlight data for the notifications page
-          highlightTmdbId = data['tmdb_id']?.toString();
+          // Check if this is a support ticket notification
+          final isSupportTicket = data['type'] == 'support_ticket';
+          final ticketId = data['ticket_id']?.toString();
 
-          // Navigate to notifications page (bell icon) immediately
-          try {
-            final ctx = AppRouter.rootNavKey.currentContext;
-            if (ctx != null) {
-              GoRouter.of(ctx).go('/notifications');
-              debugPrint('📱 Navigated to /notifications from notification tap');
-            } else {
-              // Cold start: context not available yet, set pending payload
-              // so splash screen will navigate after initialization
+          if (isSupportTicket && ticketId != null) {
+            // Navigate to the specific ticket chat
+            try {
+              final ctx = AppRouter.rootNavKey.currentContext;
+              if (ctx != null) {
+                GoRouter.of(ctx).go('/requests/chat/$ticketId');
+                debugPrint('📱 Navigated to /requests/chat/$ticketId from notification tap');
+              } else {
+                pendingNotificationPayload = {
+                  'navigate_to': 'support_chat',
+                  'ticket_id': ticketId,
+                };
+              }
+            } catch (e) {
+              debugPrint('⚠️ Support notification tap navigation failed: $e');
+              pendingNotificationPayload = {
+                'navigate_to': 'support_chat',
+                'ticket_id': ticketId,
+              };
+            }
+          } else {
+            // Original notification behavior
+            highlightTmdbId = data['tmdb_id']?.toString();
+            try {
+              final ctx = AppRouter.rootNavKey.currentContext;
+              if (ctx != null) {
+                GoRouter.of(ctx).go('/notifications');
+                debugPrint('📱 Navigated to /notifications from notification tap');
+              } else {
+                pendingNotificationPayload = {
+                  'navigate_to': 'notifications',
+                  'highlight_tmdb_id': data['tmdb_id']?.toString(),
+                };
+              }
+            } catch (e) {
+              debugPrint('⚠️ Notification tap navigation failed: $e');
               pendingNotificationPayload = {
                 'navigate_to': 'notifications',
                 'highlight_tmdb_id': data['tmdb_id']?.toString(),
               };
-              debugPrint('📱 Set pending notification payload (cold start, no context yet)');
             }
-          } catch (e) {
-            debugPrint('⚠️ Notification tap navigation failed: $e');
-            // Fallback: set pending payload
-            pendingNotificationPayload = {
-              'navigate_to': 'notifications',
-              'highlight_tmdb_id': data['tmdb_id']?.toString(),
-            };
           }
         }
       } catch (e) {
@@ -342,6 +400,7 @@ class NotificationService {
       'daniewatch_newly_added',
       'daniewatch_recently_released',
       'daniewatch_admin_messages',
+      'daniewatch_support_admin',
     ];
 
     Future(() async {

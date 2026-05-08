@@ -84,6 +84,51 @@ class SupportService {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', ticketId);
 
+      // 3. Send push notification to the other party
+      try {
+        if (isAdmin) {
+          // Admin sending → notify the ticket owner via targeted device push
+          final ticketData = await _supabase
+              .from('support_tickets')
+              .select('user_id')
+              .eq('id', ticketId)
+              .single();
+          final targetUserId = ticketData['user_id'] as String;
+
+          await _supabase.functions.invoke(
+            'send-push-notification',
+            body: {
+              'target_user_id': targetUserId,
+              'sender_id': user.id,
+              'ticket_id': ticketId,
+              'title': '💬 Support Reply',
+              'body': preview,
+              'data': {
+                'type': 'support_ticket',
+                'ticket_id': ticketId,
+              },
+            },
+          );
+        } else {
+          // User sending → notify admins via targeted device push
+          await _supabase.functions.invoke(
+            'send-push-notification',
+            body: {
+              'type': 'support_admin_notify',
+              'sender_id': user.id,
+              'title': '📩 New Support Message',
+              'body': preview,
+              'data': {
+                'type': 'support_ticket',
+                'ticket_id': ticketId,
+              },
+            },
+          );
+        }
+      } catch (e) {
+        debugPrint('Push notification failed (message still sent): $e');
+      }
+
       return true;
     } catch (e) {
       debugPrint('Error sending message: $e');
@@ -117,6 +162,33 @@ class SupportService {
           'last_message_preview': 'Status changed to $statusLabel',
           'last_message_by': user.id,
         }).eq('id', ticketId);
+
+        // Notify the ticket owner about the status change
+        try {
+          final ticketData = await _supabase
+              .from('support_tickets')
+              .select('user_id')
+              .eq('id', ticketId)
+              .single();
+          final targetUserId = ticketData['user_id'] as String;
+
+          await _supabase.functions.invoke(
+            'send-push-notification',
+            body: {
+              'target_user_id': targetUserId,
+              'sender_id': user.id,
+              'ticket_id': ticketId,
+              'title': '📋 Ticket $statusLabel',
+              'body': 'Your support request status changed to "$statusLabel"',
+              'data': {
+                'type': 'support_ticket',
+                'ticket_id': ticketId,
+              },
+            },
+          );
+        } catch (e) {
+          debugPrint('Status change push failed: $e');
+        }
       }
 
       return true;
@@ -169,6 +241,21 @@ class SupportService {
       }
     } catch (e) {
       debugPrint('Error marking ticket read: $e');
+    }
+  }
+
+  /// Mark all messages from the other party as read (WhatsApp-style blue ticks)
+  Future<void> markMessagesRead(String ticketId, {required bool isAdmin}) async {
+    try {
+      // Mark messages from the OTHER party as read
+      await _supabase
+          .from('support_messages')
+          .update({'read_at': DateTime.now().toIso8601String()})
+          .eq('ticket_id', ticketId)
+          .eq('is_admin', !isAdmin)
+          .isFilter('read_at', null);
+    } catch (e) {
+      debugPrint('Error marking messages read: $e');
     }
   }
 

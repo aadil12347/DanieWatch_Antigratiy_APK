@@ -2,7 +2,7 @@
 /// Tracks read/unread state and contains rich data for entry-based notifications.
 class LocalNotification {
   final String id;
-  final String type; // 'newly_added', 'recently_released', 'admin_message'
+  final String type; // 'newly_added', 'recently_released', 'admin_message', 'support_ticket'
   final String title;
   final String body;
   final Map<String, dynamic> data;
@@ -33,6 +33,12 @@ class LocalNotification {
   /// Batch group identifier — each admin send assigns a unique group_id
   String? get groupId => data['group_id']?.toString();
 
+  /// Support ticket ID for deep-linking to chat
+  String? get ticketId => data['ticket_id']?.toString();
+
+  /// Whether this is a support ticket notification
+  bool get isSupportTicket => type == 'support_ticket';
+
   /// Whether this is a grouped notification (multiple entries in one card)
   bool get isGrouped => data['is_grouped'] == true;
 
@@ -55,6 +61,8 @@ class LocalNotification {
         return 'Recently Added';
       case 'admin_message':
         return 'Admin Message';
+      case 'support_ticket':
+        return 'Support';
       default:
         return 'Notification';
     }

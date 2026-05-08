@@ -5,6 +5,7 @@ class SupportMessage {
   final String body;
   final bool isAdmin;
   final DateTime createdAt;
+  final DateTime? readAt;
 
   const SupportMessage({
     required this.id,
@@ -13,6 +14,7 @@ class SupportMessage {
     required this.body,
     this.isAdmin = false,
     required this.createdAt,
+    this.readAt,
   });
 
   factory SupportMessage.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,9 @@ class SupportMessage {
       body: json['body'] as String,
       isAdmin: (json['is_admin'] as bool?) ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
+      readAt: json['read_at'] != null
+          ? DateTime.parse(json['read_at'] as String)
+          : null,
     );
   }
 
@@ -32,6 +37,14 @@ class SupportMessage {
         'body': body,
         'is_admin': isAdmin,
       };
+
+  /// WhatsApp-style message status
+  /// - sent: message exists in DB
+  /// - read: readAt is set (recipient opened the chat)
+  MessageStatus get status {
+    if (readAt != null) return MessageStatus.read;
+    return MessageStatus.delivered;
+  }
 
   String get timeFormatted {
     final h = createdAt.hour;
@@ -49,3 +62,5 @@ class SupportMessage {
     return '${months[createdAt.month - 1]} ${createdAt.day}';
   }
 }
+
+enum MessageStatus { delivered, read }
