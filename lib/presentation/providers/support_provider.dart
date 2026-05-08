@@ -49,6 +49,29 @@ class SupportService {
         'is_admin': false,
       });
 
+      // 3. Notify all admins about the new ticket
+      try {
+        final preview = description.length > 80
+            ? '${description.substring(0, 80)}...'
+            : description;
+        await _supabase.functions.invoke(
+          'send-push-notification',
+          body: {
+            'type': 'support_admin_notify',
+            'sender_id': user.id,
+            'ticket_id': ticket.id,
+            'title': '🆕 New Support Request',
+            'body': '$subject: $preview',
+            'data': {
+              'type': 'support_ticket',
+              'ticket_id': ticket.id,
+            },
+          },
+        );
+      } catch (e) {
+        debugPrint('Push notification failed (ticket still created): $e');
+      }
+
       return ticket;
     } catch (e) {
       debugPrint('Error creating ticket: $e');
@@ -111,12 +134,15 @@ class SupportService {
             },
           );
         } else {
-          // User sending → notify admins via targeted device push
+          // User sending → notify all admins via topic-based push
+          // This targets the 'daniewatch_support_admin' topic that all admins subscribe to
           await _supabase.functions.invoke(
             'send-push-notification',
             body: {
               'type': 'support_admin_notify',
+              'topic': 'daniewatch_support_admin',
               'sender_id': user.id,
+              'ticket_id': ticketId,
               'title': '📩 New Support Message',
               'body': preview,
               'data': {

@@ -353,7 +353,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         )
                       : null,
-                  onTap: () => context.push('/admin-console/support-inbox'),
+                  onTap: () => context.push('/support-inbox'),
                 );
               }
               final unreadCount = ref.watch(userUnreadCountProvider);

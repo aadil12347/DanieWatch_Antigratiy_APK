@@ -128,7 +128,7 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
         if (context.canPop()) {
           context.pop();
         } else {
-          context.go(isAdmin ? '/admin-console/support-inbox' : '/requests');
+          context.go(isAdmin ? '/support-inbox' : '/requests');
         }
       },
       child: Scaffold(
@@ -178,7 +178,7 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
           if (context.canPop()) {
             context.pop();
           } else {
-            context.go(isAdmin ? '/admin-console/support-inbox' : '/requests');
+            context.go(isAdmin ? '/support-inbox' : '/requests');
           }
         },
       ),

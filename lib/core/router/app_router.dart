@@ -268,7 +268,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       },
     ),
     GoRoute(
-      path: '/admin-console/support-inbox',
+      path: '/support-inbox',
       pageBuilder: (context, state) => _quickPage(const AdminSupportInboxScreen(), state),
     ),
 

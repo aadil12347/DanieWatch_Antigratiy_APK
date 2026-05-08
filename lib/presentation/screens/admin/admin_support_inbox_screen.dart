@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../../domain/models/support_ticket.dart';
@@ -246,7 +247,7 @@ class _AdminSupportInboxScreenState
         } else if (context.canPop()) {
           context.pop();
         } else {
-          context.go('/admin-console');
+          context.go('/profile');
         }
       },
       child: Scaffold(
@@ -286,11 +287,11 @@ class _AdminSupportInboxScreenState
                         }
                       },
                       onLongPress: () {
-                        HapticFeedback.mediumImpact();
-                        setState(() {
-                          _selectionMode = true;
-                          _selectedIds.add(filtered[index].id);
-                        });
+                        if (!_selectionMode) {
+                          HapticFeedback.mediumImpact();
+                          setState(() => _selectionMode = true);
+                        }
+                        _toggleSelection(filtered[index].id);
                       },
                     ),
                   );
@@ -322,7 +323,7 @@ class _AdminSupportInboxScreenState
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/admin-console');
+              context.go('/profile');
             }
           }
         },
@@ -440,8 +441,8 @@ class _AdminSupportInboxScreenState
   Widget _buildBulkActionBar() {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        16, 12, 16,
-        MediaQuery.of(context).padding.bottom + 12,
+        12, 10, 12,
+        MediaQuery.of(context).padding.bottom + 10,
       ),
       decoration: BoxDecoration(
         color: AppColors.surfaceElevated,
@@ -449,37 +450,27 @@ class _AdminSupportInboxScreenState
       ),
       child: Row(
         children: [
-          // Bulk status change
-          Expanded(
-            child: _BulkActionButton(
-              icon: Icons.swap_horiz_rounded,
-              label: 'Status',
-              color: const Color(0xFF3B82F6),
-              onTap: () => _showStatusPicker(),
-            ),
+          _BulkActionButton(
+            icon: Icons.swap_horiz_rounded,
+            label: 'Status',
+            color: const Color(0xFF3B82F6),
+            onTap: () => _showStatusPicker(),
           ),
-          const SizedBox(width: 10),
-          // Bulk reply
-          Expanded(
-            child: _BulkActionButton(
-              icon: Icons.reply_all_rounded,
-              label: 'Reply All',
-              color: const Color(0xFF059669),
-              onTap: _showBulkReplyDialog,
-            ),
+          const SizedBox(width: 8),
+          _BulkActionButton(
+            icon: Icons.reply_all_rounded,
+            label: 'Reply',
+            color: const Color(0xFF059669),
+            onTap: _showBulkReplyDialog,
           ),
-          const SizedBox(width: 10),
-          // Delete
-          Expanded(
-            child: _BulkActionButton(
-              icon: Icons.delete_outline_rounded,
-              label: 'Delete',
-              color: const Color(0xFFEF4444),
-              onTap: _deleteSelected,
-            ),
+          const SizedBox(width: 8),
+          _BulkActionButton(
+            icon: Icons.delete_outline_rounded,
+            label: 'Delete',
+            color: const Color(0xFFEF4444),
+            onTap: _deleteSelected,
           ),
-          const SizedBox(width: 10),
-          // Deselect
+          const SizedBox(width: 8),
           _BulkActionButton(
             icon: Icons.deselect_rounded,
             label: 'Clear',
@@ -490,7 +481,6 @@ class _AdminSupportInboxScreenState
                 _selectionMode = false;
               });
             },
-            compact: true,
           ),
         ],
       ),
@@ -679,13 +669,23 @@ class _AdminTicketCard extends StatelessWidget {
                       ),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: ticket.userAvatarUrl != null
+                    child: ticket.userAvatarUrl != null && ticket.userAvatarUrl!.isNotEmpty
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(10),
-                            child: Image.network(
-                              ticket.userAvatarUrl!,
+                            child: CachedNetworkImage(
+                              imageUrl: ticket.userAvatarUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Center(
+                              placeholder: (_, __) => Center(
+                                child: Text(
+                                  (ticket.username ?? '?')[0].toUpperCase(),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: ticket.categoryColor,
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (_, __, ___) => Center(
                                 child: Text(
                                   (ticket.username ?? '?')[0].toUpperCase(),
                                   style: GoogleFonts.plusJakartaSans(
@@ -847,45 +847,46 @@ class _BulkActionButton extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-  final bool compact;
 
   const _BulkActionButton({
     required this.icon,
     required this.label,
     required this.color,
     required this.onTap,
-    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 12 : 16,
-          vertical: 10,
-        ),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
+    return Expanded(
+      child: Material(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+          splashColor: color.withValues(alpha: 0.2),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withValues(alpha: 0.2)),
             ),
-          ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: color),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
