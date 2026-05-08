@@ -308,7 +308,7 @@ class _HeroGradientSection extends ConsumerWidget {
           left: 0,
           right: 0,
           bottom: 0,
-          height: 80,
+          height: 120,
           child: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -422,7 +422,7 @@ class _HeroGradientSection extends ConsumerWidget {
             if (carouselItems.isNotEmpty)
               StackedCarousel(items: carouselItems),
             // Extra padding so gradient extends a bit below carousel
-            const SizedBox(height: 20),
+            const SizedBox(height: 40),
           ],
         ),
       ],
@@ -486,20 +486,46 @@ class _CarouselGradientBgState extends State<_CarouselGradientBg>
       builder: (context, _) {
         final color = _colorTween.evaluate(_curve) ?? widget.palette.primary;
 
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(0.0, 0.4),
-              radius: 0.9,
-              colors: [
-                color.withValues(alpha: 0.55),
-                color.withValues(alpha: 0.25),
-                color.withValues(alpha: 0.08),
-                Colors.transparent,
-              ],
-              stops: const [0.0, 0.3, 0.6, 1.0],
+        return Stack(
+          children: [
+            // Layer 1: Full vertical gradient — strong color at top, fading to black
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      color.withValues(alpha: 0.7),
+                      color.withValues(alpha: 0.45),
+                      color.withValues(alpha: 0.2),
+                      color.withValues(alpha: 0.05),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+                  ),
+                ),
+              ),
             ),
-          ),
+            // Layer 2: Radial glow emitting from carousel center
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.0, 0.35),
+                    radius: 1.0,
+                    colors: [
+                      color.withValues(alpha: 0.6),
+                      color.withValues(alpha: 0.3),
+                      color.withValues(alpha: 0.08),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.3, 0.6, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
