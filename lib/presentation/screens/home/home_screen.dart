@@ -22,6 +22,8 @@ import '../../providers/delete_mode_provider.dart';
 import '../../providers/notification_inbox_provider.dart';
 
 import '../../providers/scroll_provider.dart';
+import '../../providers/poster_color_provider.dart';
+import '../../../core/services/poster_color_service.dart';
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -96,110 +98,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // Personalized Header
+            // Hero section: Header + Carousel with gradient emitting from active card
             SliverToBoxAdapter(
-              child: Builder(builder: (context) {
-                final r = Responsive(context);
-                return Padding(
-                  padding: EdgeInsets.fromLTRB(r.w(16), r.h(44), r.w(16), r.h(20)),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      GestureDetector(
-                        onTap: () => context.push('/profile'),
-                        child: Row(
-                          children: [
-                            Hero(
-                              tag: 'profile-avatar',
-                              child: UserAvatar(size: r.d(48).clamp(40.0, 60.0), canEdit: false),
-                            ),
-                            SizedBox(width: r.w(16)),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Hello,',
-                                    style: GoogleFonts.inter(
-                                        color: AppColors.textMuted,
-                                        fontSize: r.f(13).clamp(11.0, 16.0),
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.1)),
-                                ref.watch(profileProvider).when(
-                                      data: (profile) => Text(
-                                        profile?.username ?? 'User',
-                                        style: GoogleFonts.lora(
-                                            color: AppColors.textPrimary,
-                                            fontSize: r.f(18).clamp(14.0, 24.0),
-                                            fontWeight: FontWeight.w500,
-                                            height: 1.2),
-                                      ),
-                                      loading: () => const SizedBox(
-                                        height: 24,
-                                        width: 24,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2),
-                                      ),
-                                      error: (_, __) => Text(
-                                        'User',
-                                        style: GoogleFonts.lora(
-                                            color: AppColors.textPrimary,
-                                            fontSize: r.f(18).clamp(14.0, 24.0),
-                                            fontWeight: FontWeight.w500,
-                                            height: 1.2),
-                                      ),
-                                    ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => context.push('/notifications'),
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Icon(Icons.notifications_none_rounded,
-                                size: r.d(28).clamp(22.0, 34.0), color: Colors.white),
-                            Consumer(
-                              builder: (context, ref, _) {
-                                final unread = ref.watch(unreadCountProvider);
-                                if (unread == 0) return const SizedBox.shrink();
-                                return Positioned(
-                                  right: -4,
-                                  top: -4,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFFE91E63),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                                    child: Text(
-                                      unread > 9 ? '9+' : '$unread',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ),
-
-            // Content sections
-            if (carouselItems.isNotEmpty)
-              SliverToBoxAdapter(
-                child: StackedCarousel(items: carouselItems),
+              child: _HeroGradientSection(
+                carouselItems: carouselItems,
               ),
+            ),
 
             // Content sections with Continue Watching inserted ABOVE Top 10
             ...sections.expand((section) {
@@ -378,6 +282,226 @@ class _EmptyHome extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Hero section: header + carousel wrapped in a radial gradient that
+/// emits from the active carousel card and scrolls with the content.
+class _HeroGradientSection extends ConsumerWidget {
+  final List<ManifestItem> carouselItems;
+  const _HeroGradientSection({required this.carouselItems});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final palette = ref.watch(activeGradientProvider);
+    final r = Responsive(context);
+
+    return Stack(
+      children: [
+        // Radial gradient background emitting from carousel center
+        Positioned.fill(
+          child: _CarouselGradientBg(palette: palette),
+        ),
+        // Fade-to-black at the bottom edge
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 80,
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black],
+              ),
+            ),
+          ),
+        ),
+        // Actual content
+        Column(
+          children: [
+            // Personalized Header
+            Padding(
+              padding: EdgeInsets.fromLTRB(r.w(16), r.h(44), r.w(16), r.h(20)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: () => context.push('/profile'),
+                    child: Row(
+                      children: [
+                        Hero(
+                          tag: 'profile-avatar',
+                          child: UserAvatar(
+                              size: r.d(48).clamp(40.0, 60.0), canEdit: false),
+                        ),
+                        SizedBox(width: r.w(16)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Hello,',
+                                style: GoogleFonts.inter(
+                                    color: AppColors.textMuted,
+                                    fontSize: r.f(13).clamp(11.0, 16.0),
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.1)),
+                            ref.watch(profileProvider).when(
+                                  data: (profile) => Text(
+                                    profile?.username ?? 'User',
+                                    style: GoogleFonts.lora(
+                                        color: AppColors.textPrimary,
+                                        fontSize: r.f(18).clamp(14.0, 24.0),
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.2),
+                                  ),
+                                  loading: () => const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                  error: (_, __) => Text(
+                                    'User',
+                                    style: GoogleFonts.lora(
+                                        color: AppColors.textPrimary,
+                                        fontSize: r.f(18).clamp(14.0, 24.0),
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.2),
+                                  ),
+                                ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => context.push('/notifications'),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(Icons.notifications_none_rounded,
+                            size: r.d(28).clamp(22.0, 34.0),
+                            color: Colors.white),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final unread = ref.watch(unreadCountProvider);
+                            if (unread == 0) return const SizedBox.shrink();
+                            return Positioned(
+                              right: -4,
+                              top: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE91E63),
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(
+                                    minWidth: 18, minHeight: 18),
+                                child: Text(
+                                  unread > 9 ? '9+' : '$unread',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Carousel
+            if (carouselItems.isNotEmpty)
+              StackedCarousel(items: carouselItems),
+            // Extra padding so gradient extends a bit below carousel
+            const SizedBox(height: 20),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Animated radial gradient that emits from the carousel center.
+/// Smoothly transitions colors when the active carousel item changes.
+class _CarouselGradientBg extends StatefulWidget {
+  final PosterColorPalette palette;
+  const _CarouselGradientBg({required this.palette});
+
+  @override
+  State<_CarouselGradientBg> createState() => _CarouselGradientBgState();
+}
+
+class _CarouselGradientBgState extends State<_CarouselGradientBg>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _curve;
+  late ColorTween _colorTween;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _curve = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _colorTween = ColorTween(
+      begin: widget.palette.primary,
+      end: widget.palette.primary,
+    );
+    _controller.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(_CarouselGradientBg old) {
+    super.didUpdateWidget(old);
+    if (old.palette.primary != widget.palette.primary) {
+      _colorTween = ColorTween(
+        begin: _colorTween.evaluate(_curve),
+        end: widget.palette.primary,
+      );
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _curve,
+      builder: (context, _) {
+        final color = _colorTween.evaluate(_curve) ?? widget.palette.primary;
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(0.0, 0.4),
+              radius: 0.9,
+              colors: [
+                color.withValues(alpha: 0.55),
+                color.withValues(alpha: 0.25),
+                color.withValues(alpha: 0.08),
+                Colors.transparent,
+              ],
+              stops: const [0.0, 0.3, 0.6, 1.0],
+            ),
+          ),
+        );
+      },
     );
   }
 }

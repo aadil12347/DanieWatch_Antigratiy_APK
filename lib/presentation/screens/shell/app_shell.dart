@@ -20,8 +20,6 @@ import 'dart:async';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../widgets/confirmation_modal_content.dart';
 import '../../providers/scroll_provider.dart';
-import '../../providers/poster_color_provider.dart';
-import '../../widgets/animated_poster_gradient.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -220,20 +218,8 @@ class _AppShellState extends ConsumerState<AppShell> {
         extendBody: true,
         body: Stack(
           children: [
-            // Ambient gradient background (ONLY on Home tab, driven by carousel)
-            Consumer(
-              builder: (context, ref, _) {
-                final isHome = widget.navigationShell.currentIndex == 0;
-                if (!isHome) {
-                  return Container(color: Colors.black);
-                }
-                final activePalette = ref.watch(activeGradientProvider);
-                return AnimatedPosterGradient(
-                  palette: activePalette,
-                  duration: const Duration(milliseconds: 600),
-                );
-              },
-            ),
+            // Static black background — gradient is now local to carousel in HomeScreen
+            Container(color: Colors.black),
             // Main content ON TOP of gradient
             widget.navigationShell,
             // Barrier to dismiss modal when tapping outside
