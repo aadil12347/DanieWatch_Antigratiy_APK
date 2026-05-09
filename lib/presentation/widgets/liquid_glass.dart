@@ -132,7 +132,7 @@ class _LiquidGlassState extends State<LiquidGlass>
     return GestureDetector(
       onTap: widget.onTap,
       onTapDown: (d) => _triggerRipple(d.globalPosition),
-      behavior: HitTestBehavior.opaque,
+      behavior: widget.onTap != null ? HitTestBehavior.opaque : HitTestBehavior.translucent,
       child: Container(
         width: widget.width,
         height: widget.height,
