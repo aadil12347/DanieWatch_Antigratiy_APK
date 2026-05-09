@@ -14,15 +14,12 @@ class CreateRequestScreen extends ConsumerStatefulWidget {
 }
 
 class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
-  final _subjectController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  String? _selectedCategory;
-  bool _categoryError = false;
+  final _messageController = TextEditingController();
+  String _selectedCategory = 'add_movie_series'; // Default category
   bool _isSubmitting = false;
 
   static const _categories = [
-    {'value': 'add_movie', 'label': 'Add Movie', 'icon': Icons.movie_rounded, 'color': Color(0xFF7C3AED)},
-    {'value': 'add_tv_show', 'label': 'Add TV Show', 'icon': Icons.tv_rounded, 'color': Color(0xFF0891B2)},
+    {'value': 'add_movie_series', 'label': 'Add Movie or Series', 'icon': Icons.movie_filter_rounded, 'color': Color(0xFF7C3AED)},
     {'value': 'bug_report', 'label': 'Bug Report', 'icon': Icons.bug_report_rounded, 'color': Color(0xFFEF4444)},
     {'value': 'feature_request', 'label': 'Feature Request', 'icon': Icons.lightbulb_rounded, 'color': Color(0xFFF59E0B)},
     {'value': 'other', 'label': 'Other', 'icon': Icons.chat_bubble_rounded, 'color': Color(0xFF6B7280)},
@@ -30,49 +27,35 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
 
   @override
   void dispose() {
-    _subjectController.dispose();
-    _descriptionController.dispose();
+    _messageController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    // Validate category
-    if (_selectedCategory == null) {
-      setState(() => _categoryError = true);
-      CustomToast.show(
-        context,
-        'Please select a category',
-        type: ToastType.error,
-      );
-      return;
-    }
-
-    // Validate subject
-    if (_subjectController.text.trim().isEmpty) {
-      CustomToast.show(context, 'Please enter a title', type: ToastType.error);
-      return;
-    }
-
-    // Validate description
-    if (_descriptionController.text.trim().isEmpty) {
-      CustomToast.show(context, 'Please enter a description', type: ToastType.error);
+    // Validate message
+    if (_messageController.text.trim().isEmpty) {
+      CustomToast.show(context, 'Please enter a message', type: ToastType.error);
       return;
     }
 
     setState(() => _isSubmitting = true);
 
+    final message = _messageController.text.trim();
+    // Use first line or first 80 chars as subject
+    final firstLine = message.contains('\n') ? message.split('\n').first : message;
+    final subject = firstLine.length > 80 ? '${firstLine.substring(0, 80)}...' : firstLine;
+
     final service = ref.read(supportServiceProvider);
     final ticket = await service.createTicket(
-      subject: _subjectController.text.trim(),
-      description: _descriptionController.text.trim(),
-      category: _selectedCategory!,
+      subject: subject,
+      description: message,
+      category: _selectedCategory,
     );
 
     if (!mounted) return;
 
     if (ticket != null) {
       CustomToast.show(context, 'Request submitted!', type: ToastType.success);
-      // Navigate to the chat screen, replacing this screen
       context.push('/requests/chat/${ticket.id}');
     } else {
       setState(() => _isSubmitting = false);
@@ -125,22 +108,12 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
             _buildCategorySelector(),
             const SizedBox(height: 24),
 
-            // ── Subject ────────────────────────────────────────────
-            _buildLabel('Title', required: true),
+            // ── Message ────────────────────────────────────────────
+            _buildLabel('Message', required: true),
             const SizedBox(height: 10),
             _buildTextField(
-              controller: _subjectController,
-              hint: 'e.g. Please add "The Dark Knight"',
-              maxLines: 1,
-            ),
-            const SizedBox(height: 24),
-
-            // ── Description ────────────────────────────────────────
-            _buildLabel('Description', required: true),
-            const SizedBox(height: 10),
-            _buildTextField(
-              controller: _descriptionController,
-              hint: 'Describe your request in detail...',
+              controller: _messageController,
+              hint: _getHintForCategory(_selectedCategory),
               maxLines: 6,
             ),
             const SizedBox(height: 32),
@@ -153,6 +126,19 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
       ),
       ),
     );
+  }
+
+  String _getHintForCategory(String category) {
+    switch (category) {
+      case 'add_movie_series':
+        return 'e.g. Please add "The Dark Knight" or "Breaking Bad Season 5"';
+      case 'bug_report':
+        return 'Describe the bug you encountered...';
+      case 'feature_request':
+        return 'Describe the feature you\'d like to see...';
+      default:
+        return 'Describe your request in detail...';
+    }
   }
 
   Widget _buildLabel(String text, {bool required = false}) {
@@ -187,10 +173,8 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
         color: AppColors.surfaceElevated,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _categoryError
-              ? AppColors.error.withValues(alpha: 0.8)
-              : Colors.white.withValues(alpha: 0.04),
-          width: _categoryError ? 1.5 : 1,
+          color: Colors.white.withValues(alpha: 0.04),
+          width: 1,
         ),
       ),
       child: DropdownButtonHideUnderline(
@@ -204,16 +188,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             icon: Icon(
               Icons.keyboard_arrow_down_rounded,
-              color: _selectedCategory != null
-                  ? AppColors.textSecondary
-                  : AppColors.textHint,
-            ),
-            hint: Text(
-              'Select a category',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: AppColors.textHint,
-              ),
+              color: AppColors.textSecondary,
             ),
             items: _categories.map((cat) {
               final color = cat['color'] as Color;
@@ -247,10 +222,11 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
               );
             }).toList(),
             onChanged: (value) {
-              setState(() {
-                _selectedCategory = value;
-                _categoryError = false;
-              });
+              if (value != null) {
+                setState(() {
+                  _selectedCategory = value;
+                });
+              }
             },
           ),
         ),

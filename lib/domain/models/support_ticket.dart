@@ -99,6 +99,8 @@ class SupportTicket {
 
   String get categoryLabel {
     switch (category) {
+      case 'add_movie_series':
+        return 'Add Movie or Series';
       case 'add_movie':
         return 'Add Movie';
       case 'add_tv_show':
@@ -114,6 +116,8 @@ class SupportTicket {
 
   IconData get categoryIcon {
     switch (category) {
+      case 'add_movie_series':
+        return Icons.movie_filter_rounded;
       case 'add_movie':
         return Icons.movie_rounded;
       case 'add_tv_show':
@@ -129,6 +133,8 @@ class SupportTicket {
 
   Color get categoryColor {
     switch (category) {
+      case 'add_movie_series':
+        return const Color(0xFF7C3AED);
       case 'add_movie':
         return const Color(0xFF7C3AED);
       case 'add_tv_show':
