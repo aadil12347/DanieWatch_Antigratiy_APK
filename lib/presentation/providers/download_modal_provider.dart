@@ -11,6 +11,7 @@ class DownloadModalState {
   final bool isMovie;
   final String? fallbackQuality;
   final String? fallbackLanguage;
+  final int? runtime; // Episode/movie duration in minutes
   final void Function(DownloadSelection)? onSelected;
   final void Function()? onCancel;
 
@@ -24,6 +25,7 @@ class DownloadModalState {
     this.isMovie = false,
     this.fallbackQuality,
     this.fallbackLanguage,
+    this.runtime,
     this.onSelected,
     this.onCancel,
   });
@@ -38,6 +40,7 @@ class DownloadModalState {
     bool? isMovie,
     String? fallbackQuality,
     String? fallbackLanguage,
+    int? runtime,
     void Function(DownloadSelection)? onSelected,
     void Function()? onCancel,
   }) {
@@ -51,6 +54,7 @@ class DownloadModalState {
       isMovie: isMovie ?? this.isMovie,
       fallbackQuality: fallbackQuality ?? this.fallbackQuality,
       fallbackLanguage: fallbackLanguage ?? this.fallbackLanguage,
+      runtime: runtime ?? this.runtime,
       onSelected: onSelected ?? this.onSelected,
       onCancel: onCancel ?? this.onCancel,
     );

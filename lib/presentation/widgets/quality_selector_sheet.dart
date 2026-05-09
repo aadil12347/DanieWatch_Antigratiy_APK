@@ -42,6 +42,7 @@ Future<DownloadSelection?> showQualitySelectorSheet({
   bool isMovie = false,
   String? fallbackQuality,
   String? fallbackLanguage,
+  int? runtime,
 }) async {
   final currentState = ref.read(downloadModalProvider);
   if (currentState.isOpen) {
@@ -62,6 +63,7 @@ Future<DownloadSelection?> showQualitySelectorSheet({
     isMovie: isMovie,
     fallbackQuality: fallbackQuality,
     fallbackLanguage: fallbackLanguage,
+    runtime: runtime,
     onSelected: (sel) {
       ref.read(downloadModalProvider.notifier).state =
           const DownloadModalState();
@@ -265,20 +267,6 @@ class _QualitySelectorContentState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Fix: Only show S0 E0 for non-movies and if season/episode > 0
-                      if (!modalState.isMovie && 
-                          modalState.season != null && 
-                          modalState.episode != null &&
-                          modalState.season! > 0)
-                        Text(
-                          'SEASON ${modalState.season} · EPISODE ${modalState.episode}',
-                          style: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
                       Text(
                         widget.title,
                         style: GoogleFonts.lora(
@@ -289,15 +277,32 @@ class _QualitySelectorContentState
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      // Season/Episode label below the title
+                      if (!modalState.isMovie && 
+                          modalState.season != null && 
+                          modalState.episode != null &&
+                          modalState.season! > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text(
+                            'Season ${modalState.season} · Episode ${modalState.episode}',
+                            style: GoogleFonts.inter(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      // Accurate file size using actual runtime
                       if (_selectedVariant != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.only(top: 3),
                           child: Text(
-                            'Estimated Size: ${_selectedVariant!.estimatedSize}',
+                            'Size: ${_selectedVariant!.estimatedSizeForDuration(modalState.runtime)} · ${_getVariantDisplayLabel(_selectedVariant!)}',
                             style: GoogleFonts.inter(
-                              color: Colors.white.withValues(alpha: 0.9),
+                              color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 13,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),

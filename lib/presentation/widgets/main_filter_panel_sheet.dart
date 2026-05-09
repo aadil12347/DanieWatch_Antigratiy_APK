@@ -112,21 +112,26 @@ class _MainFilterPanelContentState
                   padding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.25)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isSelected
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : Colors.white.withValues(alpha: 0.3),
-                      width: 1.5,
+                          ? AppColors.primary.withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.2),
+                      width: isSelected ? 1.8 : 1.2,
                     ),
                   ),
                   child: Text(
                     option,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: isSelected
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.6),
                       fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                 ),
@@ -171,21 +176,26 @@ class _MainFilterPanelContentState
                   padding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.25)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isSelected
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : Colors.white.withValues(alpha: 0.3),
-                      width: 1.5,
+                          ? AppColors.primary.withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.2),
+                      width: isSelected ? 1.8 : 1.2,
                     ),
                   ),
                   child: Text(
                     option,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: isSelected
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.6),
                       fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                 ),

@@ -1180,33 +1180,89 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 12),
             ),
 
-            // Download button (Icon Only) — uses playLink as download source
-            GestureDetector(
-              onTap: hasPlayLink
-                  ? () => _startDownload(episode.playLink!, epNum, content)
-                  : () => _showToastError('No play/download link available'),
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: hasPlayLink
-                      ? AppColors.surfaceElevated
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: hasPlayLink
-                          ? AppColors.primary.withValues(alpha: 0.5)
-                          : Colors.transparent,
-                      width: 1),
-                ),
-                child: Icon(
-                  Icons.download_rounded,
-                  color: hasPlayLink
-                      ? AppColors.primary
-                      : AppColors.textMuted.withValues(alpha: 0.3),
-                  size: 24,
-                ),
-              ),
+            // Download button — state-aware (idle / downloading / done)
+            StreamBuilder<DownloadItem>(
+              stream: DownloadManager.instance.updateStream,
+              builder: (context, _) {
+                final match = DownloadManager.instance.downloads.cast<DownloadItem?>().firstWhere(
+                  (d) => d!.title == content.title && d.season == _selectedSeason && d.episode == epNum,
+                  orElse: () => null,
+                );
+                final isDownloading = match != null &&
+                    (match.status == DownloadStatus.downloading ||
+                     match.status == DownloadStatus.pending ||
+                     match.status == DownloadStatus.converting);
+                final isCompleted = match != null && match.status == DownloadStatus.completed;
+                final progress = match?.progress ?? 0.0;
+
+                if (isCompleted) {
+                  // ── Green checkmark ──
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      CustomToast.show(context, 'Already Downloaded', type: ToastType.success);
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.greenAccent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4), width: 1.2),
+                      ),
+                      child: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 22),
+                    ),
+                  );
+                }
+
+                if (isDownloading) {
+                  // ── Animated progress ring ──
+                  return SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            value: progress > 0 ? progress : null,
+                            strokeWidth: 2.5,
+                            color: AppColors.primary,
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        Icon(Icons.downloading_rounded, color: AppColors.primary.withValues(alpha: 0.7), size: 18),
+                      ],
+                    ),
+                  );
+                }
+
+                // ── Default download button ──
+                return GestureDetector(
+                  onTap: hasPlayLink
+                      ? () => _startDownload(episode.playLink!, epNum, content)
+                      : () => _showToastError('No play/download link available'),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: hasPlayLink ? AppColors.surfaceElevated : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: hasPlayLink ? AppColors.primary.withValues(alpha: 0.5) : Colors.transparent,
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.download_rounded,
+                      color: hasPlayLink ? AppColors.primary : AppColors.textMuted.withValues(alpha: 0.3),
+                      size: 22,
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -1259,6 +1315,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       isMovie: content.isMovie,
       fallbackQuality: content.result,
       fallbackLanguage: content.language,
+      runtime: content.runtime,
     );
 
     String? m3u8Url;

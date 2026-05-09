@@ -43,6 +43,17 @@ class StreamVariant {
     return '~${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
+  /// Estimate file size using actual runtime (in minutes).
+  /// Falls back to 45 min if null.
+  String estimatedSizeForDuration(int? minutes) {
+    final dur = minutes ?? 45;
+    final bytes = (bandwidth / 8) * dur * 60;
+    if (bytes < 1024 * 1024 * 1024) {
+      return '~${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+    }
+    return '~${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
   String get badgeLabel {
     if (resolution == null) return '720p HD'; // Primary default if unknown
     final parts = resolution!.split('x');
