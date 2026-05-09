@@ -398,7 +398,7 @@ class _ExpandableBioState extends State<_ExpandableBio> {
               child: Text(
                 _expanded ? 'Show Less' : 'Read More',
                 style: const TextStyle(
-                  color: AppColors.primary,
+                  color: Colors.white,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),

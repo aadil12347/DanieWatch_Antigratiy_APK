@@ -112,19 +112,19 @@ class _MainFilterPanelContentState
                   padding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    color: isSelected ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isSelected
-                          ? AppColors.primary
-                          : AppColors.primary.withValues(alpha: 0.5),
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.3),
                       width: 1.5,
                     ),
                   ),
                   child: Text(
                     option,
                     style: TextStyle(
-                      color: isSelected ? Colors.white : AppColors.primary,
+                      color: Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -171,19 +171,19 @@ class _MainFilterPanelContentState
                   padding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    color: isSelected ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isSelected
-                          ? AppColors.primary
-                          : AppColors.primary.withValues(alpha: 0.5),
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.3),
                       width: 1.5,
                     ),
                   ),
                   child: Text(
                     option,
                     style: TextStyle(
-                      color: isSelected ? Colors.white : AppColors.primary,
+                      color: Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -233,7 +233,7 @@ class _MainFilterPanelContentState
             child: Text(
               'Sort & Filter',
               style: TextStyle(
-                color: AppColors.primary,
+                color: Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
@@ -396,8 +396,8 @@ class _MainFilterPanelContentState
                             const FilterModalState(view: FilterView.none);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(28)),
                         elevation: 0,

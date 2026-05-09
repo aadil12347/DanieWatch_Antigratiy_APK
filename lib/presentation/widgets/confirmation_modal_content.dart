@@ -37,7 +37,7 @@ class _ConfirmationModalContentState extends State<ConfirmationModalContent> {
           Row(
             children: [
               const Icon(Icons.warning_amber_rounded,
-                  color: AppColors.primary, size: 28),
+                  color: Colors.amber, size: 28),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -68,7 +68,7 @@ class _ConfirmationModalContentState extends State<ConfirmationModalContent> {
                   Checkbox(
                     value: _alsoDeleteFile,
                     onChanged: (v) => setState(() => _alsoDeleteFile = v ?? false),
-                    activeColor: AppColors.primary,
+                    activeColor: Colors.white,
                     side: const BorderSide(color: Colors.white24, width: 2),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                   ),
@@ -101,8 +101,8 @@ class _ConfirmationModalContentState extends State<ConfirmationModalContent> {
                 child: ElevatedButton(
                   onPressed: () => widget.onConfirm(_alsoDeleteFile),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),

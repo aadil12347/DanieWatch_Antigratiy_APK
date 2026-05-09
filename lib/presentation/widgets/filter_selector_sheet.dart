@@ -35,11 +35,11 @@ class FilterSelectorContent extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
+                    color: Colors.white.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.tune_rounded,
-                      color: Colors.red, size: 22),
+                      color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -101,7 +101,7 @@ class FilterSelectorContent extends ConsumerWidget {
                         const Spacer(),
                         if (isSelected)
                           const Icon(Icons.check_circle,
-                              color: Colors.red, size: 20),
+                              color: Colors.white, size: 20),
                       ],
                     ),
                   ),

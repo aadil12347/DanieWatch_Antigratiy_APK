@@ -14,6 +14,7 @@ class AppColors {
   // Brand / Accent (Vibrant Red)
   static const primary = Color(0xFFB81D24); // Brand Red
   static const primaryHover = Color(0xFF91171D); // Darker Red
+  static const primaryOnGlass = Color(0xFFFF6B6B); // Bright coral-red for glass surfaces (high contrast)
   static const secondary = Color(0xFF6A9BCC); // Claude Blue accent
 
   // Text

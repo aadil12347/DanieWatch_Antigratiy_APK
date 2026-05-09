@@ -600,8 +600,8 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
                   isSelected ? _activeIcons[index] : _icons[index],
                   key: ValueKey('icon_${index}_$isSelected'),
                   color: isSelected
-                      ? AppColors.primary
-                      : Colors.white.withValues(alpha: 0.78),
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.45),
                   size: iconSize,
                 ),
               ),
@@ -611,8 +611,8 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
                 duration: const Duration(milliseconds: 200),
                 style: GoogleFonts.inter(
                   color: isSelected
-                      ? AppColors.primary
-                      : Colors.white.withValues(alpha: 0.65),
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.40),
                   fontSize: labelSize,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   letterSpacing: -0.2,
@@ -666,7 +666,7 @@ class _NavBarRipplePainter extends CustomPainter {
         15 * rippleProgress + 5,
         Paint()
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
-          ..color = AppColors.primary.withValues(alpha: glow),
+          ..color = Colors.white.withValues(alpha: glow * 0.6),
       );
     }
   }

@@ -254,11 +254,11 @@ class _QualitySelectorContentState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: Colors.white.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.download_rounded,
-                      color: AppColors.primary, size: 22),
+                      color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -273,7 +273,7 @@ class _QualitySelectorContentState
                         Text(
                           'SEASON ${modalState.season} · EPISODE ${modalState.episode}',
                           style: GoogleFonts.inter(
-                            color: AppColors.primary,
+                            color: Colors.white.withValues(alpha: 0.9),
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1.2,
@@ -295,7 +295,7 @@ class _QualitySelectorContentState
                           child: Text(
                             'Estimated Size: ${_selectedVariant!.estimatedSize}',
                             style: GoogleFonts.inter(
-                              color: AppColors.primary,
+                              color: Colors.white.withValues(alpha: 0.9),
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
                             ),
@@ -477,11 +477,11 @@ class _QualitySelectorContentState
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? AppColors.primary
+                        ? Colors.white.withValues(alpha: 0.15)
                         : AppColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: isSelected ? AppColors.primary : AppColors.border),
+                        color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
                   ),
                   alignment: Alignment.center,
                   child: Text(
@@ -527,11 +527,11 @@ class _QualitySelectorContentState
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? AppColors.primary.withValues(alpha: 0.1)
+                      ? Colors.white.withValues(alpha: 0.1)
                       : AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: isSelected ? AppColors.primary : AppColors.border),
+                      color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
                 ),
                 child: Row(
                   children: [
@@ -541,7 +541,7 @@ class _QualitySelectorContentState
                     const Spacer(),
                     if (isSelected)
                       const Icon(Icons.check_circle,
-                          color: AppColors.primary, size: 20),
+                          color: Colors.white, size: 20),
                   ],
                 ),
               ),
@@ -573,7 +573,7 @@ class _QualitySelectorContentState
                 ),
                 Switch(
                   value: _downloadSubtitles,
-                  activeThumbColor: AppColors.primary,
+                  activeThumbColor: Colors.white,
                   onChanged: (val) {
                     setState(() {
                       _downloadSubtitles = val;
@@ -625,8 +625,8 @@ class _QualitySelectorContentState
                 }
               : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
             disabledBackgroundColor: AppColors.border.withValues(alpha: 0.3),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
