@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,10 +9,8 @@ import '../providers/support_provider.dart';
 import '../providers/admin_provider.dart';
 import '../providers/support_modal_provider.dart';
 
-
-/// A draggable floating support button that snaps to screen edges.
-/// Visible on all pages except video player, profile, notifications, admin,
-/// and request pages. Shows unread badge. Tapping opens the support modal.
+/// A draggable floating support button with velocity-based spring physics.
+/// Snaps to screen edges with momentum from the user's drag gesture.
 class SupportFAB extends ConsumerStatefulWidget {
   const SupportFAB({super.key});
 
@@ -20,14 +19,18 @@ class SupportFAB extends ConsumerStatefulWidget {
 }
 
 class _SupportFABState extends ConsumerState<SupportFAB>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _fabSize = 48.0;
-  static const _edgePadding = 16.0;
+  static const _edgePadding = 12.0;
   static const _prefsKeyX = 'support_fab_x';
   static const _prefsKeyY = 'support_fab_y';
 
-  late AnimationController _snapController;
-  Animation<Offset>? _snapAnimation;
+  // Separate X and Y animation controllers for independent spring physics
+  late AnimationController _xController;
+  late AnimationController _yController;
+  Animation<double>? _xAnim;
+  Animation<double>? _yAnim;
+
   Offset _position = Offset.zero;
   bool _initialized = false;
   bool _isDragging = false;
@@ -35,13 +38,21 @@ class _SupportFABState extends ConsumerState<SupportFAB>
   @override
   void initState() {
     super.initState();
-    _snapController = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
-    _snapController.addListener(() {
-      if (_snapAnimation != null) {
-        setState(() => _position = _snapAnimation!.value);
-      }
-    });
+    _xController = AnimationController.unbounded(vsync: this);
+    _yController = AnimationController.unbounded(vsync: this);
+    _xController.addListener(_onAnimUpdate);
+    _yController.addListener(_onAnimUpdate);
     _loadPosition();
+  }
+
+  void _onAnimUpdate() {
+    if (!mounted) return;
+    setState(() {
+      _position = Offset(
+        _xAnim?.value ?? _xController.value,
+        _yAnim?.value ?? _yController.value,
+      );
+    });
   }
 
   Future<void> _loadPosition() async {
@@ -62,7 +73,6 @@ class _SupportFABState extends ConsumerState<SupportFAB>
 
   void _initDefaultPosition(Size screenSize, EdgeInsets padding) {
     if (_position == Offset.zero) {
-      // Default: bottom-right corner above the navbar
       _position = Offset(
         screenSize.width - _fabSize - _edgePadding,
         screenSize.height - padding.bottom - 160,
@@ -70,51 +80,64 @@ class _SupportFABState extends ConsumerState<SupportFAB>
     }
   }
 
+  void _onPanStart(DragStartDetails details) {
+    _xController.stop();
+    _yController.stop();
+    setState(() => _isDragging = true);
+  }
+
   void _onPanUpdate(DragUpdateDetails details) {
     setState(() {
-      _isDragging = true;
       _position += details.delta;
     });
   }
 
   void _onPanEnd(DragEndDetails details, Size screenSize, EdgeInsets padding) {
-    _isDragging = false;
-    // Snap to nearest horizontal edge
+    setState(() => _isDragging = false);
+
+    final velocity = details.velocity.pixelsPerSecond;
+
+    // Determine snap edge based on position + velocity direction
     final centerX = _position.dx + _fabSize / 2;
     final halfScreen = screenSize.width / 2;
-
+    // If velocity is strong enough, use its direction; otherwise use position
     double targetX;
-    if (centerX < halfScreen) {
-      // Snap left
-      targetX = _edgePadding;
+    if (velocity.dx.abs() > 300) {
+      targetX = velocity.dx < 0
+          ? _edgePadding
+          : screenSize.width - _fabSize - _edgePadding;
     } else {
-      // Snap right
-      targetX = screenSize.width - _fabSize - _edgePadding;
+      targetX = centerX < halfScreen
+          ? _edgePadding
+          : screenSize.width - _fabSize - _edgePadding;
     }
 
-    // Clamp vertical
+    // Vertical: project with velocity then clamp
     final minY = padding.top + _edgePadding;
-    final maxY = screenSize.height - padding.bottom - _fabSize - 120; // above navbar
-    final targetY = _position.dy.clamp(minY, maxY);
+    final maxY = screenSize.height - padding.bottom - _fabSize - 120;
+    // Project position forward based on velocity (momentum)
+    final projectedY = _position.dy + velocity.dy * 0.15;
+    final targetY = projectedY.clamp(minY, maxY);
 
-    final target = Offset(targetX, targetY);
+    // Spring physics for X (horizontal snap)
+    const xSpring = SpringDescription(mass: 1.0, stiffness: 200, damping: 22);
+    final xSim = SpringSimulation(xSpring, _position.dx, targetX, velocity.dx);
+    _xAnim = null;
+    _xController.animateWith(xSim);
 
-    _snapAnimation = Tween<Offset>(
-      begin: _position,
-      end: target,
-    ).animate(CurvedAnimation(
-      parent: _snapController,
-      curve: Curves.easeOutBack,
-    ));
+    // Spring physics for Y (vertical momentum settle)
+    const ySpring = SpringDescription(mass: 1.0, stiffness: 150, damping: 20);
+    final ySim = SpringSimulation(ySpring, _position.dy, targetY, velocity.dy);
+    _yAnim = null;
+    _yController.animateWith(ySim);
 
-    _snapController.forward(from: 0).then((_) {
-      _position = target;
-      _savePosition();
+    // Save after animation settles
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) _savePosition();
     });
   }
 
   bool _shouldShow(String location) {
-    // Hide on these routes
     final hidePatterns = [
       '/profile',
       '/account-settings',
@@ -125,17 +148,16 @@ class _SupportFABState extends ConsumerState<SupportFAB>
       '/support-inbox',
       '/requests',
     ];
-
-    for (final pattern in hidePatterns) {
-      if (location.startsWith(pattern)) return false;
+    for (final p in hidePatterns) {
+      if (location.startsWith(p)) return false;
     }
-
     return true;
   }
 
   @override
   void dispose() {
-    _snapController.dispose();
+    _xController.dispose();
+    _yController.dispose();
     super.dispose();
   }
 
@@ -152,15 +174,13 @@ class _SupportFABState extends ConsumerState<SupportFAB>
     final padding = MediaQuery.paddingOf(context);
 
     if (!_initialized) return const SizedBox.shrink();
-
     _initDefaultPosition(screenSize, padding);
 
-    // Clamp position within bounds
+    // Clamp display position
     final minY = padding.top + _edgePadding;
     final maxY = screenSize.height - padding.bottom - _fabSize - 120;
     final clampedY = _position.dy.clamp(minY, maxY);
     final clampedX = _position.dx.clamp(_edgePadding, screenSize.width - _fabSize - _edgePadding);
-    final clampedPos = Offset(clampedX, clampedY);
 
     // Get unread count
     final isAdmin = ref.watch(isAdminProvider).valueOrNull ?? false;
@@ -169,18 +189,17 @@ class _SupportFABState extends ConsumerState<SupportFAB>
         : ref.watch(userUnreadCountProvider);
 
     return Positioned(
-      left: clampedPos.dx,
-      top: clampedPos.dy,
+      left: clampedX,
+      top: clampedY,
       child: GestureDetector(
+        onPanStart: _onPanStart,
         onPanUpdate: _onPanUpdate,
-        onPanEnd: (details) => _onPanEnd(details, screenSize, padding),
-        onTap: () {
-          // Open the support modal
-          ref.read(supportModalProvider.notifier).state = true;
-        },
+        onPanEnd: (d) => _onPanEnd(d, screenSize, padding),
+        onTap: () => ref.read(supportModalProvider.notifier).state = true,
         child: AnimatedScale(
-          scale: _isDragging ? 1.1 : 1.0,
-          duration: const Duration(milliseconds: 150),
+          scale: _isDragging ? 1.12 : 1.0,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
           child: Container(
             width: _fabSize,
             height: _fabSize,
@@ -193,8 +212,8 @@ class _SupportFABState extends ConsumerState<SupportFAB>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF059669).withValues(alpha: 0.4),
-                  blurRadius: 16,
+                  color: const Color(0xFF059669).withValues(alpha: _isDragging ? 0.5 : 0.35),
+                  blurRadius: _isDragging ? 20 : 14,
                   offset: const Offset(0, 4),
                 ),
                 BoxShadow(
@@ -207,15 +226,9 @@ class _SupportFABState extends ConsumerState<SupportFAB>
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // Icon
                 const Center(
-                  child: Icon(
-                    Icons.support_agent_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
+                  child: Icon(Icons.support_agent_rounded, color: Colors.white, size: 24),
                 ),
-                // Badge
                 if (unreadCount > 0)
                   Positioned(
                     top: -2,
@@ -232,9 +245,7 @@ class _SupportFABState extends ConsumerState<SupportFAB>
                         child: Text(
                           unreadCount > 9 ? '9+' : '$unreadCount',
                           style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
+                            color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),

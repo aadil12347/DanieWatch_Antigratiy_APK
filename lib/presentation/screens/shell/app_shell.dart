@@ -25,6 +25,7 @@ import '../../widgets/liquid_glass.dart';
 import '../../providers/support_modal_provider.dart';
 import '../../providers/admin_provider.dart';
 import '../../providers/support_provider.dart';
+import '../../../domain/models/support_ticket.dart';
 import '../../widgets/support_fab.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
@@ -341,7 +342,6 @@ class _AppShellState extends ConsumerState<AppShell>
                               },
                               child: isSupportOpen
                                 ? _SupportModalContent(
-                                    key: const ValueKey('support_modal'),
                                     isAdmin: isAdmin,
                                     animation: _supportModalController,
                                     onClose: _closeSupportModal,
@@ -743,15 +743,14 @@ class _NavBarRipplePainter extends CustomPainter {
 }
 
 
-/// Support modal content — shows the request list (user) or admin inbox.
-/// Fades in with the morph animation from the bottom navbar.
+/// Support modal content — mirrors the full request list page.
+/// Same size as the filter modal, showing all tickets with proper cards.
 class _SupportModalContent extends ConsumerWidget {
   final bool isAdmin;
   final AnimationController animation;
   final VoidCallback onClose;
 
   const _SupportModalContent({
-    super.key,
     required this.isAdmin,
     required this.animation,
     required this.onClose,
@@ -760,7 +759,7 @@ class _SupportModalContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final maxModalHeight = screenHeight * 0.7;
+    final maxModalHeight = screenHeight * 0.75;
 
     return FadeTransition(
       opacity: CurvedAnimation(
@@ -774,9 +773,9 @@ class _SupportModalContent extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header
+              // Header bar
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 8, 4),
+                padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
                 child: Row(
                   children: [
                     Container(
@@ -810,11 +809,11 @@ class _SupportModalContent extends ConsumerWidget {
                 ),
               ),
               const Divider(color: Colors.white10, height: 1),
-              // Content
+              // Ticket list content
               Flexible(
                 child: isAdmin
-                    ? const _AdminSupportModalList()
-                    : const _UserSupportModalList(),
+                    ? _FullAdminTicketList(onClose: onClose)
+                    : _FullUserTicketList(onClose: onClose),
               ),
             ],
           ),
@@ -824,9 +823,10 @@ class _SupportModalContent extends ConsumerWidget {
   }
 }
 
-/// User's ticket list inside the support modal
-class _UserSupportModalList extends ConsumerWidget {
-  const _UserSupportModalList();
+/// Full user ticket list — mirrors RequestListScreen content
+class _FullUserTicketList extends ConsumerWidget {
+  final VoidCallback onClose;
+  const _FullUserTicketList({required this.onClose});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -835,7 +835,7 @@ class _UserSupportModalList extends ConsumerWidget {
     return ticketsAsync.when(
       loading: () => const Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: EdgeInsets.all(40),
           child: CircularProgressIndicator(color: Color(0xFF059669), strokeWidth: 2),
         ),
       ),
@@ -845,81 +845,76 @@ class _UserSupportModalList extends ConsumerWidget {
       ),
       data: (tickets) {
         if (tickets.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 40),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.inbox_rounded, color: AppColors.textMuted.withValues(alpha: 0.4), size: 40),
-                const SizedBox(height: 12),
-                Text(
-                  'No requests yet',
-                  style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                _NewRequestButton(),
-              ],
-            ),
-          );
+          return _buildEmptyState(context, ref);
         }
         return Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Flexible(
+            Expanded(
               child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                itemCount: tickets.length.clamp(0, 10),
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                itemCount: tickets.length,
                 itemBuilder: (context, index) {
-                  final t = tickets[index];
-                  return _MiniTicketCard(
-                    subject: t.subject,
-                    status: t.status,
-                    category: t.category,
-                    lastMessage: t.createdAt,
+                  final ticket = tickets[index];
+                  return _ModalTicketCard(
+                    ticket: ticket,
+                    isAdmin: false,
                     onTap: () {
                       ref.read(supportModalProvider.notifier).state = false;
-                      context.push('/requests/chat/${t.id}');
+                      context.push('/requests/chat/${ticket.id}');
                     },
                   );
                 },
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Row(
-                children: [
-                  Expanded(child: _NewRequestButton()),
-                  if (tickets.length > 10) ...[
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () {
-                        ref.read(supportModalProvider.notifier).state = false;
-                        context.push('/requests');
-                      },
-                      child: Text(
-                        'View all',
-                        style: GoogleFonts.inter(
-                          color: const Color(0xFF059669),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            // New Request button at bottom
+            _ModalNewRequestButton(onClose: onClose),
           ],
         );
       },
     );
   }
+
+  Widget _buildEmptyState(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF059669).withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.support_agent_rounded, size: 40, color: Color(0xFF059669)),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'No Requests Yet',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Submit a content request, report a bug,\nor suggest a new feature.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted, height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          _ModalNewRequestButton(onClose: onClose),
+        ],
+      ),
+    );
+  }
 }
 
-/// Admin's ticket list inside the support modal
-class _AdminSupportModalList extends ConsumerWidget {
-  const _AdminSupportModalList();
+/// Full admin ticket list — mirrors AdminSupportInboxScreen content
+class _FullAdminTicketList extends ConsumerWidget {
+  final VoidCallback onClose;
+  const _FullAdminTicketList({required this.onClose});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -928,7 +923,7 @@ class _AdminSupportModalList extends ConsumerWidget {
     return ticketsAsync.when(
       loading: () => const Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: EdgeInsets.all(40),
           child: CircularProgressIndicator(color: Color(0xFF059669), strokeWidth: 2),
         ),
       ),
@@ -945,29 +940,22 @@ class _AdminSupportModalList extends ConsumerWidget {
               children: [
                 Icon(Icons.inbox_rounded, color: AppColors.textMuted.withValues(alpha: 0.4), size: 40),
                 const SizedBox(height: 12),
-                Text(
-                  'No tickets',
-                  style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14),
-                ),
+                Text('No tickets', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14)),
               ],
             ),
           );
         }
         return ListView.builder(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          itemCount: tickets.length.clamp(0, 15),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          itemCount: tickets.length,
           itemBuilder: (context, index) {
-            final t = tickets[index];
-            return _MiniTicketCard(
-              subject: t.subject,
-              status: t.status,
-              category: t.category,
-              lastMessage: t.createdAt,
-              userName: t.userEmail,
+            final ticket = tickets[index];
+            return _ModalTicketCard(
+              ticket: ticket,
+              isAdmin: true,
               onTap: () {
                 ref.read(supportModalProvider.notifier).state = false;
-                context.push('/requests/chat/${t.id}');
+                context.push('/requests/chat/${ticket.id}');
               },
             );
           },
@@ -977,98 +965,150 @@ class _AdminSupportModalList extends ConsumerWidget {
   }
 }
 
-/// Compact ticket card for the modal
-class _MiniTicketCard extends StatelessWidget {
-  final String subject;
-  final String status;
-  final String category;
-  final DateTime lastMessage;
-  final String? userName;
+/// Full-featured ticket card for the support modal — matches request_list_screen design
+class _ModalTicketCard extends StatelessWidget {
+  final SupportTicket ticket;
+  final bool isAdmin;
   final VoidCallback onTap;
 
-  const _MiniTicketCard({
-    required this.subject,
-    required this.status,
-    required this.category,
-    required this.lastMessage,
-    this.userName,
+  const _ModalTicketCard({
+    required this.ticket,
+    required this.isAdmin,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = switch (status) {
-      'open' => const Color(0xFF059669),
-      'closed' => AppColors.textMuted,
-      _ => const Color(0xFFF59E0B),
-    };
+    final isUnread = isAdmin ? ticket.unreadByAdmin : ticket.unreadByUser;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(10),
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isUnread
+                ? ticket.categoryColor.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.04),
+            width: 1,
+          ),
         ),
         child: Row(
           children: [
+            // Category icon
             Container(
-              width: 6, height: 6,
-              decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    ticket.categoryColor.withValues(alpha: 0.2),
+                    ticket.categoryColor.withValues(alpha: 0.05),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(ticket.categoryIcon, color: ticket.categoryColor, size: 18),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
+            // Content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    subject,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
                   Row(
                     children: [
-                      Text(
-                        category,
-                        style: GoogleFonts.inter(
-                          color: AppColors.textMuted,
-                          fontSize: 11,
+                      Expanded(
+                        child: Text(
+                          ticket.subject,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: isUnread ? FontWeight.w700 : FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (userName != null) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '·',
-                          style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+                      const SizedBox(width: 8),
+                      Text(
+                        ticket.timeAgo,
+                        style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                  if (ticket.lastMessagePreview != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      ticket.lastMessagePreview!,
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppColors.textMuted,
+                        height: 1.3,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (isAdmin && ticket.username != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      ticket.username!,
+                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      // Status badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ticket.statusColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(5),
                         ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            userName!,
-                            style: GoogleFonts.inter(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        child: Text(
+                          ticket.statusLabel,
+                          style: GoogleFonts.inter(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: ticket.statusColor,
                           ),
                         ),
-                      ],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        ticket.categoryLabel,
+                        style: GoogleFonts.inter(fontSize: 10, color: AppColors.textHint),
+                      ),
+                      const Spacer(),
+                      // Unread dot
+                      if (isUnread)
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: ticket.categoryColor,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: ticket.categoryColor.withValues(alpha: 0.5),
+                                blurRadius: 5,
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, color: AppColors.textMuted.withValues(alpha: 0.5), size: 18),
           ],
         ),
       ),
@@ -1076,43 +1116,57 @@ class _MiniTicketCard extends StatelessWidget {
   }
 }
 
-/// New request button
-class _NewRequestButton extends StatelessWidget {
+/// New request button for the modal bottom
+class _ModalNewRequestButton extends ConsumerWidget {
+  final VoidCallback onClose;
+  const _ModalNewRequestButton({required this.onClose});
+
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        ProviderScope.containerOf(context).read(supportModalProvider.notifier).state = false;
-        context.push('/requests/new');
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF059669), Color(0xFF047857)],
-          ),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.add_rounded, color: Colors.white, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              'New Request',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+      child: GestureDetector(
+        onTap: () {
+          ref.read(supportModalProvider.notifier).state = false;
+          context.push('/requests/new');
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF059669), Color(0xFF047857)],
             ),
-          ],
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF059669).withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'New Request',
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
 
 /// A nested PopScope that intercepts system back button to close global modals
 /// when we are deeper in the navigation stack (e.g. Details page).
