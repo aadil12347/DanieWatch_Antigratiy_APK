@@ -75,15 +75,16 @@ class _LiquidGlassState extends State<LiquidGlass>
   Color get _fillColor {
     final tint = widget.tintColor;
     if (tint != null) return tint.withValues(alpha: widget.tintOpacity);
+    // Blend white with subtle crimson for Netflix-red glass identity
     switch (widget.intensity) {
       case GlassIntensity.light:
-        return Colors.white.withValues(alpha: 0.04);
+        return Color.lerp(Colors.white.withValues(alpha: 0.04), AppColors.glassTintRed, 0.5)!;
       case GlassIntensity.medium:
-        return Colors.white.withValues(alpha: 0.06);
+        return Color.lerp(Colors.white.withValues(alpha: 0.06), AppColors.glassTintRed, 0.4)!;
       case GlassIntensity.heavy:
-        return Colors.white.withValues(alpha: 0.14);
+        return Color.lerp(Colors.white.withValues(alpha: 0.14), AppColors.glassTintRed, 0.3)!;
       case GlassIntensity.ultra:
-        return Colors.white.withValues(alpha: 0.20);
+        return Color.lerp(Colors.white.withValues(alpha: 0.20), AppColors.glassTintRed, 0.25)!;
     }
   }
 
@@ -204,7 +205,7 @@ class _LiquidSurfacePainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(rrect);
 
-    // Layer 2: Caustic top highlight — light entering the liquid surface
+    // Layer 2: Caustic top highlight — warm rose light entering the liquid surface
     final causticRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.45);
     canvas.drawRect(
       causticRect,
@@ -213,8 +214,8 @@ class _LiquidSurfacePainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withValues(alpha: 0.12),
-            Colors.white.withValues(alpha: 0.04),
+            Color.lerp(Colors.white.withValues(alpha: 0.12), AppColors.glassRedCaustic, 0.3)!,
+            Color.lerp(Colors.white.withValues(alpha: 0.04), AppColors.glassRedCaustic, 0.2)!,
             Colors.transparent,
           ],
           stops: const [0.0, 0.3, 1.0],
@@ -236,10 +237,10 @@ class _LiquidSurfacePainter extends CustomPainter {
         ).createShader(depthRect),
     );
 
-    // Layer 4: Animated specular highlight sweep
+    // Layer 4: Animated specular highlight sweep — warm rose tint
     if (enableSpecular) {
       final sweepAngle = specularPhase * 2 * math.pi;
-      // Moving highlight spot
+      // Moving highlight spot with subtle crimson warmth
       final spotX = size.width * (0.3 + 0.4 * math.sin(sweepAngle));
       final spotY = size.height * (0.2 + 0.15 * math.cos(sweepAngle * 0.7));
       final spotRadius = size.shortestSide * 0.6;
@@ -250,8 +251,8 @@ class _LiquidSurfacePainter extends CustomPainter {
         Paint()
           ..shader = RadialGradient(
             colors: [
-              Colors.white.withValues(alpha: 0.06),
-              Colors.white.withValues(alpha: 0.02),
+              Color.lerp(Colors.white.withValues(alpha: 0.06), AppColors.glassHighlightRed, 0.35)!,
+              Color.lerp(Colors.white.withValues(alpha: 0.02), AppColors.glassHighlightRed, 0.2)!,
               Colors.transparent,
             ],
             stops: const [0.0, 0.4, 1.0],
@@ -280,7 +281,11 @@ class _LiquidSurfacePainter extends CustomPainter {
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2.0 - i * 0.5
-            ..color = Colors.white.withValues(alpha: ringOpacity.clamp(0.0, 1.0)),
+            ..color = Color.lerp(
+              Colors.white.withValues(alpha: ringOpacity.clamp(0.0, 1.0)),
+              AppColors.glassBorderRed,
+              0.3,
+            )!,
         );
       }
 
@@ -311,7 +316,7 @@ class _LiquidSurfacePainter extends CustomPainter {
       ..strokeWidth = 0.8;
 
     if (enableSpecular) {
-      // Animated border with shifting brightness
+      // Animated border with red-accent shifting brightness
       final angle = specularPhase * 2 * math.pi;
       borderPaint.shader = SweepGradient(
         center: Alignment.center,
@@ -319,10 +324,10 @@ class _LiquidSurfacePainter extends CustomPainter {
         endAngle: angle + 2 * math.pi,
         colors: [
           Colors.white.withValues(alpha: 0.20),
-          Colors.white.withValues(alpha: 0.35),
+          Color.lerp(Colors.white.withValues(alpha: 0.35), AppColors.glassBorderRed, 0.4)!,
           Colors.white.withValues(alpha: 0.12),
           Colors.white.withValues(alpha: 0.05),
-          Colors.white.withValues(alpha: 0.20),
+          Color.lerp(Colors.white.withValues(alpha: 0.20), AppColors.glassBorderRed, 0.25)!,
         ],
         stops: const [0.0, 0.2, 0.4, 0.7, 1.0],
       ).createShader(rect);

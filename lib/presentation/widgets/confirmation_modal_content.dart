@@ -101,8 +101,8 @@ class _ConfirmationModalContentState extends State<ConfirmationModalContent> {
                 child: ElevatedButton(
                   onPressed: () => widget.onConfirm(_alsoDeleteFile),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),

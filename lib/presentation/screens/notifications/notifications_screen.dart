@@ -7,6 +7,7 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../domain/models/local_notification.dart';
 import '../../providers/notification_inbox_provider.dart';
+import '../../widgets/liquid_glass.dart';
 
 /// Notification inbox screen — accessible from the bell icon on home.
 /// Shows rich notification cards with poster, title, year, and type.
@@ -156,12 +157,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
+          LiquidGlass(
+            isCircular: true,
+            intensity: GlassIntensity.medium,
+            enableAnimatedBorder: false,
+            enableTouchRipple: false,
             padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: AppColors.surfaceElevated,
-              shape: BoxShape.circle,
-            ),
             child: const Icon(
               Icons.notifications_off_outlined,
               color: AppColors.textMuted,
@@ -251,17 +252,14 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
     final hasUnread = group.hasUnread;
     const accentColor = Color(0xFF0891B2);
 
-    return Container(
+    return LiquidGlass(
+      borderRadius: 14,
+      intensity: GlassIntensity.light,
+      enableAnimatedBorder: false,
+      enableTouchRipple: false,
+      tintColor: hasUnread ? accentColor : null,
+      tintOpacity: hasUnread ? 0.03 : 0.0,
       margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: hasUnread
-              ? accentColor.withValues(alpha: 0.3)
-              : AppColors.border,
-        ),
-      ),
       child: Column(
         children: [
           // Header — tappable to expand/collapse
@@ -499,27 +497,15 @@ class _NotificationCard extends ConsumerWidget {
           context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
         }
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 500),
+      child: LiquidGlass(
+        borderRadius: 14,
+        intensity: GlassIntensity.light,
+        enableAnimatedBorder: false,
+        enableTouchRipple: true,
+        tintColor: isHighlighted ? AppColors.primary : (!notification.isRead ? AppColors.primary : null),
+        tintOpacity: isHighlighted ? 0.08 : (!notification.isRead ? 0.03 : 0.0),
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: notification.isRead
-              ? AppColors.surfaceElevated
-              : AppColors.surfaceElevated.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isHighlighted
-                ? AppColors.primary
-                : notification.isRead
-                    ? AppColors.border
-                    : AppColors.primary.withValues(alpha: 0.3),
-            width: isHighlighted ? 2 : 1,
-          ),
-          boxShadow: isHighlighted
-              ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: 2)]
-              : null,
-        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

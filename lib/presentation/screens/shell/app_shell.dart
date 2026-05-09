@@ -532,17 +532,17 @@ class _LiquidNavBarContentState extends State<_LiquidNavBarContent>
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    Colors.white.withValues(alpha: 0.18),
-                                    Colors.white.withValues(alpha: 0.06),
+                                    Color.lerp(Colors.white.withValues(alpha: 0.18), AppColors.glassPillGlow, 0.35)!,
+                                    Color.lerp(Colors.white.withValues(alpha: 0.06), AppColors.glassTintRed, 0.3)!,
                                   ],
                                 ),
                                 border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.25),
+                                  color: Color.lerp(Colors.white.withValues(alpha: 0.25), AppColors.glassBorderRed, 0.35)!,
                                   width: 0.6,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.white.withValues(alpha: 0.08),
+                                    color: AppColors.glassPillGlow,
                                     blurRadius: 20,
                                     spreadRadius: 0,
                                   ),
@@ -654,11 +654,15 @@ class _NavBarRipplePainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5 - i * 0.5
-          ..color = Colors.white.withValues(alpha: opacity),
+          ..color = Color.lerp(
+            Colors.white.withValues(alpha: opacity),
+            AppColors.glassBorderRed,
+            0.3,
+          )!,
       );
     }
 
-    // Glow at center
+    // Glow at center — warm red tint
     if (rippleProgress < 0.4) {
       final glow = 0.12 * (1.0 - rippleProgress / 0.4);
       canvas.drawCircle(
@@ -666,7 +670,11 @@ class _NavBarRipplePainter extends CustomPainter {
         15 * rippleProgress + 5,
         Paint()
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
-          ..color = Colors.white.withValues(alpha: glow * 0.6),
+          ..color = Color.lerp(
+            Colors.white.withValues(alpha: glow * 0.6),
+            AppColors.glassPillGlow,
+            0.4,
+          )!,
       );
     }
   }

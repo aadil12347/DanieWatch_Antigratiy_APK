@@ -625,8 +625,8 @@ class _QualitySelectorContentState
                 }
               : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
             disabledBackgroundColor: AppColors.border.withValues(alpha: 0.3),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

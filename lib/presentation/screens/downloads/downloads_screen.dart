@@ -19,6 +19,7 @@ import '../../providers/downloads_selection_provider.dart';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../providers/scroll_provider.dart';
 import '../../widgets/morphing_search.dart';
+import '../../widgets/liquid_glass.dart';
 
 class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
@@ -294,159 +295,164 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         HapticFeedback.mediumImpact();
         ref.read(downloadsSelectionProvider.notifier).activate(item.id);
       },
-      child: Container(
-        margin: EdgeInsets.symmetric(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
           horizontal: Responsive(context).w(16),
           vertical: Responsive(context).h(6),
         ),
-        padding: EdgeInsets.all(Responsive(context).w(12)),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.red.withValues(alpha: 0.1)
-              : AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? Colors.red.withValues(alpha: 0.8)
-                : AppColors.border,
-            width: 1.0,
-          ),
-        ),
-        child: Row(
-          children: [
-            // Selection Indicator (Reserved Space to prevent glitch/shift)
-            SizedBox(
-              width: isSelectionMode ? 32 : 0,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: isSelectionMode
-                    ? Icon(
-                        isSelected
-                            ? Icons.check_circle_rounded
-                            : Icons.radio_button_off_rounded,
-                        color: isSelected ? Colors.red : Colors.white24,
-                        size: 20,
-                        key: const ValueKey('selected'),
-                      )
-                    : const SizedBox.shrink(key: ValueKey('empty')),
+        child: LiquidGlass(
+          borderRadius: 12,
+          intensity: GlassIntensity.light,
+          enableAnimatedBorder: false,
+          enableTouchRipple: false,
+          tintColor: isSelected ? Colors.red : null,
+          tintOpacity: isSelected ? 0.08 : 0.0,
+          padding: EdgeInsets.all(Responsive(context).w(12)),
+          child: Container(
+            decoration: isSelected ? BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.red.withValues(alpha: 0.8),
+                width: 1.0,
               ),
-            ),
-            if (isSelectionMode) const SizedBox(width: 4),
-            // Thumbnail with Delete Overlay
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: item.posterUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: item.posterUrl!,
-                      width: 60,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => _buildPlaceholder(),
-                      errorWidget: (_, __, ___) => _buildPlaceholder(),
-                    )
-                  : _buildPlaceholder(),
-            ),
-            const SizedBox(width: 12),
+            ) : null,
+            child: Row(
+              children: [
+                // Selection Indicator (Reserved Space to prevent glitch/shift)
+                SizedBox(
+                  width: isSelectionMode ? 32 : 0,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: isSelectionMode
+                        ? Icon(
+                            isSelected
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_off_rounded,
+                            color: isSelected ? Colors.red : Colors.white24,
+                            size: 20,
+                            key: const ValueKey('selected'),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('empty')),
+                  ),
+                ),
+                if (isSelectionMode) const SizedBox(width: 4),
+                // Thumbnail with Delete Overlay
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: item.posterUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl!,
+                          width: 60,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _buildPlaceholder(),
+                          errorWidget: (_, __, ___) => _buildPlaceholder(),
+                        )
+                      : _buildPlaceholder(),
+                ),
+                const SizedBox(width: 12),
 
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.displayName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // Size (Show estimate if real size is unknown)
-                  const SizedBox(height: 4),
-                  Text(
-                    item.formattedSize,
-                    style: GoogleFonts.inter(
-                      color: AppColors.primary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Progress bar
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: item.progress > 0 ? item.progress : null,
-                      backgroundColor: AppColors.surface,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        item.status == DownloadStatus.paused
-                            ? Colors.orange
-                            : item.status == DownloadStatus.failed
-                                ? Colors.red
-                                : AppColors.primary,
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      minHeight: 6,
-                    ),
+                      // Size (Show estimate if real size is unknown)
+                      const SizedBox(height: 4),
+                      Text(
+                        item.formattedSize,
+                        style: GoogleFonts.inter(
+                          color: AppColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Progress bar
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: item.progress > 0 ? item.progress : null,
+                          backgroundColor: AppColors.surface,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            item.status == DownloadStatus.paused
+                                ? Colors.orange
+                                : item.status == DownloadStatus.failed
+                                    ? Colors.red
+                                    : AppColors.primary,
+                          ),
+                          minHeight: 6,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _getProgressText(item, pct),
+                        style: TextStyle(
+                          color: item.status == DownloadStatus.paused
+                              ? Colors.orange
+                              : item.status == DownloadStatus.failed
+                                  ? Colors.red
+                                  : AppColors.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _getProgressText(item, pct),
-                    style: TextStyle(
-                      color: item.status == DownloadStatus.paused
-                          ? Colors.orange
-                          : item.status == DownloadStatus.failed
-                              ? Colors.red
-                              : AppColors.primary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
 
-            // Controls Column (at the end)
-            if (!isSelectionMode) ...[
-              const SizedBox(width: 12),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Pause/Resume (Top)
-                  GestureDetector(
-                    onTap: () {
-                      if (item.status == DownloadStatus.paused) {
-                        DownloadManager.instance.resumeDownload(item.id);
-                      } else {
-                        DownloadManager.instance.pauseDownload(item.id);
-                      }
-                      setState(() {});
-                    },
-                    child: Icon(
-                      item.status == DownloadStatus.paused
-                          ? Icons.play_circle_outline_rounded
-                          : Icons.pause_circle_outline_rounded,
-                      color: item.status == DownloadStatus.paused
-                          ? Colors.orange
-                          : AppColors.primary,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Delete (Bottom)
-                  GestureDetector(
-                    onTap: () => _showDeleteConfirmation(item),
-                    child: const Icon(
-                      Icons.delete_outline_rounded,
-                      color: Colors.redAccent,
-                      size: 24,
-                    ),
+                // Controls Column (at the end)
+                if (!isSelectionMode) ...[
+                  const SizedBox(width: 12),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Pause/Resume (Top)
+                      GestureDetector(
+                        onTap: () {
+                          if (item.status == DownloadStatus.paused) {
+                            DownloadManager.instance.resumeDownload(item.id);
+                          } else {
+                            DownloadManager.instance.pauseDownload(item.id);
+                          }
+                          setState(() {});
+                        },
+                        child: Icon(
+                          item.status == DownloadStatus.paused
+                              ? Icons.play_circle_outline_rounded
+                              : Icons.pause_circle_outline_rounded,
+                          color: item.status == DownloadStatus.paused
+                              ? Colors.orange
+                              : AppColors.primary,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Delete (Bottom)
+                      GestureDetector(
+                        onTap: () => _showDeleteConfirmation(item),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.redAccent,
+                          size: 24,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -485,99 +491,104 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         HapticFeedback.mediumImpact();
         ref.read(downloadsSelectionProvider.notifier).activate(item.id);
       },
-      child: Container(
-        margin: EdgeInsets.symmetric(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
           horizontal: Responsive(context).w(16),
           vertical: Responsive(context).h(6),
         ),
-        padding: EdgeInsets.all(Responsive(context).w(12)),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.red.withValues(alpha: 0.1)
-              : AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? Colors.red.withValues(alpha: 0.8)
-                : AppColors.border,
-            width: 1.0,
-          ),
-        ),
-        child: Row(
-          children: [
-            if (isSelectionMode) ...[
-              Icon(
-                isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
-                color: isSelected ? Colors.red : Colors.white24,
-                size: 20,
+        child: LiquidGlass(
+          borderRadius: 12,
+          intensity: GlassIntensity.light,
+          enableAnimatedBorder: false,
+          enableTouchRipple: true,
+          tintColor: isSelected ? Colors.red : null,
+          tintOpacity: isSelected ? 0.08 : 0.0,
+          padding: EdgeInsets.all(Responsive(context).w(12)),
+          child: Container(
+            decoration: isSelected ? BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.red.withValues(alpha: 0.8),
+                width: 1.0,
               ),
-              const SizedBox(width: 12),
-            ],
-            // Thumbnail with Delete Overlay
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: item.posterUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: item.posterUrl!,
-                      width: 60,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => _buildPlaceholder(),
-                      errorWidget: (_, __, ___) => _buildPlaceholder(),
-                    )
-                  : _buildPlaceholder(),
-            ),
-            const SizedBox(width: 12),
-
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.displayName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+            ) : null,
+            child: Row(
+              children: [
+                if (isSelectionMode) ...[
+                  Icon(
+                    isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
+                    color: isSelected ? Colors.red : Colors.white24,
+                    size: 20,
                   ),
-                  // Size (Hide if unknown)
-                  if (item.totalBytes > 0) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      item.formattedSize,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                  const SizedBox(width: 12),
+                ],
+                // Thumbnail with Delete Overlay
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: item.posterUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl!,
+                          width: 60,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _buildPlaceholder(),
+                          errorWidget: (_, __, ___) => _buildPlaceholder(),
+                        )
+                      : _buildPlaceholder(),
+                ),
+                const SizedBox(width: 12),
+
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                      // Size (Hide if unknown)
+                      if (item.totalBytes > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          item.formattedSize,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
 
-            // Controls Column (at the end)
-            if (!isSelectionMode) ...[
-              const SizedBox(width: 12),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  GestureDetector(
-                    onTap: () => _showDeleteConfirmation(item),
-                    child: const Icon(
-                      Icons.delete_outline_rounded,
-                      color: Colors.redAccent,
-                      size: 24,
-                    ),
+                // Controls Column (at the end)
+                if (!isSelectionMode) ...[
+                  const SizedBox(width: 12),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _showDeleteConfirmation(item),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.redAccent,
+                          size: 24,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

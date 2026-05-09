@@ -27,6 +27,7 @@ import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/play_loader_overlay.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
+import '../../widgets/liquid_glass.dart';
 import '../video_player/video_player_screen.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
@@ -734,14 +735,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         }
         return Column(
           children: reviews.map((review) {
-            return Container(
+            return LiquidGlass(
+              borderRadius: 16,
+              intensity: GlassIntensity.light,
+              enableAnimatedBorder: false,
+              enableTouchRipple: false,
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white10),
-              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -806,19 +806,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.surface,
-              AppColors.surfaceElevated.withValues(alpha: 0.6),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        ),
+      child: LiquidGlass(
+        borderRadius: 20,
+        intensity: GlassIntensity.medium,
+        enableAnimatedBorder: true,
+        enableTouchRipple: false,
         child: Column(
           children: [
             // ── Preview Card ──
@@ -1091,14 +1083,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               season: _selectedSeason, episode: epNum)
           : () =>
               _showToastError('No play link available for ${episode.title}'),
-      child: Container(
+      child: LiquidGlass(
+        borderRadius: 12,
+        intensity: GlassIntensity.light,
+        enableAnimatedBorder: false,
+        enableTouchRipple: true,
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white10),
-        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [

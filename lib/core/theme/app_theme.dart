@@ -42,7 +42,7 @@ class AppColors {
   static const gradientEnd = Color(0xFF000000);
   static const heroDimGradient = Color(0x99000000);
 
-  // Liquid Glass tokens (iOS-style)
+  // Liquid Glass tokens (iOS-style) — with warm Netflix-red undertone
   static const glassLight = Color(0x12FFFFFF);     // 7% white
   static const glassMedium = Color(0x1AFFFFFF);    // 10% white
   static const glassHeavy = Color(0x26FFFFFF);     // 15% white
@@ -50,6 +50,13 @@ class AppColors {
   static const glassHighlight = Color(0x40FFFFFF); // 25% white
   static const glassShadow = Color(0x20000000);    // inner shadow
   static const glassSpecular = Color(0x50FFFFFF);  // specular edge highlight
+
+  // Netflix-Red Glass accent tokens
+  static const glassTintRed = Color(0x08FF2828);       // 3% crimson fill — barely perceptible
+  static const glassBorderRed = Color(0x20FF4040);     // 12% red border glow
+  static const glassHighlightRed = Color(0x12FFB4B4);  // 7% rose specular
+  static const glassPillGlow = Color(0x1FFF3C3C);      // 12% navbar pill red accent
+  static const glassRedCaustic = Color(0x0FFFC0C0);    // 6% warm rose caustic top edge
 }
 
 class AppTheme {

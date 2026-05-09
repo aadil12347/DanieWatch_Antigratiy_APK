@@ -15,6 +15,7 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../../core/utils/restart_widget.dart';
+import '../../widgets/liquid_glass.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -161,18 +162,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _buildHeader(UserProfile? profile) {
     return Column(
       children: [
-        // Avatar with subtle glow
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                blurRadius: 30,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
+        // Avatar with liquid glass glow
+        LiquidGlass(
+          isCircular: true,
+          intensity: GlassIntensity.medium,
+          tintColor: AppColors.primary,
+          tintOpacity: 0.08,
+          enableAnimatedBorder: true,
+          enableTouchRipple: false,
+          padding: const EdgeInsets.all(6),
           child: const Hero(
             tag: 'profile-avatar',
             child: UserAvatar(size: 96, canEdit: true),
@@ -475,15 +473,55 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surfaceElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Sign Out', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-        content: const Text('Are you sure you want to sign out?', style: TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sign Out', style: TextStyle(color: AppColors.error))),
-        ],
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: LiquidGlass(
+          borderRadius: 20,
+          intensity: GlassIntensity.heavy,
+          tintColor: AppColors.primary,
+          tintOpacity: 0.05,
+          enableAnimatedBorder: true,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Sign Out', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20, letterSpacing: -0.5)),
+              const SizedBox(height: 12),
+              const Text('Are you sure you want to sign out?', style: TextStyle(color: Colors.white70, fontSize: 15)),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
 
