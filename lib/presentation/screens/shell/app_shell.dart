@@ -944,19 +944,27 @@ class _FullAdminTicketList extends ConsumerWidget {
             ),
           );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-          itemCount: tickets.length,
-          itemBuilder: (context, index) {
-            final ticket = tickets[index];
-            return _ModalTicketCard(
-              ticket: ticket,
-              isAdmin: true,
-              onTap: () {
-                context.push('/requests/chat/${ticket.id}');
-              },
-            );
-          },
+        return Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                itemCount: tickets.length,
+                itemBuilder: (context, index) {
+                  final ticket = tickets[index];
+                  return _ModalTicketCard(
+                    ticket: ticket,
+                    isAdmin: true,
+                    onTap: () {
+                      context.push('/requests/chat/${ticket.id}');
+                    },
+                  );
+                },
+              ),
+            ),
+            // New Request button at bottom
+            _ModalNewRequestButton(onClose: onClose),
+          ],
         );
       },
     );

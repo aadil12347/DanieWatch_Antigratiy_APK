@@ -1218,7 +1218,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 }
 
                 if (isActiveDownload) {
-                  // ── Animated progress ring with pause/resume ──
+                  // ── Animated progress ring with pause/resume + percentage ──
+                  final pctText = (progress * 100).toStringAsFixed(2);
                   return GestureDetector(
                     onTap: () {
                       HapticFeedback.lightImpact();
@@ -1228,29 +1229,43 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                         DownloadManager.instance.pauseDownload(match.id);
                       }
                     },
-                    child: SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          SizedBox(
-                            width: 36,
-                            height: 36,
-                            child: CircularProgressIndicator(
-                              value: progress > 0 ? progress : null,
-                              strokeWidth: 2.5,
-                              color: isPaused ? Colors.orangeAccent : AppColors.primary,
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
-                            ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: CircularProgressIndicator(
+                                  value: progress > 0 ? progress : null,
+                                  strokeWidth: 2.5,
+                                  color: isPaused ? Colors.orangeAccent : AppColors.primary,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              Icon(
+                                isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                                color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
+                                size: 18,
+                              ),
+                            ],
                           ),
-                          Icon(
-                            isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                            color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
-                            size: 18,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$pctText%',
+                          style: TextStyle(
+                            color: isPaused ? Colors.orangeAccent : AppColors.primary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   );
                 }
