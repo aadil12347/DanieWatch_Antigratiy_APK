@@ -859,7 +859,6 @@ class _FullUserTicketList extends ConsumerWidget {
                     ticket: ticket,
                     isAdmin: false,
                     onTap: () {
-                      ref.read(supportModalProvider.notifier).state = false;
                       context.push('/requests/chat/${ticket.id}');
                     },
                   );
@@ -954,7 +953,6 @@ class _FullAdminTicketList extends ConsumerWidget {
               ticket: ticket,
               isAdmin: true,
               onTap: () {
-                ref.read(supportModalProvider.notifier).state = false;
                 context.push('/requests/chat/${ticket.id}');
               },
             );
@@ -1127,7 +1125,6 @@ class _ModalNewRequestButton extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
       child: GestureDetector(
         onTap: () {
-          ref.read(supportModalProvider.notifier).state = false;
           context.push('/requests/new');
         },
         child: Container(

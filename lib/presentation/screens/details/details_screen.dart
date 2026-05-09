@@ -1188,10 +1188,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   (d) => d!.title == content.title && d.season == _selectedSeason && d.episode == epNum,
                   orElse: () => null,
                 );
-                final isDownloading = match != null &&
+                final isPaused = match != null && match.status == DownloadStatus.paused;
+                final isActiveDownload = match != null &&
                     (match.status == DownloadStatus.downloading ||
                      match.status == DownloadStatus.pending ||
-                     match.status == DownloadStatus.converting);
+                     match.status == DownloadStatus.converting ||
+                     match.status == DownloadStatus.paused);
                 final isCompleted = match != null && match.status == DownloadStatus.completed;
                 final progress = match?.progress ?? 0.0;
 
@@ -1215,26 +1217,40 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   );
                 }
 
-                if (isDownloading) {
-                  // ── Animated progress ring ──
-                  return SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(
-                            value: progress > 0 ? progress : null,
-                            strokeWidth: 2.5,
-                            color: AppColors.primary,
-                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                if (isActiveDownload) {
+                  // ── Animated progress ring with pause/resume ──
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      if (isPaused) {
+                        DownloadManager.instance.resumeDownload(match!.id);
+                      } else if (match!.status == DownloadStatus.downloading) {
+                        DownloadManager.instance.pauseDownload(match.id);
+                      }
+                    },
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(
+                              value: progress > 0 ? progress : null,
+                              strokeWidth: 2.5,
+                              color: isPaused ? Colors.orangeAccent : AppColors.primary,
+                              backgroundColor: Colors.white.withValues(alpha: 0.08),
+                            ),
                           ),
-                        ),
-                        Icon(Icons.downloading_rounded, color: AppColors.primary.withValues(alpha: 0.7), size: 18),
-                      ],
+                          Icon(
+                            isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                            color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
+                            size: 18,
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
