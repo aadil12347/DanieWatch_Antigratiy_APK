@@ -22,6 +22,10 @@ import '../../providers/confirmation_modal_provider.dart';
 import '../../widgets/confirmation_modal_content.dart';
 import '../../providers/scroll_provider.dart';
 import '../../widgets/liquid_glass.dart';
+import '../../providers/support_modal_provider.dart';
+import '../../providers/admin_provider.dart';
+import '../../providers/support_provider.dart';
+import '../../widgets/support_fab.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -32,8 +36,21 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with SingleTickerProviderStateMixin {
   DateTime? _lastBackPressed;
+  late AnimationController _supportModalController;
+
+  @override
+  void initState() {
+    super.initState();
+    _supportModalController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _downloadSub =
+        DownloadManager.instance.updateStream.listen(_handleDownloadUpdate);
+  }
 
   static const _icons = [
     Icons.home_outlined,
@@ -63,6 +80,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     ref.read(confirmationModalProvider.notifier).state =
         const ConfirmationModalState();
     ref.read(actorModalProvider.notifier).state = const ActorModalState();
+    ref.read(supportModalProvider.notifier).state = false;
   }
 
   void _onTap(int index) {
@@ -90,13 +108,6 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   StreamSubscription? _downloadSub;
-
-  @override
-  void initState() {
-    super.initState();
-    _downloadSub =
-        DownloadManager.instance.updateStream.listen(_handleDownloadUpdate);
-  }
 
   void _handleDownloadUpdate(DownloadItem item) {
     if (!mounted) return;
@@ -130,6 +141,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void dispose() {
     _downloadSub?.cancel();
+    _supportModalController.dispose();
     super.dispose();
   }
 
@@ -145,6 +157,20 @@ class _AppShellState extends ConsumerState<AppShell> {
     ref.read(confirmationModalProvider.notifier).state =
         const ConfirmationModalState();
     ref.read(actorModalProvider.notifier).state = const ActorModalState();
+    _closeSupportModal();
+  }
+
+  void _closeSupportModal() {
+    if (ref.read(supportModalProvider)) {
+      _supportModalController.reverse().then((_) {
+        if (mounted) ref.read(supportModalProvider.notifier).state = false;
+      });
+    }
+  }
+
+  void _openSupportModal() {
+    ref.read(supportModalProvider.notifier).state = true;
+    _supportModalController.forward(from: 0);
   }
 
   @override
@@ -157,9 +183,18 @@ class _AppShellState extends ConsumerState<AppShell> {
     final filterState = ref.watch(filterModalProvider);
     final confirmState = ref.watch(confirmationModalProvider);
     final actorState = ref.watch(actorModalProvider);
+    final isSupportOpen = ref.watch(supportModalProvider);
     final isOtherModalOpen =
         downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen;
-    final isModalOpen = isOtherModalOpen;
+    final isModalOpen = isOtherModalOpen || isSupportOpen;
+    final isAdmin = ref.watch(isAdminProvider).valueOrNull ?? false;
+
+    // Listen for support modal provider to trigger animation
+    ref.listen<bool>(supportModalProvider, (prev, next) {
+      if (next && !(prev ?? false)) {
+        _supportModalController.forward(from: 0);
+      }
+    });
 
     return PopScope(
       canPop: false,
@@ -167,7 +202,13 @@ class _AppShellState extends ConsumerState<AppShell> {
         if (didPop) return;
 
 
-        // 2. If global modals are open, close them
+        // 2. If support modal is open, close it
+        if (isSupportOpen) {
+          _closeSupportModal();
+          return;
+        }
+
+        // 3. If global modals are open, close them
         if (isOtherModalOpen) {
           // Special case for filter step-back
           if (filterState.view == FilterView.optionsList &&
@@ -229,18 +270,28 @@ class _AppShellState extends ConsumerState<AppShell> {
               Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: _closeAllModals,
+                  onTap: () {
+                    if (isSupportOpen) {
+                      _closeSupportModal();
+                    } else {
+                      _closeAllModals();
+                    }
+                  },
                   child: Container(color: Colors.black.withValues(alpha: 0.4)),
                 ),
               ),
+            // Floating support FAB
+            if (!isSupportOpen && !isOtherModalOpen)
+              const SupportFAB(),
             // Floating Bottom Nav Bar or Download/Filter Modal
             if (!isSearchExpanded && !hideNavBar)
               Builder(builder: (context) {
                 final r = Responsive(context);
                 final navBottom = MediaQuery.paddingOf(context).bottom + r.h(24);
-                final navMaxWidth = isOtherModalOpen ? r.wClamped(600, minVal: 320) : r.wClamped(400, minVal: 280);
-                final navHPad = isOtherModalOpen ? r.w(16) : r.w(24);
-                final navRadius = isOtherModalOpen ? r.w(24) : r.w(32);
+                final anyModalOpen = isOtherModalOpen || isSupportOpen;
+                final navMaxWidth = anyModalOpen ? r.wClamped(600, minVal: 320) : r.wClamped(400, minVal: 280);
+                final navHPad = anyModalOpen ? r.w(16) : r.w(24);
+                final navRadius = anyModalOpen ? r.w(24) : r.w(32);
                 final iconSize = r.d(24).clamp(18.0, 30.0);
                 final labelSize = r.f(11).clamp(9.0, 14.0);
                 final tabWidth = r.w(64).clamp(48.0, 80.0);
@@ -259,7 +310,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                         padding: EdgeInsets.symmetric(horizontal: navHPad),
                         child: LiquidGlass(
                           borderRadius: navRadius,
-                          intensity: isOtherModalOpen ? GlassIntensity.heavy : GlassIntensity.medium,
+                          intensity: anyModalOpen ? GlassIntensity.heavy : GlassIntensity.medium,
                           enableAnimatedBorder: true,
                           enableTouchRipple: false,
                           child: AnimatedSize(
@@ -288,7 +339,14 @@ class _AppShellState extends ConsumerState<AppShell> {
                                   ),
                                 );
                               },
-                              child: isOtherModalOpen
+                              child: isSupportOpen
+                                ? _SupportModalContent(
+                                    key: const ValueKey('support_modal'),
+                                    isAdmin: isAdmin,
+                                    animation: _supportModalController,
+                                    onClose: _closeSupportModal,
+                                  )
+                                : isOtherModalOpen
                                 ? Material(
                                     color: Colors.transparent,
                                     child: downloadState.isOpen
@@ -684,6 +742,378 @@ class _NavBarRipplePainter extends CustomPainter {
       rippleProgress != old.rippleProgress;
 }
 
+
+/// Support modal content — shows the request list (user) or admin inbox.
+/// Fades in with the morph animation from the bottom navbar.
+class _SupportModalContent extends ConsumerWidget {
+  final bool isAdmin;
+  final AnimationController animation;
+  final VoidCallback onClose;
+
+  const _SupportModalContent({
+    super.key,
+    required this.isAdmin,
+    required this.animation,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final maxModalHeight = screenHeight * 0.7;
+
+    return FadeTransition(
+      opacity: CurvedAnimation(
+        parent: animation,
+        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxModalHeight),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 8, 4),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF059669).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.support_agent_rounded,
+                        color: Color(0xFF059669),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        isAdmin ? 'Support Inbox' : 'My Requests',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 22),
+                      onPressed: onClose,
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.white10, height: 1),
+              // Content
+              Flexible(
+                child: isAdmin
+                    ? const _AdminSupportModalList()
+                    : const _UserSupportModalList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// User's ticket list inside the support modal
+class _UserSupportModalList extends ConsumerWidget {
+  const _UserSupportModalList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ticketsAsync = ref.watch(userTicketsProvider);
+
+    return ticketsAsync.when(
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: Color(0xFF059669), strokeWidth: 2),
+        ),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text('Error: $e', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+      ),
+      data: (tickets) {
+        if (tickets.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.inbox_rounded, color: AppColors.textMuted.withValues(alpha: 0.4), size: 40),
+                const SizedBox(height: 12),
+                Text(
+                  'No requests yet',
+                  style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                _NewRequestButton(),
+              ],
+            ),
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                itemCount: tickets.length.clamp(0, 10),
+                itemBuilder: (context, index) {
+                  final t = tickets[index];
+                  return _MiniTicketCard(
+                    subject: t.subject,
+                    status: t.status,
+                    category: t.category,
+                    lastMessage: t.createdAt,
+                    onTap: () {
+                      ref.read(supportModalProvider.notifier).state = false;
+                      context.push('/requests/chat/${t.id}');
+                    },
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(child: _NewRequestButton()),
+                  if (tickets.length > 10) ...[
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () {
+                        ref.read(supportModalProvider.notifier).state = false;
+                        context.push('/requests');
+                      },
+                      child: Text(
+                        'View all',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF059669),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Admin's ticket list inside the support modal
+class _AdminSupportModalList extends ConsumerWidget {
+  const _AdminSupportModalList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ticketsAsync = ref.watch(allTicketsProvider);
+
+    return ticketsAsync.when(
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: Color(0xFF059669), strokeWidth: 2),
+        ),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text('Error: $e', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+      ),
+      data: (tickets) {
+        if (tickets.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.inbox_rounded, color: AppColors.textMuted.withValues(alpha: 0.4), size: 40),
+                const SizedBox(height: 12),
+                Text(
+                  'No tickets',
+                  style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14),
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          itemCount: tickets.length.clamp(0, 15),
+          itemBuilder: (context, index) {
+            final t = tickets[index];
+            return _MiniTicketCard(
+              subject: t.subject,
+              status: t.status,
+              category: t.category,
+              lastMessage: t.createdAt,
+              userName: t.userEmail,
+              onTap: () {
+                ref.read(supportModalProvider.notifier).state = false;
+                context.push('/requests/chat/${t.id}');
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Compact ticket card for the modal
+class _MiniTicketCard extends StatelessWidget {
+  final String subject;
+  final String status;
+  final String category;
+  final DateTime lastMessage;
+  final String? userName;
+  final VoidCallback onTap;
+
+  const _MiniTicketCard({
+    required this.subject,
+    required this.status,
+    required this.category,
+    required this.lastMessage,
+    this.userName,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = switch (status) {
+      'open' => const Color(0xFF059669),
+      'closed' => AppColors.textMuted,
+      _ => const Color(0xFFF59E0B),
+    };
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 6, height: 6,
+              decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subject,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Text(
+                        category,
+                        style: GoogleFonts.inter(
+                          color: AppColors.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                      if (userName != null) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '·',
+                          style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            userName!,
+                            style: GoogleFonts.inter(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: AppColors.textMuted.withValues(alpha: 0.5), size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// New request button
+class _NewRequestButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        ProviderScope.containerOf(context).read(supportModalProvider.notifier).state = false;
+        context.push('/requests/new');
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF059669), Color(0xFF047857)],
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.add_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              'New Request',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A nested PopScope that intercepts system back button to close global modals
 /// when we are deeper in the navigation stack (e.g. Details page).
 /// Without this, the inner Navigator would pop the page instead of closing the modal.
@@ -697,14 +1127,17 @@ class ShellPopScope extends ConsumerWidget {
     final filterState = ref.watch(filterModalProvider);
     final confirmState = ref.watch(confirmationModalProvider);
     final actorState = ref.watch(actorModalProvider);
+    final isSupportOpen = ref.watch(supportModalProvider);
     final isModalOpen =
-        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen;
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen || isSupportOpen;
 
     return PopScope(
       canPop: !isModalOpen,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && isModalOpen) {
-          if (downloadState.isOpen) {
+          if (isSupportOpen) {
+            ref.read(supportModalProvider.notifier).state = false;
+          } else if (downloadState.isOpen) {
             ref.read(downloadModalProvider.notifier).state =
                 const DownloadModalState();
           } else if (confirmState.isOpen) {
