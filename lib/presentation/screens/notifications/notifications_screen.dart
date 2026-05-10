@@ -68,7 +68,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ),
         title: Text(
           'Notifications',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -252,14 +255,19 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
     final hasUnread = group.hasUnread;
     const accentColor = Color(0xFF0891B2);
 
-    return LiquidGlass(
-      borderRadius: 14,
-      intensity: GlassIntensity.light,
-      enableAnimatedBorder: false,
-      enableTouchRipple: false,
-      tintColor: hasUnread ? accentColor : null,
-      tintOpacity: hasUnread ? 0.03 : 0.0,
-      margin: const EdgeInsets.only(bottom: 10),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: hasUnread
+            ? accentColor.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasUnread
+              ? accentColor.withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.06),
+        ),
+      ),
       child: Column(
         children: [
           // Header — tappable to expand/collapse
@@ -497,15 +505,24 @@ class _NotificationCard extends ConsumerWidget {
           context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
         }
       },
-      child: LiquidGlass(
-        borderRadius: 14,
-        intensity: GlassIntensity.light,
-        enableAnimatedBorder: false,
-        enableTouchRipple: true,
-        tintColor: isHighlighted ? AppColors.primary : (!notification.isRead ? AppColors.primary : null),
-        tintOpacity: isHighlighted ? 0.08 : (!notification.isRead ? 0.03 : 0.0),
-        margin: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isHighlighted
+              ? AppColors.primary.withValues(alpha: 0.08)
+              : (!notification.isRead
+                  ? AppColors.primary.withValues(alpha: 0.04)
+                  : Colors.white.withValues(alpha: 0.04)),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isHighlighted
+                ? AppColors.primary.withValues(alpha: 0.2)
+                : (!notification.isRead
+                    ? AppColors.primary.withValues(alpha: 0.1)
+                    : Colors.white.withValues(alpha: 0.06)),
+          ),
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

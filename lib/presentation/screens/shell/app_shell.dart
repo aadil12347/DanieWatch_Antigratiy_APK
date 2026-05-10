@@ -1187,14 +1187,25 @@ class ShellPopScope extends ConsumerWidget {
     final confirmState = ref.watch(confirmationModalProvider);
     final actorState = ref.watch(actorModalProvider);
     final isSupportOpen = ref.watch(supportModalProvider);
-    final isModalOpen =
-        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen || isSupportOpen;
+
+    // When the support modal is open but user is on a support sub-route
+    // (e.g. /requests/chat/... or /requests/new), allow normal back navigation
+    // instead of closing the modal. The modal should persist while navigating
+    // within the support flow.
+    final location = GoRouterState.of(context).uri.toString();
+    final isOnSupportSubRoute = location.startsWith('/requests/chat/') ||
+        location.startsWith('/requests/new');
+    final shouldInterceptSupport = isSupportOpen && !isOnSupportSubRoute;
+
+    final isOtherModalOpen =
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen;
+    final isModalOpen = isOtherModalOpen || shouldInterceptSupport;
 
     return PopScope(
       canPop: !isModalOpen,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && isModalOpen) {
-          if (isSupportOpen) {
+          if (shouldInterceptSupport) {
             ref.read(supportModalProvider.notifier).state = false;
           } else if (downloadState.isOpen) {
             ref.read(downloadModalProvider.notifier).state =

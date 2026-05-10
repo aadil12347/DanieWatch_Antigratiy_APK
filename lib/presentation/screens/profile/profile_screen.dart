@@ -134,9 +134,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         title: Text(
           'Profile',
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
           ),
         ),
         backgroundColor: Colors.transparent,
