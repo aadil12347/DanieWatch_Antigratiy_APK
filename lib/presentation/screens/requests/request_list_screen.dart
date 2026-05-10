@@ -95,8 +95,10 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
     final service = ref.read(supportServiceProvider);
     await service.deleteTickets(_selectedIds.toList());
 
-    // Invalidate the provider to refresh the list from Supabase
+    // Invalidate both providers to refresh lists everywhere
+    // (user request list, admin inbox, AND floating support modal)
     ref.invalidate(userTicketsProvider);
+    ref.invalidate(allTicketsProvider);
 
     if (mounted) {
       CustomToast.show(context, 'Deleted $count request${count > 1 ? 's' : ''}', type: ToastType.success);

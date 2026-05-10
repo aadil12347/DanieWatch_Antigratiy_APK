@@ -219,8 +219,10 @@ class _AdminSupportInboxScreenState
     final service = ref.read(supportServiceProvider);
     await service.deleteTickets(_selectedIds.toList());
 
-    // Invalidate the provider to refresh the list from Supabase
+    // Invalidate both providers to refresh lists everywhere
+    // (admin inbox, user request list, AND floating support modal)
     ref.invalidate(allTicketsProvider);
+    ref.invalidate(userTicketsProvider);
 
     if (mounted) {
       CustomToast.show(context, 'Deleted $count request${count > 1 ? 's' : ''}', type: ToastType.success);
