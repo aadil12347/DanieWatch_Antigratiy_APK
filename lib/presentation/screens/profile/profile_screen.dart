@@ -338,7 +338,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 return SettingsTile(
                   icon: Icons.inbox_rounded,
                   title: 'Support Inbox',
-                  infoText: 'View & manage user support tickets',
+                  infoText: 'View & manage user support requests',
                   accentColor: const Color(0xFF059669),
                   trailing: adminUnread > 0
                       ? Container(

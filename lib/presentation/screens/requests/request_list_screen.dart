@@ -60,14 +60,14 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Delete $count ticket${count > 1 ? 's' : ''}?',
+          'Delete $count request${count > 1 ? 's' : ''}?',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
           ),
         ),
         content: Text(
-          'This will permanently delete ${count > 1 ? 'these tickets' : 'this ticket'} and all messages. This cannot be undone.',
+          'This will permanently delete ${count > 1 ? 'these requests' : 'this request'} and all messages. This cannot be undone.',
           style: GoogleFonts.inter(
             fontSize: 14,
             color: AppColors.textMuted,
@@ -99,7 +99,7 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
     ref.invalidate(userTicketsProvider);
 
     if (mounted) {
-      CustomToast.show(context, 'Deleted $count ticket${count > 1 ? 's' : ''}', type: ToastType.success);
+      CustomToast.show(context, 'Deleted $count request${count > 1 ? 's' : ''}', type: ToastType.success);
       setState(() {
         _selectedIds.clear();
         _selectionMode = false;
@@ -205,9 +205,7 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
                   if (_selectionMode) {
                     _toggleSelection(tickets[index].id);
                   } else {
-                    if (!tickets[index].isClosed) {
-                      context.push('/requests/chat/${tickets[index].id}');
-                    }
+                    context.push('/requests/chat/${tickets[index].id}');
                   }
                 },
                 onLongPress: () {

@@ -90,7 +90,7 @@ class _AdminSupportInboxScreenState
       if (success) {
         CustomToast.show(
           context,
-          'Updated ${_selectedIds.length} ticket(s)',
+          'Updated ${_selectedIds.length} request(s)',
           type: ToastType.success,
         );
         setState(() {
@@ -112,7 +112,7 @@ class _AdminSupportInboxScreenState
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Bulk Reply (${_selectedIds.length} tickets)',
+          'Bulk Reply (${_selectedIds.length} requests)',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
@@ -160,7 +160,7 @@ class _AdminSupportInboxScreenState
         if (success) {
           CustomToast.show(
             context,
-            'Replied to ${_selectedIds.length} ticket(s)',
+            'Replied to ${_selectedIds.length} request(s)',
             type: ToastType.success,
           );
           setState(() {
@@ -184,14 +184,14 @@ class _AdminSupportInboxScreenState
         backgroundColor: AppColors.surfaceElevated,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Delete $count ticket${count > 1 ? 's' : ''}?',
+          'Delete $count request${count > 1 ? 's' : ''}?',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
           ),
         ),
         content: Text(
-          'These tickets will be removed from your admin view only.',
+          'These requests will be removed from your admin view only.',
           style: GoogleFonts.inter(
             fontSize: 14,
             color: AppColors.textMuted,
@@ -223,7 +223,7 @@ class _AdminSupportInboxScreenState
     ref.invalidate(allTicketsProvider);
 
     if (mounted) {
-      CustomToast.show(context, 'Deleted $count ticket${count > 1 ? 's' : ''}', type: ToastType.success);
+      CustomToast.show(context, 'Deleted $count request${count > 1 ? 's' : ''}', type: ToastType.success);
       setState(() {
         _selectedIds.clear();
         _selectionMode = false;
@@ -341,7 +341,7 @@ class _AdminSupportInboxScreenState
                   style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
                 ),
                 Text(
-                  '$totalCount ticket${totalCount == 1 ? '' : 's'}',
+                  '$totalCount request${totalCount == 1 ? '' : 's'}',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     color: AppColors.textMuted,
@@ -512,7 +512,7 @@ class _AdminSupportInboxScreenState
             ),
             const SizedBox(height: 16),
             Text(
-              'Change Status (${_selectedIds.length} tickets)',
+              'Change Status (${_selectedIds.length} requests)',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -562,7 +562,7 @@ class _AdminSupportInboxScreenState
           Icon(Icons.inbox_rounded, size: 48, color: AppColors.textHint),
           const SizedBox(height: 16),
           Text(
-            'No tickets found',
+            'No requests found',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 16,
               fontWeight: FontWeight.w600,

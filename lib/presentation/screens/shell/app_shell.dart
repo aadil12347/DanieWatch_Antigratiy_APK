@@ -859,9 +859,7 @@ class _FullUserTicketList extends ConsumerWidget {
                     ticket: ticket,
                     isAdmin: false,
                     onTap: () {
-                      if (!ticket.isClosed) {
-                        context.push('/requests/chat/${ticket.id}');
-                      }
+                      context.push('/requests/chat/${ticket.id}');
                     },
                   );
                 },
@@ -941,7 +939,7 @@ class _FullAdminTicketList extends ConsumerWidget {
               children: [
                 Icon(Icons.inbox_rounded, color: AppColors.textMuted.withValues(alpha: 0.4), size: 40),
                 const SizedBox(height: 12),
-                Text('No tickets', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14)),
+                Text('No requests', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 14)),
               ],
             ),
           );

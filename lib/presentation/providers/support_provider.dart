@@ -207,7 +207,7 @@ class SupportService {
         await _supabase.from('support_messages').insert({
           'ticket_id': ticketId,
           'sender_id': user.id,
-          'body': '📋 Ticket status changed to "$statusLabel"',
+          'body': '📋 Request status changed to "$statusLabel"',
           'is_admin': true,
         });
 
@@ -233,7 +233,7 @@ class SupportService {
               'target_user_id': targetUserId,
               'sender_id': user.id,
               'ticket_id': ticketId,
-              'title': '📋 Ticket $statusLabel',
+              'title': '📋 Request $statusLabel',
               'body': 'Your support request status changed to "$statusLabel"',
               'data': {
                 'type': 'support_ticket',
