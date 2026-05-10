@@ -20,6 +20,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
 import '../../services/background_download_service.dart';
+import '../../services/video_extractor_service.dart';
 
 /// Port name for isolate communication
 const String _downloadPortName = 'downloader_send_port';
@@ -89,6 +90,9 @@ class DownloadItem {
   String? segmentDirectory;
   int downloadSpeed; // bytes per second
 
+  // ── Resilient resume: original embed URL for re-extraction ──
+  final String? originalEmbedUrl;
+
   DownloadItem({
     required this.id,
     required this.url,
@@ -116,6 +120,7 @@ class DownloadItem {
     this.completedSegments = 0,
     this.segmentDirectory,
     this.downloadSpeed = 0,
+    this.originalEmbedUrl,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -263,6 +268,7 @@ class DownloadItem {
         'completedSegments': completedSegments,
         'segmentDirectory': segmentDirectory,
         'downloadSpeed': downloadSpeed,
+        'originalEmbedUrl': originalEmbedUrl,
       };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -295,6 +301,7 @@ class DownloadItem {
         completedSegments: json['completedSegments'] ?? 0,
         segmentDirectory: json['segmentDirectory'],
         downloadSpeed: json['downloadSpeed'] ?? 0,
+        originalEmbedUrl: json['originalEmbedUrl'],
       );
 }
 
@@ -489,6 +496,25 @@ class DownloadManager {
       onDownloadUpdate?.call(item);
       _saveDownloads();
       _stopBackgroundServiceIfIdle();
+    });
+
+    // ── Link Expired: CDN token expired, trigger re-extraction ──
+    service.on('linkExpired').listen((data) {
+      if (data == null) return;
+      final id = data['id'] as String?;
+      if (id == null) return;
+      final item = _findById(id);
+      if (item == null) return;
+
+      debugPrint('\ud83d\udd17 Link expired for ${item.title} \u2014 attempting re-extraction');
+      item.status = DownloadStatus.paused;
+      item.error = 'Re-extracting fresh link...';
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+
+      // Trigger async re-extraction
+      _reExtractAndResume(item);
     });
 
     // ── Notification action: Pause (from background notification button) ──
@@ -835,6 +861,7 @@ class DownloadManager {
     AudioTrack? audioTrack,
     SubtitleTrack? subtitleTrack,
     BuildContext? context,
+    String? originalEmbedUrl,
   }) async {
     final hasPermission = await requestPermissions(context);
     if (!hasPermission) return null;
@@ -878,6 +905,7 @@ class DownloadManager {
       localPath: publicMp4Path, // The user-visible path
       segmentDirectory: segmentDir,
       totalBytes: variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0,
+      originalEmbedUrl: originalEmbedUrl,
     );
 
     // Store the internal path temporarily to handle the move later
@@ -1373,5 +1401,195 @@ class DownloadManager {
         );
       },
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  RE-EXTRACTION & RESILIENT RESUME
+  // ═══════════════════════════════════════════════════════════
+
+  /// Triggered when CDN links expire during download.
+  /// Re-extracts a fresh stream URL from the saved embed URL,
+  /// cleans corrupted partial segments, and restarts the download.
+  Future<void> _reExtractAndResume(DownloadItem item) async {
+    if (item.originalEmbedUrl == null || item.originalEmbedUrl!.isEmpty) {
+      debugPrint('⚠ No originalEmbedUrl saved — cannot re-extract for ${item.title}');
+      item.status = DownloadStatus.failed;
+      item.error = 'Link expired. No embed URL saved for recovery.';
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+      return;
+    }
+
+    debugPrint('🔄 Re-extracting from: ${item.originalEmbedUrl}');
+
+    try {
+      // Phase 1: Extract fresh master M3U8 URL
+      final extractor = VideoExtractorService();
+
+      String? freshM3u8 = await extractor.extractVideoUrl(
+        item.originalEmbedUrl!,
+        bypassCache: true,
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => null,
+      );
+
+      // Retry once if first attempt fails
+      if (freshM3u8 == null || freshM3u8.isEmpty) {
+        debugPrint('🔄 First re-extraction failed, retrying...');
+        await Future.delayed(const Duration(seconds: 2));
+        freshM3u8 = await extractor.extractVideoUrl(
+          item.originalEmbedUrl!,
+          bypassCache: true,
+        ).timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => null,
+        );
+      }
+
+      if (freshM3u8 == null || freshM3u8.isEmpty) {
+        debugPrint('❌ Re-extraction failed for ${item.title}');
+        item.status = DownloadStatus.failed;
+        item.error = 'Re-extraction failed. Try again later.';
+        _updateController.add(item);
+        onDownloadUpdate?.call(item);
+        _saveDownloads();
+        return;
+      }
+
+      debugPrint('✅ Got fresh M3U8: $freshM3u8');
+
+      // Phase 2: Parse fresh master playlist to find matching quality
+      String? freshVideoUrl;
+      String? freshAudioUrl;
+      String? freshSubtitleUrl;
+
+      try {
+        final parser = M3u8Parser();
+        final masterData = await parser.parse(freshM3u8);
+
+        // Match by qualityLabel
+        if (item.qualityLabel != null && masterData.variants.isNotEmpty) {
+          final match = masterData.variants.cast<StreamVariant?>().firstWhere(
+            (v) => v!.qualityLabel == item.qualityLabel,
+            orElse: () => null,
+          );
+          if (match != null) {
+            freshVideoUrl = match.url;
+            debugPrint('✅ Matched quality: ${item.qualityLabel} → ${match.url}');
+          } else {
+            // Fallback: use first variant
+            freshVideoUrl = masterData.variants.first.url;
+            debugPrint('⚠ Quality label not found, using first: ${masterData.variants.first.qualityLabel}');
+          }
+        } else if (masterData.variants.isNotEmpty) {
+          freshVideoUrl = masterData.variants.first.url;
+        }
+
+        // Match audio track by name
+        if (item.audioLabel != null && masterData.audioTracks.isNotEmpty) {
+          final audioMatch = masterData.audioTracks.cast<AudioTrack?>().firstWhere(
+            (a) => a!.name == item.audioLabel || a.displayName == item.audioLabel,
+            orElse: () => null,
+          );
+          if (audioMatch != null) {
+            freshAudioUrl = audioMatch.url;
+            debugPrint('✅ Matched audio: ${item.audioLabel}');
+          } else if (masterData.audioTracks.isNotEmpty) {
+            freshAudioUrl = masterData.audioTracks.first.url;
+          }
+        }
+
+        // Match subtitle track by name
+        if (item.subtitleLabel != null && masterData.subtitles.isNotEmpty) {
+          final subMatch = masterData.subtitles.cast<SubtitleTrack?>().firstWhere(
+            (s) => s!.name == item.subtitleLabel,
+            orElse: () => null,
+          );
+          if (subMatch != null) {
+            freshSubtitleUrl = subMatch.url;
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠ Master playlist parsing failed, using raw M3U8 as video URL: $e');
+        freshVideoUrl = freshM3u8;
+      }
+
+      freshVideoUrl ??= freshM3u8;
+
+      // Phase 3: Clean corrupted partial segments
+      if (item.segmentDirectory != null) {
+        await _cleanCorruptedSegments(item.segmentDirectory!);
+      }
+
+      // Phase 4: Restart download with fresh URLs
+      debugPrint('🚀 Restarting download with fresh URLs for ${item.title}');
+      item.status = DownloadStatus.downloading;
+      item.error = null;
+
+      if (item.segmentDirectory != null) {
+        final segDirName = item.segmentDirectory!.split('/').last;
+        final baseName = segDirName.replaceFirst('.segments_', '');
+        final parentDir = item.segmentDirectory!.substring(
+            0, item.segmentDirectory!.length - segDirName.length - 1);
+        final tempMp4Path = '$parentDir/$baseName.mp4';
+
+        await BackgroundDownloadService().startDownload(
+          id: item.id,
+          title: item.displayName,
+          videoUrl: freshVideoUrl,
+          audioUrl: freshAudioUrl,
+          subtitleUrl: freshSubtitleUrl,
+          saveDir: item.segmentDirectory!,
+          outputMp4Path: tempMp4Path,
+          fileName: item.fileName,
+        );
+      }
+
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    } catch (e) {
+      debugPrint('❌ Re-extraction error: $e');
+      item.status = DownloadStatus.failed;
+      item.error = 'Re-extraction failed: $e';
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      _saveDownloads();
+    }
+  }
+
+  /// Delete corrupted/partial segment files that may have been
+  /// partially written when the download was interrupted.
+  Future<void> _cleanCorruptedSegments(String segmentDir) async {
+    try {
+      final dir = Directory(segmentDir);
+      if (!await dir.exists()) return;
+
+      final files = await dir.list().toList();
+      files.sort((a, b) => a.path.compareTo(b.path));
+
+      int cleaned = 0;
+      for (final entity in files) {
+        if (entity is! File) continue;
+        final file = entity;
+        final size = await file.length();
+
+        // Delete files that are suspiciously small (likely corrupted)
+        // A valid segment is typically > 1KB
+        if (size > 0 && size < 1024) {
+          debugPrint('🧹 Deleting corrupted segment: ${p.basename(file.path)} (${size}B)');
+          await file.delete();
+          cleaned++;
+        }
+      }
+
+      if (cleaned > 0) {
+        debugPrint('🧹 Cleaned $cleaned corrupted segments');
+      }
+    } catch (e) {
+      debugPrint('⚠ Segment cleanup error: $e');
+    }
   }
 }

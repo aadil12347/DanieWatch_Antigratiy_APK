@@ -47,12 +47,14 @@ class HlsDownloaderService {
     );
   }
 
-  // ── Callbacks ──────────────────────────────────────────
   Function(double progress, int completedSegments, int totalSegments,
       int downloadedBytes, int bytesPerSecond)? onProgress;
   Function(String error)? onError;
   Function(String mp4Path)? onComplete;
   VoidCallback? onConversionStarted;
+  /// Fired when CDN links are expired (403/404) and playlist refresh failed.
+  /// Distinct from onError — signals that re-extraction from embed URL is needed.
+  Function(String error)? onLinkExpired;
 
   // ── State ──────────────────────────────────────────────
   bool _isCancelled = false;
@@ -397,6 +399,14 @@ class HlsDownloaderService {
         }
 
         if (attempt == _maxRetries - 1) {
+          // If it was a 403/404 and all refreshes exhausted, signal link expired
+          if ((statusCode == 403 || statusCode == 404) &&
+              _playlistRefreshCount >= _maxPlaylistRefreshes) {
+            _isCancelled = true;
+            onLinkExpired?.call(
+                'CDN link expired (HTTP $statusCode) — re-extraction needed');
+            return;
+          }
           throw Exception(
               'Download failed after $_maxRetries attempts');
         }

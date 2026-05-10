@@ -20,6 +20,7 @@ const String _eventProgress = 'progress';
 const String _eventComplete = 'complete';
 const String _eventError = 'error';
 const String _eventConversionStarted = 'conversionStarted';
+const String _eventLinkExpired = 'linkExpired';
 
 // ── Notification action routing ──
 const String _notifActionEvent = 'onNotifAction';
@@ -599,6 +600,26 @@ void _onStart(ServiceInstance service) async {
           }
         });
       }
+    };
+
+    // ── Link Expired: CDN token expired, re-extraction needed ──
+    downloader.onLinkExpired = (error) async {
+      debugPrint('🔗 Link expired for $id: $error');
+
+      // Don't mark as failed — mark as paused so UI knows it's recoverable
+      await updateDownloadStatusInPrefs(
+        id,
+        statusIndex: 2, // DownloadStatus.paused
+        error: 'Link expired — re-extracting...',
+      );
+
+      // Notify UI isolate with special event
+      service.invoke(_eventLinkExpired, {'id': id, 'error': error});
+
+      // Clean up the downloader but keep title/state for restart
+      downloaders.remove(id);
+      downloadPausedState.remove(id);
+      updateSummaryNotification();
     };
 
     try {
