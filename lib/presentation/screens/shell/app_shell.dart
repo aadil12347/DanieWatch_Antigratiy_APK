@@ -314,6 +314,7 @@ class _AppShellState extends ConsumerState<AppShell>
                           intensity: anyModalOpen ? GlassIntensity.heavy : GlassIntensity.medium,
                           enableAnimatedBorder: true,
                           enableTouchRipple: false,
+                          edgeGlow: anyModalOpen ? 0.10 : 0.18,
                           child: AnimatedSize(
                             duration: const Duration(milliseconds: 450),
                             curve: Curves.easeOutCubic,

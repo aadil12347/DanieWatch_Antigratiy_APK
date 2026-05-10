@@ -27,6 +27,7 @@ class LiquidGlass extends StatefulWidget {
   final double? height;
   final BoxConstraints? constraints;
   final bool isCircular;
+  final double edgeGlow;
   final VoidCallback? onTap;
 
   const LiquidGlass({
@@ -44,6 +45,7 @@ class LiquidGlass extends StatefulWidget {
     this.height,
     this.constraints,
     this.isCircular = false,
+    this.edgeGlow = 0.0,
     this.onTap,
   });
 
@@ -154,6 +156,7 @@ class _LiquidGlassState extends State<LiquidGlass>
                     rippleOrigin: _rippleOrigin,
                     rippleProgress: _rippleCurve.value,
                     enableRipple: widget.enableTouchRipple,
+                    edgeGlow: widget.edgeGlow,
                   ),
                   child: Container(
                     padding: widget.padding,
@@ -183,6 +186,7 @@ class _LiquidSurfacePainter extends CustomPainter {
   final Offset rippleOrigin;
   final double rippleProgress;
   final bool enableRipple;
+  final double edgeGlow;
 
   _LiquidSurfacePainter({
     required this.fillColor,
@@ -192,6 +196,7 @@ class _LiquidSurfacePainter extends CustomPainter {
     required this.rippleOrigin,
     required this.rippleProgress,
     required this.enableRipple,
+    required this.edgeGlow,
   });
 
   @override
@@ -260,6 +265,27 @@ class _LiquidSurfacePainter extends CustomPainter {
             Rect.fromCircle(center: Offset(spotX, spotY), radius: spotRadius),
           ),
       );
+
+      // Secondary specular — smaller, faster for liquid complexity
+      final sweepAngle2 = specularPhase * 2 * math.pi * 1.4;
+      final spotX2 = size.width * (0.6 + 0.25 * math.cos(sweepAngle2 * 0.8));
+      final spotY2 = size.height * (0.5 + 0.2 * math.sin(sweepAngle2));
+      final spotRadius2 = size.shortestSide * 0.35;
+
+      canvas.drawCircle(
+        Offset(spotX2, spotY2),
+        spotRadius2,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [
+              Color.lerp(Colors.white.withValues(alpha: 0.03), AppColors.glassHighlightRed, 0.25)!,
+              Colors.transparent,
+            ],
+            stops: const [0.0, 1.0],
+          ).createShader(
+            Rect.fromCircle(center: Offset(spotX2, spotY2), radius: spotRadius2),
+          ),
+      );
     }
 
     // Layer 5: Touch ripple — concentric liquid waves
@@ -310,7 +336,40 @@ class _LiquidSurfacePainter extends CustomPainter {
 
     canvas.restore();
 
-    // Layer 6: Liquid glass border — subtle, slightly brighter at top
+    // Layer 6: Edge glow — rim lighting (Liquid-style)
+    if (edgeGlow > 0) {
+      final innerGlowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0 + edgeGlow * 6.0
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.0 + edgeGlow * 6.0);
+
+      innerGlowPaint.shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color.lerp(
+            Colors.white.withValues(alpha: edgeGlow * 0.45),
+            AppColors.glassHighlightRed,
+            0.2,
+          )!,
+          Color.lerp(
+            Colors.white.withValues(alpha: edgeGlow * 0.08),
+            AppColors.glassBorderRed,
+            0.15,
+          )!,
+          Color.lerp(
+            Colors.white.withValues(alpha: edgeGlow * 0.20),
+            AppColors.glassHighlightRed,
+            0.1,
+          )!,
+        ],
+        stops: const [0.0, 0.55, 1.0],
+      ).createShader(rect);
+
+      canvas.drawRRect(rrect.deflate(1.0), innerGlowPaint);
+    }
+
+    // Layer 7: Liquid glass border — subtle, slightly brighter at top
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
@@ -342,5 +401,6 @@ class _LiquidSurfacePainter extends CustomPainter {
   bool shouldRepaint(covariant _LiquidSurfacePainter old) =>
       specularPhase != old.specularPhase ||
       rippleProgress != old.rippleProgress ||
-      fillColor != old.fillColor;
+      fillColor != old.fillColor ||
+      edgeGlow != old.edgeGlow;
 }
