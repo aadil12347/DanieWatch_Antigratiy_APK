@@ -449,22 +449,23 @@ class _TicketCard extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          // Status badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: ticket.statusColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              ticket.statusLabel,
-                              style: GoogleFonts.inter(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: ticket.statusColor,
+                          // Status badge (only show for meaningful statuses)
+                          if (ticket.showStatusBadge)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: ticket.statusColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                ticket.statusLabel,
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: ticket.statusColor,
+                                ),
                               ),
                             ),
-                          ),
                           const SizedBox(width: 8),
                           // Category label
                           Text(

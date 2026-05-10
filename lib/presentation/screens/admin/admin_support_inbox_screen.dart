@@ -790,25 +790,26 @@ class _AdminTicketCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          // Status badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: ticket.statusColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: Text(
-                              ticket.statusLabel,
-                              style: GoogleFonts.inter(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                color: ticket.statusColor,
+                          // Status badge (only show for meaningful statuses)
+                          if (ticket.showStatusBadge)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ticket.statusColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                ticket.statusLabel,
+                                style: GoogleFonts.inter(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  color: ticket.statusColor,
+                                ),
                               ),
                             ),
-                          ),
                           const Spacer(),
                           // Unread dot
                           if (ticket.unreadByAdmin)

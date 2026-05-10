@@ -107,21 +107,36 @@ class _MovieCardState extends ConsumerState<MovieCard>
         : null;
     final glowColor = colorAsync?.valueOrNull?.primary;
 
-    return PosterTouchHandler(
-      onTap: _navigate,
-      onLongHold: _onLongHoldChanged,
-      glowColor: glowColor,
-      child: SizedBox(
-        width: widget.width,
-        height: widget.height,
-        child: _buildCardContent(
-          item: item,
-          posterUrl: posterUrl,
-          logoUrl: logoUrl,
-          isInWatchlist: isInWatchlist,
-          isHovering: isActive,
-          hoverAnimation: _hoverController,
-        ),
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Main card with touch handler
+          Positioned.fill(
+            child: PosterTouchHandler(
+              onTap: _navigate,
+              onLongHold: _onLongHoldChanged,
+              glowColor: glowColor,
+              child: _buildCardContent(
+                item: item,
+                posterUrl: posterUrl,
+                logoUrl: logoUrl,
+                isInWatchlist: isInWatchlist,
+                isHovering: isActive,
+                hoverAnimation: _hoverController,
+              ),
+            ),
+          ),
+          // Save button: positioned OUTSIDE PosterTouchHandler
+          // so tapping it doesn't trigger navigation
+          Positioned(
+            top: 6,
+            right: 6,
+            child: _SaveButton(item: item),
+          ),
+        ],
       ),
     );
   }
@@ -181,15 +196,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
                       else
                         _placeholder(),
 
-
-
-                      // Save Button (top-right)
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: _SaveButton(item: item),
-                      ),
-
                       // Language Badge (top-left)
                       if (item.language.isNotEmpty)
                         Positioned(
@@ -197,7 +203,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
                           left: 6,
                           child: _LanguageBadge(text: item.language.first),
                         ),
-
 
                     ],
                   ),
@@ -346,6 +351,7 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
         );
       },
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () {
           _controller.forward(from: 0.0);
           HapticFeedback.lightImpact();

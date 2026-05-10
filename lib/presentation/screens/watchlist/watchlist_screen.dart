@@ -141,14 +141,21 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                           ];
                         }
 
-                        // Map watchlist items to ManifestItems for filtering
-                        final manifestItems = items.map((item) => ManifestItem(
-                              id: item.tmdbId,
-                              mediaType: item.mediaType,
-                              title: item.title,
-                              posterUrl: item.posterPath,
-                              voteAverage: item.voteAverage,
-                            )).toList();
+                        // Map watchlist items to ManifestItems, enriching from manifest index
+                        final manifestItems = items.map((item) {
+                          final key = '${item.mediaType}_${item.tmdbId}';
+                          final manifestEntry = index[key];
+                          return ManifestItem(
+                            id: item.tmdbId,
+                            mediaType: item.mediaType,
+                            title: item.title,
+                            posterUrl: item.posterPath,
+                            voteAverage: item.voteAverage,
+                            releaseYear: manifestEntry?.releaseYear,
+                            genreIds: manifestEntry?.genreIds ?? [],
+                            language: manifestEntry?.language ?? [],
+                          );
+                        }).toList();
 
                         // Apply filters
                         final filteredItems = FilterUtils.getFilteredItems(

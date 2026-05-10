@@ -282,13 +282,20 @@ class SupportService {
     }
   }
 
-  /// Mark ticket as read
+  /// Mark ticket as read.
+  /// When an admin reads a 'new' ticket, status transitions to 'open'
+  /// so the "New" badge disappears until admin explicitly sets a status.
   Future<void> markTicketRead(String ticketId, {required bool isAdmin}) async {
     try {
       if (isAdmin) {
         await _supabase.from('support_tickets').update({
           'unread_by_admin': false,
         }).eq('id', ticketId);
+
+        // Auto-transition 'new' → 'open' when admin views the ticket
+        await _supabase.from('support_tickets').update({
+          'status': 'open',
+        }).eq('id', ticketId).eq('status', 'new');
       } else {
         await _supabase.from('support_tickets').update({
           'unread_by_user': false,

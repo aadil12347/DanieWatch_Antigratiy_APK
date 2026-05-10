@@ -152,6 +152,8 @@ class SupportTicket {
     switch (status) {
       case 'new':
         return 'New';
+      case 'open':
+        return 'Open';
       case 'pending':
         return 'Pending';
       case 'completed':
@@ -163,10 +165,16 @@ class SupportTicket {
     }
   }
 
+  /// Whether the status badge should be visible in the UI.
+  /// 'open' status (admin has seen the ticket) shows no badge.
+  bool get showStatusBadge => status != 'open';
+
   Color get statusColor {
     switch (status) {
       case 'new':
         return const Color(0xFF3B82F6);
+      case 'open':
+        return const Color(0xFF6B7280);
       case 'pending':
         return const Color(0xFFF59E0B);
       case 'completed':
@@ -182,12 +190,14 @@ class SupportTicket {
 
   String get timeAgo {
     final now = DateTime.now();
-    final target = lastMessageAt ?? createdAt;
+    final target = (lastMessageAt ?? createdAt).toLocal();
     final diff = now.difference(target);
-    if (diff.inMinutes < 1) return 'now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    if (diff.inDays < 7) return '${diff.inDays}d';
-    return '${(diff.inDays / 7).floor()}w';
+    if (diff.isNegative) return 'now';
+    if (diff.inSeconds < 60) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
+    return '${(diff.inDays / 30).floor()}mo ago';
   }
 }

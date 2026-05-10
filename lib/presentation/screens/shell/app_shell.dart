@@ -962,8 +962,6 @@ class _FullAdminTicketList extends ConsumerWidget {
                 },
               ),
             ),
-            // New Request button at bottom
-            _ModalNewRequestButton(onClose: onClose),
           ],
         );
       },
@@ -1072,22 +1070,23 @@ class _ModalTicketCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      // Status badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ticket.statusColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          ticket.statusLabel,
-                          style: GoogleFonts.inter(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                            color: ticket.statusColor,
+                      // Status badge (only show for meaningful statuses)
+                      if (ticket.showStatusBadge)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: ticket.statusColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            ticket.statusLabel,
+                            style: GoogleFonts.inter(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                              color: ticket.statusColor,
+                            ),
                           ),
                         ),
-                      ),
                       const SizedBox(width: 8),
                       Text(
                         ticket.categoryLabel,
