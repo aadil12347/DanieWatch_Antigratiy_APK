@@ -167,25 +167,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
-              // Soft inner glow ring
+              // Soft inner glow ring — pushed slightly down
               BoxShadow(
-                color: const Color(0xFFFF3B30).withValues(alpha: 0.40),
-                blurRadius: 16,
-                spreadRadius: 2,
+                color: const Color(0xFFFF3B30).withValues(alpha: 0.35),
+                blurRadius: 14,
+                spreadRadius: 1,
+                offset: const Offset(0, 6),
               ),
-              // Outer glow halo
+              // Outer glow halo — pushed well below avatar
               BoxShadow(
-                color: const Color(0xFFFF3B30).withValues(alpha: 0.25),
-                blurRadius: 35,
-                spreadRadius: 4,
-                offset: const Offset(0, 4),
+                color: const Color(0xFFFF3B30).withValues(alpha: 0.20),
+                blurRadius: 30,
+                spreadRadius: 2,
+                offset: const Offset(0, 12),
               ),
               // Deep shadow for depth
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 20,
-                spreadRadius: 2,
-                offset: const Offset(0, 8),
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 18,
+                spreadRadius: 1,
+                offset: const Offset(0, 14),
               ),
             ],
           ),

@@ -138,24 +138,25 @@ class UserAvatar extends ConsumerWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
-                // Soft inner glow ring (replaces the solid border)
-                BoxShadow(
-                  color: const Color(0xFFFF3B30).withValues(alpha: 0.45),
-                  blurRadius: 12,
-                  spreadRadius: 1,
-                ),
-                // Premium Red Glow — outer halo
+                // Soft inner glow ring — pushed down
                 BoxShadow(
                   color: const Color(0xFFFF3B30).withValues(alpha: 0.35),
-                  blurRadius: 30,
-                  spreadRadius: 3,
+                  blurRadius: 12,
+                  spreadRadius: 1,
                   offset: const Offset(0, 4),
+                ),
+                // Premium Red Glow — outer halo pushed down
+                BoxShadow(
+                  color: const Color(0xFFFF3B30).withValues(alpha: 0.25),
+                  blurRadius: 25,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 8),
                 ),
                 // Deep background 3D shadow drop
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 20,
-                  spreadRadius: 2,
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 18,
+                  spreadRadius: 1,
                   offset: const Offset(0, 10),
                 ),
               ],
