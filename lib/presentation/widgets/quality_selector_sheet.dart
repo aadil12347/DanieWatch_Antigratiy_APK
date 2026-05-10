@@ -298,7 +298,7 @@ class _QualitySelectorContentState
                         Padding(
                           padding: const EdgeInsets.only(top: 3),
                           child: Text(
-                            'Size: ${_selectedVariant!.estimatedSizeForDuration(modalState.runtime)} · ${_getVariantDisplayLabel(_selectedVariant!)}',
+                            'Size: ${_selectedVariant!.estimatedSizeForDuration(modalState.runtime)}',
                             style: GoogleFonts.inter(
                               color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 13,
