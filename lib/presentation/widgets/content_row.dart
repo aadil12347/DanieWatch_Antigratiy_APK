@@ -27,6 +27,7 @@ class ContentRow extends StatelessWidget {
       height: rowHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
           left: leftPad,

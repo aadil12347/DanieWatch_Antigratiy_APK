@@ -113,6 +113,24 @@ class _MovieCardState extends ConsumerState<MovieCard>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          // Ambient glow layer — spans entire card (poster + text)
+          if (glowColor != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: glowColor.withValues(alpha: 0.18),
+                        blurRadius: 14,
+                        spreadRadius: -3,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // Main card with touch handler
           Positioned.fill(
             child: PosterTouchHandler(
@@ -182,12 +200,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
                             blurRadius: 2.0,
                             offset: const Offset(0, 1.0),
                           ),
-                          if (glowColor != null)
-                            BoxShadow(
-                              color: glowColor.withValues(alpha: 0.30),
-                              blurRadius: 20,
-                              spreadRadius: -2,
-                            ),
                         ],
                       ),
                       clipBehavior: Clip.antiAlias,
