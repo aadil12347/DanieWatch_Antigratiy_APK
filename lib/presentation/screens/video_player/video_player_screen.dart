@@ -14,6 +14,7 @@ import 'package:daniewatch_app/services/bysebuho_extractor.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watch_history_provider.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
+import '../../widgets/liquid_tap_effect.dart';
 import '../../../pip/pip_controller.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -1712,7 +1713,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: GestureDetector(
+                child: LiquidTapEffect(
                   onTap: _goBack,
                   child: Container(
                     width: 52,

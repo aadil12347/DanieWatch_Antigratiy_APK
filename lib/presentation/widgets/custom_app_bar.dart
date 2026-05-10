@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/search_provider.dart';
+import 'liquid_tap_effect.dart';
 
 class CustomAppBar extends ConsumerStatefulWidget {
   final Widget child;
@@ -177,7 +178,7 @@ class _CustomAppBarState extends ConsumerState<CustomAppBar>
               opacity: _fadeAnimation,
               child: SlideTransition(
                 position: _slideAnimation,
-                child: GestureDetector(
+                child: LiquidTapEffect(
                   onTap: () {
                     if (context.canPop()) {
                       context.pop();

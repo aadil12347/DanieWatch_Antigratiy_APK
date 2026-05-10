@@ -19,6 +19,7 @@ import '../../providers/downloads_selection_provider.dart';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../providers/scroll_provider.dart';
 import '../../widgets/morphing_search.dart';
+import '../../widgets/liquid_tap_effect.dart';
 
 
 class DownloadsScreen extends ConsumerStatefulWidget {
@@ -412,7 +413,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  GestureDetector(
+                  LiquidTapEffect(
                     onTap: () {
                       if (item.status == DownloadStatus.paused) {
                         DownloadManager.instance.resumeDownload(item.id);
@@ -432,7 +433,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  GestureDetector(
+                  LiquidTapEffect(
                     onTap: () => _showDeleteConfirmation(item),
                     child: const Icon(
                       Icons.delete_outline_rounded,
@@ -562,7 +563,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  GestureDetector(
+                  LiquidTapEffect(
                     onTap: () => _showDeleteConfirmation(item),
                     child: const Icon(
                       Icons.delete_outline_rounded,

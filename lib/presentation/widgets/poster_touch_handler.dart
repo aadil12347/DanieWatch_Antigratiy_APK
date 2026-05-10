@@ -247,14 +247,14 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
                         borderRadius: widget.borderRadius,
                         boxShadow: [
                           BoxShadow(
-                            color: glowColor.withValues(alpha: 0.50 * glowOpacity),
-                            blurRadius: 20,
-                            spreadRadius: 3,
+                            color: glowColor.withValues(alpha: 0.70 * glowOpacity),
+                            blurRadius: 28,
+                            spreadRadius: 4,
                           ),
                           BoxShadow(
-                            color: glowColor.withValues(alpha: 0.20 * glowOpacity),
-                            blurRadius: 40,
-                            spreadRadius: 6,
+                            color: glowColor.withValues(alpha: 0.35 * glowOpacity),
+                            blurRadius: 50,
+                            spreadRadius: 8,
                           ),
                         ],
                       )

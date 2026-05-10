@@ -162,15 +162,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _buildHeader(UserProfile? profile) {
     return Column(
       children: [
-        // Avatar with liquid glass glow
-        LiquidGlass(
-          isCircular: true,
-          intensity: GlassIntensity.medium,
-          tintColor: AppColors.primary,
-          tintOpacity: 0.08,
-          enableAnimatedBorder: true,
-          enableTouchRipple: false,
-          padding: const EdgeInsets.all(6),
+        // Avatar with premium red glow (no hard border ring)
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              // Soft inner glow ring
+              BoxShadow(
+                color: const Color(0xFFFF3B30).withValues(alpha: 0.40),
+                blurRadius: 16,
+                spreadRadius: 2,
+              ),
+              // Outer glow halo
+              BoxShadow(
+                color: const Color(0xFFFF3B30).withValues(alpha: 0.25),
+                blurRadius: 35,
+                spreadRadius: 4,
+                offset: const Offset(0, 4),
+              ),
+              // Deep shadow for depth
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 20,
+                spreadRadius: 2,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
           child: const Hero(
             tag: 'profile-avatar',
             child: UserAvatar(size: 96, canEdit: true),

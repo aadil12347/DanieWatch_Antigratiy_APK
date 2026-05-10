@@ -126,6 +126,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
                 isInWatchlist: isInWatchlist,
                 isHovering: isActive,
                 hoverAnimation: _hoverController,
+                glowColor: glowColor,
               ),
             ),
           ),
@@ -148,6 +149,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
     required bool isInWatchlist,
     required bool isHovering,
     AnimationController? hoverAnimation,
+    Color? glowColor,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,6 +182,12 @@ class _MovieCardState extends ConsumerState<MovieCard>
                             blurRadius: 2.0,
                             offset: const Offset(0, 1.0),
                           ),
+                          if (glowColor != null)
+                            BoxShadow(
+                              color: glowColor.withValues(alpha: 0.30),
+                              blurRadius: 20,
+                              spreadRadius: -2,
+                            ),
                         ],
                       ),
                       clipBehavior: Clip.antiAlias,

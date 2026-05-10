@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import 'liquid_tap_effect.dart';
 
 class ConfirmationModalContent extends StatefulWidget {
   final String title;
@@ -84,32 +86,36 @@ class _ConfirmationModalContentState extends State<ConfirmationModalContent> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
-                  onPressed: widget.onCancel,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Colors.white10),
+                child: LiquidTapEffect(
+                  onTap: widget.onCancel,
+                  child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text('Cancel',
+                        style: TextStyle(color: Colors.white70)),
                   ),
-                  child: const Text('Cancel'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton(
-                  onPressed: () => widget.onConfirm(_alsoDeleteFile),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                child: LiquidTapEffect(
+                  onTap: () => widget.onConfirm(_alsoDeleteFile),
+                  child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(widget.confirmLabel,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold)),
                   ),
-                  child: Text(widget.confirmLabel,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],

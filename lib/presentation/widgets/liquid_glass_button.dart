@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -85,10 +86,12 @@ class LiquidGlassButton extends StatefulWidget {
 }
 
 class _LiquidGlassButtonState extends State<LiquidGlassButton>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _pressController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _glowAnimation;
+  // Water-tap wobble after release
+  late AnimationController _bounceController;
 
   @override
   void initState() {
@@ -104,11 +107,16 @@ class _LiquidGlassButtonState extends State<LiquidGlassButton>
     _glowAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _pressController, curve: Curves.easeOut),
     );
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
   }
 
   @override
   void dispose() {
     _pressController.dispose();
+    _bounceController.dispose();
     super.dispose();
   }
 
@@ -118,6 +126,7 @@ class _LiquidGlassButtonState extends State<LiquidGlassButton>
 
   void _onTapUp(TapUpDetails _) {
     _pressController.reverse();
+    _bounceController.forward(from: 0);
     if (widget.enableHaptic) {
       HapticFeedback.lightImpact();
     }
@@ -138,10 +147,16 @@ class _LiquidGlassButtonState extends State<LiquidGlassButton>
       onTapCancel: _onTapCancel,
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
-        animation: _pressController,
+        animation: Listenable.merge([_pressController, _bounceController]),
         builder: (context, child) {
+          // Water-tap wobble: sin(3π*t) with decay
+          final bt = _bounceController.value;
+          final wobble = bt > 0
+              ? 1.0 + math.sin(bt * math.pi * 3) * (1.0 - bt) * 0.14
+              : 1.0;
+
           return Transform.scale(
-            scale: _scaleAnimation.value,
+            scale: _scaleAnimation.value * wobble,
             child: LiquidGlass(
               borderRadius: widget.borderRadius,
               intensity: widget.intensity,

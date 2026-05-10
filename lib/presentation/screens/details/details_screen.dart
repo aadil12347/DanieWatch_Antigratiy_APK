@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -27,6 +28,7 @@ import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/play_loader_overlay.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
+import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
 
@@ -321,7 +323,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     return Row(
       children: [
         // Play Button
-        GestureDetector(
+        LiquidTapEffect(
           onTap: hasWatch
               ? () => _handlePlay(watchLink!,
                   season: content.isTv ? 1 : null,
@@ -1724,21 +1726,14 @@ class _AnimatedActionButton extends StatefulWidget {
 class _AnimatedActionButtonState extends State<_AnimatedActionButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 500),
     );
-    _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 0.8, end: 1.25), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.95), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 25),
-    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
 
   @override
@@ -1767,10 +1762,14 @@ class _AnimatedActionButtonState extends State<_AnimatedActionButton>
     return GestureDetector(
       onTap: _handleTap,
       child: AnimatedBuilder(
-        animation: _scaleAnimation,
+        animation: _controller,
         builder: (context, child) {
+          final t = _controller.value;
+          final wobble = t > 0
+              ? 1.0 + math.sin(t * math.pi * 3) * (1.0 - t) * 0.08
+              : 1.0;
           return Transform.scale(
-            scale: _scaleAnimation.value,
+            scale: wobble,
             child: child,
           );
         },
@@ -2191,7 +2190,7 @@ class _HeroSectionState extends State<_HeroSection> {
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               right: 12,
-              child: GestureDetector(
+              child: LiquidTapEffect(
                 onTap: _toggleMute,
                 child: Container(
                   width: 40,
