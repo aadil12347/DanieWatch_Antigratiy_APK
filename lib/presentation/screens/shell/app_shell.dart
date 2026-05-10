@@ -859,7 +859,9 @@ class _FullUserTicketList extends ConsumerWidget {
                     ticket: ticket,
                     isAdmin: false,
                     onTap: () {
-                      context.push('/requests/chat/${ticket.id}');
+                      if (!ticket.isClosed) {
+                        context.push('/requests/chat/${ticket.id}');
+                      }
                     },
                   );
                 },

@@ -515,67 +515,35 @@ class _RequestChatScreenState extends ConsumerState<RequestChatScreen>
     );
   }
 
-  Future<void> _reopenTicket(String ticketId) async {
-    await ref.read(supportServiceProvider).updateTicketStatus(ticketId, 'pending');
-  }
-
   Widget _buildDisabledInput(SupportTicket ticket, bool isAdmin) {
     final isCompleted = ticket.status == 'completed';
     if (!isAdmin) {
-      // User sees a reopen button
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isCompleted ? Icons.check_circle_outline_rounded : Icons.block_rounded,
-                  size: 14,
-                  color: AppColors.textHint,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  isCompleted ? 'Completed' : 'Rejected',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: AppColors.textHint,
-                  ),
-                ),
-              ],
+      // User sees a locked message — only admin can change status
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isCompleted ? Icons.check_circle_outline_rounded : Icons.block_rounded,
+              size: 16,
+              color: AppColors.textHint,
             ),
-          ),
-          GestureDetector(
-            onTap: () => _reopenTicket(ticket.id),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.refresh_rounded, size: 16, color: Color(0xFF3B82F6)),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Reopen Request',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF3B82F6),
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 8),
+            Text(
+              isCompleted ? 'This request has been completed' : 'This request has been rejected',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textHint,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     // Admin sees a locked message with hint to use status menu

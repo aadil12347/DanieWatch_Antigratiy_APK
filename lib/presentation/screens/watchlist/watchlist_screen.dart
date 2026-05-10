@@ -143,7 +143,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
                         // Map watchlist items to ManifestItems, enriching from manifest index
                         final manifestItems = items.map((item) {
-                          final key = '${item.mediaType}_${item.tmdbId}';
+                          final key = '${item.tmdbId}-${item.mediaType}';
                           final manifestEntry = index[key];
                           return ManifestItem(
                             id: item.tmdbId,

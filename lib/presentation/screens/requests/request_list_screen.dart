@@ -205,7 +205,9 @@ class _RequestListScreenState extends ConsumerState<RequestListScreen> {
                   if (_selectionMode) {
                     _toggleSelection(tickets[index].id);
                   } else {
-                    context.push('/requests/chat/${tickets[index].id}');
+                    if (!tickets[index].isClosed) {
+                      context.push('/requests/chat/${tickets[index].id}');
+                    }
                   }
                 },
                 onLongPress: () {
