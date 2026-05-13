@@ -516,8 +516,8 @@ class DownloadManager {
       if (item == null) return;
 
       debugPrint('\ud83d\udd17 Link expired for ${item.title} \u2014 attempting re-extraction');
-      item.status = DownloadStatus.paused;
-      item.error = 'Re-extracting fresh link...';
+      item.status = DownloadStatus.downloading;
+      item.error = null;
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
@@ -1004,9 +1004,6 @@ class DownloadManager {
 
     if (urlAge.inMinutes > 90 && item.originalEmbedUrl != null && item.originalEmbedUrl!.isNotEmpty) {
       debugPrint('🔗 URLs are ${urlAge.inMinutes}min old (>90min) — triggering re-extraction for ${item.title}');
-      item.error = 'Refreshing download link...';
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
       await _reExtractAndResume(item);
       return;
     }
@@ -1595,9 +1592,8 @@ class DownloadManager {
       _saveDownloads();
     } catch (e) {
       debugPrint('❌ Re-extraction error: $e');
-      // Keep as paused (not failed) so user can retry with one tap
-      item.status = DownloadStatus.paused;
-      item.error = 'Link refresh failed. Tap to retry.';
+      item.status = DownloadStatus.failed;
+      item.error = 'Download link expired. Tap \u25b6 to retry.';
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();

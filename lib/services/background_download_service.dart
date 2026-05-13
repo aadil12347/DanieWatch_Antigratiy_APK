@@ -609,8 +609,7 @@ void _onStart(ServiceInstance service) async {
       // Don't mark as failed — mark as paused so UI knows it's recoverable
       await updateDownloadStatusInPrefs(
         id,
-        statusIndex: 2, // DownloadStatus.paused
-        error: 'Link expired — re-extracting...',
+        statusIndex: 1, // DownloadStatus.downloading
       );
 
       // Notify UI isolate with special event
