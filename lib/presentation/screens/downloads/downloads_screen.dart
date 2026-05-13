@@ -14,7 +14,6 @@ import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../providers/search_provider.dart';
 import '../../../core/utils/toast_utils.dart';
-import '../../../core/utils/error_sanitizer.dart';
 import '../../providers/downloads_selection_provider.dart';
 import '../../providers/confirmation_modal_provider.dart';
 import '../../providers/scroll_provider.dart';
@@ -415,7 +414,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 children: [
                   LiquidTapEffect(
                     onTap: () {
-                      if (item.status == DownloadStatus.paused) {
+                      if (item.status == DownloadStatus.paused ||
+                          item.status == DownloadStatus.failed) {
                         DownloadManager.instance.resumeDownload(item.id);
                       } else {
                         DownloadManager.instance.pauseDownload(item.id);
@@ -423,12 +423,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       setState(() {});
                     },
                     child: Icon(
-                      item.status == DownloadStatus.paused
+                      item.status == DownloadStatus.paused ||
+                              item.status == DownloadStatus.failed
                           ? Icons.play_circle_outline_rounded
                           : Icons.pause_circle_outline_rounded,
-                      color: item.status == DownloadStatus.paused
-                          ? Colors.orange
-                          : AppColors.primary,
+                      color: item.status == DownloadStatus.failed
+                          ? Colors.red
+                          : item.status == DownloadStatus.paused
+                              ? Colors.orange
+                              : AppColors.primary,
                       size: 28,
                     ),
                   ),
@@ -453,10 +456,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   String _getProgressText(DownloadItem item, int pct) {
     final mb = item.formattedDownloadedBytes;
     if (item.status == DownloadStatus.paused) {
+      // Show error message during re-extraction (e.g. "Refreshing download link...")
+      if (item.error != null && item.error!.isNotEmpty) {
+        return item.error!;
+      }
       return 'Paused · $pct% · $mb';
     }
     if (item.status == DownloadStatus.failed) {
-      return ErrorSanitizer.sanitize(item.error ?? 'Failed');
+      return 'Failed · Tap ▶ to retry';
     }
     if (item.status == DownloadStatus.converting) {
       return '$pct% · $mb · Finalizing...';

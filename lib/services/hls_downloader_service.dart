@@ -60,6 +60,7 @@ class HlsDownloaderService {
   bool _isCancelled = false;
   bool _isPaused = false;
   bool _isNetworkPaused = false;
+  bool _completedSuccessfully = false;
   int _completedSegments = 0;
   int _totalSegments = 0;
   int _downloadedBytes = 0;
@@ -143,6 +144,7 @@ class HlsDownloaderService {
     _isCancelled = false;
     _isPaused = false;
     _isNetworkPaused = false;
+    _completedSuccessfully = false;
     _completedSegments = 0;
     _totalSegments = 0;
     _downloadedBytes = 0;
@@ -205,18 +207,31 @@ class HlsDownloaderService {
       if (_isCancelled) throw Exception('Download cancelled');
 
       onComplete?.call(outputMp4Path);
+      _completedSuccessfully = true;
     } catch (e, stack) {
       _connectivitySub?.cancel();
       if (!_isCancelled) {
         debugPrint('❌ Download error: $e');
         debugPrint('StackTrace: $stack');
+
+        // Check if this was a CDN expiry error (403/404 during playlist fetch)
+        // This catches expired URLs during Phase 1 (playlist parsing) which
+        // would otherwise fire onError instead of onLinkExpired
+        if (e is DioException &&
+            (e.response?.statusCode == 403 || e.response?.statusCode == 404)) {
+          debugPrint('🔗 Playlist URL expired (HTTP ${e.response?.statusCode}) — signaling re-extraction');
+          _isCancelled = true; // Prevent segment cleanup
+          onLinkExpired?.call('Playlist URL expired (HTTP ${e.response?.statusCode})');
+          return;
+        }
+
         onError?.call(ErrorSanitizer.sanitize(e));
       }
     } finally {
-      // Always try to cleanup segments if we are NOT in a state that allows resume
-      // For now, let's just ensure cleanup on completion or fatal error
-      if (!_isCancelled) {
-         try {
+      // CRITICAL: Only delete segments after SUCCESSFUL completion.
+      // Never delete on error or cancellation — segments are needed for resume.
+      if (_completedSuccessfully) {
+        try {
           final segDir = Directory(saveDirectory);
           if (await segDir.exists()) {
             await segDir.delete(recursive: true);

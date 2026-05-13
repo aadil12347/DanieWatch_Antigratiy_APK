@@ -21,6 +21,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 
 import '../../services/background_download_service.dart';
 import '../../services/video_extractor_service.dart';
+import '../../services/bysebuho_extractor.dart';
 
 /// Port name for isolate communication
 const String _downloadPortName = 'downloader_send_port';
@@ -93,6 +94,9 @@ class DownloadItem {
   // ── Resilient resume: original embed URL for re-extraction ──
   final String? originalEmbedUrl;
 
+  // ── URL freshness tracking: when CDN URLs were obtained ──
+  DateTime? urlObtainedAt;
+
   DownloadItem({
     required this.id,
     required this.url,
@@ -121,6 +125,7 @@ class DownloadItem {
     this.segmentDirectory,
     this.downloadSpeed = 0,
     this.originalEmbedUrl,
+    this.urlObtainedAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -269,6 +274,7 @@ class DownloadItem {
         'segmentDirectory': segmentDirectory,
         'downloadSpeed': downloadSpeed,
         'originalEmbedUrl': originalEmbedUrl,
+        'urlObtainedAt': urlObtainedAt?.toIso8601String(),
       };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -302,6 +308,9 @@ class DownloadItem {
         segmentDirectory: json['segmentDirectory'],
         downloadSpeed: json['downloadSpeed'] ?? 0,
         originalEmbedUrl: json['originalEmbedUrl'],
+        urlObtainedAt: json['urlObtainedAt'] != null
+            ? DateTime.tryParse(json['urlObtainedAt'])
+            : null,
       );
 }
 
@@ -906,6 +915,7 @@ class DownloadManager {
       segmentDirectory: segmentDir,
       totalBytes: variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0,
       originalEmbedUrl: originalEmbedUrl,
+      urlObtainedAt: DateTime.now(),
     );
 
     // Store the internal path temporarily to handle the move later
@@ -982,6 +992,24 @@ class DownloadManager {
 
     item.status = DownloadStatus.downloading;
     item.error = null;
+    _updateController.add(item);
+    _saveDownloads();
+
+    // ── Smart Resume: Check if CDN URLs are likely expired ──
+    // CDN tokens typically expire after 2-3 hours.
+    // If URLs are older than 90 minutes, proactively re-extract.
+    final urlAge = item.urlObtainedAt != null
+        ? DateTime.now().difference(item.urlObtainedAt!)
+        : const Duration(hours: 99); // Assume expired if no timestamp
+
+    if (urlAge.inMinutes > 90 && item.originalEmbedUrl != null && item.originalEmbedUrl!.isNotEmpty) {
+      debugPrint('🔗 URLs are ${urlAge.inMinutes}min old (>90min) — triggering re-extraction for ${item.title}');
+      item.error = 'Refreshing download link...';
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+      await _reExtractAndResume(item);
+      return;
+    }
 
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
@@ -1424,6 +1452,20 @@ class DownloadManager {
     debugPrint('🔄 Re-extracting from: ${item.originalEmbedUrl}');
 
     try {
+      // Phase 0: Clear ALL cached URLs for this embed to force truly fresh extraction
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('extract_${item.originalEmbedUrl}');
+      // Clear Bysebuho-specific cache if applicable
+      final bysebuho = BysebuhoExtractor.instance;
+      if (bysebuho.isBysebuhoUrl(item.originalEmbedUrl!)) {
+        final code = bysebuho.extractCode(item.originalEmbedUrl!);
+        if (code != null) {
+          await prefs.remove('bysebuho_$code');
+          debugPrint('🧹 Cleared Bysebuho cache for code: $code');
+        }
+      }
+      debugPrint('🧹 Cleared extraction cache for: ${item.originalEmbedUrl}');
+
       // Phase 1: Extract fresh master M3U8 URL
       final extractor = VideoExtractorService();
 
@@ -1431,7 +1473,7 @@ class DownloadManager {
         item.originalEmbedUrl!,
         bypassCache: true,
       ).timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 20),
         onTimeout: () => null,
       );
 
@@ -1443,7 +1485,7 @@ class DownloadManager {
           item.originalEmbedUrl!,
           bypassCache: true,
         ).timeout(
-          const Duration(seconds: 15),
+          const Duration(seconds: 20),
           onTimeout: () => null,
         );
       }
@@ -1527,6 +1569,7 @@ class DownloadManager {
       debugPrint('🚀 Restarting download with fresh URLs for ${item.title}');
       item.status = DownloadStatus.downloading;
       item.error = null;
+      item.urlObtainedAt = DateTime.now(); // Track fresh URL timestamp
 
       if (item.segmentDirectory != null) {
         final segDirName = item.segmentDirectory!.split('/').last;
@@ -1552,8 +1595,9 @@ class DownloadManager {
       _saveDownloads();
     } catch (e) {
       debugPrint('❌ Re-extraction error: $e');
-      item.status = DownloadStatus.failed;
-      item.error = 'Re-extraction failed: $e';
+      // Keep as paused (not failed) so user can retry with one tap
+      item.status = DownloadStatus.paused;
+      item.error = 'Link refresh failed. Tap to retry.';
       _updateController.add(item);
       onDownloadUpdate?.call(item);
       _saveDownloads();
