@@ -149,13 +149,29 @@ class DeepLinkService {
   }
 
   /// Navigate to a route using the root navigator.
+  ///
+  /// When the app is already running inside the StatefulShellRoute, we must
+  /// ensure the shell (/home) is the base of the navigation stack before
+  /// pushing the details page on top. Otherwise the top-level /details route
+  /// would replace the shell entirely, causing a broken back-navigation that
+  /// has no /home underneath and throws an error.
   void _navigateTo(String route) {
     debugPrint('🔗 DeepLinkService: Navigating to $route');
     final context = AppRouter.rootNavKey.currentContext;
     if (context != null) {
-      // Use `go` (not `push`) so the top-level /details route is matched,
-      // which has a PopScope that navigates back to /home on system back.
-      context.go(route);
+      // 1. Ensure the shell is on the stack (replaces whatever the current
+      //    location is with /home, which lives inside the StatefulShellRoute).
+      context.go('/home');
+
+      // 2. Push the details page on top so pressing back pops cleanly to /home.
+      //    WidgetsBinding.addPostFrameCallback ensures the /home route has
+      //    settled before we push.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = AppRouter.rootNavKey.currentContext;
+        if (ctx != null && ctx.mounted) {
+          ctx.push(route);
+        }
+      });
     } else {
       debugPrint('🔗 DeepLinkService: No context available, saving as pending');
       _savePendingLink(route);
