@@ -116,6 +116,10 @@ class _BlobConfig {
   final double amplitudeY;
   final double sizeFactor;
 
+  // Pre-computed gradient color stops (cached per blob)
+  List<Color>? _gradientColors;
+  double _cachedOpacity = -1;
+
   _BlobConfig({
     required this.color,
     required this.phaseX,
@@ -128,12 +132,33 @@ class _BlobConfig {
     required this.amplitudeY,
     required this.sizeFactor,
   });
+
+  /// Returns cached gradient colors, only rebuilding when opacity changes.
+  List<Color> getGradientColors(double opacity) {
+    if (_cachedOpacity != opacity || _gradientColors == null) {
+      _cachedOpacity = opacity;
+      _gradientColors = [
+        color.withValues(alpha: opacity),
+        color.withValues(alpha: opacity * 0.5),
+        color.withValues(alpha: opacity * 0.15),
+        Colors.transparent,
+      ];
+    }
+    return _gradientColors!;
+  }
 }
 
+/// PERFORMANCE: Pre-allocates Paint objects and caches gradient color
+/// lists per blob. Only the shader Rect (center position) changes per
+/// frame — the gradient colors/stops are reused from cache.
 class _BlobPainter extends CustomPainter {
   final List<_BlobConfig> blobs;
   final double progress;
   final double opacity;
+
+  // Pre-allocated paints — one per blob (max 5)
+  static final List<Paint> _paints = List.generate(5, (_) => Paint());
+  static const _stops = [0.0, 0.3, 0.6, 1.0];
 
   _BlobPainter({
     required this.blobs,
@@ -143,8 +168,10 @@ class _BlobPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final blob in blobs) {
-      final t = progress * 2 * math.pi;
+    final t = progress * 2 * math.pi;
+
+    for (int i = 0; i < blobs.length; i++) {
+      final blob = blobs[i];
 
       // Calculate animated position
       final cx = size.width *
@@ -155,21 +182,18 @@ class _BlobPainter extends CustomPainter {
               math.cos(t * blob.speedY + blob.phaseY) * blob.amplitudeY);
 
       final radius = size.shortestSide * blob.sizeFactor;
+      final center = Offset(cx, cy);
 
-      final paint = Paint()
-        ..shader = RadialGradient(
-          colors: [
-            blob.color.withValues(alpha: opacity),
-            blob.color.withValues(alpha: opacity * 0.5),
-            blob.color.withValues(alpha: opacity * 0.15),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 0.3, 0.6, 1.0],
-        ).createShader(
-          Rect.fromCircle(center: Offset(cx, cy), radius: radius),
-        );
+      // Reuse pre-allocated paint, only update shader with new position
+      final paint = _paints[i];
+      paint.shader = RadialGradient(
+        colors: blob.getGradientColors(opacity),
+        stops: _stops,
+      ).createShader(
+        Rect.fromCircle(center: center, radius: radius),
+      );
 
-      canvas.drawCircle(Offset(cx, cy), radius, paint);
+      canvas.drawCircle(center, radius, paint);
     }
   }
 

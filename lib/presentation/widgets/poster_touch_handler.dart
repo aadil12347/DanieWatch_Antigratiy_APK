@@ -253,13 +253,13 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
                           ),
                           BoxShadow(
                             color: glowColor.withValues(alpha: 0.35 * glowOpacity),
-                            blurRadius: 50,
-                            spreadRadius: 8,
+                            blurRadius: 32,
+                            spreadRadius: 6,
                           ),
                         ],
                       )
                     : null,
-                child: child,
+                child: RepaintBoundary(child: child),
               ),
             );
           },

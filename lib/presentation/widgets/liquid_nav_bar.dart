@@ -98,7 +98,8 @@ class _LiquidNavBarContentState extends State<LiquidNavBarContent>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return RepaintBoundary(
+      child: SizedBox(
       height: widget.navHeight,
       child: AnimatedBuilder(
         animation: Listenable.merge([..._glowCtrls, ..._bounceCtrls]),
@@ -111,6 +112,7 @@ class _LiquidNavBarContentState extends State<LiquidNavBarContent>
             ),
           );
         },
+      ),
       ),
     );
   }

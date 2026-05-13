@@ -285,8 +285,8 @@ class _AppShellState extends ConsumerState<AppShell>
                   right: 0,
                   child: Center(
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeInOutCubic,
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeOutExpo,
                       constraints: BoxConstraints(maxWidth: navMaxWidth),
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: navHPad),
@@ -297,29 +297,20 @@ class _AppShellState extends ConsumerState<AppShell>
                           enableTouchRipple: false,
                           edgeGlow: anyModalOpen ? 0.10 : 0.18,
                           child: AnimatedSize(
-                            duration: const Duration(milliseconds: 450),
-                            curve: Curves.easeOutCubic,
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.easeOutExpo,
                             alignment: Alignment.bottomCenter,
                             child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 400),
-                              switchInCurve: Curves.easeOutCubic,
+                              duration: const Duration(milliseconds: 350),
+                              switchInCurve: Curves.easeOutExpo,
                               switchOutCurve: Curves.easeInCubic,
                               transitionBuilder: (child, animation) {
                                 return FadeTransition(
                                   opacity: CurvedAnimation(
                                     parent: animation,
-                                    curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
+                                    curve: const Interval(0.0, 0.8, curve: Curves.easeOut),
                                   ),
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, 0.06),
-                                      end: Offset.zero,
-                                    ).animate(CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutCubic,
-                                    )),
-                                    child: child,
-                                  ),
+                                  child: child,
                                 );
                               },
                               child: isSupportOpen

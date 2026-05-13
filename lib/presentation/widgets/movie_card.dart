@@ -84,8 +84,8 @@ class _MovieCardState extends ConsumerState<MovieCard>
     final posterUrl = item.effectivePosterUrl ?? '';
     final logoUrl = item.logoUrl;
 
-    final activeKey = ref.watch(activeCardProvider);
-    final isActive = activeKey == _cardKey;
+    // Selective watch: only rebuild THIS card when its active state changes
+    final isActive = ref.watch(activeCardProvider.select((key) => key == _cardKey));
 
     // Sync hover animation with active state (for external changes)
     if (isActive && !_hoverController.isCompleted) {
@@ -93,13 +93,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
     } else if (!isActive && _hoverController.value > 0) {
       _hoverController.reverse();
     }
-
-    final watchlistAsync = ref.watch(watchlistProvider);
-    final isInWatchlist = watchlistAsync.maybeWhen(
-      data: (items) => items
-          .any((w) => w.tmdbId == item.id && w.mediaType == item.mediaType),
-      orElse: () => false,
-    );
 
     // Get extracted glow color for the touch handler
     final colorAsync = posterUrl.isNotEmpty
@@ -141,7 +134,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
                 item: item,
                 posterUrl: posterUrl,
                 logoUrl: logoUrl,
-                isInWatchlist: isInWatchlist,
+                isInWatchlist: false,
                 isHovering: isActive,
                 hoverAnimation: _hoverController,
                 glowColor: glowColor,
@@ -187,7 +180,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
 
               // 2. Main Poster Stack (Image + Overlays)
               Positioned.fill(
-                child: Container(
+                child: RepaintBoundary(child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
@@ -227,7 +220,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
                     ],
                   ),
                 ),
-              ),
+              )),
             ],
           ),
         ),

@@ -164,7 +164,9 @@ class _LiquidGlassState extends State<LiquidGlass>
                   ),
                 );
               },
-              child: widget.child,
+              // Wrap child in RepaintBoundary to isolate child repaints
+              // from the glass surface animation repaints
+              child: RepaintBoundary(child: widget.child),
             ),
           ),
         ),
@@ -178,6 +180,10 @@ class _LiquidGlassState extends State<LiquidGlass>
 /// 2. Top-edge caustic highlight (light refracting through liquid surface)
 /// 3. Animated specular sweep (light moving across the glass)
 /// 4. Touch ripple wave (concentric rings spreading from touch point)
+///
+/// PERFORMANCE: Static gradient shaders (caustic, depth, edge glow, border)
+/// are cached and only rebuilt when canvas size changes. Only the animated
+/// specular highlight shaders are recreated per frame (unavoidable — position changes).
 class _LiquidSurfacePainter extends CustomPainter {
   final Color fillColor;
   final double borderRadius;
@@ -187,6 +193,26 @@ class _LiquidSurfacePainter extends CustomPainter {
   final double rippleProgress;
   final bool enableRipple;
   final double edgeGlow;
+
+  // ── Cached static shaders & paints ──
+  // These are only rebuilt when size or edgeGlow changes
+  static Size _cachedSize = Size.zero;
+  static double _cachedEdgeGlow = -1;
+  static Color _cachedFillColor = Colors.transparent;
+  static Shader? _causticShader;
+  static Shader? _depthShader;
+  static Shader? _edgeGlowShader;
+  // Pre-allocated paint objects
+  static final Paint _fillPaint = Paint();
+  static final Paint _causticPaint = Paint();
+  static final Paint _depthPaint = Paint();
+  static final Paint _specPaint1 = Paint();
+  static final Paint _specPaint2 = Paint();
+  static final Paint _edgeGlowPaint = Paint()
+    ..style = PaintingStyle.stroke;
+  static final Paint _borderPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 0.8;
 
   _LiquidSurfacePainter({
     required this.fillColor,
@@ -199,151 +225,41 @@ class _LiquidSurfacePainter extends CustomPainter {
     required this.edgeGlow,
   });
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
+  void _rebuildStaticShaders(Size size) {
+    if (size == _cachedSize && edgeGlow == _cachedEdgeGlow && fillColor == _cachedFillColor) return;
 
-    // Layer 1: Ultra-thin fill — like tinted water
-    canvas.drawRRect(rrect, Paint()..color = fillColor);
+    _cachedSize = size;
+    _cachedEdgeGlow = edgeGlow;
+    _cachedFillColor = fillColor;
 
-    canvas.save();
-    canvas.clipRRect(rrect);
-
-    // Layer 2: Caustic top highlight — warm rose light entering the liquid surface
+    // Caustic top highlight
     final causticRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.45);
-    canvas.drawRect(
-      causticRect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color.lerp(Colors.white.withValues(alpha: 0.12), AppColors.glassRedCaustic, 0.3)!,
-            Color.lerp(Colors.white.withValues(alpha: 0.04), AppColors.glassRedCaustic, 0.2)!,
-            Colors.transparent,
-          ],
-          stops: const [0.0, 0.3, 1.0],
-        ).createShader(causticRect),
-    );
+    _causticShader = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        Color.lerp(Colors.white.withValues(alpha: 0.12), AppColors.glassRedCaustic, 0.3)!,
+        Color.lerp(Colors.white.withValues(alpha: 0.04), AppColors.glassRedCaustic, 0.2)!,
+        Colors.transparent,
+      ],
+      stops: const [0.0, 0.3, 1.0],
+    ).createShader(causticRect);
 
-    // Layer 3: Bottom edge inner shadow — depth of liquid
+    // Bottom depth shadow
     final depthRect = Rect.fromLTWH(0, size.height * 0.75, size.width, size.height * 0.25);
-    canvas.drawRect(
-      depthRect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.08),
-          ],
-        ).createShader(depthRect),
-    );
+    _depthShader = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        Colors.transparent,
+        Colors.black.withValues(alpha: 0.08),
+      ],
+    ).createShader(depthRect);
 
-    // Layer 4: Animated specular highlight sweep — warm rose tint
-    if (enableSpecular) {
-      final sweepAngle = specularPhase * 2 * math.pi;
-      // Moving highlight spot with subtle crimson warmth
-      final spotX = size.width * (0.3 + 0.4 * math.sin(sweepAngle));
-      final spotY = size.height * (0.2 + 0.15 * math.cos(sweepAngle * 0.7));
-      final spotRadius = size.shortestSide * 0.6;
-
-      canvas.drawCircle(
-        Offset(spotX, spotY),
-        spotRadius,
-        Paint()
-          ..shader = RadialGradient(
-            colors: [
-              Color.lerp(Colors.white.withValues(alpha: 0.06), AppColors.glassHighlightRed, 0.35)!,
-              Color.lerp(Colors.white.withValues(alpha: 0.02), AppColors.glassHighlightRed, 0.2)!,
-              Colors.transparent,
-            ],
-            stops: const [0.0, 0.4, 1.0],
-          ).createShader(
-            Rect.fromCircle(center: Offset(spotX, spotY), radius: spotRadius),
-          ),
-      );
-
-      // Secondary specular — smaller, faster for liquid complexity
-      final sweepAngle2 = specularPhase * 2 * math.pi * 1.4;
-      final spotX2 = size.width * (0.6 + 0.25 * math.cos(sweepAngle2 * 0.8));
-      final spotY2 = size.height * (0.5 + 0.2 * math.sin(sweepAngle2));
-      final spotRadius2 = size.shortestSide * 0.35;
-
-      canvas.drawCircle(
-        Offset(spotX2, spotY2),
-        spotRadius2,
-        Paint()
-          ..shader = RadialGradient(
-            colors: [
-              Color.lerp(Colors.white.withValues(alpha: 0.03), AppColors.glassHighlightRed, 0.25)!,
-              Colors.transparent,
-            ],
-            stops: const [0.0, 1.0],
-          ).createShader(
-            Rect.fromCircle(center: Offset(spotX2, spotY2), radius: spotRadius2),
-          ),
-      );
-    }
-
-    // Layer 5: Touch ripple — concentric liquid waves
-    if (enableRipple && rippleProgress > 0 && rippleProgress < 1) {
-      final maxR = size.longestSide * 0.8;
-      final fadeOut = 1.0 - rippleProgress;
-
-      // Draw 3 concentric ripple rings
-      for (int i = 0; i < 3; i++) {
-        final ringProgress = (rippleProgress - i * 0.1).clamp(0.0, 1.0);
-        if (ringProgress <= 0) continue;
-
-        final ringRadius = maxR * ringProgress;
-        final ringOpacity = 0.08 * fadeOut * (1.0 - i * 0.3);
-
-        canvas.drawCircle(
-          rippleOrigin,
-          ringRadius,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.0 - i * 0.5
-            ..color = Color.lerp(
-              Colors.white.withValues(alpha: ringOpacity.clamp(0.0, 1.0)),
-              AppColors.glassBorderRed,
-              0.3,
-            )!,
-        );
-      }
-
-      // Central glow at ripple origin
-      if (rippleProgress < 0.5) {
-        final glowOpacity = 0.15 * (1.0 - rippleProgress * 2);
-        canvas.drawCircle(
-          rippleOrigin,
-          20 * rippleProgress,
-          Paint()
-            ..shader = RadialGradient(
-              colors: [
-                Colors.white.withValues(alpha: glowOpacity),
-                Colors.transparent,
-              ],
-            ).createShader(
-              Rect.fromCircle(center: rippleOrigin, radius: 20 * rippleProgress + 1),
-            ),
-        );
-      }
-    }
-
-    canvas.restore();
-
-    // Layer 6: Edge glow — rim lighting (Liquid-style)
+    // Edge glow shader
     if (edgeGlow > 0) {
-      final innerGlowPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0 + edgeGlow * 6.0
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.0 + edgeGlow * 6.0);
-
-      innerGlowPaint.shader = LinearGradient(
+      final rect = Offset.zero & size;
+      _edgeGlowShader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
@@ -365,19 +281,132 @@ class _LiquidSurfacePainter extends CustomPainter {
         ],
         stops: const [0.0, 0.55, 1.0],
       ).createShader(rect);
+    } else {
+      _edgeGlowShader = null;
+    }
+  }
 
-      canvas.drawRRect(rrect.deflate(1.0), innerGlowPaint);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
+
+    // Rebuild static shaders only if size/config changed
+    _rebuildStaticShaders(size);
+
+    // Layer 1: Ultra-thin fill — like tinted water
+    _fillPaint.color = fillColor;
+    canvas.drawRRect(rrect, _fillPaint);
+
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    // Layer 2: Caustic top highlight (cached shader)
+    final causticRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.45);
+    _causticPaint.shader = _causticShader;
+    canvas.drawRect(causticRect, _causticPaint);
+
+    // Layer 3: Bottom edge inner shadow (cached shader)
+    final depthRect = Rect.fromLTWH(0, size.height * 0.75, size.width, size.height * 0.25);
+    _depthPaint.shader = _depthShader;
+    canvas.drawRect(depthRect, _depthPaint);
+
+    // Layer 4: Animated specular highlight sweep (position-dependent — must rebuild)
+    if (enableSpecular) {
+      final sweepAngle = specularPhase * 2 * math.pi;
+      final spotX = size.width * (0.3 + 0.4 * math.sin(sweepAngle));
+      final spotY = size.height * (0.2 + 0.15 * math.cos(sweepAngle * 0.7));
+      final spotRadius = size.shortestSide * 0.6;
+
+      _specPaint1.shader = RadialGradient(
+        colors: [
+          Color.lerp(Colors.white.withValues(alpha: 0.06), AppColors.glassHighlightRed, 0.35)!,
+          Color.lerp(Colors.white.withValues(alpha: 0.02), AppColors.glassHighlightRed, 0.2)!,
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.4, 1.0],
+      ).createShader(
+        Rect.fromCircle(center: Offset(spotX, spotY), radius: spotRadius),
+      );
+      canvas.drawCircle(Offset(spotX, spotY), spotRadius, _specPaint1);
+
+      // Secondary specular
+      final sweepAngle2 = specularPhase * 2 * math.pi * 1.4;
+      final spotX2 = size.width * (0.6 + 0.25 * math.cos(sweepAngle2 * 0.8));
+      final spotY2 = size.height * (0.5 + 0.2 * math.sin(sweepAngle2));
+      final spotRadius2 = size.shortestSide * 0.35;
+
+      _specPaint2.shader = RadialGradient(
+        colors: [
+          Color.lerp(Colors.white.withValues(alpha: 0.03), AppColors.glassHighlightRed, 0.25)!,
+          Colors.transparent,
+        ],
+        stops: const [0.0, 1.0],
+      ).createShader(
+        Rect.fromCircle(center: Offset(spotX2, spotY2), radius: spotRadius2),
+      );
+      canvas.drawCircle(Offset(spotX2, spotY2), spotRadius2, _specPaint2);
     }
 
-    // Layer 7: Liquid glass border — subtle, slightly brighter at top
-    final borderPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
+    // Layer 5: Touch ripple — concentric liquid waves
+    if (enableRipple && rippleProgress > 0 && rippleProgress < 1) {
+      final maxR = size.longestSide * 0.8;
+      final fadeOut = 1.0 - rippleProgress;
 
+      for (int i = 0; i < 3; i++) {
+        final ringProgress = (rippleProgress - i * 0.1).clamp(0.0, 1.0);
+        if (ringProgress <= 0) continue;
+
+        final ringRadius = maxR * ringProgress;
+        final ringOpacity = 0.08 * fadeOut * (1.0 - i * 0.3);
+
+        canvas.drawCircle(
+          rippleOrigin,
+          ringRadius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0 - i * 0.5
+            ..color = Color.lerp(
+              Colors.white.withValues(alpha: ringOpacity.clamp(0.0, 1.0)),
+              AppColors.glassBorderRed,
+              0.3,
+            )!,
+        );
+      }
+
+      if (rippleProgress < 0.5) {
+        final glowOpacity = 0.15 * (1.0 - rippleProgress * 2);
+        canvas.drawCircle(
+          rippleOrigin,
+          20 * rippleProgress,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                Colors.white.withValues(alpha: glowOpacity),
+                Colors.transparent,
+              ],
+            ).createShader(
+              Rect.fromCircle(center: rippleOrigin, radius: 20 * rippleProgress + 1),
+            ),
+        );
+      }
+    }
+
+    canvas.restore();
+
+    // Layer 6: Edge glow — rim lighting (cached shader)
+    if (edgeGlow > 0 && _edgeGlowShader != null) {
+      _edgeGlowPaint
+        ..strokeWidth = 2.0 + edgeGlow * 6.0
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.0 + edgeGlow * 6.0)
+        ..shader = _edgeGlowShader;
+      canvas.drawRRect(rrect.deflate(1.0), _edgeGlowPaint);
+    }
+
+    // Layer 7: Liquid glass border
     if (enableSpecular) {
-      // Animated border with red-accent shifting brightness
       final angle = specularPhase * 2 * math.pi;
-      borderPaint.shader = SweepGradient(
+      _borderPaint.shader = SweepGradient(
         center: Alignment.center,
         startAngle: angle,
         endAngle: angle + 2 * math.pi,
@@ -391,10 +420,12 @@ class _LiquidSurfacePainter extends CustomPainter {
         stops: const [0.0, 0.2, 0.4, 0.7, 1.0],
       ).createShader(rect);
     } else {
-      borderPaint.color = Colors.white.withValues(alpha: 0.15);
+      _borderPaint
+        ..shader = null
+        ..color = Colors.white.withValues(alpha: 0.15);
     }
 
-    canvas.drawRRect(rrect, borderPaint);
+    canvas.drawRRect(rrect, _borderPaint);
   }
 
   @override
