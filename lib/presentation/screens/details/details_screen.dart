@@ -1083,11 +1083,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final epNum = episode.episodeNumber ?? 0;
 
     return PressableScale(
-      onTap: hasPlayLink
-          ? () => _handlePlay(episode.playLink!,
-              season: _selectedSeason, episode: epNum)
-          : () =>
-              _showToastError('No play link available for ${episode.title}'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(8),
@@ -1099,79 +1094,95 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Thumbnail with episode number
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: 140,
-                    height: 85,
-                    child: episode.thumbnailUrl != null &&
-                            episode.thumbnailUrl!.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: episode.thumbnailUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                Container(color: AppColors.surfaceElevated),
-                            errorWidget: (_, __, ___) => Container(
-                              color: AppColors.surfaceElevated,
-                              child: const Icon(Icons.play_circle_outline,
-                                  color: AppColors.textMuted),
-                            ),
-                          )
-                        : Container(
-                            color: AppColors.surfaceElevated,
-                            child: const Icon(Icons.play_circle_fill,
-                                color: AppColors.textMuted, size: 32),
-                          ),
-                  ),
-                ),
-                Positioned(
-                  left: 6,
-                  top: 6,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text('E$epNum',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 16),
-
-            // Episode info
+            // ── Play area: thumbnail + episode info ──
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    episode.title ?? 'Episode $epNum',
-                    style: TextStyle(
-                      color: hasPlayLink ? Colors.white : AppColors.textMuted,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasPlayLink
+                    ? () => _handlePlay(episode.playLink!,
+                        season: _selectedSeason, episode: epNum)
+                    : () => _showToastError(
+                        'No play link available for ${episode.title}'),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Thumbnail with episode number
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: SizedBox(
+                            width: 140,
+                            height: 85,
+                            child: episode.thumbnailUrl != null &&
+                                    episode.thumbnailUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: episode.thumbnailUrl!,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) =>
+                                        Container(color: AppColors.surfaceElevated),
+                                    errorWidget: (_, __, ___) => Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.play_circle_outline,
+                                          color: AppColors.textMuted),
+                                    ),
+                                  )
+                                : Container(
+                                    color: AppColors.surfaceElevated,
+                                    child: const Icon(Icons.play_circle_fill,
+                                        color: AppColors.textMuted, size: 32),
+                                  ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 6,
+                          top: 6,
+                          child: Container(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text('E$epNum',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ],
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (episode.runtime != null) ...[
-                    const SizedBox(height: 6),
-                    Text('${episode.runtime}m',
-                        style: TextStyle(
-                            color: AppColors.textMuted.withValues(alpha: 0.6),
-                            fontSize: 12)),
+                    const SizedBox(width: 16),
+
+                    // Episode info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            episode.title ?? 'Episode $epNum',
+                            style: TextStyle(
+                              color: hasPlayLink ? Colors.white : AppColors.textMuted,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (episode.runtime != null) ...[
+                            const SizedBox(height: 6),
+                            Text('${episode.runtime}m',
+                                style: TextStyle(
+                                    color: AppColors.textMuted.withValues(alpha: 0.6),
+                                    fontSize: 12)),
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
-                ],
+                ),
               ),
             ),
 
