@@ -297,19 +297,32 @@ class _AppShellState extends ConsumerState<AppShell>
                           enableTouchRipple: false,
                           edgeGlow: anyModalOpen ? 0.10 : 0.18,
                           child: AnimatedSize(
-                            duration: const Duration(milliseconds: 350),
+                            duration: const Duration(milliseconds: 300),
                             curve: Curves.easeOutExpo,
                             alignment: Alignment.bottomCenter,
+                            clipBehavior: Clip.hardEdge,
                             child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 350),
-                              switchInCurve: Curves.easeOutExpo,
-                              switchOutCurve: Curves.easeInCubic,
+                              duration: const Duration(milliseconds: 300),
+                              // Outgoing: fade out FAST in first 40% so buttons
+                              // vanish before container size changes squish them
+                              switchOutCurve: const Interval(0.6, 1.0),
+                              // Incoming: fade in from 30% mark onward
+                              switchInCurve: const Interval(0.3, 1.0, curve: Curves.easeOut),
+                              // CRITICAL: Use bottomCenter alignment so old navbar
+                              // stays pinned to bottom instead of drifting to center
+                              layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+                                return Stack(
+                                  alignment: Alignment.bottomCenter,
+                                  clipBehavior: Clip.hardEdge,
+                                  children: <Widget>[
+                                    ...previousChildren,
+                                    if (currentChild != null) currentChild,
+                                  ],
+                                );
+                              },
                               transitionBuilder: (child, animation) {
                                 return FadeTransition(
-                                  opacity: CurvedAnimation(
-                                    parent: animation,
-                                    curve: const Interval(0.0, 0.8, curve: Curves.easeOut),
-                                  ),
+                                  opacity: animation,
                                   child: child,
                                 );
                               },
