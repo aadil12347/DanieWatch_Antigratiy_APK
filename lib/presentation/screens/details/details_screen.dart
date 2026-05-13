@@ -28,6 +28,7 @@ import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/play_loader_overlay.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
+import '../../widgets/pressable_scale.dart';
 import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
@@ -1081,7 +1082,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         episode.playLink != null && episode.playLink!.isNotEmpty;
     final epNum = episode.episodeNumber ?? 0;
 
-    return GestureDetector(
+    return PressableScale(
       onTap: hasPlayLink
           ? () => _handlePlay(episode.playLink!,
               season: _selectedSeason, episode: epNum)

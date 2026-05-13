@@ -8,6 +8,7 @@ import '../../../core/services/notification_service.dart';
 import '../../../domain/models/local_notification.dart';
 import '../../providers/notification_inbox_provider.dart';
 import '../../widgets/liquid_glass.dart';
+import '../../widgets/pressable_scale.dart';
 
 /// Notification inbox screen — accessible from the bell icon on home.
 /// Shows rich notification cards with poster, title, year, and type.
@@ -255,7 +256,9 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
     final hasUnread = group.hasUnread;
     const accentColor = Color(0xFF0891B2);
 
-    return Container(
+    return PressableScale(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: hasUnread
@@ -274,7 +277,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
-              setState(() => _expanded = !_expanded);
+              // Tap handled by PressableScale parent
             },
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -366,6 +369,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
           ],
         ],
       ),
+    ),
     );
   }
 
@@ -392,15 +396,13 @@ class _GroupedEntryTile extends StatelessWidget {
     if (title.isEmpty) title = notification.body;
     final mediaType = notification.mediaType;
     final year = notification.releaseYear;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          if (notification.tmdbId != null && notification.mediaType != null) {
-            context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
-          }
-        },
-        child: Padding(
+    return PressableScale(
+      onTap: () {
+        if (notification.tmdbId != null && notification.mediaType != null) {
+          context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
+        }
+      },
+      child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: [
@@ -461,7 +463,6 @@ class _GroupedEntryTile extends StatelessWidget {
               ),
             ],
           ),
-        ),
       ),
     );
   }
@@ -495,7 +496,7 @@ class _NotificationCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isRich = notification.isRichNotification;
 
-    return GestureDetector(
+    return PressableScale(
       onTap: () {
         // Mark as read
         ref.read(notificationInboxProvider.notifier).markAsRead(notification.id);

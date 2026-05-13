@@ -152,8 +152,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
         widget.onLongHold?.call(false);
       }
       setState(() => _state = PosterTouchState.dragging);
-      _animateScale(_normalScale);
-      // Keep glow on while finger is still on the card
+      // Keep card pinched — only release on pointer up
     }
   }
 
