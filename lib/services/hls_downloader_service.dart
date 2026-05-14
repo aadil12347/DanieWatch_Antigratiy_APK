@@ -6,6 +6,7 @@ import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import '../core/utils/error_sanitizer.dart';
 
@@ -596,16 +597,16 @@ class HlsDownloaderService {
       // Prepend init segment(s) for fMP4 streams
       for (final seg in initSegs) {
         final f = File(seg.localPath);
-        if (await f.exists()) {
-          sink.add(await f.readAsBytes());
+        if (await f.exists() && await f.length() > 0) {
+          await sink.addStream(f.openRead());
         }
       }
 
       // Append all media segments in order
       for (final seg in mediaSegs) {
         final f = File(seg.localPath);
-        if (await f.exists()) {
-          sink.add(await f.readAsBytes());
+        if (await f.exists() && await f.length() > 0) {
+          await sink.addStream(f.openRead());
         }
       }
 
@@ -661,7 +662,17 @@ class HlsDownloaderService {
         '-shortest -y "$outputMp4Path"';
 
     debugPrint('▶ FFmpeg (binary-concat remux): $copyCommand');
-    final copySession = await FFmpegKit.execute(copyCommand);
+    late final FFmpegSession copySession;
+    try {
+      copySession = await FFmpegKit.execute(copyCommand).timeout(
+        const Duration(minutes: 5),
+      );
+    } on TimeoutException {
+      debugPrint('⚠ FFmpeg copy timed out after 5 minutes');
+      await FFmpegKit.cancel();
+      _cleanupIntermediateFiles([videoCombined, audioCombined, subCombined]);
+      throw Exception('MP4 conversion timed out');
+    }
     final copyRc = await copySession.getReturnCode();
 
     if (ReturnCode.isSuccess(copyRc)) {
@@ -690,7 +701,17 @@ class HlsDownloaderService {
         '-shortest -y "$outputMp4Path"';
 
     debugPrint('▶ FFmpeg (audio re-encode fallback): $reencodeCommand');
-    final reencodeSession = await FFmpegKit.execute(reencodeCommand);
+    late final FFmpegSession reencodeSession;
+    try {
+      reencodeSession = await FFmpegKit.execute(reencodeCommand).timeout(
+        const Duration(minutes: 15),
+      );
+    } on TimeoutException {
+      debugPrint('⚠ FFmpeg re-encode timed out after 15 minutes');
+      await FFmpegKit.cancel();
+      _cleanupIntermediateFiles([videoCombined, audioCombined, subCombined]);
+      throw Exception('MP4 conversion timed out');
+    }
     final reencodeRc = await reencodeSession.getReturnCode();
     if (!ReturnCode.isSuccess(reencodeRc)) {
       final logs = await reencodeSession.getAllLogsAsString();

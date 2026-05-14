@@ -449,14 +449,15 @@ class DownloadManager {
       onDownloadUpdate?.call(item);
     });
 
-    // ── Conversion started ──
+    // ── Conversion started (silent — keep showing "downloading") ──
     service.on('conversionStarted').listen((data) {
       if (data == null) return;
       final item = _findById(data['id']);
       if (item == null) return;
       
-      item.status = DownloadStatus.converting;
-      item.progress = 0.97;
+      // Keep status as downloading — conversion is silent to the user
+      item.status = DownloadStatus.downloading;
+      item.progress = 0.96;
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);

@@ -466,7 +466,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       return 'Failed · Tap ▶ to retry';
     }
     if (item.status == DownloadStatus.converting) {
-      return '$pct% · $mb · Finalizing...';
+      return '$pct% · $mb';
     }
     // Downloading
     final speedStr = item.formattedSpeed;

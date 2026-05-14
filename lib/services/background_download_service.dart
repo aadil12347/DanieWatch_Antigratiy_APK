@@ -505,12 +505,13 @@ void _onStart(ServiceInstance service) async {
     downloader.onConversionStarted = () {
       service.invoke(_eventConversionStarted, {'id': id});
 
-      // Update notification to show conversion
+      // Keep showing download notification — conversion is silent
       showDownloadNotification(
         itemId: id,
-        title: '$title — Converting…',
-        progressPct: 97,
+        title: title,
+        progressPct: 96,
         isPaused: false,
+        speedText: 'Saving…',
       );
     };
 
