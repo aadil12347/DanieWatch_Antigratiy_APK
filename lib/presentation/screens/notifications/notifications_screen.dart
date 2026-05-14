@@ -247,7 +247,17 @@ class _GroupedNotificationCard extends ConsumerStatefulWidget {
 }
 
 class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCard> {
-  bool _expanded = false;
+  /// Remember which groups the user expanded — persists across rebuilds/navigation
+  static final Set<String> _expandedGroups = {};
+
+  bool get _expanded => _expandedGroups.contains(widget.group.dateKey);
+  set _expanded(bool value) {
+    if (value) {
+      _expandedGroups.add(widget.group.dateKey);
+    } else {
+      _expandedGroups.remove(widget.group.dateKey);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,9 +266,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
     final hasUnread = group.hasUnread;
     const accentColor = Color(0xFF0891B2);
 
-    return PressableScale(
-      onTap: () => setState(() => _expanded = !_expanded),
-      child: Container(
+    final cardContent = Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: hasUnread
@@ -276,9 +284,7 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
           // Header — tappable to expand/collapse
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () {
-              // Tap handled by PressableScale parent
-            },
+            onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Row(
@@ -362,15 +368,23 @@ class _GroupedNotificationCardState extends ConsumerState<_GroupedNotificationCa
               ),
             ),
           ),
-          // Expanded list of individual entries
+          // Expanded list of individual entries (each with its own pinch animation)
           if (_expanded) ...[
             const Divider(color: Colors.white10, height: 1),
             ...group.notifications.map((n) => _GroupedEntryTile(notification: n)),
           ],
         ],
       ),
-    ),
     );
+
+    // Collapsed: whole card gets pinch animation
+    // Expanded: no pinch on main card, individual tiles handle their own
+    if (!_expanded) {
+      return PressableScale(
+        child: cardContent,
+      );
+    }
+    return cardContent;
   }
 
   String _timeAgo(DateTime dt) {
@@ -402,67 +416,70 @@ class _GroupedEntryTile extends StatelessWidget {
           context.push('/notification-details/${notification.mediaType}/${notification.tmdbId}');
         }
       },
-      child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            children: [
-              if (notification.posterUrl != null || notification.backdropUrl != null)
-                ClipRRect(
+      child: ColoredBox(
+        color: Colors.transparent,
+        child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            if (notification.posterUrl != null || notification.backdropUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: CachedNetworkImage(
+                  imageUrl: notification.posterUrl ?? notification.backdropUrl!,
+                  width: 40,
+                  height: 60,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(width: 40, height: 60, color: AppColors.surface),
+                  errorWidget: (_, __, ___) => Container(
+                    width: 40, height: 60, color: AppColors.surface,
+                    child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
+                  ),
+                ),
+              )
+            else
+              Container(
+                width: 40, height: 60,
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
-                    imageUrl: notification.posterUrl ?? notification.backdropUrl!,
-                    width: 40,
-                    height: 60,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(width: 40, height: 60, color: AppColors.surface),
-                    errorWidget: (_, __, ___) => Container(
-                      width: 40, height: 60, color: AppColors.surface,
-                      child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 40, height: 60,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
                 ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 5),
-                    // Year first, then type
-                    Row(
-                      children: [
-                        if (year != null)
-                          _typeBadge('$year'),
-                        if (year != null && mediaType != null)
-                          const SizedBox(width: 6),
-                        if (mediaType != null)
-                          _typeBadge(mediaType == 'tv' ? 'Series' : 'Movie'),
-                      ],
-                    ),
-                  ],
-                ),
+                child: const Icon(Icons.movie, color: AppColors.textMuted, size: 16),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textMuted.withValues(alpha: 0.5),
-                size: 18,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 5),
+                  // Year first, then type
+                  Row(
+                    children: [
+                      if (year != null)
+                        _typeBadge('$year'),
+                      if (year != null && mediaType != null)
+                        const SizedBox(width: 6),
+                      if (mediaType != null)
+                        _typeBadge(mediaType == 'tv' ? 'Series' : 'Movie'),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textMuted.withValues(alpha: 0.5),
+              size: 18,
+            ),
+          ],
+        ),
+      ),
       ),
     );
   }
