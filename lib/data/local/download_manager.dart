@@ -980,6 +980,43 @@ class DownloadManager {
     onDownloadUpdate?.call(item);
   }
 
+  /// Play whatever segments have been downloaded so far.
+  /// Pauses the download, creates a temporary preview MP4, and returns the path.
+  /// Returns null if not enough segments are available.
+  Future<String?> playPartialDownload(String id) async {
+    final item = _findById(id);
+    if (item == null || item.segmentDirectory == null) return null;
+
+    // Must have at least some progress
+    if (item.completedSegments < 2) return null;
+
+    // Pause the download first
+    if (item.status == DownloadStatus.downloading) {
+      await pauseDownload(id);
+      // Small delay to let in-flight segments finish writing
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    // Clean up any previous preview file
+    final tempDir = await getTemporaryDirectory();
+    final existingPreviews = await tempDir
+        .list()
+        .where((e) => e is File && e.path.endsWith('_preview.mp4'))
+        .toList();
+    for (final preview in existingPreviews) {
+      try { await preview.delete(); } catch (_) {}
+    }
+
+    // Mux the available segments
+    final previewPath = await HlsDownloaderService.muxPartialSegments(
+      segmentDirectory: item.segmentDirectory!,
+      outputDir: tempDir.path,
+      title: item.displayName,
+    );
+
+    return previewPath;
+  }
+
   /// Resume a paused download
   ///
   /// If the background service is still alive, we simply flip the pause flag.

@@ -435,7 +435,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       size: 28,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  // Play Preview button — visible when ≥5% downloaded
+                  if (item.progress >= 0.05 &&
+                      item.status != DownloadStatus.converting &&
+                      item.status != DownloadStatus.failed) ...[
+                    const SizedBox(height: 8),
+                    LiquidTapEffect(
+                      onTap: () => _playPartialPreview(item),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white70,
+                        size: 24,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
                   LiquidTapEffect(
                     onTap: () => _showDeleteConfirmation(item),
                     child: const Icon(
@@ -627,6 +641,47 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           type: ToastType.error,
         );
       }
+    }
+  }
+
+  /// Play a preview of the downloaded portion
+  void _playPartialPreview(DownloadItem item) async {
+    final pct = (item.progress * 100).toInt();
+    CustomToast.show(
+      context,
+      'Creating preview ($pct% downloaded)...',
+      type: ToastType.info,
+      icon: Icons.movie_creation_outlined,
+    );
+
+    final previewPath = await DownloadManager.instance.playPartialDownload(item.id);
+
+    if (!mounted) return;
+
+    if (previewPath != null) {
+      final result = await OpenFile.open(previewPath);
+      if (result.type != ResultType.done) {
+        CustomToast.show(
+          context,
+          'Could not open preview: ${result.message}',
+          type: ToastType.error,
+        );
+      } else {
+        // Remind user they can resume
+        CustomToast.show(
+          context,
+          'Download paused · Tap ▶ to resume',
+          type: ToastType.info,
+          icon: Icons.pause_circle_outline_rounded,
+        );
+      }
+      setState(() {});
+    } else {
+      CustomToast.show(
+        context,
+        'Not enough segments to preview yet',
+        type: ToastType.error,
+      );
     }
   }
 
