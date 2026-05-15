@@ -56,8 +56,9 @@ dependencies:
   permission_handler: ^11.3.1
   open_file: ^3.5.10
 
-  # FFmpeg for .ts → .mp4 concat only (min = smaller APK)
-  ffmpeg_kit_flutter_new_min: ^3.1.0
+  # Native Android MediaMuxer for .ts → .mp4 (zero APK overhead)
+  native_muxer:
+    path: packages/native_muxer
 
   # Network connectivity monitoring (auto-pause/resume downloads)
   connectivity_plus: ^6.1.4
