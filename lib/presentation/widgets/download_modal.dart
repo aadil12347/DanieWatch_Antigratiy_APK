@@ -66,6 +66,7 @@ class _DownloadModalState extends State<DownloadModal> {
   String? _capturedUrl;
   bool _isTryingDirect = true;
   String? _directError;
+  int? _fileSizeBytes;
 
   // Block ads & gambling popups but NOT captcha/recaptcha
   bool _isAd(String url) {
@@ -144,6 +145,13 @@ class _DownloadModalState extends State<DownloadModal> {
       if (mounted) setState(() { _isTryingDirect = false; });
       return;
     }
+
+    // Fetch file size in parallel (non-blocking)
+    bysebuho.fetchOriginalFileSize(widget.initialUrl).then((size) {
+      if (size != null && mounted) {
+        setState(() { _fileSizeBytes = size; });
+      }
+    });
 
     try {
       // Try the downloads API first (direct MP4 links)
@@ -294,6 +302,15 @@ class _DownloadModalState extends State<DownloadModal> {
     );
   }
 
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
   Widget _buildDirectLoading() {
     return Center(
       child: Column(
@@ -324,6 +341,24 @@ class _DownloadModalState extends State<DownloadModal> {
               fontSize: 13,
             ),
           ),
+          if (_fileSizeBytes != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'File size: ${_formatBytes(_fileSizeBytes!)}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -451,19 +486,30 @@ class _DownloadModalState extends State<DownloadModal> {
   }
 
   Widget _buildCaptured() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle, color: Colors.green, size: 64),
-          SizedBox(height: 16),
-          Text('Download Started!',
+          const Icon(Icons.check_circle, color: Colors.green, size: 64),
+          const SizedBox(height: 16),
+          const Text('Download Started!',
               style: TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text('Check downloads page for progress',
+          if (_fileSizeBytes != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _formatBytes(_fileSizeBytes!),
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          const Text('Check downloads page for progress',
               style: TextStyle(color: Colors.white54, fontSize: 13)),
         ],
       ),

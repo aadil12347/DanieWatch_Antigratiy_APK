@@ -22,6 +22,7 @@ import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
 import '../../../services/video_extractor_service.dart';
+import '../../../services/bysebuho_extractor.dart';
 import '../../../core/services/deep_link_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
@@ -1363,6 +1364,15 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: content.runtime,
     );
 
+    // Fetch accurate file size in parallel (non-blocking)
+    int? realFileSize;
+    final bysebuho = BysebuhoExtractor.instance;
+    if (bysebuho.isBysebuhoUrl(url)) {
+      bysebuho.fetchOriginalFileSize(url).then((size) {
+        realFileSize = size;
+      });
+    }
+
     String? m3u8Url;
     try {
       // 2. Extract m3u8 URL in the background
@@ -1420,6 +1430,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         subtitleTrack: selection.subtitleTrack,
         context: context,
         originalEmbedUrl: url,
+        fileSizeBytes: realFileSize,
       );
       if (item != null && mounted) {
         _showDownloadStartedToast(item);

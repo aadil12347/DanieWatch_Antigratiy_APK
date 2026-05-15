@@ -872,6 +872,7 @@ class DownloadManager {
     SubtitleTrack? subtitleTrack,
     BuildContext? context,
     String? originalEmbedUrl,
+    int? fileSizeBytes,
   }) async {
     final hasPermission = await requestPermissions(context);
     if (!hasPermission) return null;
@@ -914,7 +915,7 @@ class DownloadManager {
       subtitleLabel: subLbl,
       localPath: publicMp4Path, // The user-visible path
       segmentDirectory: segmentDir,
-      totalBytes: variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0,
+      totalBytes: fileSizeBytes ?? (variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0),
       originalEmbedUrl: originalEmbedUrl,
       urlObtainedAt: DateTime.now(),
     );

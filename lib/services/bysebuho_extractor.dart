@@ -206,6 +206,74 @@ class BysebuhoExtractor {
     }
   }
 
+  /// Fetch the file size from the downloads API.
+  /// Returns the "Original" option's size_bytes, or the first available size.
+  /// Returns null on failure.
+  Future<int?> fetchOriginalFileSize(String embedUrl) async {
+    try {
+      return await _fetchOriginalFileSizeInternal(embedUrl)
+          .timeout(_extractionTimeout, onTimeout: () {
+        developer.log(
+            '[BysebuhoExtractor] ⏱ File size fetch timed out',
+            name: 'BysebuhoExtractor');
+        return null;
+      });
+    } catch (e) {
+      developer.log('[BysebuhoExtractor] File size fetch error: $e',
+          name: 'BysebuhoExtractor');
+      return null;
+    }
+  }
+
+  Future<int?> _fetchOriginalFileSizeInternal(String embedUrl) async {
+    final code = extractCode(embedUrl);
+    if (code == null) return null;
+
+    final sessionCookies = await _establishSession(code)
+        .timeout(_httpTimeout, onTimeout: () => null);
+    if (sessionCookies == null || sessionCookies.isEmpty) return null;
+
+    final url = Uri.parse('$_baseUrl/api/videos/$code/downloads');
+    final response = await http.get(
+      url,
+      headers: {
+        'User-Agent': _userAgent,
+        'Referer': '$_baseUrl/d/$code',
+        'Origin': _baseUrl,
+        'Cookie': sessionCookies,
+        'Accept': 'application/json',
+      },
+    ).timeout(_httpTimeout, onTimeout: () {
+      return http.Response('', 408);
+    });
+
+    if (response.statusCode != 200) return null;
+
+    final data = jsonDecode(response.body);
+    final options = data is Map ? data['options'] : null;
+    if (options is! List) return null;
+
+    // Prefer the "Original" label, else use the first option
+    for (final opt in options) {
+      if (opt is Map && opt['label']?.toString().toLowerCase() == 'original') {
+        final size = opt['size_bytes'];
+        if (size is int && size > 0) {
+          developer.log('[BysebuhoExtractor] Original file size: $size bytes',
+              name: 'BysebuhoExtractor');
+          return size;
+        }
+      }
+    }
+    // Fallback: first option with a size
+    for (final opt in options) {
+      if (opt is Map) {
+        final size = opt['size_bytes'];
+        if (size is int && size > 0) return size;
+      }
+    }
+    return null;
+  }
+
   Future<List<String>?> _fetchDownloadLinksInternal(String embedUrl) async {
     final code = extractCode(embedUrl);
     if (code == null) return null;
