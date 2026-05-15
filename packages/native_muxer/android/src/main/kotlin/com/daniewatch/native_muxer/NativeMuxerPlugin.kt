@@ -38,11 +38,11 @@ class NativeMuxerPlugin : FlutterPlugin, MethodCallHandler {
                     return
                 }
 
-                // Binary-concat on background thread, then Transformer on main thread
+                // Binary-concat on background, then Transformer on main thread
                 executor.execute {
                     try {
-                        val helper = TransformerMuxer(appContext)
-                        helper.muxSegmentsToMp4(segmentDir, outputPath, result, mainHandler)
+                        val muxer = TransformerMuxer(appContext)
+                        muxer.muxSegmentsToMp4(segmentDir, outputPath, result, mainHandler)
                     } catch (e: Exception) {
                         Log.e("NativeMuxerPlugin", "Muxing failed: ${e.message}", e)
                         mainHandler.post {
