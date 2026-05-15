@@ -345,6 +345,8 @@ class DownloadManager {
   final _updateController = StreamController<DownloadItem>.broadcast();
   Stream<DownloadItem> get updateStream => _updateController.stream;
 
+  Timer? _saveDebounce;
+
   final _completeController = StreamController<DownloadItem>.broadcast();
   Stream<DownloadItem> get completeStream => _completeController.stream;
 
@@ -447,6 +449,7 @@ class DownloadManager {
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);
+      _saveDownloadsDebounced(); // Debounced: at most once per 5s
     });
 
     // ── Conversion started (silent — keep showing "downloading") ──
@@ -981,42 +984,7 @@ class DownloadManager {
     onDownloadUpdate?.call(item);
   }
 
-  /// Play whatever segments have been downloaded so far.
-  /// Pauses the download, creates a temporary preview MP4, and returns the path.
-  /// Returns null if not enough segments are available.
-  Future<String?> playPartialDownload(String id) async {
-    final item = _findById(id);
-    if (item == null || item.segmentDirectory == null) return null;
 
-    // Must have at least some progress
-    if (item.completedSegments < 2) return null;
-
-    // Pause the download first
-    if (item.status == DownloadStatus.downloading) {
-      await pauseDownload(id);
-      // Small delay to let in-flight segments finish writing
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    // Clean up any previous preview file
-    final tempDir = await getTemporaryDirectory();
-    final existingPreviews = await tempDir
-        .list()
-        .where((e) => e is File && e.path.endsWith('_preview.mp4'))
-        .toList();
-    for (final preview in existingPreviews) {
-      try { await preview.delete(); } catch (_) {}
-    }
-
-    // Mux the available segments
-    final previewPath = await HlsDownloaderService.muxPartialSegments(
-      segmentDirectory: item.segmentDirectory!,
-      outputDir: tempDir.path,
-      title: item.displayName,
-    );
-
-    return previewPath;
-  }
 
   /// Resume a paused download
   ///
@@ -1273,6 +1241,15 @@ class DownloadManager {
     } catch (e) {
       debugPrint('Error saving downloads: $e');
     }
+  }
+
+  /// Debounced save — at most once per 5 seconds during active downloads.
+  /// Use for progress updates; use _saveDownloads() for critical events.
+  void _saveDownloadsDebounced() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(seconds: 5), () {
+      _saveDownloads();
+    });
   }
 
   DownloadItem? getDownloadByUrl(String url) {

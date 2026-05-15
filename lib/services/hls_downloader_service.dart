@@ -19,7 +19,7 @@ import '../core/utils/error_sanitizer.dart';
 ///  - FFmpeg concat demuxer mux to .mp4 with proper A/V sync
 class HlsDownloaderService {
   // ── Configuration ──────────────────────────────────────
-  static const int _maxWorkers = 5;
+  static const int _maxWorkers = 8;
   static const int _maxRetries = 3;
   static const List<int> _retryDelaysMs = [0, 500, 1500];
 
@@ -29,7 +29,7 @@ class HlsDownloaderService {
     _dio = Dio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 120),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
               '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
@@ -45,8 +45,8 @@ class HlsDownloaderService {
         final client = HttpClient();
         client.badCertificateCallback =
             (X509Certificate cert, String host, int port) => true;
-        client.maxConnectionsPerHost = _maxWorkers;
-        client.idleTimeout = const Duration(seconds: 30);
+        client.maxConnectionsPerHost = _maxWorkers * 2;
+        client.idleTimeout = const Duration(seconds: 15);
         return client;
       },
     );
@@ -111,7 +111,7 @@ class HlsDownloaderService {
         _isNetworkPaused = true;
       } else if (hasConnection && _isNetworkPaused) {
         debugPrint('⚡ Network restored — auto-resuming in 2s');
-        Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(milliseconds: 500), () {
           if (!_isCancelled) {
             _isNetworkPaused = false;
           }
@@ -346,7 +346,7 @@ class HlsDownloaderService {
     Future<void> worker() async {
       while (true) {
         while (isPaused && !_isCancelled) {
-          await Future.delayed(const Duration(milliseconds: 300));
+          await Future.delayed(const Duration(milliseconds: 100));
         }
         if (_isCancelled) return;
 
@@ -389,7 +389,7 @@ class HlsDownloaderService {
       }
 
       while (isPaused && !_isCancelled) {
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 100));
       }
       if (_isCancelled) return;
 
@@ -502,28 +502,47 @@ class HlsDownloaderService {
       existingBytes = await file.length();
     }
 
-    final response = await _dio.get<ResponseBody>(
-      url,
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: existingBytes > 0 ? {'Range': 'bytes=$existingBytes-'} : null,
-      ),
-    );
+    if (existingBytes > 0) {
+      // ── RESUME PATH: Use streaming to append from byte offset ──
+      final response = await _dio.get<ResponseBody>(
+        url,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {'Range': 'bytes=$existingBytes-'},
+        ),
+      );
 
-    final fileMode = existingBytes > 0 ? FileMode.append : FileMode.write;
-    final sink = file.openWrite(mode: fileMode);
-
-    try {
-      await for (final chunk in response.data!.stream) {
-        if (_isCancelled) break;
-        sink.add(chunk);
-        _downloadedBytes += chunk.length;
-        _reportProgress(); // Real-time speed tracking (debounced)
+      final sink = file.openWrite(mode: FileMode.append);
+      try {
+        await for (final chunk in response.data!.stream) {
+          if (_isCancelled) break;
+          sink.add(chunk);
+          _downloadedBytes += chunk.length;
+        }
+      } finally {
+        await sink.close();
       }
-    } finally {
-      await sink.flush();
-      await sink.close();
+    } else {
+      // ── FAST PATH: Bulk download entire segment in native code ──
+      // ResponseType.bytes downloads in native I/O without per-chunk
+      // Dart event loop overhead, then writes in a single syscall.
+      // This is dramatically faster than streaming for parallel workers.
+      final response = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+        ),
+      );
+
+      if (_isCancelled) return;
+
+      final bytes = response.data!;
+      await file.writeAsBytes(bytes, flush: false);
+      _downloadedBytes += bytes.length;
     }
+
+    // Report progress once per segment completion
+    _reportProgress();
   }
 
   void _reportProgress() {
@@ -550,7 +569,11 @@ class HlsDownloaderService {
     final elapsed = now - _lastSpeedTime;
     if (elapsed >= 1000) {
       final bytesDelta = _downloadedBytes - _lastSpeedBytes;
-      _bytesPerSecond = (bytesDelta * 1000 ~/ elapsed);
+      final instantSpeed = (bytesDelta * 1000 ~/ elapsed);
+      // EMA smoothing: 30% new + 70% old — dampens spikes for stable display
+      _bytesPerSecond = _bytesPerSecond == 0
+          ? instantSpeed
+          : (0.3 * instantSpeed + 0.7 * _bytesPerSecond).toInt();
       _lastSpeedTime = now;
       _lastSpeedBytes = _downloadedBytes;
     }
@@ -634,7 +657,8 @@ class HlsDownloaderService {
     String writeConcatFile(List<String> inits, List<String> media, String name) {
       final listPath = p.join(saveDir, '${name}_list.txt');
       final buffer = StringBuffer();
-      // Use simple concat format (no ffconcat header) for maximum compatibility
+      // Place init segment(s) before media segments for proper fMP4 decoding
+      // Init segments contain codec/track metadata needed before any media data
       for (final path in inits) {
         final escaped = path.replaceAll("'", "'\\''");
         buffer.writeln("file '$escaped'");
@@ -677,10 +701,11 @@ class HlsDownloaderService {
       }
 
       // ── Attempt 1: Concat demuxer + stream copy ───────────
+      // -fflags +genpts regenerates PTS to fix timestamp discontinuities
+      // -avoid_negative_ts make_zero shifts negative timestamps to zero
       // No -movflags +faststart (unnecessary for local playback, saves time)
-      // No genpts/igndts — use actual embedded PTS/DTS for perfect sync
       final copyCommand =
-          '${inputs.join(' ')} ${maps.join(' ')} '
+          '-fflags +genpts ${inputs.join(' ')} ${maps.join(' ')} '
           '-c:v copy -c:a copy $codecArgs '
           '-avoid_negative_ts make_zero '
           '-shortest -y "$outputMp4Path"';
@@ -716,7 +741,7 @@ class HlsDownloaderService {
       // ── Attempt 2: Concat demuxer + audio re-encode ───────
       // Re-encodes audio to fix timestamp/codec edge cases
       final reencodeCommand =
-          '${inputs.join(' ')} ${maps.join(' ')} '
+          '-fflags +genpts ${inputs.join(' ')} ${maps.join(' ')} '
           '-c:v copy -c:a aac -b:a 192k '
           '-af "aresample=async=1:first_pts=0" '
           '$codecArgs '
@@ -779,131 +804,6 @@ class HlsDownloaderService {
     }
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  PARTIAL PLAY: Mux downloaded segments into a temp MP4
-  //
-  //  Allows user to play whatever has been downloaded so far.
-  //  Uses the same concat demuxer approach for proper A/V sync.
-  // ══════════════════════════════════════════════════════════
-  static Future<String?> muxPartialSegments({
-    required String segmentDirectory,
-    required String outputDir,
-    required String title,
-  }) async {
-    try {
-      final dir = Directory(segmentDirectory);
-      if (!await dir.exists()) return null;
-
-      final files = await dir.list().toList();
-      final fileNames = files
-          .whereType<File>()
-          .map((f) => p.basename(f.path))
-          .toList()
-        ..sort();
-
-      // Collect init and media segments by prefix
-      final videoInits = <String>[];
-      final videoMedia = <String>[];
-      final audioInits = <String>[];
-      final audioMedia = <String>[];
-
-      for (final name in fileNames) {
-        final fullPath = p.join(segmentDirectory, name);
-        final size = await File(fullPath).length();
-        if (size <= 0) continue; // Skip empty/corrupt files
-
-        if (name.startsWith('v_init_')) {
-          videoInits.add(fullPath);
-        } else if (name.startsWith('v_seg_')) {
-          videoMedia.add(fullPath);
-        } else if (name.startsWith('a_init_')) {
-          audioInits.add(fullPath);
-        } else if (name.startsWith('a_seg_')) {
-          audioMedia.add(fullPath);
-        }
-      }
-
-      if (videoMedia.isEmpty) {
-        debugPrint('⚠ No video segments found for partial play');
-        return null;
-      }
-
-      // Build concat list files
-      final intermediateFiles = <String>[];
-
-      String writeConcatFile(List<String> inits, List<String> media, String name) {
-        final listPath = p.join(segmentDirectory, '${name}_partial_list.txt');
-        final buffer = StringBuffer();
-        buffer.writeln('ffconcat version 1.0');
-        for (final path in inits) {
-          final escaped = path.replaceAll("'", "'\\''");
-          buffer.writeln("file '$escaped'");
-        }
-        for (final path in media) {
-          final escaped = path.replaceAll("'", "'\\''");
-          buffer.writeln("file '$escaped'");
-        }
-        File(listPath).writeAsStringSync(buffer.toString());
-        intermediateFiles.add(listPath);
-        return listPath;
-      }
-
-      final videoListPath = writeConcatFile(videoInits, videoMedia, 'video');
-      final hasSeparateAudio = audioMedia.isNotEmpty;
-
-      // Build FFmpeg command
-      final List<String> inputs = ['-f concat -safe 0 -i "$videoListPath"'];
-      final List<String> maps = ['-map 0:v'];
-      int inputIdx = 1;
-
-      if (hasSeparateAudio) {
-        final audioListPath = writeConcatFile(audioInits, audioMedia, 'audio');
-        inputs.add('-f concat -safe 0 -i "$audioListPath"');
-        maps.add('-map $inputIdx:a');
-        inputIdx++;
-      } else {
-        maps.add('-map 0:a?');
-      }
-
-      final safeTitle = title.replaceAll(RegExp(r'[^\w\s\-]'), '').trim();
-      final outputPath = p.join(outputDir, '${safeTitle}_preview.mp4');
-
-      final command =
-          '${inputs.join(' ')} ${maps.join(' ')} '
-          '-c:v copy -c:a copy '
-          '-avoid_negative_ts make_zero '
-          '-movflags +faststart '
-          '-shortest -y "$outputPath"';
-
-      debugPrint('▶ FFmpeg (partial preview): $command');
-      debugPrint('📊 Partial: ${videoMedia.length} video + ${audioMedia.length} audio segments');
-
-      final session = await FFmpegKit.execute(command).timeout(
-        const Duration(minutes: 5),
-      );
-      final rc = await session.getReturnCode();
-
-      // Cleanup concat list files
-      for (final f in intermediateFiles) {
-        try { File(f).deleteSync(); } catch (_) {}
-      }
-
-      if (ReturnCode.isSuccess(rc)) {
-        final outFile = File(outputPath);
-        if (await outFile.exists() && await outFile.length() > 1024) {
-          debugPrint('✅ Partial preview created: $outputPath (${videoMedia.length} segments)');
-          return outputPath;
-        }
-      }
-
-      final logs = await session.getAllLogsAsString();
-      debugPrint('⚠ Partial preview mux failed: $logs');
-      return null;
-    } catch (e) {
-      debugPrint('❌ Partial mux error: $e');
-      return null;
-    }
-  }
 }
 
 /// Internal model for a segment download task.

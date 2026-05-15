@@ -1364,13 +1364,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: content.runtime,
     );
 
-    // Fetch accurate file size in parallel (non-blocking)
-    int? realFileSize;
+    // Fetch accurate file size in parallel (awaited before download starts)
+    Future<int?> sizeFuture = Future.value(null);
     final bysebuho = BysebuhoExtractor.instance;
     if (bysebuho.isBysebuhoUrl(url)) {
-      bysebuho.fetchOriginalFileSize(url).then((size) {
-        realFileSize = size;
-      });
+      sizeFuture = bysebuho.fetchOriginalFileSize(url);
     }
 
     String? m3u8Url;
@@ -1415,10 +1413,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final selection = await selectionFuture;
     if (selection == null || !mounted) return;
 
-    // 5. Start ffmpeg download (with a tiny delay to ensure sheet closes smoothly if needed,
-    // although our provider handles the closing animation via morphing back)
+    // 5. Start ffmpeg download
     try {
-      // Ensure we don't block the UI thread during initialization
+      // Await the file size that was fetching in parallel
+      final realFileSize = await sizeFuture;
+
       final item = await DownloadManager.instance.startSegmentDownload(
         m3u8Url: m3u8Url,
         title: content.title,
