@@ -18,7 +18,7 @@ import '../core/utils/error_sanitizer.dart';
 ///  - Separate video + audio stream support
 ///  - FFmpeg concat demuxer mux to .mp4 with proper A/V sync
 class HlsDownloaderService {
-  // ── Configuration ──────────────────────────────────────
+  // â”€â”€ Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   static const int _maxWorkers = 8;
   static const int _maxRetries = 3;
   static const List<int> _retryDelaysMs = [0, 500, 1500];
@@ -58,10 +58,10 @@ class HlsDownloaderService {
   Function(String mp4Path)? onComplete;
   VoidCallback? onConversionStarted;
   /// Fired when CDN links are expired (403/404) and playlist refresh failed.
-  /// Distinct from onError — signals that re-extraction from embed URL is needed.
+  /// Distinct from onError â€” signals that re-extraction from embed URL is needed.
   Function(String error)? onLinkExpired;
 
-  // ── State ──────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   bool _isCancelled = false;
   bool _isPaused = false;
   bool _isNetworkPaused = false;
@@ -70,7 +70,7 @@ class HlsDownloaderService {
   int _totalSegments = 0;
   int _downloadedBytes = 0;
 
-  // ── CDN Refresh State ──────────────────────────────────
+  // â”€â”€ CDN Refresh State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   int _playlistRefreshCount = 0;
   static const int _maxPlaylistRefreshes = 2;
   String? _videoPlaylistUrl;
@@ -78,7 +78,7 @@ class HlsDownloaderService {
   String? _subtitlePlaylistUrl;
   String? _saveDirectory;
 
-  // ── Speed tracking ─────────────────────────────────────
+  // â”€â”€ Speed tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   int _bytesPerSecond = 0;
   int _lastSpeedBytes = 0;
   int _lastSpeedTime = 0;
@@ -101,16 +101,16 @@ class HlsDownloaderService {
   bool get isPaused => _isPaused || _isNetworkPaused;
   bool get isCancelled => _isCancelled;
 
-  // ── Connectivity Monitor ───────────────────────────────
+  // â”€â”€ Connectivity Monitor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _startConnectivityMonitor() {
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final hasConnection = results.any((r) => r != ConnectivityResult.none);
 
       if (!hasConnection && !_isNetworkPaused) {
-        debugPrint('⚡ Network lost — auto-pausing download');
+        debugPrint('âš¡ Network lost â€” auto-pausing download');
         _isNetworkPaused = true;
       } else if (hasConnection && _isNetworkPaused) {
-        debugPrint('⚡ Network restored — auto-resuming in 2s');
+        debugPrint('âš¡ Network restored â€” auto-resuming in 2s');
         Future.delayed(const Duration(milliseconds: 500), () {
           if (!_isCancelled) {
             _isNetworkPaused = false;
@@ -120,7 +120,7 @@ class HlsDownloaderService {
     });
   }
 
-  // ── URL Resolution ─────────────────────────────────────
+  // â”€â”€ URL Resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   String _resolveUrl(String baseUrl, String relativeUrl) {
     if (relativeUrl.startsWith('http')) return relativeUrl;
     final base = Uri.parse(baseUrl);
@@ -130,16 +130,16 @@ class HlsDownloaderService {
     return base.resolve(relativeUrl).toString();
   }
 
-  // ══════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  MAIN ENTRY POINT
-  // ══════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   /// Download HLS segments and convert to MP4.
   ///
-  /// [videoM3u8Url] — video variant playlist URL
-  /// [audioM3u8Url] — optional separate audio playlist URL (null if audio is muxed in video)
-  /// [saveDirectory] — temp directory for .ts segments
-  /// [outputMp4Path] — final .mp4 output path
+  /// [videoM3u8Url] â€” video variant playlist URL
+  /// [audioM3u8Url] â€” optional separate audio playlist URL (null if audio is muxed in video)
+  /// [saveDirectory] â€” temp directory for .ts segments
+  /// [outputMp4Path] â€” final .mp4 output path
   Future<void> startDownload({
     required String videoM3u8Url,
     String? audioM3u8Url,
@@ -166,21 +166,21 @@ class HlsDownloaderService {
       final dir = Directory(saveDirectory);
       if (!await dir.exists()) await dir.create(recursive: true);
 
-      // ── Phase 1: Parse playlists & build segment queues ──
-      debugPrint('📦 Parsing video playlist: $videoM3u8Url');
+      // â”€â”€ Phase 1: Parse playlists & build segment queues â”€â”€
+      debugPrint('ðŸ“¦ Parsing video playlist: $videoM3u8Url');
       final videoSegments =
           await _parseMediaPlaylist(videoM3u8Url, saveDirectory, 'v');
 
       List<_SegmentTask> audioSegments = [];
       if (audioM3u8Url != null && audioM3u8Url.isNotEmpty) {
-        debugPrint('📦 Parsing audio playlist: $audioM3u8Url');
+        debugPrint('ðŸ“¦ Parsing audio playlist: $audioM3u8Url');
         audioSegments =
             await _parseMediaPlaylist(audioM3u8Url, saveDirectory, 'a');
       }
 
       List<_SegmentTask> subtitleSegments = [];
       if (subtitleM3u8Url != null && subtitleM3u8Url.isNotEmpty) {
-        debugPrint('📦 Parsing subtitle playlist: $subtitleM3u8Url');
+        debugPrint('ðŸ“¦ Parsing subtitle playlist: $subtitleM3u8Url');
         subtitleSegments =
             await _parseMediaPlaylist(subtitleM3u8Url, saveDirectory, 's');
       }
@@ -197,16 +197,16 @@ class HlsDownloaderService {
       }
 
       debugPrint(
-          '📦 HLS: ${videoSegments.length} video + ${audioSegments.length} audio + ${subtitleSegments.length} sub = $_totalSegments total segments');
+          'ðŸ“¦ HLS: ${videoSegments.length} video + ${audioSegments.length} audio + ${subtitleSegments.length} sub = $_totalSegments total segments');
 
-      // ── Phase 2: Download all segments (3 parallel) ────
+      // â”€â”€ Phase 2: Download all segments (3 parallel) â”€â”€â”€â”€
       await _downloadAllSegments(allSegments);
 
       if (_isCancelled) throw Exception('Download cancelled');
 
-      // ── Phase 3: Mux to .mp4 with FFmpeg ──────────────
+      // â”€â”€ Phase 3: Mux to .mp4 with FFmpeg â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       onConversionStarted?.call();
-      debugPrint('🔧 Converting to MP4...');
+      debugPrint('ðŸ”§ Converting to MP4...');
       await _muxToMp4(
           videoSegments, audioSegments, subtitleSegments, saveDirectory, outputMp4Path);
 
@@ -217,7 +217,7 @@ class HlsDownloaderService {
     } catch (e, stack) {
       _connectivitySub?.cancel();
       if (!_isCancelled) {
-        debugPrint('❌ Download error: $e');
+        debugPrint('âŒ Download error: $e');
         debugPrint('StackTrace: $stack');
 
         // Check if this was a CDN expiry error (403/404 during playlist fetch)
@@ -225,7 +225,7 @@ class HlsDownloaderService {
         // would otherwise fire onError instead of onLinkExpired
         if (e is DioException &&
             (e.response?.statusCode == 403 || e.response?.statusCode == 404)) {
-          debugPrint('🔗 Playlist URL expired (HTTP ${e.response?.statusCode}) — signaling re-extraction');
+          debugPrint('ðŸ”— Playlist URL expired (HTTP ${e.response?.statusCode}) â€” signaling re-extraction');
           _isCancelled = true; // Prevent segment cleanup
           onLinkExpired?.call('Playlist URL expired (HTTP ${e.response?.statusCode})');
           return;
@@ -235,7 +235,7 @@ class HlsDownloaderService {
       }
     } finally {
       // CRITICAL: Only delete segments after SUCCESSFUL completion.
-      // Never delete on error or cancellation — segments are needed for resume.
+      // Never delete on error or cancellation â€” segments are needed for resume.
       if (_completedSuccessfully) {
         try {
           final segDir = Directory(saveDirectory);
@@ -243,19 +243,19 @@ class HlsDownloaderService {
             await segDir.delete(recursive: true);
           }
         } catch (e) {
-          debugPrint('⚠ Cleanup warning: $e');
+          debugPrint('âš  Cleanup warning: $e');
         }
       }
       _connectivitySub?.cancel();
     }
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  PHASE 1: Parse media playlist → segment list
-  // ══════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  PHASE 1: Parse media playlist â†’ segment list
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   /// Parse a media playlist (NOT master) and return segment tasks.
-  /// [prefix] is 'v' for video, 'a' for audio — to keep file names distinct.
+  /// [prefix] is 'v' for video, 'a' for audio â€” to keep file names distinct.
   Future<List<_SegmentTask>> _parseMediaPlaylist(
     String playlistUrl,
     String saveDir,
@@ -268,7 +268,7 @@ class HlsDownloaderService {
     // If this is somehow a master playlist, find the first variant and use it
     if (content.contains('#EXT-X-STREAM-INF')) {
       debugPrint(
-          '⚠ Got master playlist instead of media — extracting first variant');
+          'âš  Got master playlist instead of media â€” extracting first variant');
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i].trim();
         if (line.startsWith('#EXT-X-STREAM-INF:')) {
@@ -337,9 +337,9 @@ class HlsDownloaderService {
     return ext;
   }
 
-  // ══════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  PHASE 2: Download all segments with 3 parallel workers
-  // ══════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Future<void> _downloadAllSegments(List<_SegmentTask> segments) async {
     int nextIndex = 0;
 
@@ -384,7 +384,7 @@ class HlsDownloaderService {
         final delayMs =
             _retryDelaysMs[attempt.clamp(0, _retryDelaysMs.length - 1)];
         debugPrint(
-            '🔄 Retry ${attempt + 1}/$_maxRetries for ${p.basename(seg.localPath)} after ${delayMs}ms');
+            'ðŸ”„ Retry ${attempt + 1}/$_maxRetries for ${p.basename(seg.localPath)} after ${delayMs}ms');
         await Future.delayed(Duration(milliseconds: delayMs));
       }
 
@@ -401,9 +401,9 @@ class HlsDownloaderService {
       } on DioException catch (e) {
         final statusCode = e.response?.statusCode;
         debugPrint(
-            '⚠ ${p.basename(seg.localPath)} attempt ${attempt + 1} failed (HTTP $statusCode): $e');
+            'âš  ${p.basename(seg.localPath)} attempt ${attempt + 1} failed (HTTP $statusCode): $e');
 
-        // CDN token expired — try refreshing the playlist
+        // CDN token expired â€” try refreshing the playlist
         if ((statusCode == 404 || statusCode == 403) &&
             _playlistRefreshCount < _maxPlaylistRefreshes &&
             attempt < _maxRetries - 1) {
@@ -414,7 +414,7 @@ class HlsDownloaderService {
               localPath: seg.localPath,
               isTsSegment: seg.isTsSegment,
             );
-            // Don't count this as a retry — continue loop with fresh URL
+            // Don't count this as a retry â€” continue loop with fresh URL
             continue;
           }
         }
@@ -425,7 +425,7 @@ class HlsDownloaderService {
               _playlistRefreshCount >= _maxPlaylistRefreshes) {
             _isCancelled = true;
             onLinkExpired?.call(
-                'CDN link expired (HTTP $statusCode) — re-extraction needed');
+                'CDN link expired (HTTP $statusCode) â€” re-extraction needed');
             return;
           }
           throw Exception(
@@ -433,7 +433,7 @@ class HlsDownloaderService {
         }
       } catch (e) {
         debugPrint(
-            '⚠ ${p.basename(seg.localPath)} attempt ${attempt + 1} failed: $e');
+            'âš  ${p.basename(seg.localPath)} attempt ${attempt + 1} failed: $e');
         if (attempt == _maxRetries - 1) {
           throw Exception(
               'Download failed after $_maxRetries attempts');
@@ -447,7 +447,7 @@ class HlsDownloaderService {
   Future<String?> _refreshSegmentUrl(_SegmentTask failedSeg) async {
     _playlistRefreshCount++;
     debugPrint(
-        '🔄 Refreshing playlist (attempt $_playlistRefreshCount/$_maxPlaylistRefreshes) for expired CDN URL');
+        'ðŸ”„ Refreshing playlist (attempt $_playlistRefreshCount/$_maxPlaylistRefreshes) for expired CDN URL');
 
     try {
       // Determine which playlist this segment belongs to based on prefix
@@ -481,15 +481,15 @@ class HlsDownloaderService {
             freshSegments.where((s) => s.isTsSegment).toList();
         if (segIndex < tsSegments.length) {
           final freshUrl = tsSegments[segIndex].url;
-          debugPrint('✅ Got fresh CDN URL for segment $segIndex');
+          debugPrint('âœ… Got fresh CDN URL for segment $segIndex');
           return freshUrl;
         }
       }
 
-      debugPrint('⚠ Could not match segment index in refreshed playlist');
+      debugPrint('âš  Could not match segment index in refreshed playlist');
       return null;
     } catch (e) {
-      debugPrint('❌ Playlist refresh failed: $e');
+      debugPrint('âŒ Playlist refresh failed: $e');
       return null;
     }
   }
@@ -503,7 +503,7 @@ class HlsDownloaderService {
     }
 
     if (existingBytes > 0) {
-      // ── RESUME PATH: Use streaming to append from byte offset ──
+      // â”€â”€ RESUME PATH: Use streaming to append from byte offset â”€â”€
       final response = await _dio.get<ResponseBody>(
         url,
         options: Options(
@@ -523,7 +523,7 @@ class HlsDownloaderService {
         await sink.close();
       }
     } else {
-      // ── FAST PATH: Bulk download entire segment in native code ──
+      // â”€â”€ FAST PATH: Bulk download entire segment in native code â”€â”€
       // ResponseType.bytes downloads in native I/O without per-chunk
       // Dart event loop overhead, then writes in a single syscall.
       // This is dramatically faster than streaming for parallel workers.
@@ -570,7 +570,7 @@ class HlsDownloaderService {
     if (elapsed >= 1000) {
       final bytesDelta = _downloadedBytes - _lastSpeedBytes;
       final instantSpeed = (bytesDelta * 1000 ~/ elapsed);
-      // EMA smoothing: 30% new + 70% old — dampens spikes for stable display
+      // EMA smoothing: 30% new + 70% old â€” dampens spikes for stable display
       _bytesPerSecond = _bytesPerSecond == 0
           ? instantSpeed
           : (0.3 * instantSpeed + 0.7 * _bytesPerSecond).toInt();
@@ -579,23 +579,17 @@ class HlsDownloaderService {
     }
   }
 
-  // ══════════════════════════════════════════════════════════
-  //  PHASE 3: Mux video + audio → single .mp4
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  PHASE 3: Mux video + audio â†’ single .mp4
   //
-  //  Strategy: DIRECTORY-SCANNING CONCAT DEMUXER
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  //  Strategy: BINARY CONCAT â†’ SINGLE-FILE INPUTS
   //
-  //  Scans the segment directory for downloaded files and
-  //  uses FFmpeg's concat demuxer to read each segment
-  //  individually. This is the same proven approach used by
-  //  muxPartialSegments (which produces perfect sync).
-  //
-  //  2-Tier Fallback:
-  //  1. Concat demuxer + stream copy (fastest, perfect sync)
-  //  2. Concat demuxer + audio re-encode (handles codec edge cases)
-  //
-  //  No binary concat — that approach synthesizes timestamps
-  //  and causes A/V desync on large files.
-  // ══════════════════════════════════════════════════════════
+  //  Binary-joins segments into continuous stream files, then
+  //  feeds FFmpeg single-file inputs. This preserves original
+  //  PTS/DTS from transport stream packets (unlike the concat
+  //  demuxer which creates independent timelines per input).
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Future<void> _muxToMp4(
     List<_SegmentTask> videoSegments,
     List<_SegmentTask> audioSegments,
@@ -603,9 +597,6 @@ class HlsDownloaderService {
     String saveDir,
     String outputMp4Path,
   ) async {
-    // ── Step 1: Scan the segment directory for actual files ──
-    // This is the same approach as muxPartialSegments — scan what's
-    // actually on disk rather than relying on task lists.
     final dir = Directory(saveDir);
     if (!await dir.exists()) throw Exception('Segment directory not found');
 
@@ -614,9 +605,8 @@ class HlsDownloaderService {
         .whereType<File>()
         .map((f) => p.basename(f.path))
         .toList()
-      ..sort(); // Alphabetical sort ensures correct segment order
+      ..sort();
 
-    // Classify files by type
     final videoInits = <String>[];
     final videoMedia = <String>[];
     final audioInits = <String>[];
@@ -627,162 +617,143 @@ class HlsDownloaderService {
     for (final name in fileNames) {
       final fullPath = p.join(saveDir, name);
       final size = await File(fullPath).length();
-      if (size <= 0) continue; // Skip empty/corrupt files
+      if (size <= 0) continue;
 
-      if (name.startsWith('v_init_')) {
-        videoInits.add(fullPath);
-      } else if (name.startsWith('v_seg_')) {
-        videoMedia.add(fullPath);
-      } else if (name.startsWith('a_init_')) {
-        audioInits.add(fullPath);
-      } else if (name.startsWith('a_seg_')) {
-        audioMedia.add(fullPath);
-      } else if (name.startsWith('s_init_')) {
-        subInits.add(fullPath);
-      } else if (name.startsWith('s_seg_')) {
-        subMedia.add(fullPath);
-      }
+      if (name.startsWith('v_init_')) videoInits.add(fullPath);
+      else if (name.startsWith('v_seg_')) videoMedia.add(fullPath);
+      else if (name.startsWith('a_init_')) audioInits.add(fullPath);
+      else if (name.startsWith('a_seg_')) audioMedia.add(fullPath);
+      else if (name.startsWith('s_init_')) subInits.add(fullPath);
+      else if (name.startsWith('s_seg_')) subMedia.add(fullPath);
     }
 
     if (videoMedia.isEmpty) throw Exception('No video segments found');
 
     final hasSeparateAudio = audioMedia.isNotEmpty;
     final hasSubtitles = subMedia.isNotEmpty;
+    debugPrint('ðŸ“Š Mux: ${videoMedia.length} video + ${audioMedia.length} audio + ${subMedia.length} sub segments');
 
-    debugPrint('📊 Mux: ${videoMedia.length} video + ${audioMedia.length} audio + ${subMedia.length} sub segments');
-
-    // ── Step 2: Write concat list files ──────────────────────
+    // â”€â”€ Binary concat segments â†’ continuous stream files â”€â”€â”€â”€â”€â”€
     final intermediateFiles = <String>[];
 
-    String writeConcatFile(List<String> inits, List<String> media, String name) {
-      final listPath = p.join(saveDir, '${name}_list.txt');
-      final buffer = StringBuffer();
-      // Place init segment(s) before media segments for proper fMP4 decoding
-      // Init segments contain codec/track metadata needed before any media data
-      for (final path in inits) {
-        final escaped = path.replaceAll("'", "'\\''");
-        buffer.writeln("file '$escaped'");
-      }
-      for (final path in media) {
-        final escaped = path.replaceAll("'", "'\\''");
-        buffer.writeln("file '$escaped'");
-      }
-      File(listPath).writeAsStringSync(buffer.toString());
-      intermediateFiles.add(listPath);
-      debugPrint('📋 Concat list $name: ${inits.length} init + ${media.length} media segments');
-      return listPath;
+    final videoExt = p.extension(videoMedia.first);
+    final videoCombined = p.join(saveDir, 'video_combined$videoExt');
+    intermediateFiles.add(videoCombined);
+    await _binaryConcat([...videoInits, ...videoMedia], videoCombined);
+    debugPrint('ðŸ“¦ Video: ${videoInits.length + videoMedia.length} files â†’ video_combined$videoExt');
+
+    String? audioCombined;
+    if (hasSeparateAudio) {
+      final audioExt = p.extension(audioMedia.first);
+      audioCombined = p.join(saveDir, 'audio_combined$audioExt');
+      intermediateFiles.add(audioCombined);
+      await _binaryConcat([...audioInits, ...audioMedia], audioCombined);
+      debugPrint('ðŸ“¦ Audio: ${audioInits.length + audioMedia.length} files â†’ audio_combined$audioExt');
+    }
+
+    String? subCombined;
+    if (hasSubtitles) {
+      final subExt = p.extension(subMedia.first);
+      subCombined = p.join(saveDir, 'sub_combined$subExt');
+      intermediateFiles.add(subCombined);
+      await _binaryConcat([...subInits, ...subMedia], subCombined);
     }
 
     try {
-      final videoListPath = writeConcatFile(videoInits, videoMedia, 'video');
+      final inputs = <String>['-i "$videoCombined"'];
+      final maps = <String>['-map 0:v'];
+      int idx = 1;
 
-      // Build FFmpeg inputs and maps
-      final List<String> inputs = ['-f concat -safe 0 -i "$videoListPath"'];
-      final List<String> maps = ['-map 0:v'];
-      int inputIdx = 1;
-
-      if (hasSeparateAudio) {
-        final audioListPath = writeConcatFile(audioInits, audioMedia, 'audio');
-        inputs.add('-f concat -safe 0 -i "$audioListPath"');
-        maps.add('-map $inputIdx:a');
-        inputIdx++;
+      if (audioCombined != null) {
+        inputs.add('-i "$audioCombined"');
+        maps.add('-map $idx:a');
+        idx++;
       } else {
-        // Audio might be muxed in the video segments
         maps.add('-map 0:a?');
       }
 
       String codecArgs = '';
-      if (hasSubtitles) {
-        final subListPath = writeConcatFile(subInits, subMedia, 'sub');
-        inputs.add('-f concat -safe 0 -i "$subListPath"');
-        maps.add('-map $inputIdx:s');
+      if (subCombined != null) {
+        inputs.add('-i "$subCombined"');
+        maps.add('-map $idx:s');
         codecArgs = '-c:s mov_text';
-        inputIdx++;
+        idx++;
       }
 
-      // ── Attempt 1: Concat demuxer + stream copy ───────────
-      // -fflags +genpts regenerates PTS to fix timestamp discontinuities
-      // -avoid_negative_ts make_zero shifts negative timestamps to zero
-      // No -movflags +faststart (unnecessary for local playback, saves time)
-      final copyCommand =
-          '-fflags +genpts ${inputs.join(' ')} ${maps.join(' ')} '
+      // â”€â”€ Attempt 1: Stream copy (fast, ~10-30 seconds) â”€â”€â”€â”€â”€â”€
+      final copyCmd =
+          '${inputs.join(' ')} ${maps.join(' ')} '
           '-c:v copy -c:a copy $codecArgs '
           '-avoid_negative_ts make_zero '
-          '-shortest -y "$outputMp4Path"';
+          '-y "$outputMp4Path"';
 
-      debugPrint('▶ FFmpeg Attempt 1 (concat copy): $copyCommand');
-      late final FFmpegSession copySession;
+      debugPrint('â–¶ FFmpeg Attempt 1 (binary concat + copy): $copyCmd');
       try {
-        copySession = await FFmpegKit.execute(copyCommand).timeout(
-          const Duration(minutes: 30),
-        );
-      } on TimeoutException {
-        debugPrint('⚠ FFmpeg concat copy timed out after 30 minutes');
-        await FFmpegKit.cancel();
-        _cleanupIntermediateFiles(intermediateFiles);
-        throw Exception('MP4 conversion timed out');
-      }
-      final copyRc = await copySession.getReturnCode();
-
-      if (ReturnCode.isSuccess(copyRc)) {
-        final outFile = File(outputMp4Path);
-        final outSize = await outFile.exists() ? await outFile.length() : 0;
-        if (outSize > 1024 * 100) {
-          debugPrint('✅ MP4 created (concat copy): $outputMp4Path (${(outSize / (1024 * 1024)).toStringAsFixed(1)} MB)');
-          _cleanupIntermediateFiles(intermediateFiles);
-          return;
+        final s = await FFmpegKit.execute(copyCmd).timeout(const Duration(minutes: 30));
+        if (ReturnCode.isSuccess(await s.getReturnCode())) {
+          final sz = await File(outputMp4Path).length();
+          if (sz > 100 * 1024) {
+            debugPrint('âœ… MP4 created (copy): ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB');
+            _cleanupIntermediateFiles(intermediateFiles);
+            return;
+          }
         }
-        debugPrint('⚠ Output too small ($outSize bytes) — trying audio re-encode');
-      } else {
-        final logs = await copySession.getAllLogsAsString();
-        debugPrint('⚠ Concat copy failed — trying audio re-encode. Logs: $logs');
+        debugPrint('âš  Copy attempt failed or too small â€” trying audio re-encode');
+      } on TimeoutException {
+        debugPrint('âš  Copy timed out');
+        await FFmpegKit.cancel();
       }
 
-      // ── Attempt 2: Concat demuxer + audio re-encode ───────
-      // Re-encodes audio to fix timestamp/codec edge cases
-      final reencodeCommand =
-          '-fflags +genpts ${inputs.join(' ')} ${maps.join(' ')} '
+      // â”€â”€ Attempt 2: Audio re-encode with sync correction â”€â”€â”€â”€
+      final syncCmd =
+          '${inputs.join(' ')} ${maps.join(' ')} '
           '-c:v copy -c:a aac -b:a 192k '
           '-af "aresample=async=1:first_pts=0" '
           '$codecArgs '
           '-avoid_negative_ts make_zero '
-          '-shortest -y "$outputMp4Path"';
+          '-y "$outputMp4Path"';
 
-      debugPrint('▶ FFmpeg Attempt 2 (concat re-encode): $reencodeCommand');
-      late final FFmpegSession reencodeSession;
+      debugPrint('â–¶ FFmpeg Attempt 2 (audio re-encode): $syncCmd');
       try {
-        reencodeSession = await FFmpegKit.execute(reencodeCommand).timeout(
-          const Duration(minutes: 60),
-        );
-      } on TimeoutException {
-        debugPrint('⚠ FFmpeg concat re-encode timed out after 60 minutes');
-        await FFmpegKit.cancel();
-        _cleanupIntermediateFiles(intermediateFiles);
-        throw Exception('MP4 conversion timed out');
-      }
-      final reencodeRc = await reencodeSession.getReturnCode();
-
-      if (ReturnCode.isSuccess(reencodeRc)) {
-        final outFile = File(outputMp4Path);
-        final outSize = await outFile.exists() ? await outFile.length() : 0;
-        if (outSize > 1024 * 100) {
-          debugPrint('✅ MP4 created (concat re-encode): $outputMp4Path (${(outSize / (1024 * 1024)).toStringAsFixed(1)} MB)');
-          _cleanupIntermediateFiles(intermediateFiles);
-          return;
+        final s = await FFmpegKit.execute(syncCmd).timeout(const Duration(minutes: 45));
+        if (ReturnCode.isSuccess(await s.getReturnCode())) {
+          final sz = await File(outputMp4Path).length();
+          if (sz > 100 * 1024) {
+            debugPrint('âœ… MP4 created (audio re-encode): ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB');
+            _cleanupIntermediateFiles(intermediateFiles);
+            return;
+          }
         }
+        final logs = await s.getAllLogsAsString();
+        debugPrint('âœ— All attempts failed: $logs');
+      } on TimeoutException {
+        debugPrint('âš  Audio re-encode timed out');
+        await FFmpegKit.cancel();
       }
 
-      final logs = await reencodeSession.getAllLogsAsString();
-      debugPrint('✗ All FFmpeg attempts failed: $logs');
       _cleanupIntermediateFiles(intermediateFiles);
-      throw Exception('MP4 conversion failed — both attempts unsuccessful');
+      throw Exception('MP4 conversion failed');
     } catch (e) {
       _cleanupIntermediateFiles(intermediateFiles);
       rethrow;
     }
   }
 
-  /// Cleanup intermediate concat list files
+  /// Binary concatenate files by streaming â€” memory efficient.
+  Future<void> _binaryConcat(List<String> inputPaths, String outputPath) async {
+    final sink = File(outputPath).openWrite();
+    try {
+      for (final path in inputPaths) {
+        await sink.addStream(File(path).openRead());
+      }
+      await sink.flush();
+      await sink.close();
+    } catch (e) {
+      try { await sink.close(); } catch (_) {}
+      rethrow;
+    }
+  }
+
   void _cleanupIntermediateFiles(List<String?> paths) {
     for (final path in paths) {
       if (path == null) continue;
@@ -793,13 +764,13 @@ class HlsDownloaderService {
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────
+  // -- Helpers ------------------------------------------------
   Future<String> _fetchContent(String url) async {
     try {
       final response = await _dio.get(url);
       return response.data.toString();
     } catch (e) {
-      debugPrint('❌ Failed to fetch: $url → $e');
+      debugPrint('Failed to fetch: $url -> $e');
       rethrow;
     }
   }
