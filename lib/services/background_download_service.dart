@@ -20,6 +20,7 @@ const String _eventProgress = 'progress';
 const String _eventComplete = 'complete';
 const String _eventError = 'error';
 const String _eventConversionStarted = 'conversionStarted';
+const String _eventMuxProgress = 'muxProgress';
 const String _eventLinkExpired = 'linkExpired';
 
 // ── Notification action routing ──
@@ -504,14 +505,34 @@ void _onStart(ServiceInstance service) async {
 
     downloader.onConversionStarted = () {
       service.invoke(_eventConversionStarted, {'id': id});
-
-      // Keep showing download notification — conversion is silent
       showDownloadNotification(
         itemId: id,
         title: title,
         progressPct: 96,
         isPaused: false,
         speedText: 'Saving…',
+      );
+    };
+
+    // Mux progress: show method + elapsed time in notification
+    downloader.onMuxProgress = (phase, progress, method, elapsedMs) {
+      service.invoke(_eventMuxProgress, {
+        'id': id,
+        'phase': phase,
+        'progress': progress,
+        'method': method,
+        'elapsedMs': elapsedMs,
+      });
+      final sec = elapsedMs ~/ 1000;
+      final methodLabel = method == 'direct_remux' ? '⚡Fast' : '🔄Std';
+      final phaseLabel = phase == 'concat' ? 'Joining' : phase == 'muxing' ? 'Saving' : phase == 'complete' ? 'Done' : phase;
+      final pct = (96 + (progress * 4)).toInt().clamp(96, 100);
+      showDownloadNotification(
+        itemId: id,
+        title: title,
+        progressPct: pct,
+        isPaused: false,
+        speedText: '$phaseLabel $methodLabel ${sec}s',
       );
     };
 

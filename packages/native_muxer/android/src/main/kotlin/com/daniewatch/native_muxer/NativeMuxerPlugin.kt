@@ -38,10 +38,22 @@ class NativeMuxerPlugin : FlutterPlugin, MethodCallHandler {
                     return
                 }
 
-                // Binary-concat on background, then Transformer on main thread
                 executor.execute {
                     try {
                         val muxer = TransformerMuxer(appContext)
+                        // Wire progress reporting back to Dart via MethodChannel
+                        muxer.onProgress = { phase, progress, method, elapsedMs ->
+                            mainHandler.post {
+                                try {
+                                    channel.invokeMethod("onMuxProgress", mapOf(
+                                        "phase" to phase,
+                                        "progress" to progress,
+                                        "method" to method,
+                                        "elapsedMs" to elapsedMs
+                                    ))
+                                } catch (_: Exception) {}
+                            }
+                        }
                         muxer.muxSegmentsToMp4(segmentDir, outputPath, result, mainHandler)
                     } catch (e: Exception) {
                         Log.e("NativeMuxerPlugin", "Muxing failed: ${e.message}", e)

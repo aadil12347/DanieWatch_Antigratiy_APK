@@ -1,31 +1,37 @@
 import 'package:flutter/services.dart';
 
-/// Native Android MediaMuxer wrapper for TS→MP4 conversion.
-///
-/// Uses Android's MediaExtractor + MediaMuxer APIs for:
-///  - Guaranteed A/V sync (native PTS/DTS handling)
-///  - Stream-copy speed (no re-encoding)
-///  - Works in both main and background isolates
+/// Native Android muxer for TS→MP4 conversion with progress reporting.
 class NativeMuxer {
   static const MethodChannel _channel =
       MethodChannel('com.daniewatch.app/native_muxer');
 
-  /// Mux HLS segments from [segmentDir] into a single MP4 at [outputPath].
-  ///
-  /// The segment directory should contain files named:
-  ///   - `v_init_*.mp4` / `v_seg_*.ts` (video)
-  ///   - `a_init_*.mp4` / `a_seg_*.ts` (audio, optional)
-  ///
-  /// Returns the output path on success.
-  /// Throws [PlatformException] on failure.
+  /// Progress callback: phase, progress(0-1), method, elapsedMs
+  static Function(String phase, double progress, String method, int elapsedMs)?
+      onMuxProgress;
+
   static Future<String> muxToMp4({
     required String segmentDir,
     required String outputPath,
   }) async {
+    // Listen for progress from native side
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onMuxProgress') {
+        final args = call.arguments as Map;
+        onMuxProgress?.call(
+          args['phase'] as String,
+          (args['progress'] as num).toDouble(),
+          args['method'] as String,
+          (args['elapsedMs'] as num).toInt(),
+        );
+      }
+    });
+
     final result = await _channel.invokeMethod<String>('muxToMp4', {
       'segmentDir': segmentDir,
       'outputPath': outputPath,
     });
+
+    _channel.setMethodCallHandler(null);
 
     if (result == null) {
       throw PlatformException(

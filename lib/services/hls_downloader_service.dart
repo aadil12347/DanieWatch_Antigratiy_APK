@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
@@ -6,6 +6,8 @@ import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:native_muxer/native_muxer.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import '../core/utils/error_sanitizer.dart';
 
 /// Robust HLS segment downloader with:
@@ -55,6 +57,8 @@ class HlsDownloaderService {
   Function(String error)? onError;
   Function(String mp4Path)? onComplete;
   VoidCallback? onConversionStarted;
+  /// Mux progress: phase, progress(0-1), method, elapsedMs
+  Function(String phase, double progress, String method, int elapsedMs)? onMuxProgress;
   /// Fired when CDN links are expired (403/404) and playlist refresh failed.
   /// Distinct from onError â€” signals that re-extraction from embed URL is needed.
   Function(String error)? onLinkExpired;
@@ -479,15 +483,15 @@ class HlsDownloaderService {
             freshSegments.where((s) => s.isTsSegment).toList();
         if (segIndex < tsSegments.length) {
           final freshUrl = tsSegments[segIndex].url;
-          debugPrint('âœ… Got fresh CDN URL for segment $segIndex');
+          debugPrint('✅ Got fresh CDN URL for segment $segIndex');
           return freshUrl;
         }
       }
 
-      debugPrint('âš  Could not match segment index in refreshed playlist');
+      debugPrint('⚠️ Could not match segment index in refreshed playlist');
       return null;
     } catch (e) {
-      debugPrint('âŒ Playlist refresh failed: $e');
+      debugPrint('❌ Playlist refresh failed: $e');
       return null;
     }
   }
@@ -501,7 +505,7 @@ class HlsDownloaderService {
     }
 
     if (existingBytes > 0) {
-      // â”€â”€ RESUME PATH: Use streaming to append from byte offset â”€â”€
+      // ── RESUME PATH: Use streaming to append from byte offset ──
       final response = await _dio.get<ResponseBody>(
         url,
         options: Options(
@@ -521,7 +525,7 @@ class HlsDownloaderService {
         await sink.close();
       }
     } else {
-      // â”€â”€ FAST PATH: Bulk download entire segment in native code â”€â”€
+      // ── FAST PATH: Bulk download entire segment in native code ──
       // ResponseType.bytes downloads in native I/O without per-chunk
       // Dart event loop overhead, then writes in a single syscall.
       // This is dramatically faster than streaming for parallel workers.
@@ -577,14 +581,7 @@ class HlsDownloaderService {
     }
   }
 
-  // ═══════════════════════════════════════════════════════
-  //  PHASE 3: Mux video + audio → single .mp4
-  //
-  //  Uses Android's native MediaExtractor + MediaMuxer APIs:
-  //  - Guaranteed A/V sync (native PTS/DTS handling)
-  //  - Stream-copy only (no re-encoding, ~5-10x faster)
-  //  - Zero APK overhead (built into Android)
-  // ═══════════════════════════════════════════════════════
+  // FFmpeg-based muxing: -c:v copy + -c:a aac
   Future<void> _muxToMp4(
     List<_SegmentTask> videoSegments,
     List<_SegmentTask> audioSegments,
@@ -595,20 +592,96 @@ class HlsDownloaderService {
     final dir = Directory(saveDir);
     if (!await dir.exists()) throw Exception('Segment directory not found');
 
-    debugPrint('🔧 Native MediaMuxer: muxing segments from $saveDir');
+    final sw = Stopwatch()..start();
+    debugPrint('FFmpeg muxer: starting from $saveDir');
+    onMuxProgress?.call('concat', 0.0, 'ffmpeg', 0);
+
+    final files = dir.listSync().whereType<File>().toList();
+    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+    final vInits = files.where((f) => p.basename(f.path).startsWith('v_init_')).toList();
+    final vSegs = files.where((f) => p.basename(f.path).startsWith('v_seg_')).toList();
+    final aInits = files.where((f) => p.basename(f.path).startsWith('a_init_')).toList();
+    final aSegs = files.where((f) => p.basename(f.path).startsWith('a_seg_')).toList();
+    if (vSegs.isEmpty) throw Exception('No video segments found');
+    final hasAudio = aSegs.isNotEmpty;
+
+    final vCombined = File(p.join(saveDir, '_video_combined.ts'));
+    final aCombined = hasAudio ? File(p.join(saveDir, '_audio_combined.ts')) : null;
+    await _binaryConcat([...vInits, ...vSegs], vCombined);
+    if (hasAudio && aCombined != null) {
+      await _binaryConcat([...aInits, ...aSegs], aCombined);
+    }
+    onMuxProgress?.call('muxing', 0.05, 'ffmpeg', sw.elapsedMilliseconds);
 
     try {
-      final result = await NativeMuxer.muxToMp4(
-        segmentDir: saveDir,
-        outputPath: outputMp4Path,
-      );
+      final outputFile = File(outputMp4Path);
+      if (await outputFile.exists()) await outputFile.delete();
+      final cmd = StringBuffer();
+      cmd.write('-i "${vCombined.path}" ');
+      if (hasAudio) {
+        cmd.write('-i "${aCombined!.path}" ');
+        cmd.write('-map 0:v -map 1:a ');
+      }
+      cmd.write('-c:v copy ');
+      if (hasAudio) cmd.write('-c:a aac -b:a 128k ');
+      cmd.write('-y "$outputMp4Path"');
+      debugPrint('FFmpeg: ${cmd.toString()}');
 
-      final sz = await File(result).length();
-      debugPrint('✅ MP4 created (native): ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB');
-    } catch (e) {
-      debugPrint('❌ Native muxer failed: $e');
-      throw Exception('MP4 conversion failed: $e');
+      // Use executeAsync + file size polling for progress
+      // (statistics callback doesn't work in background isolates)
+      final expectedSize = await vCombined.length() + (aCombined != null ? (await aCombined.length()) * 0.9 : 0);
+      final completer = Completer<void>();
+      String? ffmpegError;
+
+      final session = await FFmpegKit.executeAsync(cmd.toString(), (session) async {
+        final returnCode = await session.getReturnCode();
+        if (!ReturnCode.isSuccess(returnCode)) {
+          final logs = await session.getLogsAsString();
+          ffmpegError = 'FFmpeg exit code: $returnCode\n$logs';
+          debugPrint('FFmpeg failed: $ffmpegError');
+        }
+        completer.complete();
+      });
+
+      // Poll output file size for progress every 2 seconds
+      Timer.periodic(const Duration(seconds: 2), (timer) {
+        if (completer.isCompleted) {
+          timer.cancel();
+          return;
+        }
+        final outFile = File(outputMp4Path);
+        if (outFile.existsSync()) {
+          final currentSize = outFile.lengthSync();
+          final progress = expectedSize > 0
+              ? (currentSize / expectedSize).clamp(0.0, 0.95)
+              : 0.0;
+          onMuxProgress?.call('muxing', progress, 'ffmpeg', sw.elapsedMilliseconds);
+        }
+      });
+
+      await completer.future;
+
+      if (ffmpegError != null) throw Exception(ffmpegError);
+
+      onMuxProgress?.call('muxing', 1.0, 'ffmpeg', sw.elapsedMilliseconds);
+      final sz = await File(outputMp4Path).length();
+      debugPrint('MP4 done: ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB in ${sw.elapsed.inSeconds}s');
+      onMuxProgress?.call('complete', 1.0, 'ffmpeg', sw.elapsedMilliseconds);
+    } finally {
+      try { if (await vCombined.exists()) await vCombined.delete(); } catch (_) {}
+      try { if (aCombined != null && await aCombined.exists()) await aCombined.delete(); } catch (_) {}
     }
+  }
+
+  Future<void> _binaryConcat(List<File> inputs, File output) async {
+    final sink = output.openWrite();
+    try {
+      for (final f in inputs) {
+        if (!await f.exists() || await f.length() == 0) continue;
+        await sink.addStream(f.openRead());
+      }
+      await sink.flush();
+    } finally { await sink.close(); }
   }
 
 

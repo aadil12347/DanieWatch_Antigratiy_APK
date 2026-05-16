@@ -91,6 +91,12 @@ class DownloadItem {
   String? segmentDirectory;
   int downloadSpeed; // bytes per second
 
+  // ── Mux/saving progress tracking ──
+  String muxPhase; // concat, muxing, complete
+  double muxProgress; // 0-1
+  String muxMethod; // direct_remux, transformer_fallback
+  int muxElapsedMs; // elapsed time in ms
+
   // ── Resilient resume: original embed URL for re-extraction ──
   final String? originalEmbedUrl;
 
@@ -126,6 +132,10 @@ class DownloadItem {
     this.downloadSpeed = 0,
     this.originalEmbedUrl,
     this.urlObtainedAt,
+    this.muxPhase = '',
+    this.muxProgress = 0.0,
+    this.muxMethod = '',
+    this.muxElapsedMs = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -242,7 +252,11 @@ class DownloadItem {
       case DownloadStatus.paused:
         return 'Paused';
       case DownloadStatus.converting:
-        return 'Converting…';
+        final sec = muxElapsedMs ~/ 1000;
+        final methodTag = muxMethod == 'direct_remux' ? '⚡Fast' : muxMethod == 'transformer_fallback' ? '🔄Std' : '';
+        final phaseTag = muxPhase == 'concat' ? 'Joining' : muxPhase == 'muxing' ? 'Saving' : muxPhase == 'complete' ? 'Done' : 'Saving';
+        final pct = (muxProgress * 100).toInt();
+        return '$phaseTag $methodTag $pct% · ${sec}s';
     }
   }
 
@@ -458,9 +472,26 @@ class DownloadManager {
       final item = _findById(data['id']);
       if (item == null) return;
       
-      // Keep status as downloading — conversion is silent to the user
-      item.status = DownloadStatus.downloading;
+      // Keep status as converting — show saving progress
+      item.status = DownloadStatus.converting;
       item.progress = 0.96;
+
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+    });
+
+    // ── Mux progress (saving details: method, time, phase) ──
+    service.on('muxProgress').listen((data) {
+      if (data == null) return;
+      final item = _findById(data['id']);
+      if (item == null) return;
+
+      item.status = DownloadStatus.converting;
+      item.muxPhase = data['phase'] as String? ?? '';
+      item.muxProgress = (data['progress'] as num?)?.toDouble() ?? 0.0;
+      item.muxMethod = data['method'] as String? ?? '';
+      item.muxElapsedMs = (data['elapsedMs'] as num?)?.toInt() ?? 0;
+      item.progress = 0.96 + (item.muxProgress * 0.04);
 
       _updateController.add(item);
       onDownloadUpdate?.call(item);

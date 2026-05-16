@@ -380,11 +380,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       value: item.progress > 0 ? item.progress : null,
                       backgroundColor: AppColors.surface,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        item.status == DownloadStatus.paused
-                            ? Colors.orange
-                            : item.status == DownloadStatus.failed
-                                ? Colors.red
-                                : AppColors.primary,
+                        item.status == DownloadStatus.converting
+                            ? const Color(0xFF00E5FF) // Cyan for saving
+                            : item.status == DownloadStatus.paused
+                                ? Colors.orange
+                                : item.status == DownloadStatus.failed
+                                    ? Colors.red
+                                    : AppColors.primary,
                       ),
                       minHeight: 6,
                     ),
@@ -393,11 +395,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   Text(
                     _getProgressText(item, pct),
                     style: TextStyle(
-                      color: item.status == DownloadStatus.paused
-                          ? Colors.orange
-                          : item.status == DownloadStatus.failed
-                              ? Colors.red
-                              : AppColors.primary,
+                      color: item.status == DownloadStatus.converting
+                          ? const Color(0xFF00E5FF) // Cyan for saving
+                          : item.status == DownloadStatus.paused
+                              ? Colors.orange
+                              : item.status == DownloadStatus.failed
+                                  ? Colors.red
+                                  : AppColors.primary,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
@@ -466,7 +470,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       return 'Failed · Tap ▶ to retry';
     }
     if (item.status == DownloadStatus.converting) {
-      return '$pct% · $mb';
+      return item.statusLabel;
     }
     // Downloading
     final speedStr = item.formattedSpeed;
