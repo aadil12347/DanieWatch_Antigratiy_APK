@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
@@ -18,18 +19,28 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
  * Uses ExoPlayer Transformer for TS→MP4 conversion.
- * Transformer handles CSD extraction (SPS/PPS) automatically via its
- * internal TsExtractor, producing properly playable MP4 files.
+ *
+ * Key design decisions for A/V sync:
+ * - Video: transmux (stream-copy) — fast, no quality loss
+ * - Audio: re-encode — forces Transformer to generate fresh, mathematically
+ *   correct timestamps aligned to the video timeline. This fixes accumulated
+ *   PTS drift between video and audio tracks across 100+ HLS segments.
+ *
+ * Performance optimizations:
+ * - Parallel binary concat (video + audio run simultaneously)
+ * - 4 MB I/O buffer (vs 512 KB) for faster disk reads/writes
  */
 @OptIn(UnstableApi::class)
 class TransformerMuxer(private val context: Context) {
     companion object {
         private const val TAG = "TransformerMuxer"
         private const val TIMEOUT_SECONDS = 600L
+        private const val IO_BUFFER_SIZE = 4 * 1024 * 1024  // 4 MB for fast I/O
     }
 
     fun muxSegmentsToMp4(
@@ -63,16 +74,31 @@ class TransformerMuxer(private val context: Context) {
         val hasSeparateAudio = audioMedia.isNotEmpty()
         Log.d(TAG, "Muxing: ${videoMedia.size} video + ${audioMedia.size} audio segments")
 
-        // Binary-concat segments into continuous streams
+        // ── Parallel binary-concat: video + audio run simultaneously ──
         val videoCombined = File(segmentDir, "_video_combined.ts").absolutePath
-        binaryConcat(videoInits + videoMedia, videoCombined)
-        Log.d(TAG, "Video combined: ${File(videoCombined).length() / (1024*1024)} MB")
-
         var audioCombined: String? = null
+
         if (hasSeparateAudio) {
             audioCombined = File(segmentDir, "_audio_combined.ts").absolutePath
-            binaryConcat(audioInits + audioMedia, audioCombined)
-            Log.d(TAG, "Audio combined: ${File(audioCombined).length() / (1024*1024)} MB")
+            val concatExecutor = Executors.newFixedThreadPool(2)
+
+            val videoFuture = concatExecutor.submit {
+                binaryConcat(videoInits + videoMedia, videoCombined)
+                Log.d(TAG, "Video combined: ${File(videoCombined).length() / (1024 * 1024)} MB")
+            }
+            val audioFuture = concatExecutor.submit {
+                binaryConcat(audioInits + audioMedia, audioCombined!!)
+                Log.d(TAG, "Audio combined: ${File(audioCombined!!).length() / (1024 * 1024)} MB")
+            }
+
+            // Wait for both to finish
+            videoFuture.get()
+            audioFuture.get()
+            concatExecutor.shutdown()
+        } else {
+            // No separate audio — just concat video
+            binaryConcat(videoInits + videoMedia, videoCombined)
+            Log.d(TAG, "Video combined: ${File(videoCombined).length() / (1024 * 1024)} MB")
         }
 
         // Delete previous output
@@ -96,7 +122,10 @@ class TransformerMuxer(private val context: Context) {
                     }
                 }
 
+                // ── Transformer with desync fix ──
+                // setMaxDelayBetweenMuxerSamplesMs: prevents stalls on timestamp gaps
                 val transformer = Transformer.Builder(context)
+                    .setMaxDelayBetweenMuxerSamplesMs(C.TIME_UNSET)
                     .addListener(listener)
                     .build()
 
@@ -109,25 +138,37 @@ class TransformerMuxer(private val context: Context) {
                         MediaItem.fromUri(Uri.fromFile(File(audioCombined)))
                     ).setRemoveVideo(true).build()
 
+                    // ── DESYNC FIX ──
+                    // setTransmuxVideo(true)  = stream-copy video (fast, no quality loss)
+                    // setTransmuxAudio(false) = RE-ENCODE audio with fresh timestamps
+                    //
+                    // Why this fixes desync:
+                    // Each HLS segment has slightly different audio vs video duration
+                    // (e.g., 6.006s video, 5.994s audio). Over 100+ segments this
+                    // accumulates to 1-2 seconds of drift. By re-encoding audio,
+                    // Transformer generates mathematically correct timestamps from
+                    // the decoded sample count (sample_number / sample_rate = exact time),
+                    // eliminating all accumulated drift.
                     val composition = Composition.Builder(
                         EditedMediaItemSequence(videoItem),
                         EditedMediaItemSequence(audioItem)
                     ).setTransmuxVideo(true)
-                     .setTransmuxAudio(true)
+                     .setTransmuxAudio(false)  // RE-ENCODE audio for perfect sync
                      .build()
 
-                    Log.d(TAG, "Starting Transformer (separate A+V)...")
+                    Log.d(TAG, "Starting Transformer (separate A+V, audio re-encode for sync)...")
                     transformer.start(composition, outputPath)
                 } else {
+                    // Single input (video+audio already muxed in TS)
                     val mediaItem = MediaItem.fromUri(Uri.fromFile(File(videoCombined)))
                     val editedItem = EditedMediaItem.Builder(mediaItem).build()
                     val composition = Composition.Builder(
                         EditedMediaItemSequence(editedItem)
                     ).setTransmuxVideo(true)
-                     .setTransmuxAudio(true)
+                     .setTransmuxAudio(false)  // RE-ENCODE audio for sync safety
                      .build()
 
-                    Log.d(TAG, "Starting Transformer (single input)...")
+                    Log.d(TAG, "Starting Transformer (single input, audio re-encode)...")
                     transformer.start(composition, outputPath)
                 }
             } catch (e: Exception) {
@@ -165,7 +206,7 @@ class TransformerMuxer(private val context: Context) {
 
     private fun binaryConcat(inputPaths: List<String>, outputPath: String) {
         FileOutputStream(outputPath).use { out ->
-            val buf = ByteArray(512 * 1024)
+            val buf = ByteArray(IO_BUFFER_SIZE)  // 4 MB buffer for fast I/O
             for (path in inputPaths) {
                 val file = File(path)
                 if (!file.exists() || file.length() == 0L) continue
