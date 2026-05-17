@@ -627,28 +627,19 @@ class HlsDownloaderService {
       cmd.write('-y "$outputMp4Path"');
       debugPrint('FFmpeg: ${cmd.toString()}');
 
-      // Use executeAsync + file size polling for progress
-      // (statistics callback doesn't work in background isolates)
+      // Estimate expected output size for progress
       final expectedSize = await vCombined.length() + (aCombined != null ? (await aCombined.length()) * 0.9 : 0);
-      final completer = Completer<void>();
-      String? ffmpegError;
 
-      final session = await FFmpegKit.executeAsync(cmd.toString(), (session) async {
-        final returnCode = await session.getReturnCode();
-        if (!ReturnCode.isSuccess(returnCode)) {
-          final logs = await session.getLogsAsString();
-          ffmpegError = 'FFmpeg exit code: $returnCode\n$logs';
-          debugPrint('FFmpeg failed: $ffmpegError');
-        }
-        completer.complete();
-      });
+      // FFmpegKit execute/executeAsync both hang in background isolates
+      // because the EventChannel is null. Instead: fire-and-forget via
+      // executeAsync, then poll the output file size for completion.
+      FFmpegKit.executeAsync(cmd.toString(), (_) {});
 
-      // Poll output file size for progress every 2 seconds
-      Timer.periodic(const Duration(seconds: 2), (timer) {
-        if (completer.isCompleted) {
-          timer.cancel();
-          return;
-        }
+      // Poll output file for progress + completion (size stabilizes = done)
+      int stableCount = 0;
+      int lastSize = 0;
+      while (true) {
+        await Future.delayed(const Duration(seconds: 2));
         final outFile = File(outputMp4Path);
         if (outFile.existsSync()) {
           final currentSize = outFile.lengthSync();
@@ -656,15 +647,27 @@ class HlsDownloaderService {
               ? (currentSize / expectedSize).clamp(0.0, 0.95)
               : 0.0;
           onMuxProgress?.call('muxing', progress, 'ffmpeg', sw.elapsedMilliseconds);
+
+          // Check if file size stabilized (FFmpeg finished writing)
+          if (currentSize > 0 && currentSize == lastSize) {
+            stableCount++;
+            if (stableCount >= 3) {
+              // FFmpeg is done
+              break;
+            }
+          } else {
+            stableCount = 0;
+          }
+          lastSize = currentSize;
         }
-      });
+      }
 
-      await completer.future;
-
-      if (ffmpegError != null) throw Exception(ffmpegError);
+      final sz = await File(outputMp4Path).length();
+      if (sz < 1024) {
+        throw Exception('FFmpeg produced empty/tiny output ($sz bytes)');
+      }
 
       onMuxProgress?.call('muxing', 1.0, 'ffmpeg', sw.elapsedMilliseconds);
-      final sz = await File(outputMp4Path).length();
       debugPrint('MP4 done: ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB in ${sw.elapsed.inSeconds}s');
       onMuxProgress?.call('complete', 1.0, 'ffmpeg', sw.elapsedMilliseconds);
     } finally {
