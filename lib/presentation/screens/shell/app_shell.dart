@@ -43,6 +43,10 @@ class _AppShellState extends ConsumerState<AppShell>
   DateTime? _lastBackPressed;
   late AnimationController _supportModalController;
 
+  // Swipe navigation tracking
+  double _swipeDx = 0;
+  double _swipeDy = 0;
+
   @override
   void initState() {
     super.initState();
@@ -246,7 +250,37 @@ class _AppShellState extends ConsumerState<AppShell>
             // Static black background — gradient is now local to carousel in HomeScreen
             Container(color: Colors.black),
             // Main content ON TOP of gradient
-            widget.navigationShell,
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragStart: (_) {
+                _swipeDx = 0;
+                _swipeDy = 0;
+              },
+              onHorizontalDragUpdate: (details) {
+                _swipeDx += details.delta.dx;
+                _swipeDy += details.delta.dy;
+              },
+              onHorizontalDragEnd: (_) {
+                final absDx = _swipeDx.abs();
+                final absDy = _swipeDy.abs();
+                // Intentional swipe: >80px horizontal, ratio > 2x vertical
+                if (absDx > 80 && (absDy < 1 || absDx / absDy > 2.0)) {
+                  final current = widget.navigationShell.currentIndex;
+                  if (_swipeDx < 0 && current < 3) {
+                    // Swipe left → next tab
+                    HapticFeedback.lightImpact();
+                    _onTap(current + 1);
+                  } else if (_swipeDx > 0 && current > 0) {
+                    // Swipe right → previous tab
+                    HapticFeedback.lightImpact();
+                    _onTap(current - 1);
+                  }
+                }
+                _swipeDx = 0;
+                _swipeDy = 0;
+              },
+              child: widget.navigationShell,
+            ),
             // Barrier to dismiss modal when tapping outside
             if (isModalOpen)
               Positioned.fill(
