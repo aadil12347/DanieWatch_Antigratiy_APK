@@ -183,7 +183,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   if (downloading.isNotEmpty) ...[
                     _buildSectionHeader(
                       'DOWNLOADING (${downloading.length})',
-                      trailing: isSelectionMode
+                      trailing: isSelectionMode && selectionState.section == SelectionSection.downloading
                           ? _buildBulkDeleteButton(selectionState.selectedIds)
                           : null,
                     ),
@@ -197,19 +197,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   if (completed.isNotEmpty) ...[
                     _buildSectionHeader(
                       'DOWNLOADED (${completed.length})',
-                      trailing: isSelectionMode
+                      trailing: isSelectionMode && selectionState.section == SelectionSection.downloaded
                           ? _buildBulkDeleteButton(selectionState.selectedIds)
-                          : GestureDetector(
-                              onTap: _showClearDialog,
-                              child: Text(
-                                'Clear All',
-                                style: GoogleFonts.inter(
-                                  color: AppColors.primary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
+                          : !isSelectionMode
+                              ? GestureDetector(
+                                  onTap: _showClearDialog,
+                                  child: Text(
+                                    'Clear All',
+                                    style: GoogleFonts.inter(
+                                      color: AppColors.primary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                )
+                              : null,
                     ),
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
@@ -286,14 +288,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final selectionState = ref.watch(downloadsSelectionProvider);
     final isSelected = selectionState.selectedIds.contains(item.id);
     final isSelectionMode = selectionState.isSelectionMode;
+    final isThisSection = selectionState.section == SelectionSection.downloading;
 
     return GestureDetector(
-      onTap: isSelectionMode
+      onTap: isSelectionMode && isThisSection
           ? () => ref.read(downloadsSelectionProvider.notifier).toggleItem(item.id)
           : null,
       onLongPress: () {
         HapticFeedback.mediumImpact();
-        ref.read(downloadsSelectionProvider.notifier).activate(item.id);
+        ref.read(downloadsSelectionProvider.notifier).activate(item.id, section: SelectionSection.downloading);
       },
       child: Container(
         margin: EdgeInsets.symmetric(
@@ -317,10 +320,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           children: [
             // Selection Indicator (Reserved Space to prevent glitch/shift)
             SizedBox(
-              width: isSelectionMode ? 32 : 0,
+              width: isSelectionMode && isThisSection ? 32 : 0,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
-                child: isSelectionMode
+                child: isSelectionMode && isThisSection
                     ? Icon(
                         isSelected
                             ? Icons.check_circle_rounded
@@ -332,7 +335,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     : const SizedBox.shrink(key: ValueKey('empty')),
               ),
             ),
-            if (isSelectionMode) const SizedBox(width: 4),
+            if (isSelectionMode && isThisSection) const SizedBox(width: 4),
             // Thumbnail with Delete Overlay
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -381,7 +384,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       backgroundColor: AppColors.surface,
                       valueColor: AlwaysStoppedAnimation<Color>(
                         item.status == DownloadStatus.converting
-                            ? const Color(0xFF00E5FF) // Cyan for saving
+                            ? const Color(0xFFFF7043) // Warm coral-orange for saving
                             : item.status == DownloadStatus.paused
                                 ? Colors.orange
                                 : item.status == DownloadStatus.failed
@@ -396,7 +399,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     _getProgressText(item, pct),
                     style: TextStyle(
                       color: item.status == DownloadStatus.converting
-                          ? const Color(0xFF00E5FF) // Cyan for saving
+                          ? const Color(0xFFFF7043) // Warm coral-orange for saving
                           : item.status == DownloadStatus.paused
                               ? Colors.orange
                               : item.status == DownloadStatus.failed
@@ -411,7 +414,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             ),
 
             // Controls Column
-            if (!isSelectionMode) ...[
+            if (!(isSelectionMode && isThisSection)) ...[
               const SizedBox(width: 12),
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -485,14 +488,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final selectionState = ref.watch(downloadsSelectionProvider);
     final isSelected = selectionState.selectedIds.contains(item.id);
     final isSelectionMode = selectionState.isSelectionMode;
+    final isThisSection = selectionState.section == SelectionSection.downloaded;
 
     return GestureDetector(
-      onTap: isSelectionMode
+      onTap: isSelectionMode && isThisSection
           ? () => ref.read(downloadsSelectionProvider.notifier).toggleItem(item.id)
           : () => _playDownload(item),
       onLongPress: () {
         HapticFeedback.mediumImpact();
-        ref.read(downloadsSelectionProvider.notifier).activate(item.id);
+        ref.read(downloadsSelectionProvider.notifier).activate(item.id, section: SelectionSection.downloaded);
       },
       child: Container(
         margin: EdgeInsets.symmetric(
@@ -514,7 +518,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         ),
         child: Row(
           children: [
-            if (isSelectionMode) ...[
+            if (isSelectionMode && isThisSection) ...[
               Icon(
                 isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
                 color: isSelected ? Colors.red : Colors.white24,
@@ -569,7 +573,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             ),
 
             // Controls Column
-            if (!isSelectionMode) ...[
+            if (!(isSelectionMode && isThisSection)) ...[
               const SizedBox(width: 12),
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,

@@ -505,16 +505,34 @@ void _onStart(ServiceInstance service) async {
 
     downloader.onConversionStarted = () {
       service.invoke(_eventConversionStarted, {'id': id});
-      showDownloadNotification(
-        itemId: id,
-        title: title,
-        progressPct: 96,
-        isPaused: false,
-        speedText: 'Saving…',
+      // Show saving notification without pause/resume buttons
+      final notifId = notifIdForDownload(id);
+      final androidDetails = AndroidNotificationDetails(
+        _downloadChannelId,
+        _downloadChannelName,
+        channelDescription: _downloadChannelDesc,
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: true,
+        autoCancel: false,
+        showProgress: true,
+        maxProgress: 100,
+        progress: 96,
+        onlyAlertOnce: true,
+        icon: '@mipmap/launcher_icon',
+        subText: '96%',
+      );
+      notifPlugin.show(
+        notifId,
+        title,
+        'Saving…',
+        NotificationDetails(android: androidDetails),
+        payload: id,
       );
     };
 
-    // Mux progress: show method + elapsed time in notification
+    // Mux progress: show remaining time in notification (no pause/resume buttons)
+    int _notifLastShownRemaining = 999999;
     downloader.onMuxProgress = (phase, progress, method, elapsedMs) {
       service.invoke(_eventMuxProgress, {
         'id': id,
@@ -523,16 +541,48 @@ void _onStart(ServiceInstance service) async {
         'method': method,
         'elapsedMs': elapsedMs,
       });
-      final sec = elapsedMs ~/ 1000;
-      final methodLabel = method == 'direct_remux' ? '⚡Fast' : '🔄Std';
-      final phaseLabel = phase == 'concat' ? 'Joining' : phase == 'muxing' ? 'Saving' : phase == 'complete' ? 'Done' : phase;
       final pct = (96 + (progress * 4)).toInt().clamp(96, 100);
-      showDownloadNotification(
-        itemId: id,
-        title: title,
-        progressPct: pct,
-        isPaused: false,
-        speedText: '$phaseLabel $methodLabel ${sec}s',
+      // Calculate smoothed remaining time
+      String timeStr;
+      if (progress > 0.01 && elapsedMs > 500) {
+        final estimatedTotalMs = elapsedMs / progress;
+        final remainingMs = (estimatedTotalMs - elapsedMs).clamp(0, double.infinity);
+        final rawSec = (remainingMs / 1000).round();
+        if (rawSec < _notifLastShownRemaining) {
+          _notifLastShownRemaining = rawSec;
+        }
+        final d = _notifLastShownRemaining;
+        if (d >= 60) {
+          timeStr = 'Saving · ${d ~/ 60}m ${d % 60}s left';
+        } else {
+          timeStr = 'Saving · ${d}s left';
+        }
+      } else {
+        timeStr = 'Saving…';
+      }
+      // Show without action buttons
+      final notifId = notifIdForDownload(id);
+      final androidDetails = AndroidNotificationDetails(
+        _downloadChannelId,
+        _downloadChannelName,
+        channelDescription: _downloadChannelDesc,
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: true,
+        autoCancel: false,
+        showProgress: true,
+        maxProgress: 100,
+        progress: pct,
+        onlyAlertOnce: true,
+        icon: '@mipmap/launcher_icon',
+        subText: '$pct%',
+      );
+      notifPlugin.show(
+        notifId,
+        title,
+        timeStr,
+        NotificationDetails(android: androidDetails),
+        payload: id,
       );
     };
 

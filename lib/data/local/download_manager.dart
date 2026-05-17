@@ -96,6 +96,7 @@ class DownloadItem {
   double muxProgress; // 0-1
   String muxMethod; // direct_remux, transformer_fallback
   int muxElapsedMs; // elapsed time in ms
+  int _lastShownRemainingSec = 999999; // smoothed ETA (only decreases)
 
   // ── Resilient resume: original embed URL for re-extraction ──
   final String? originalEmbedUrl;
@@ -252,11 +253,30 @@ class DownloadItem {
       case DownloadStatus.paused:
         return 'Paused';
       case DownloadStatus.converting:
-        final sec = muxElapsedMs ~/ 1000;
-        final methodTag = muxMethod == 'direct_remux' ? '⚡Fast' : muxMethod == 'transformer_fallback' ? '🔄Std' : '';
-        final phaseTag = muxPhase == 'concat' ? 'Joining' : muxPhase == 'muxing' ? 'Saving' : muxPhase == 'complete' ? 'Done' : 'Saving';
+        final phaseTag = muxPhase == 'complete' ? 'Done' : 'Saving';
         final pct = (muxProgress * 100).toInt();
-        return '$phaseTag $methodTag $pct% · ${sec}s';
+        // Calculate remaining time — smoothed to only decrease
+        String timeStr;
+        if (muxProgress > 0.01 && muxElapsedMs > 500) {
+          final estimatedTotalMs = muxElapsedMs / muxProgress;
+          final remainingMs = (estimatedTotalMs - muxElapsedMs).clamp(0, double.infinity);
+          final rawRemainingSec = (remainingMs / 1000).round();
+          // Only allow time to decrease (smooth out jitter)
+          if (rawRemainingSec < _lastShownRemainingSec) {
+            _lastShownRemainingSec = rawRemainingSec;
+          }
+          final display = _lastShownRemainingSec;
+          if (display >= 60) {
+            final min = display ~/ 60;
+            final sec = display % 60;
+            timeStr = '${min}m ${sec}s left';
+          } else {
+            timeStr = '${display}s left';
+          }
+        } else {
+          timeStr = 'estimating…';
+        }
+        return '$phaseTag $pct% · $timeStr';
     }
   }
 

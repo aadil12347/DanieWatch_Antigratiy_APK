@@ -1,21 +1,28 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// Which section the selection originated from
+enum SelectionSection { downloading, downloaded }
+
 class DownloadsSelectionState {
   final Set<String> selectedIds;
   final bool isSelectionMode;
+  final SelectionSection? section;
 
   const DownloadsSelectionState({
     this.selectedIds = const {},
     this.isSelectionMode = false,
+    this.section,
   });
 
   DownloadsSelectionState copyWith({
     Set<String>? selectedIds,
     bool? isSelectionMode,
+    SelectionSection? section,
   }) {
     return DownloadsSelectionState(
       selectedIds: selectedIds ?? this.selectedIds,
       isSelectionMode: isSelectionMode ?? this.isSelectionMode,
+      section: section ?? this.section,
     );
   }
 }
@@ -23,7 +30,7 @@ class DownloadsSelectionState {
 class DownloadsSelectionNotifier extends StateNotifier<DownloadsSelectionState> {
   DownloadsSelectionNotifier() : super(const DownloadsSelectionState());
 
-  void toggleItem(String id) {
+  void toggleItem(String id, {SelectionSection? section}) {
     final newSelectedIds = Set<String>.from(state.selectedIds);
     if (newSelectedIds.contains(id)) {
       newSelectedIds.remove(id);
@@ -32,16 +39,20 @@ class DownloadsSelectionNotifier extends StateNotifier<DownloadsSelectionState> 
     }
 
     if (newSelectedIds.isEmpty) {
-      state = state.copyWith(selectedIds: {}, isSelectionMode: false);
+      state = const DownloadsSelectionState();
     } else {
-      state = state.copyWith(selectedIds: newSelectedIds, isSelectionMode: true);
+      state = state.copyWith(
+        selectedIds: newSelectedIds,
+        isSelectionMode: true,
+      );
     }
   }
 
-  void activate(String id) {
-    state = state.copyWith(
+  void activate(String id, {required SelectionSection section}) {
+    state = DownloadsSelectionState(
       isSelectionMode: true,
       selectedIds: {id},
+      section: section,
     );
   }
 
