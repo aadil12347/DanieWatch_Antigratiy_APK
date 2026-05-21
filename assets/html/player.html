@@ -278,6 +278,20 @@
             background: #B81D24;
             border-radius: 2px;
             width: 0%;
+            z-index: 1;
+        }
+
+        .seek-preview-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 2px;
+            width: 0%;
+            z-index: 3;
+            pointer-events: none;
+            display: none;
         }
 
         .seek-thumb {
@@ -291,7 +305,7 @@
             transform: translate(-50%, -50%) scale(0);
             transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease;
             box-shadow: 0 0 8px rgba(184, 29, 36, 0.5);
-            z-index: 2;
+            z-index: 5;
         }
 
         .seek-bar-container:hover .seek-thumb,
@@ -907,8 +921,10 @@
         .seek-thumbnail-line {
             width: 2px;
             height: 16px;
-            background: rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.5);
             border-radius: 1px;
+            position: relative;
+            left: 0;
         }
 
         /* ===== LOCK OVERLAY ===== */
@@ -1732,6 +1748,7 @@
                 <div class="seek-bar" id="seekBar">
                     <div class="seek-buffer" id="seekBuffer"></div>
                     <div class="seek-progress" id="seekProgress"></div>
+                    <div class="seek-preview-progress" id="seekPreviewProgress"></div>
                     <div class="seek-marker" id="seekMarker" style="display:none; position:absolute; top:0; bottom:0; width:3px; background:white; z-index:4; border-radius:1px;"></div>
                     <div class="seek-thumb" id="seekThumb"></div>
                 </div>
@@ -1831,6 +1848,7 @@
         const seekThumbnailCtx = seekThumbnailCanvas.getContext('2d');
         const seekThumbnailContainer = document.getElementById('seekThumbnailContainer');
         const seekThumbnailTime = document.getElementById('seekThumbnailTime');
+        const seekThumbnailLine = document.querySelector('.seek-thumbnail-line');
         const miniProgressFill = document.getElementById('miniProgressFill');
 
         // ===== WEB AUDIO API — 3x VOLUME BOOST =====
@@ -1896,27 +1914,21 @@
             pendingPreviewTime = Math.max(0, time);
             
             if (!isPreviewSeeking) {
-                if (previewSeekTimer) clearTimeout(previewSeekTimer);
                 isPreviewSeeking = true;
                 previewVideo.currentTime = pendingPreviewTime;
-            } else {
-                if (previewSeekTimer) clearTimeout(previewSeekTimer);
-                previewSeekTimer = setTimeout(() => {
-                    if (pendingPreviewTime >= 0) {
-                        isPreviewSeeking = true;
-                        previewVideo.currentTime = pendingPreviewTime;
-                    }
-                }, 50);
             }
+            // If already seeking, the seeked handler will chain to pendingPreviewTime
         }
 
         previewVideo.addEventListener('seeked', () => {
             try {
-                seekThumbnailCtx.drawImage(previewVideo, 0, 0, 320, 180);
+                requestAnimationFrame(() => {
+                    seekThumbnailCtx.drawImage(previewVideo, 0, 0, 320, 180);
+                });
             } catch (e) {}
             isPreviewSeeking = false;
             // If there's a newer pending time, seek to it
-            if (pendingPreviewTime >= 0 && Math.abs(previewVideo.currentTime - pendingPreviewTime) > 1) {
+            if (pendingPreviewTime >= 0 && Math.abs(previewVideo.currentTime - pendingPreviewTime) > 0.5) {
                 isPreviewSeeking = true;
                 previewVideo.currentTime = pendingPreviewTime;
             }
@@ -2068,12 +2080,39 @@
         let gestureVolume = 1.0;
         let gestureSeekStart = 0;
         let longPressTimer = null;
+        let longPressRAF = null;
+        let longPressStartTime = 0;
         let isLongPress = false;
         let longPressSpeed = 1.0;
 
-        videoContainer.addEventListener('touchstart', onTouchStart, { passive: true });
+        // Robust long-press detection using rAF polling (immune to WebView timer throttling)
+        function checkLongPress() {
+            if (longPressStartTime === 0) return;
+            if (gestureActive || gestureType || isLongPress) return;
+            const elapsed = Date.now() - longPressStartTime;
+            if (elapsed >= 500) {
+                isLongPress = true;
+                longPressSpeed = 2.0;
+                video.playbackRate = longPressSpeed;
+                haptic('medium');
+                document.getElementById('speedPill').classList.add('visible');
+                longPressStartTime = 0;
+                if (longPressTimer) { clearInterval(longPressTimer); longPressTimer = null; }
+                return;
+            }
+            longPressRAF = requestAnimationFrame(checkLongPress);
+        }
+
+        function cancelLongPress() {
+            longPressStartTime = 0;
+            if (longPressRAF) { cancelAnimationFrame(longPressRAF); longPressRAF = null; }
+            if (longPressTimer) { clearInterval(longPressTimer); longPressTimer = null; }
+        }
+
+        videoContainer.addEventListener('touchstart', onTouchStart, { passive: false });
         videoContainer.addEventListener('touchmove', onTouchMove, { passive: false });
         videoContainer.addEventListener('touchend', onTouchEnd, { passive: true });
+        window.addEventListener('contextmenu', e => e.preventDefault());
 
         // ===== DOUBLE-TAP SKIP =====
         let lastTapTime = 0;
@@ -2085,6 +2124,10 @@
             if (e.touches.length >= 2) return; // Don't start single-finger gestures when two fingers are down
             if (e.target.closest('.ctrl-btn, .back-btn, .center-btn, .seek-bar-container, #settings-menu, .subtitle-panel, .next-episode-overlay, .lock-btn')) return;
 
+            // Prevent Android WebView native long-press (context menu/text selection)
+            // from stealing touch events before our custom long-press timer fires
+            e.preventDefault();
+
             const touch = e.touches[0];
             gestureStartX = touch.clientX;
             gestureStartY = touch.clientY;
@@ -2094,14 +2137,27 @@
             gestureSeekStart = video.currentTime || 0;
             // gestureVolume tracks system volume — don't reset from video.volume
 
-            // Long-press detection
-            longPressTimer = setTimeout(() => {
-                isLongPress = true;
-                longPressSpeed = 2.0;
-                video.playbackRate = longPressSpeed;
-                haptic('medium');
-                document.getElementById('speedPill').classList.add('visible');
-            }, 500);
+            // Start long-press detection with dual rAF + setInterval for maximum reliability
+            longPressStartTime = Date.now();
+            longPressRAF = requestAnimationFrame(checkLongPress);
+            // Fallback interval in case rAF is throttled
+            longPressTimer = setInterval(() => {
+                if (longPressStartTime === 0 || gestureActive || gestureType || isLongPress) {
+                    clearInterval(longPressTimer); longPressTimer = null;
+                    return;
+                }
+                const elapsed = Date.now() - longPressStartTime;
+                if (elapsed >= 500) {
+                    isLongPress = true;
+                    longPressSpeed = 2.0;
+                    video.playbackRate = longPressSpeed;
+                    haptic('medium');
+                    document.getElementById('speedPill').classList.add('visible');
+                    longPressStartTime = 0;
+                    if (longPressRAF) { cancelAnimationFrame(longPressRAF); longPressRAF = null; }
+                    clearInterval(longPressTimer); longPressTimer = null;
+                }
+            }, 100);
         }
 
         function onTouchMove(e) {
@@ -2123,7 +2179,7 @@
             const touch = e.touches[0];
             const dx = touch.clientX - gestureStartX;
             const dy = touch.clientY - gestureStartY;
-            if (longPressTimer && Math.sqrt(dx*dx + dy*dy) > 30) { clearTimeout(longPressTimer); longPressTimer = null; }
+            if (longPressStartTime > 0 && Math.sqrt(dx*dx + dy*dy) > 30) { cancelLongPress(); }
             if (isLongPress) return; // Don't process gestures during long-press
 
             const absDx = Math.abs(dx);
@@ -2141,6 +2197,8 @@
                     gestureType = 'seek';
                 }
                 gestureActive = true;
+                // Cancel long-press since a gesture is starting
+                cancelLongPress();
                 // Cancel tap detection
                 if (tapTimeout) { clearTimeout(tapTimeout); tapTimeout = null; }
             }
@@ -2185,7 +2243,13 @@
             } else if (gestureType === 'seek') {
                 if (!isScrubbing) {
                     isScrubbing = true;
-                    showControls();
+                    // Show bottom controls for seek bar, hide other overlays
+                    controlsBar.classList.add('visible');
+                    headline.classList.remove('visible');
+                    centerControls.classList.remove('visible');
+                    dimmer.classList.add('visible');
+                    topGradient.classList.remove('visible');
+                    clearTimeout(controlsTimeout);
                     seekBarContainer.classList.add('scrubbing');
                     
                     const marker = document.getElementById('seekMarker');
@@ -2193,6 +2257,8 @@
                         marker.style.left = ((gestureSeekStart / video.duration) * 100) + '%';
                         marker.style.display = 'block';
                     }
+                    const previewProg = document.getElementById('seekPreviewProgress');
+                    if (previewProg) previewProg.style.display = 'block';
                 }
 
                 const rect = videoContainer.getBoundingClientRect();
@@ -2201,9 +2267,9 @@
                 const newTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
 
                 const percent = (newTime / video.duration) * 100;
-                seekProgress.style.width = percent + '%';
+                const previewProg = document.getElementById('seekPreviewProgress');
+                if (previewProg) previewProg.style.width = percent + '%';
                 seekThumb.style.left = percent + '%';
-                timeDisplay.textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
 
                 // Thumbnail preview above seek bar (single source of seek time)
                 const barRect = seekBar.getBoundingClientRect();
@@ -2212,6 +2278,8 @@
                 seekThumbnailContainer.style.left = clampedX + 'px';
                 seekThumbnailContainer.classList.add('visible');
                 seekThumbnailTime.textContent = formatTime(newTime);
+                // Offset line to point at actual seek position on progress bar
+                if (seekThumbnailLine) seekThumbnailLine.style.left = (thumbX - clampedX) + 'px';
                 capturePreviewFrame(newTime);
 
                 // Hide the seek tooltip — thumbnail time is sufficient
@@ -2240,7 +2308,7 @@
             }
 
             // Clear long-press
-            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+            cancelLongPress();
             if (isLongPress) {
                 isLongPress = false;
                 video.playbackRate = currentSpeed;
@@ -2263,13 +2331,18 @@
                 video.currentTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
 
                 seekThumbnailContainer.classList.remove('visible');
+                if (seekThumbnailLine) seekThumbnailLine.style.left = '0';
                 isScrubbing = false;
                 seekBarContainer.classList.remove('scrubbing');
                 seekTooltip.classList.remove('visible');
                 
                 const marker = document.getElementById('seekMarker');
                 if (marker) marker.style.display = 'none';
+                const previewProg = document.getElementById('seekPreviewProgress');
+                if (previewProg) previewProg.style.display = 'none';
 
+                // Restore all UI controls
+                showControls();
                 gestureActive = false;
                 gestureType = null;
                 return;
@@ -2657,12 +2730,19 @@
             e.stopPropagation();
             isScrubbing = true;
             seekBarContainer.classList.add('scrubbing');
+            // Hide overlaying controls during seek preview
+            headline.classList.remove('visible');
+            centerControls.classList.remove('visible');
+            topGradient.classList.remove('visible');
+            clearTimeout(controlsTimeout);
             
             const marker = document.getElementById('seekMarker');
             if (marker && video.duration > 0) {
                 marker.style.left = ((video.currentTime / video.duration) * 100) + '%';
                 marker.style.display = 'block';
             }
+            const previewProg = document.getElementById('seekPreviewProgress');
+            if (previewProg) previewProg.style.display = 'block';
             
             updateScrub(e);
             document.addEventListener('mousemove', updateScrub);
@@ -2676,10 +2756,10 @@
             const pct = getSeekPercent(e);
             if (pct < 0) return;
             const p = pct * 100;
-            seekProgress.style.width = p + '%';
+            const previewProg = document.getElementById('seekPreviewProgress');
+            if (previewProg) previewProg.style.width = p + '%';
             seekThumb.style.left = p + '%';
             const previewTime = pct * (video.duration || 0);
-            timeDisplay.textContent = formatTime(previewTime) + ' / ' + formatTime(video.duration);
 
             // Thumbnail preview above seek bar (single time display, no tooltip)
             const barRect = seekBar.getBoundingClientRect();
@@ -2688,6 +2768,8 @@
             seekThumbnailContainer.style.left = clampedX + 'px';
             seekThumbnailContainer.classList.add('visible');
             seekThumbnailTime.textContent = formatTime(previewTime);
+            // Offset line to point at actual seek position on progress bar
+            if (seekThumbnailLine) seekThumbnailLine.style.left = (thumbX - clampedX) + 'px';
             capturePreviewFrame(previewTime);
 
             // Hide seek tooltip — thumbnail time is the single source
@@ -2703,14 +2785,18 @@
             seekBarContainer.classList.remove('scrubbing');
             seekTooltip.classList.remove('visible');
             seekThumbnailContainer.classList.remove('visible');
+            if (seekThumbnailLine) seekThumbnailLine.style.left = '0';
             
             const marker = document.getElementById('seekMarker');
             if (marker) marker.style.display = 'none';
+            const previewProg = document.getElementById('seekPreviewProgress');
+            if (previewProg) previewProg.style.display = 'none';
             
             document.removeEventListener('mousemove', updateScrub);
             document.removeEventListener('mouseup', endScrub);
             document.removeEventListener('touchmove', updateScrub);
             document.removeEventListener('touchend', endScrub);
+            // Restore all controls including headline and center
             showControls();
         }
 

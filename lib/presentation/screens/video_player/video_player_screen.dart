@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -997,11 +999,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       child: InAppWebView(
         key: webKey,
         initialFile: 'assets/html/player.html',
+        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+          Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           allowsInlineMediaPlayback: true,
           mediaPlaybackRequiresUserGesture: false,
           useShouldOverrideUrlLoading: true,
+          disableContextMenu: true,
+          disableLongPressContextMenuOnLinks: true,
         ),
         onWebViewCreated: (controller) {
           if (_isClosing) return; // Don't set up handlers if already closing
