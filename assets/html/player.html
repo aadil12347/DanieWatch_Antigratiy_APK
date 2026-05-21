@@ -219,7 +219,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            z-index: 10;
+            z-index: 20;
             display: flex;
             flex-direction: column;
             padding: 0 20px 16px 20px;
@@ -860,7 +860,7 @@
         /* ===== THUMBNAIL SEEK PREVIEW (above progress bar) ===== */
         .seek-thumbnail-container {
             position: absolute;
-            bottom: 56px;
+            bottom: 36px;
             z-index: 202;
             display: flex;
             flex-direction: column;
@@ -1732,6 +1732,7 @@
                 <div class="seek-bar" id="seekBar">
                     <div class="seek-buffer" id="seekBuffer"></div>
                     <div class="seek-progress" id="seekProgress"></div>
+                    <div class="seek-marker" id="seekMarker" style="display:none; position:absolute; top:0; bottom:0; width:3px; background:white; z-index:4; border-radius:1px;"></div>
                     <div class="seek-thumb" id="seekThumb"></div>
                 </div>
                 <div class="seek-tooltip" id="seekTooltip">00:00</div>
@@ -1739,6 +1740,14 @@
 
             <div class="controls-row">
                 <div class="controls-left">
+                    <button class="ctrl-btn" onclick="playPause(event)" style="margin-right: -4px;">
+                        <svg id="iconPlayBottom" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                        </svg>
+                        <svg id="iconPauseBottom" class="icon-hidden" viewBox="0 0 24 24">
+                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                        </svg>
+                    </button>
                     <button class="ctrl-btn" id="btnVolume" onclick="volumeToggle(event)">
                         <svg id="iconVolumeUp" viewBox="0 0 24 24">
                             <path
@@ -1885,15 +1894,19 @@
         function capturePreviewFrame(time) {
             if (!previewReady || !previewVideo) return;
             pendingPreviewTime = Math.max(0, time);
-            // Throttle: only seek if not currently seeking, debounce at 200ms
+            
             if (!isPreviewSeeking) {
+                if (previewSeekTimer) clearTimeout(previewSeekTimer);
+                isPreviewSeeking = true;
+                previewVideo.currentTime = pendingPreviewTime;
+            } else {
                 if (previewSeekTimer) clearTimeout(previewSeekTimer);
                 previewSeekTimer = setTimeout(() => {
                     if (pendingPreviewTime >= 0) {
                         isPreviewSeeking = true;
                         previewVideo.currentTime = pendingPreviewTime;
                     }
-                }, 200);
+                }, 50);
             }
         }
 
@@ -2106,11 +2119,11 @@
             }
             if (e.target.closest('.ctrl-btn, .back-btn, .center-btn, .seek-bar-container, #settings-menu, .subtitle-panel, .next-episode-overlay, .lock-btn')) return;
 
-            // Cancel long-press if user moves significantly (15px jitter tolerance)
+            // Cancel long-press if user moves significantly (30px jitter tolerance)
             const touch = e.touches[0];
             const dx = touch.clientX - gestureStartX;
             const dy = touch.clientY - gestureStartY;
-            if (longPressTimer && Math.sqrt(dx*dx + dy*dy) > 15) { clearTimeout(longPressTimer); longPressTimer = null; }
+            if (longPressTimer && Math.sqrt(dx*dx + dy*dy) > 30) { clearTimeout(longPressTimer); longPressTimer = null; }
             if (isLongPress) return; // Don't process gestures during long-press
 
             const absDx = Math.abs(dx);
@@ -2170,9 +2183,17 @@
                 }
                 gestureStartY = touch.clientY;
             } else if (gestureType === 'seek') {
-                isScrubbing = true;
-                showControls();
-                seekBarContainer.classList.add('scrubbing');
+                if (!isScrubbing) {
+                    isScrubbing = true;
+                    showControls();
+                    seekBarContainer.classList.add('scrubbing');
+                    
+                    const marker = document.getElementById('seekMarker');
+                    if (marker && video.duration > 0) {
+                        marker.style.left = ((gestureSeekStart / video.duration) * 100) + '%';
+                        marker.style.display = 'block';
+                    }
+                }
 
                 const rect = videoContainer.getBoundingClientRect();
                 const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
@@ -2224,6 +2245,8 @@
                 isLongPress = false;
                 video.playbackRate = currentSpeed;
                 document.getElementById('speedPill').classList.remove('visible');
+                gestureActive = false;
+                gestureType = null;
                 return;
             }
 
@@ -2243,6 +2266,9 @@
                 isScrubbing = false;
                 seekBarContainer.classList.remove('scrubbing');
                 seekTooltip.classList.remove('visible');
+                
+                const marker = document.getElementById('seekMarker');
+                if (marker) marker.style.display = 'none';
 
                 gestureActive = false;
                 gestureType = null;
@@ -2372,13 +2398,20 @@
             const playEl = document.querySelector('#iconPlayCenter path');
             const pauseEl = document.querySelector('#iconPauseCenter path');
             const playBtn = document.querySelector('.center-btn.play');
+            const playBottom = document.getElementById('iconPlayBottom');
+            const pauseBottom = document.getElementById('iconPauseBottom');
+            
             if (isPlaying) {
                 iconPlayCenter.classList.add('icon-hidden');
                 iconPauseCenter.classList.remove('icon-hidden');
+                if (playBottom) playBottom.classList.add('icon-hidden');
+                if (pauseBottom) pauseBottom.classList.remove('icon-hidden');
                 if (playBtn) playBtn.classList.remove('paused-glow');
             } else {
                 iconPlayCenter.classList.remove('icon-hidden');
                 iconPauseCenter.classList.add('icon-hidden');
+                if (playBottom) playBottom.classList.remove('icon-hidden');
+                if (pauseBottom) pauseBottom.classList.add('icon-hidden');
                 if (playBtn) playBtn.classList.add('paused-glow');
             }
         }
@@ -2624,6 +2657,13 @@
             e.stopPropagation();
             isScrubbing = true;
             seekBarContainer.classList.add('scrubbing');
+            
+            const marker = document.getElementById('seekMarker');
+            if (marker && video.duration > 0) {
+                marker.style.left = ((video.currentTime / video.duration) * 100) + '%';
+                marker.style.display = 'block';
+            }
+            
             updateScrub(e);
             document.addEventListener('mousemove', updateScrub);
             document.addEventListener('mouseup', endScrub);
@@ -2663,6 +2703,10 @@
             seekBarContainer.classList.remove('scrubbing');
             seekTooltip.classList.remove('visible');
             seekThumbnailContainer.classList.remove('visible');
+            
+            const marker = document.getElementById('seekMarker');
+            if (marker) marker.style.display = 'none';
+            
             document.removeEventListener('mousemove', updateScrub);
             document.removeEventListener('mouseup', endScrub);
             document.removeEventListener('touchmove', updateScrub);
