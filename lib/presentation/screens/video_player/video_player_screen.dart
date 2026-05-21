@@ -1389,7 +1389,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                       )
                                                       .toList();
 
+                                          // Find current episode index to auto-scroll
+                                          final currentIdx = filtered.indexWhere(
+                                            (e) => e.episodeNumber == _currentEpisode,
+                                          );
+                                          const itemHeight = 92.0; // 68px thumb + 12px margin + 8*2 padding
+                                          final initialOffset = currentIdx > 0
+                                              ? (currentIdx * itemHeight).clamp(0.0, double.infinity)
+                                              : 0.0;
+                                          final scrollCtrl = ScrollController(
+                                            initialScrollOffset: initialOffset,
+                                          );
+
                                           return ListView.builder(
+                                            controller: scrollCtrl,
                                             physics:
                                                 const AlwaysScrollableScrollPhysics(),
                                             itemCount: filtered.length,

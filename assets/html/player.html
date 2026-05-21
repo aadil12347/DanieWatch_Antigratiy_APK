@@ -584,6 +584,13 @@
             display: none;
         }
 
+        /* Hide center play/pause controls when spinner is visible */
+        #player-loader[style*="display: block"] ~ .center-controls,
+        #player-loader[style*="display:block"] ~ .center-controls {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
         .spinner {
             width: 56px;
             height: 56px;
@@ -843,43 +850,11 @@
             fill: #B81D24;
         }
 
-        /* ===== HORIZONTAL SEEK INDICATOR (center pill for swipe seek) ===== */
+        /* ===== HORIZONTAL SEEK INDICATOR (center pill for swipe seek) — HIDDEN, replaced by thumbnail preview ===== */
         .seek-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0.85);
-            background: rgba(0, 0, 0, 0.88);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: white;
-            padding: 14px 32px;
-            border-radius: 18px;
-            font-size: 28px;
-            font-weight: 800;
-            text-align: center;
-            opacity: 0;
-            transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 201;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-        }
-
-        .seek-indicator.visible {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
-        }
-
-        .seek-indicator .seek-time {
-            font-size: 15px;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.6);
-            letter-spacing: 0.5px;
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
         /* ===== THUMBNAIL SEEK PREVIEW (above progress bar) ===== */
@@ -1891,6 +1866,8 @@
         let previewHls = null;
         let previewReady = false;
         let pendingPreviewTime = -1;
+        let previewSeekTimer = null;
+        let isPreviewSeeking = false;
 
         function loadPreviewVideo(url) {
             previewReady = false;
@@ -1907,13 +1884,29 @@
 
         function capturePreviewFrame(time) {
             if (!previewReady || !previewVideo) return;
-            previewVideo.currentTime = Math.max(0, time);
+            pendingPreviewTime = Math.max(0, time);
+            // Throttle: only seek if not currently seeking, debounce at 200ms
+            if (!isPreviewSeeking) {
+                if (previewSeekTimer) clearTimeout(previewSeekTimer);
+                previewSeekTimer = setTimeout(() => {
+                    if (pendingPreviewTime >= 0) {
+                        isPreviewSeeking = true;
+                        previewVideo.currentTime = pendingPreviewTime;
+                    }
+                }, 200);
+            }
         }
 
         previewVideo.addEventListener('seeked', () => {
             try {
                 seekThumbnailCtx.drawImage(previewVideo, 0, 0, 320, 180);
             } catch (e) {}
+            isPreviewSeeking = false;
+            // If there's a newer pending time, seek to it
+            if (pendingPreviewTime >= 0 && Math.abs(previewVideo.currentTime - pendingPreviewTime) > 1) {
+                isPreviewSeeking = true;
+                previewVideo.currentTime = pendingPreviewTime;
+            }
         });
 
         let hls = null;
@@ -2185,23 +2178,13 @@
                 const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
                 const seekDelta = dx * seekSensitivity;
                 const newTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
-                const deltaSign = seekDelta >= 0 ? '+' : '-';
-                const absDelta = Math.abs(newTime - gestureSeekStart);
-
-                const indicator = document.getElementById('seekIndicator');
-                const deltaEl = document.getElementById('seekDelta');
-                const previewEl = document.getElementById('seekTimePreview');
-                indicator.classList.add('visible');
-                deltaEl.textContent = deltaSign + formatTime(absDelta);
-                deltaEl.style.color = seekDelta >= 0 ? '#B81D24' : '#60a5fa';
-                previewEl.textContent = formatTime(newTime);
 
                 const percent = (newTime / video.duration) * 100;
                 seekProgress.style.width = percent + '%';
                 seekThumb.style.left = percent + '%';
                 timeDisplay.textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
 
-                // Thumbnail preview above seek bar
+                // Thumbnail preview above seek bar (single source of seek time)
                 const barRect = seekBar.getBoundingClientRect();
                 const thumbX = (percent / 100) * barRect.width;
                 const clampedX = Math.max(85, Math.min(barRect.width - 85, thumbX));
@@ -2210,9 +2193,8 @@
                 seekThumbnailTime.textContent = formatTime(newTime);
                 capturePreviewFrame(newTime);
 
-                seekTooltip.textContent = formatTime(newTime);
-                seekTooltip.style.left = percent + '%';
-                seekTooltip.classList.add('visible');
+                // Hide the seek tooltip — thumbnail time is sufficient
+                seekTooltip.classList.remove('visible');
             }
         }
 
@@ -2257,7 +2239,6 @@
                 const seekDelta = dx * seekSensitivity;
                 video.currentTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
 
-                document.getElementById('seekIndicator').classList.remove('visible');
                 seekThumbnailContainer.classList.remove('visible');
                 isScrubbing = false;
                 seekBarContainer.classList.remove('scrubbing');
@@ -2267,8 +2248,6 @@
                 gestureType = null;
                 return;
             }
-
-            document.getElementById('seekIndicator').classList.remove('visible');
 
             if (gestureActive) {
                 gestureActive = false;
@@ -2660,12 +2639,9 @@
             seekProgress.style.width = p + '%';
             seekThumb.style.left = p + '%';
             const previewTime = pct * (video.duration || 0);
-            seekTooltip.textContent = formatTime(previewTime);
-            seekTooltip.style.left = p + '%';
-            seekTooltip.classList.add('visible');
             timeDisplay.textContent = formatTime(previewTime) + ' / ' + formatTime(video.duration);
 
-            // Thumbnail preview above seek bar
+            // Thumbnail preview above seek bar (single time display, no tooltip)
             const barRect = seekBar.getBoundingClientRect();
             const thumbX = (p / 100) * barRect.width;
             const clampedX = Math.max(85, Math.min(barRect.width - 85, thumbX));
@@ -2673,6 +2649,9 @@
             seekThumbnailContainer.classList.add('visible');
             seekThumbnailTime.textContent = formatTime(previewTime);
             capturePreviewFrame(previewTime);
+
+            // Hide seek tooltip — thumbnail time is the single source
+            seekTooltip.classList.remove('visible');
         }
 
         function endScrub(e) {
@@ -2865,8 +2844,20 @@
         }
 
         // ===== LOADERS =====
-        function showLoader() { document.getElementById('player-loader').style.display = 'block'; }
-        function hideLoader() { document.getElementById('player-loader').style.display = 'none'; }
+        function showLoader() {
+            document.getElementById('player-loader').style.display = 'block';
+            // Hide center controls to prevent overlap with spinner
+            centerControls.style.opacity = '0';
+            centerControls.style.pointerEvents = 'none';
+        }
+        function hideLoader() {
+            document.getElementById('player-loader').style.display = 'none';
+            // Restore center controls visibility if controls are shown
+            if (controlsVisible) {
+                centerControls.style.opacity = '';
+                centerControls.style.pointerEvents = '';
+            }
+        }
 
         video.addEventListener('waiting', showLoader);
         video.addEventListener('canplay', hideLoader);
