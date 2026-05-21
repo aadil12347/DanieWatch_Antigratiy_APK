@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:volume_controller/volume_controller.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
@@ -861,6 +862,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _bgTimeoutTimer?.cancel();
     _bgMasterWaitTimer?.cancel();
 
+    // 1b. Restore system brightness
+    try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
+
     // 2. Pause & null ALL controllers to prevent JS handler callbacks
     try { _betterPlayerController?.pause(); } catch (_) {}
     try {
@@ -962,6 +966,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _bgMasterWaitTimer?.cancel();
 
     // Dispose controllers (null-safe since _goBack may have already nulled them)
+    try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
     _searchController.dispose();
     _betterPlayerController?.dispose();
     _betterPlayerController = null;
@@ -1061,6 +1066,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 final vol = (args[0] as num).toDouble().clamp(0.0, 1.0);
                 VolumeController.instance.showSystemUI = false;
                 VolumeController.instance.setVolume(vol);
+              }
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'setSystemBrightness',
+            callback: (args) async {
+              if (_isClosing) return;
+              if (args.isNotEmpty) {
+                try {
+                  final brightness = (args[0] as num).toDouble().clamp(0.0, 1.0);
+                  await ScreenBrightness().setScreenBrightness(brightness);
+                } catch (e) {
+                  debugPrint('Failed to set brightness: $e');
+                }
               }
             },
           );

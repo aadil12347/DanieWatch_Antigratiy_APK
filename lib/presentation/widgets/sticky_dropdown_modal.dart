@@ -153,15 +153,20 @@ class _DropdownRoute<T> extends PopupRoute<T> {
     const itemHeight = 44.0;
     const vPad = 6.0;
     final contentH = (items.length * itemHeight) + vPad * 2;
-    final dropH = contentH.clamp(itemHeight, maxHeight);
+    // Cap maxHeight to 60% of screen height
+    final effectiveMaxHeight = maxHeight.clamp(0.0, screen.height * 0.6);
+    final dropH = contentH.clamp(itemHeight, effectiveMaxHeight);
 
     // Position below button, flip above if needed
     final spaceBelow = screen.height - buttonRect.bottom - 8;
     final showBelow = spaceBelow >= dropH;
-    final top =
+    final rawTop =
         showBelow ? buttonRect.bottom + 4 : buttonRect.top - dropH - 4;
-    final left = buttonRect.left;
+    // Clamp to screen bounds (8px margin)
+    final top = rawTop.clamp(8.0, screen.height - dropH - 8.0);
+    final rawLeft = buttonRect.left;
     final width = buttonRect.width;
+    final left = rawLeft.clamp(8.0, screen.width - width - 8.0);
 
     // Auto-scroll to selected item
     final selIdx = items.indexOf(value);
