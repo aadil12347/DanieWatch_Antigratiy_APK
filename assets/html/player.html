@@ -2857,6 +2857,11 @@
         // ===== SUBTITLE CONTROLS =====
         function toggleSubtitlePanel(e) {
             if (e) e.stopPropagation();
+            // Close settings menu if open
+            if (isMenuOpen) {
+                isMenuOpen = false;
+                document.getElementById('settings-menu').classList.remove('visible');
+            }
             isSubPanelOpen = !isSubPanelOpen;
             const panel = document.getElementById('subtitlePanel');
             if (isSubPanelOpen) {
@@ -3068,6 +3073,11 @@
         // ===== SETTINGS MENU =====
         function toggleMenu(e) {
             if (e) e.stopPropagation();
+            // Close subtitle panel if open
+            if (isSubPanelOpen) {
+                isSubPanelOpen = false;
+                document.getElementById('subtitlePanel').classList.remove('visible');
+            }
             const menu = document.getElementById('settings-menu');
             isMenuOpen = !isMenuOpen;
             if (isMenuOpen) {
