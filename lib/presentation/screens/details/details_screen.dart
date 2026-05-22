@@ -1459,94 +1459,78 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
 
     // Navigate directly to VideoPlayerScreen with the raw embed URL.
-    // The player handles extraction internally via its own WebView tapping.
-    // Use PlayLoaderOverlay for the cinematic transition animation.
-    showPlayLoader<String>(
-      context: context,
-      fetchLinkFuture: () async {
-        // Return the raw embed URL immediately — VideoPlayerScreen
-        // will handle the WebView-based extraction internally.
-        // Small delay for the cinematic animation to feel smooth.
-        await Future.delayed(const Duration(milliseconds: 300));
-        return url;
-      },
-      onSuccess: (embedUrl) async {
-        if (!mounted) return;
-        final result = await Navigator.of(context, rootNavigator: true).push(
-          PageRouteBuilder(
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, __, ___) => VideoPlayerScreen(
-              url: embedUrl,
-              originalUrl: url,
-              title: content?.title ?? '',
-              tmdbId: widget.tmdbId,
-              mediaType: widget.mediaType,
-              seasons: content?.seasonNumbers,
-              season: season,
-              episode: episode,
-              isDirectLink: false,
+    // The player handles extraction internally via its own WebView
+    // and shows its own discovery loading view (poster + backdrop + logo).
+    final result = await Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => VideoPlayerScreen(
+          url: url,
+          originalUrl: url,
+          title: content?.title ?? '',
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          seasons: content?.seasonNumbers,
+          season: season,
+          episode: episode,
+          isDirectLink: false,
+        ),
+      ),
+    );
+    if (result == 'error' && mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+          ),
+          icon: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.primary.withValues(alpha: 0.8),
+              size: 32,
             ),
           ),
-        );
-        if (result == 'error' && mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: true,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF1A1A1A),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-              ),
-              icon: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.error_outline_rounded,
-                  color: AppColors.primary.withValues(alpha: 0.8),
-                  size: 32,
-                ),
-              ),
-              title: const Text(
-                'Playback Error',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              content: Text(
-                'Failed to load the video. Please try again.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 14,
-                ),
-              ),
-              actionsAlignment: MainAxisAlignment.center,
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  ),
-                  child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-              ],
+          title: const Text(
+            'Playback Error',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
             ),
-          );
-        }
-      },
-      onError: () {
-        _showToastError('Try Again');
-      },
-    );
+          ),
+          content: Text(
+            'Failed to load the video. Please try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 14,
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
+              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> _handleDownload(String url) async {
