@@ -28,6 +28,8 @@ import '../../providers/admin_provider.dart';
 import '../../providers/support_provider.dart';
 import '../../../domain/models/support_ticket.dart';
 import '../../widgets/support_fab.dart';
+import '../../providers/app_update_provider.dart';
+import '../../widgets/force_update_modal.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -39,7 +41,7 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   DateTime? _lastBackPressed;
   late AnimationController _supportModalController;
 
@@ -50,12 +52,29 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _supportModalController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
     _downloadSub =
         DownloadManager.instance.updateStream.listen(_handleDownloadUpdate);
+
+    // Initialize the app update check
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(appUpdateStateProvider.notifier).initialize();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // If we return from the Android installer, check if install was cancelled
+      ref.read(appUpdateStateProvider.notifier).onAppResumed();
+    }
   }
 
 
@@ -126,6 +145,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _downloadSub?.cancel();
     _supportModalController.dispose();
     super.dispose();
@@ -442,6 +462,19 @@ class _AppShellState extends ConsumerState<AppShell>
                   ),
                 );
               }),
+
+            // ── Force Update Modal (topmost layer — blocks all interaction) ──
+            Consumer(
+              builder: (context, ref, _) {
+                final updateState = ref.watch(appUpdateStateProvider);
+                // Only show modal when an update is needed
+                if (updateState is AppUpdateUpToDate ||
+                    updateState is AppUpdateChecking) {
+                  return const SizedBox.shrink();
+                }
+                return const ForceUpdateModal();
+              },
+            ),
           ],
         ),
       ),

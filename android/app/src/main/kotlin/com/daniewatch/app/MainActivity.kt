@@ -51,6 +51,10 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // Register APK install method channel
+        val installChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.daniewatch/install_apk")
+        installChannel.setMethodCallHandler(InstallApkHandler(this))
+
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         pipMethodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {

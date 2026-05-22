@@ -16,6 +16,7 @@ import 'core/utils/restart_widget.dart';
 import 'pip/pip_controller.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/deep_link_service.dart';
+import 'core/services/app_update_service.dart';
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -92,6 +93,9 @@ Future<void> main() async {
       url: Env.supabaseUrl,
       anonKey: Env.supabaseAnonKey,
     );
+
+    // Cleanup old update APK if the install was successful
+    await AppUpdateService.instance.cleanupIfNeeded();
 
     // Initialize PIP Controller for handling cold recovery
     PipController.instance.init();
