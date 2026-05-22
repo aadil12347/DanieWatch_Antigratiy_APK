@@ -156,7 +156,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
       // Both user and manifest confirmed. Enforce minimum splash display time.
       final elapsed = DateTime.now().difference(_startTime);
-      const minDuration = Duration(milliseconds: 2000);
+      const minDuration = Duration(milliseconds: 1500);
       if (elapsed < minDuration) {
         await Future.delayed(minDuration - elapsed);
       }
@@ -232,7 +232,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     // ── CASE 3: User is NOT logged in — show auth modal ──────────────────────
     final elapsed = DateTime.now().difference(_startTime);
-    const minDuration = Duration(milliseconds: 2000);
+    const minDuration = Duration(milliseconds: 1500);
     if (elapsed < minDuration) {
       await Future.delayed(minDuration - elapsed);
     }
