@@ -21,7 +21,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 
 import '../../services/background_download_service.dart';
 import '../../services/video_extractor_service.dart';
-import '../../services/bysebuho_extractor.dart';
+
 
 /// Port name for isolate communication
 const String _downloadPortName = 'downloader_send_port';
@@ -1519,15 +1519,6 @@ class DownloadManager {
       // Phase 0: Clear ALL cached URLs for this embed to force truly fresh extraction
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('extract_${item.originalEmbedUrl}');
-      // Clear Bysebuho-specific cache if applicable
-      final bysebuho = BysebuhoExtractor.instance;
-      if (bysebuho.isBysebuhoUrl(item.originalEmbedUrl!)) {
-        final code = bysebuho.extractCode(item.originalEmbedUrl!);
-        if (code != null) {
-          await prefs.remove('bysebuho_$code');
-          debugPrint('🧹 Cleared Bysebuho cache for code: $code');
-        }
-      }
       debugPrint('🧹 Cleared extraction cache for: ${item.originalEmbedUrl}');
 
       // Phase 1: Extract fresh master M3U8 URL

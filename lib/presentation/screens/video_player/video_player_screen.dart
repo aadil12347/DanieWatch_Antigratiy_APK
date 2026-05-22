@@ -13,7 +13,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
-import 'package:daniewatch_app/services/bysebuho_extractor.dart';
+
 import '../../providers/detail_provider.dart';
 import '../../providers/watch_history_provider.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
@@ -213,32 +213,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
-  /// Try direct Bysebuho API extraction first (much faster ~1-2s vs 10-20s WebView)
+  /// Start extraction using WebView tapping approach.
+  /// Goes directly to the in-widget WebView extraction that reliably
+  /// discovers m3u8 links by rendering the embed page and auto-clicking.
   Future<void> _tryDirectExtraction(String url) async {
-    final bysebuho = BysebuhoExtractor.instance;
-    if (!bysebuho.isBysebuhoUrl(url)) {
-      // Not a bysebuho URL, fall back to WebView extraction
-      _startExtractionProcess(timeout: const Duration(seconds: 7));
-      return;
-    }
-
-    debugPrint('[DirectExtraction] Trying direct Bysebuho API for: $url');
-    final result = await bysebuho.extract(url);
-    if (result != null && mounted) {
-      debugPrint('[DirectExtraction] ✅ Success! Master: ${result.masterUrl}');
-      setState(() {
-        _isExtracting = false;
-        _discoveryComplete = true;
-      });
-      _startPlayback(result.masterUrl);
-      return;
-    }
-
-    // Direct extraction failed, fall back to WebView
-    debugPrint('[DirectExtraction] Failed, falling back to WebView...');
-    if (mounted) {
-      _startExtractionProcess(timeout: const Duration(seconds: 7));
-    }
+    debugPrint('[Extraction] Starting WebView tapping extraction for: $url');
+    _startExtractionProcess(timeout: const Duration(seconds: 20));
   }
 
   void _startExtractionProcess({required Duration timeout}) {

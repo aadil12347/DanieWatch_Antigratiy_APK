@@ -1,54 +1,48 @@
 import 'dart:async';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'dart:developer' as developer;
-import 'bysebuho_extractor.dart';
 
-/// Extracts streaming URLs using the same InAppWebView-based approach
-/// as the video player screen: intercept all loaded resources via
-/// `onLoadResource`, auto-click play buttons, and discover .m3u8 links.
+/// Extracts streaming URLs using an InAppWebView-based approach:
+/// intercept all loaded resources via `onLoadResource`, auto-click
+/// play buttons, and discover .m3u8 links.
 ///
-/// This replaces the old headless-only approach that looked for <video> src,
-/// which failed on many embed pages.
+/// This is the single, unified extraction approach used by both
+/// "Watch Online" and "Download" flows.
 class VideoExtractorService {
   static final VideoExtractorService _instance =
       VideoExtractorService._internal();
   factory VideoExtractorService() => _instance;
   VideoExtractorService._internal();
 
-  /// Uses an off-screen InAppWebView widget approach identical to the player.
-  /// Returns the best discovered m3u8/mp4 link, or null on timeout.
+  /// Cache TTL: 30 minutes (CDN tokens typically expire after ~1-2 hours)
+  static const Duration _cacheTtl = Duration(minutes: 30);
+
+  /// Extracts the best m3u8/mp4 URL from an embed page using a
+  /// HeadlessInAppWebView that auto-clicks and intercepts resources.
   ///
-  /// This implements a 4-click sequence to trigger HLS link generation
-  /// while handling/blocking pop-ups and redirects.
+  /// Returns the best discovered link, or null on timeout.
   Future<String?> extractVideoUrl(String embedUrl,
       {bool bypassCache = false}) async {
     // 1. Check cache
     final prefs = await SharedPreferences.getInstance();
     if (!bypassCache) {
       final cachedUrl = prefs.getString('extract_$embedUrl');
-      if (cachedUrl != null) {
-        developer.log('[Extractor] Found cached URL: $cachedUrl',
-            name: 'Extractor');
-        return cachedUrl;
+      final cachedTime = prefs.getInt('extract_ts_$embedUrl');
+      if (cachedUrl != null && cachedTime != null) {
+        final age = DateTime.now().millisecondsSinceEpoch - cachedTime;
+        if (age < _cacheTtl.inMilliseconds) {
+          developer.log('[Extractor] Cache hit (${age ~/ 1000}s old): $cachedUrl',
+              name: 'Extractor');
+          return cachedUrl;
+        } else {
+          developer.log('[Extractor] Cache expired, re-extracting...',
+              name: 'Extractor');
+          await prefs.remove('extract_$embedUrl');
+          await prefs.remove('extract_ts_$embedUrl');
+        }
       }
-    }
-
-    // 2. Try direct Bysebuho API extraction first (much faster ~1-2s)
-    final bysebuho = BysebuhoExtractor.instance;
-    if (bysebuho.isBysebuhoUrl(embedUrl)) {
-      developer.log('[Extractor] Trying direct Bysebuho API extraction...',
-          name: 'Extractor');
-      final result = await bysebuho.extract(embedUrl, bypassCache: bypassCache);
-      if (result != null) {
-        developer.log('[Extractor] ✅ Direct extraction succeeded! Master: ${result.masterUrl}',
-            name: 'Extractor');
-        // Cache under the embed URL key too for compatibility
-        await prefs.setString('extract_$embedUrl', result.masterUrl);
-        return result.masterUrl;
-      }
-      developer.log('[Extractor] Direct extraction failed, falling back to WebView...',
-          name: 'Extractor');
     }
 
     developer.log('[Extractor] Starting WebView extraction for: $embedUrl',
@@ -60,13 +54,11 @@ class VideoExtractorService {
     Timer? autoClickTimer;
     Timer? absoluteTimer;
     bool discoveryComplete = false;
-    InAppWebViewController? webViewController;
     HeadlessInAppWebView? headlessWebView;
 
     void completeDiscovery() {
       if (discoveryComplete) return;
       discoveryComplete = true;
-
       autoClickTimer?.cancel();
       absoluteTimer?.cancel();
       masterWaitTimer?.cancel();
@@ -143,7 +135,7 @@ class VideoExtractorService {
       }
     }
 
-    // Create headless WebView with same settings as the player
+    // Create headless WebView with tapping approach
     headlessWebView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(embedUrl)),
       initialSettings: InAppWebViewSettings(
@@ -157,23 +149,23 @@ class VideoExtractorService {
         useShouldInterceptRequest: true,
       ),
       onWebViewCreated: (controller) {
-        webViewController = controller;
+        // Controller managed internally by HeadlessInAppWebView
       },
       onLoadStop: (controller, url) async {
         developer.log('[Extractor] Page loaded: $url', name: 'Extractor');
 
-        // Start the 4-click sequence after load
-        for (int i = 1; i <= 4; i++) {
+        // Start the 5-click sequence after load
+        for (int i = 1; i <= 5; i++) {
           if (discoveryComplete) break;
 
-          developer.log('[Extractor] Click sequence $i/4...',
+          developer.log('[Extractor] Click sequence $i/5...',
               name: 'Extractor');
 
           try {
             await controller.evaluateJavascript(source: """
               (function() {
-                // 1. Close any visible overlays/popups if possible
-                var overlays = document.querySelectorAll('[class*="popup"], [class*="modal"], [id*="popup"], [id*="modal"]');
+                // 1. Close any visible overlays/popups
+                var overlays = document.querySelectorAll('[class*="popup"], [class*="modal"], [id*="popup"], [id*="modal"], [class*="overlay"], [class*="close"]');
                 overlays.forEach(function(el) { 
                   if (el.offsetWidth > 0 || el.offsetHeight > 0) el.remove(); 
                 });
@@ -188,8 +180,12 @@ class VideoExtractorService {
                 }
 
                 // 3. Also try clicking common play buttons
-                var playBtns = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
+                var playBtns = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid, [class*="play"], button[aria-label*="play"], button[aria-label*="Play"]');
                 playBtns.forEach(function(b) { b.click(); });
+
+                // 4. Try triggering video.play() directly
+                var v = document.querySelector('video');
+                if (v) { v.play().catch(function(e){}); }
               })();
             """);
           } catch (e) {
@@ -226,7 +222,9 @@ class VideoExtractorService {
             url.contains('doubleclick') ||
             url.contains('ads') ||
             url.contains('popad') ||
-            url.contains('onclick')) {
+            url.contains('onclick') ||
+            url.contains('popunder') ||
+            url.contains('tracker')) {
           developer.log('[Extractor] Blocking redirect/resource: $url',
               name: 'Extractor');
           return NavigationActionPolicy.CANCEL;
@@ -253,10 +251,10 @@ class VideoExtractorService {
 
     headlessWebView.run();
 
-    // Absolute timeout: 12 seconds (reduced since direct extraction handles most cases)
-    absoluteTimer = Timer(const Duration(seconds: 12), () {
+    // Absolute timeout: 20 seconds
+    absoluteTimer = Timer(const Duration(seconds: 20), () {
       if (!discoveryComplete) {
-        developer.log('[Extractor] Absolute timeout reached.',
+        developer.log('[Extractor] Absolute timeout reached (20s).',
             name: 'Extractor');
         completeDiscovery();
       }
@@ -267,13 +265,49 @@ class VideoExtractorService {
       final result = await completer.future;
       if (result != null) {
         await prefs.setString('extract_$embedUrl', result);
+        await prefs.setInt(
+            'extract_ts_$embedUrl', DateTime.now().millisecondsSinceEpoch);
       }
       return result;
     } finally {
       autoClickTimer?.cancel();
-      absoluteTimer.cancel();
+      absoluteTimer?.cancel();
       masterWaitTimer?.cancel();
       headlessWebView.dispose();
     }
+  }
+
+  /// Fetches the file size of a video URL using an HTTP HEAD request.
+  /// Tries the embed page's download API first (for bysebuho-style sites),
+  /// then falls back to HEAD request on the m3u8/mp4 URL.
+  /// Returns file size in bytes, or null if unavailable.
+  static Future<int?> fetchFileSize(String? m3u8Url) async {
+    if (m3u8Url == null || m3u8Url.isEmpty) return null;
+
+    try {
+      // Try HTTP HEAD to get Content-Length
+      final response = await http.head(
+        Uri.parse(m3u8Url),
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      final contentLength = response.headers['content-length'];
+      if (contentLength != null) {
+        final size = int.tryParse(contentLength);
+        if (size != null && size > 0) {
+          developer.log('[Extractor] File size from HEAD: $size bytes',
+              name: 'Extractor');
+          return size;
+        }
+      }
+    } catch (e) {
+      developer.log('[Extractor] File size fetch failed: $e',
+          name: 'Extractor');
+    }
+    return null;
   }
 }

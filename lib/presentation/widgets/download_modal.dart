@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
-import 'package:daniewatch_app/services/bysebuho_extractor.dart';
+import 'package:daniewatch_app/services/file_size_service.dart';
 import '../../data/local/download_manager.dart';
 import '../../domain/models/content_detail.dart';
 
@@ -64,7 +64,7 @@ class _DownloadModalState extends State<DownloadModal> {
   InAppWebViewController? _controller;
   bool _captured = false;
   String? _capturedUrl;
-  bool _isTryingDirect = true;
+  final bool _isTryingDirect = false;
   String? _directError;
   int? _fileSizeBytes;
 
@@ -138,86 +138,23 @@ class _DownloadModalState extends State<DownloadModal> {
     });
   }
 
-  /// Try direct Bysebuho API extraction to get download links instantly
-  Future<void> _tryDirectExtraction() async {
-    final bysebuho = BysebuhoExtractor.instance;
-    if (!bysebuho.isBysebuhoUrl(widget.initialUrl)) {
-      if (mounted) setState(() { _isTryingDirect = false; });
-      return;
-    }
-
-    // Fetch file size in parallel (non-blocking)
-    bysebuho.fetchOriginalFileSize(widget.initialUrl).then((size) {
-      if (size != null && mounted) {
+  /// Fetch file size info using lightweight API (no crypto dependencies).
+  /// Doesn't block the UI — runs in parallel with WebView loading.
+  Future<void> _fetchFileSize() async {
+    final info = await FileSizeService.instance.fetchFileSizeInfo(widget.initialUrl);
+    if (info != null && mounted) {
+      final size = info.size720pBytes ?? info.originalSizeBytes;
+      if (size != null) {
         setState(() { _fileSizeBytes = size; });
       }
-    });
-
-    try {
-      // Try the downloads API first (direct MP4 links)
-      final downloadLinks = await bysebuho.fetchDownloadLinks(widget.initialUrl);
-      if (downloadLinks != null && downloadLinks.isNotEmpty) {
-        debugPrint('[DownloadModal] Direct download links found: ${downloadLinks.length}');
-        if (mounted) {
-          setState(() {
-            _captured = true;
-            _capturedUrl = downloadLinks.first;
-            _isTryingDirect = false;
-          });
-          DownloadManager.instance.startDownload(
-            url: downloadLinks.first,
-            title: widget.content.title,
-            season: widget.season,
-            episode: widget.episode,
-            posterUrl: widget.posterUrl,
-            context: context,
-          );
-          Future.delayed(const Duration(seconds: 1), () {
-            if (mounted) Navigator.pop(context);
-          });
-        }
-        return;
-      }
-
-      // Fallback: try the playback API (m3u8 master URL)
-      final result = await bysebuho.extract(widget.initialUrl);
-      if (result != null) {
-        debugPrint('[DownloadModal] Direct playback URL found: ${result.masterUrl}');
-        if (mounted) {
-          setState(() {
-            _captured = true;
-            _capturedUrl = result.masterUrl;
-            _isTryingDirect = false;
-          });
-          DownloadManager.instance.startDownload(
-            url: result.masterUrl,
-            title: widget.content.title,
-            season: widget.season,
-            episode: widget.episode,
-            posterUrl: widget.posterUrl,
-            context: context,
-          );
-          Future.delayed(const Duration(seconds: 1), () {
-            if (mounted) Navigator.pop(context);
-          });
-        }
-        return;
-      }
-    } catch (e) {
-      debugPrint('[DownloadModal] Direct extraction error: $e');
-    }
-
-    // Direct extraction failed, fall back to WebView
-    if (mounted) {
-      setState(() { _isTryingDirect = false; });
     }
   }
 
   @override
   void initState() {
     super.initState();
-    // Start direct extraction immediately
-    _tryDirectExtraction();
+    // Fetch file size in parallel (non-blocking)
+    _fetchFileSize();
   }
 
   @override

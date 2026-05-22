@@ -76,8 +76,8 @@ dependencies:
   wakelock_plus: ^1.2.8
   echo_wifi_lock: ^0.0.1
 
-  # AES-256-GCM decryption for Bysebuho API
-  cryptography: ^2.7.0
+
+
   youtube_player_iframe: ^5.2.2
   share_plus: ^12.0.2
   app_links: ^6.4.0

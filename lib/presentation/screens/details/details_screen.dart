@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 
 import '../../providers/download_modal_provider.dart';
 import '../../providers/actor_modal_provider.dart';
@@ -22,7 +22,7 @@ import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
 import '../../../services/video_extractor_service.dart';
-import '../../../services/bysebuho_extractor.dart';
+import '../../../services/file_size_service.dart';
 import '../../../core/services/deep_link_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
@@ -1364,24 +1364,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: content.runtime,
     );
 
-    // Fetch accurate file size in parallel (awaited before download starts)
-    Future<int?> sizeFuture = Future.value(null);
-    final bysebuho = BysebuhoExtractor.instance;
-    if (bysebuho.isBysebuhoUrl(url)) {
-      sizeFuture = bysebuho.fetchOriginalFileSize(url);
-    }
+    // Fetch file size info in parallel (for display in quality selector)
+    final sizeFuture = FileSizeService.instance.fetchFileSizeInfo(url);
 
     String? m3u8Url;
     try {
-      // 2. Extract m3u8 URL in the background
+      // 2. Extract m3u8 URL via WebView tapping in the background
       final extractor = VideoExtractorService();
       m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
 
       // Auto-Recovery: if first attempt fails, retry once
       if ((m3u8Url == null || m3u8Url.isEmpty) && mounted) {
         debugPrint('[Download] First extraction failed, retrying...');
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('extract_$url');
         m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
       }
 
@@ -1416,7 +1410,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     // 5. Start ffmpeg download
     try {
       // Await the file size that was fetching in parallel
-      final realFileSize = await sizeFuture;
+      final fileSizeInfo = await sizeFuture;
+      final realFileSize = fileSizeInfo?.originalSizeBytes;
 
       final item = await DownloadManager.instance.startSegmentDownload(
         m3u8Url: m3u8Url,
@@ -1463,36 +1458,26 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
 
-    // Show Loader and start background extraction
+    // Navigate directly to VideoPlayerScreen with the raw embed URL.
+    // The player handles extraction internally via its own WebView tapping.
+    // Use PlayLoaderOverlay for the cinematic transition animation.
     showPlayLoader<String>(
       context: context,
       fetchLinkFuture: () async {
-        try {
-          final extractor = VideoExtractorService();
-          String? m3u8Url =
-              await extractor.extractVideoUrl(url, bypassCache: true);
-
-          // Auto-Recovery: if first attempt fails, retry once
-          if (m3u8Url == null || m3u8Url.isEmpty) {
-            debugPrint('[PlayLoader] First extraction failed, retrying...');
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove('extract_$url');
-            m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
-          }
-          return m3u8Url;
-        } catch (e) {
-          debugPrint('[PlayLoader] Extraction error: $e');
-          return null; // Will trigger 'Try Again' downstream
-        }
+        // Return the raw embed URL immediately — VideoPlayerScreen
+        // will handle the WebView-based extraction internally.
+        // Small delay for the cinematic animation to feel smooth.
+        await Future.delayed(const Duration(milliseconds: 300));
+        return url;
       },
-      onSuccess: (extractedLink) {
+      onSuccess: (embedUrl) {
         if (!mounted) return;
         Navigator.of(context, rootNavigator: true).push(
           PageRouteBuilder(
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
             pageBuilder: (_, __, ___) => VideoPlayerScreen(
-              url: extractedLink,
+              url: embedUrl,
               originalUrl: url,
               title: content?.title ?? '',
               tmdbId: widget.tmdbId,
@@ -1500,7 +1485,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               seasons: content?.seasonNumbers,
               season: season,
               episode: episode,
-              isDirectLink: true,
+              isDirectLink: false,
             ),
           ),
         );
@@ -1520,7 +1505,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
     if (content != null) {
-      // episode 0 signifies it's a movie, use watch link
       _startDownload(url, 0, content);
     }
   }
