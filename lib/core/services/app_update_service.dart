@@ -69,8 +69,8 @@ class AppUpdateService {
         return null;
       }
 
-      // Compare remote version with current app version
-      if (info.version != Env.appVersion) {
+      // Compare remote version with current app version (semver)
+      if (_isNewerVersion(info.version, Env.appVersion)) {
         debugPrint('🔄 AppUpdate: Update available! '
             'Current: ${Env.appVersion}, Remote: ${info.version}');
         return info;
@@ -82,6 +82,26 @@ class AppUpdateService {
       debugPrint('🔄 AppUpdate: Error checking for updates: $e');
       return null;
     }
+  }
+
+  /// Returns true if [remote] is a strictly higher version than [current].
+  /// Supports standard semver: "1.2.3" > "1.2.0" > "1.0.0"
+  /// Prevents downgrades: "0.9.0" vs "1.0.0" → false.
+  static bool _isNewerVersion(String remote, String current) {
+    final remoteParts =
+        remote.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+    final currentParts =
+        current.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+
+    // Pad to at least 3 parts
+    while (remoteParts.length < 3) remoteParts.add(0);
+    while (currentParts.length < 3) currentParts.add(0);
+
+    for (int i = 0; i < 3; i++) {
+      if (remoteParts[i] > currentParts[i]) return true;
+      if (remoteParts[i] < currentParts[i]) return false;
+    }
+    return false; // versions are equal
   }
 
   // ─────────────────────────────────────────────────────────
@@ -344,6 +364,7 @@ class AppUpdateService {
     await prefs.remove(_keyDownloadComplete);
     debugPrint('🔄 AppUpdate: Cleared persisted update state');
   }
+
 
   /// Clears state for a version that no longer matches the remote update.
   /// Called when a NEW update is pushed and the old download is stale.

@@ -85,5 +85,19 @@ class Env {
         'Pass them at build time or use --dart-define-from-file=.dart_define.env',
       );
     }
+
+    // Warn if APP_VERSION is still the compile-time default — means
+    // .dart_define.env was missing or forgot to set APP_VERSION.
+    assert(() {
+      if (appVersion == '1.0.0') {
+        // ignore: avoid_print
+        print(
+          '⚠️  WARNING: APP_VERSION is still the default "1.0.0".\n'
+          '   Make sure .dart_define.env contains APP_VERSION=<your version> '
+          'before building a release.',
+        );
+      }
+      return true;
+    }());
   }
 }
