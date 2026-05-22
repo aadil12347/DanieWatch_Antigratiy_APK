@@ -1740,7 +1740,7 @@
                 <!-- Thumbnail Preview (above seek bar) -->
                 <div class="seek-thumbnail-container" id="seekThumbnailContainer">
                     <div class="seek-thumbnail-frame">
-                        <canvas id="seekThumbnailCanvas" width="320" height="180"></canvas>
+                        <canvas id="seekThumbnailCanvas" width="160" height="90"></canvas>
                     </div>
                     <span class="seek-thumbnail-time" id="seekThumbnailTime">00:00</span>
                     <div class="seek-thumbnail-line"></div>
@@ -1845,7 +1845,7 @@
         const videoContainer = document.getElementById('videoContainer');
         const previewVideo = document.getElementById('previewVideo');
         const seekThumbnailCanvas = document.getElementById('seekThumbnailCanvas');
-        const seekThumbnailCtx = seekThumbnailCanvas.getContext('2d');
+        const seekThumbnailCtx = seekThumbnailCanvas.getContext('2d', { alpha: false });
         const seekThumbnailContainer = document.getElementById('seekThumbnailContainer');
         const seekThumbnailTime = document.getElementById('seekThumbnailTime');
         const seekThumbnailLine = document.querySelector('.seek-thumbnail-line');
@@ -1889,46 +1889,298 @@
             }
         }
 
-        // ===== THUMBNAIL PREVIEW STATE =====
+        // ═══════════════════════════════════════════════════════════════
+        // ═══════ INSTANT SEEK THUMBNAIL ENGINE (V2 Bulletproof) ═══════
+        // ═══════════════════════════════════════════════════════════════
+
+        // --- Configuration ---
+        const CAPTURE_W = 160;
+        const CAPTURE_H = 90;
+        const JPEG_QUALITY = 0.5;
+        const MAX_CACHE_FRAMES = 2000;
+        const CAPTURE_DELAY_MS = 80;
+        const SCRUB_RESUME_DELAY_MS = 500;
+        const CACHE_KEY_ROUND = 5; // Round timestamps to nearest 5s for consistent keys
+
+        // --- State ---
         let previewHls = null;
         let previewReady = false;
         let pendingPreviewTime = -1;
-        let previewSeekTimer = null;
         let isPreviewSeeking = false;
 
+        // The sprite cache: Map<roundedTimestamp, HTMLImageElement>
+        const spriteCache = new Map();
+        // Blob URL tracking for cleanup
+        const blobUrls = new Map();
+        // Offscreen canvas for capture (never touches the DOM display canvas)
+        const captureCanvas = document.createElement('canvas');
+        captureCanvas.width = CAPTURE_W;
+        captureCanvas.height = CAPTURE_H;
+        const captureCtx = captureCanvas.getContext('2d', { willReadFrequently: false });
+
+        // Background capture state
+        let captureQueue = [];
+        let isCaptureRunning = false;
+        let capturePassIndex = 0;
+        const PASS_INTERVALS = [60, 30, 10, 5]; // Coarse → Fine
+
+        // --- Preview HLS Setup ---
         function loadPreviewVideo(url) {
             previewReady = false;
             if (previewHls) { previewHls.destroy(); previewHls = null; }
+            clearSpriteCache();
+
             try {
                 if (Hls.isSupported()) {
-                    previewHls = new Hls({ enableWorker: false, lowLatencyMode: false, maxBufferLength: 2, maxMaxBufferLength: 5 });
+                    previewHls = new Hls({
+                        enableWorker: false,
+                        lowLatencyMode: false,
+                        maxBufferLength: 6,
+                        maxMaxBufferLength: 15,
+                        startLevel: 0,
+                        capLevelToPlayerSize: true,
+                        backBufferLength: 60,
+                    });
                     previewHls.loadSource(url);
                     previewHls.attachMedia(previewVideo);
-                    previewHls.on(Hls.Events.MANIFEST_PARSED, () => { previewReady = true; });
+                    previewHls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        previewReady = true;
+                        // Lock to absolute lowest quality
+                        previewHls.currentLevel = 0;
+                        previewHls.loadLevel = 0;
+                        // Start multi-pass background capture
+                        startMultiPassCapture();
+                    });
+                    previewHls.on(Hls.Events.ERROR, (e, data) => {
+                        if (data.fatal) {
+                            console.warn('[Sprite] Preview HLS fatal error:', data.type);
+                            previewReady = false;
+                        }
+                    });
                 }
-            } catch (e) { console.warn('Preview video load failed:', e); }
+            } catch (e) {
+                console.warn('[Sprite] Preview video load failed:', e);
+            }
         }
 
+        // --- Sprite Cache Management ---
+        function clearSpriteCache() {
+            for (const url of blobUrls.values()) {
+                try { URL.revokeObjectURL(url); } catch(e) {}
+            }
+            spriteCache.clear();
+            blobUrls.clear();
+            captureQueue = [];
+            isCaptureRunning = false;
+            capturePassIndex = 0;
+        }
+
+        function evictOldestIfNeeded() {
+            if (spriteCache.size <= MAX_CACHE_FRAMES) return;
+            const oldest = spriteCache.keys().next().value;
+            spriteCache.delete(oldest);
+            const oldUrl = blobUrls.get(oldest);
+            if (oldUrl) { URL.revokeObjectURL(oldUrl); blobUrls.delete(oldest); }
+        }
+
+        // --- Multi-Pass Background Capture ---
+        function startMultiPassCapture() {
+            if (isCaptureRunning) return;
+            capturePassIndex = 0;
+            startNextPass();
+        }
+
+        function startNextPass() {
+            if (capturePassIndex >= PASS_INTERVALS.length) {
+                isCaptureRunning = false;
+                console.log('[Sprite] All passes complete. Total cached: ' + spriteCache.size + ' frames');
+                return;
+            }
+
+            const waitDur = setInterval(() => {
+                const dur = video.duration;
+                if (!dur || dur <= 0 || !isFinite(dur)) return;
+                clearInterval(waitDur);
+
+                const interval = PASS_INTERVALS[capturePassIndex];
+                captureQueue = [];
+
+                for (let t = 0; t < dur; t += interval) {
+                    const key = Math.round(t / CACHE_KEY_ROUND) * CACHE_KEY_ROUND;
+                    if (!spriteCache.has(key)) {
+                        captureQueue.push(t);
+                    }
+                }
+
+                console.log('[Sprite] Pass ' + (capturePassIndex + 1) + '/' + PASS_INTERVALS.length +
+                    ' (every ' + interval + 's): ' + captureQueue.length + ' frames to capture');
+
+                isCaptureRunning = true;
+                captureNextFromQueue();
+            }, 300);
+        }
+
+        function captureNextFromQueue() {
+            if (captureQueue.length === 0) {
+                capturePassIndex++;
+                console.log('[Sprite] Pass ' + capturePassIndex + ' done. Cache size: ' + spriteCache.size);
+                setTimeout(startNextPass, 500);
+                return;
+            }
+
+            if (!previewReady || !previewVideo) {
+                isCaptureRunning = false;
+                return;
+            }
+
+            // YIELD to user scrubbing
+            if (isScrubbing) {
+                setTimeout(captureNextFromQueue, SCRUB_RESUME_DELAY_MS);
+                return;
+            }
+
+            const time = captureQueue.shift();
+            const cacheKey = Math.round(time / CACHE_KEY_ROUND) * CACHE_KEY_ROUND;
+
+            if (spriteCache.has(cacheKey)) {
+                setTimeout(captureNextFromQueue, 10);
+                return;
+            }
+
+            // Safety timeout: if seeked doesn't fire within 2s, skip this frame
+            let didFire = false;
+            const safetyTimeout = setTimeout(() => {
+                if (!didFire) {
+                    didFire = true;
+                    console.warn('[Sprite] Seek timeout for t=' + time.toFixed(0) + 's, skipping');
+                    setTimeout(captureNextFromQueue, CAPTURE_DELAY_MS);
+                }
+            }, 2000);
+
+            const onSeeked = () => {
+                if (didFire) return;
+                didFire = true;
+                clearTimeout(safetyTimeout);
+                previewVideo.removeEventListener('seeked', onSeeked);
+
+                requestAnimationFrame(() => {
+                    try {
+                        captureCtx.drawImage(previewVideo, 0, 0, CAPTURE_W, CAPTURE_H);
+                        captureCanvas.toBlob((blob) => {
+                            if (!blob) {
+                                setTimeout(captureNextFromQueue, CAPTURE_DELAY_MS);
+                                return;
+                            }
+                            const imgUrl = URL.createObjectURL(blob);
+                            const img = new Image();
+                            img.onload = () => {
+                                spriteCache.set(cacheKey, img);
+                                blobUrls.set(cacheKey, imgUrl);
+                                evictOldestIfNeeded();
+                                setTimeout(captureNextFromQueue, CAPTURE_DELAY_MS);
+                            };
+                            img.onerror = () => {
+                                URL.revokeObjectURL(imgUrl);
+                                setTimeout(captureNextFromQueue, CAPTURE_DELAY_MS);
+                            };
+                            img.src = imgUrl;
+                        }, 'image/jpeg', JPEG_QUALITY);
+                    } catch (e) {
+                        setTimeout(captureNextFromQueue, CAPTURE_DELAY_MS);
+                    }
+                });
+            };
+
+            previewVideo.addEventListener('seeked', onSeeked, { once: true });
+            previewVideo.currentTime = time;
+        }
+
+        // --- Instant Frame Serving ---
         function capturePreviewFrame(time) {
+            const cacheKey = Math.round(time / CACHE_KEY_ROUND) * CACHE_KEY_ROUND;
+
+            // FAST PATH: Check sprite cache — INSTANT (<1ms)
+            const cached = spriteCache.get(cacheKey);
+            if (cached && cached.complete) {
+                seekThumbnailCtx.drawImage(cached, 0, 0,
+                    seekThumbnailCanvas.width, seekThumbnailCanvas.height);
+                return;
+            }
+
+            // FAST PATH 2: Nearest cached frame — still instant
+            const nearest = findNearestCachedFrame(time);
+            if (nearest) {
+                seekThumbnailCtx.drawImage(nearest, 0, 0,
+                    seekThumbnailCanvas.width, seekThumbnailCanvas.height);
+            }
+
+            // SLOW PATH: Live seek for exact frame (and cache the result)
             if (!previewReady || !previewVideo) return;
             pendingPreviewTime = Math.max(0, time);
-            
             if (!isPreviewSeeking) {
                 isPreviewSeeking = true;
                 previewVideo.currentTime = pendingPreviewTime;
             }
-            // If already seeking, the seeked handler will chain to pendingPreviewTime
         }
 
+        function findNearestCachedFrame(time) {
+            if (spriteCache.size === 0) return null;
+            let bestKey = -1;
+            let bestDist = Infinity;
+            const searchRadius = 120;
+            const minKey = Math.round((time - searchRadius) / CACHE_KEY_ROUND) * CACHE_KEY_ROUND;
+            const maxKey = Math.round((time + searchRadius) / CACHE_KEY_ROUND) * CACHE_KEY_ROUND;
+
+            for (const key of spriteCache.keys()) {
+                if (key < minKey || key > maxKey) continue;
+                const dist = Math.abs(key - time);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestKey = key;
+                }
+            }
+            if (bestKey >= 0) {
+                const img = spriteCache.get(bestKey);
+                if (img && img.complete) return img;
+            }
+            return null;
+        }
+
+        // --- Live Seek Handler (caches results into sprite cache) ---
         previewVideo.addEventListener('seeked', () => {
             try {
                 requestAnimationFrame(() => {
-                    seekThumbnailCtx.drawImage(previewVideo, 0, 0, 320, 180);
+                    // Draw to display canvas
+                    seekThumbnailCtx.drawImage(previewVideo, 0, 0,
+                        seekThumbnailCanvas.width, seekThumbnailCanvas.height);
+
+                    // Cache this live-seek frame for future instant access
+                    const currentTime = previewVideo.currentTime;
+                    const cacheKey = Math.round(currentTime / CACHE_KEY_ROUND) * CACHE_KEY_ROUND;
+                    if (!spriteCache.has(cacheKey)) {
+                        try {
+                            captureCtx.drawImage(previewVideo, 0, 0, CAPTURE_W, CAPTURE_H);
+                            captureCanvas.toBlob((blob) => {
+                                if (!blob) return;
+                                const imgUrl = URL.createObjectURL(blob);
+                                const img = new Image();
+                                img.onload = () => {
+                                    spriteCache.set(cacheKey, img);
+                                    blobUrls.set(cacheKey, imgUrl);
+                                    evictOldestIfNeeded();
+                                };
+                                img.onerror = () => URL.revokeObjectURL(imgUrl);
+                                img.src = imgUrl;
+                            }, 'image/jpeg', JPEG_QUALITY);
+                        } catch(e) {}
+                    }
                 });
             } catch (e) {}
+
             isPreviewSeeking = false;
-            // If there's a newer pending time, seek to it
-            if (pendingPreviewTime >= 0 && Math.abs(previewVideo.currentTime - pendingPreviewTime) > 0.5) {
+            // Chain to pending time if user continued scrubbing
+            if (pendingPreviewTime >= 0 &&
+                Math.abs(previewVideo.currentTime - pendingPreviewTime) > 0.5) {
                 isPreviewSeeking = true;
                 previewVideo.currentTime = pendingPreviewTime;
             }
@@ -3170,6 +3422,12 @@
         renderSpeedOptions();
         renderAspectOptions();
         applySubtitleStyle();
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            clearSpriteCache();
+            if (previewHls) { previewHls.destroy(); previewHls = null; }
+        });
 
         // Initial state
         showControls();
