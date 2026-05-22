@@ -1942,6 +1942,7 @@
         let controlsVisible = false;
         let isLocked = false;
         let isSubPanelOpen = false;
+        let seekBarJustEnded = 0; // Timestamp to prevent toggleControls right after seek ends
 
         // Data stores
         let audioTracks = [];
@@ -2341,7 +2342,8 @@
                 const previewProg = document.getElementById('seekPreviewProgress');
                 if (previewProg) previewProg.style.display = 'none';
 
-                // Restore all UI controls
+                // Restore all UI controls (headline, center controls, bottom bar)
+                seekBarJustEnded = Date.now(); // Guard: prevent tap handler from toggling UI off
                 showControls();
                 gestureActive = false;
                 gestureType = null;
@@ -2724,10 +2726,11 @@
         }
 
         seekBarContainer.addEventListener('mousedown', startScrub);
-        seekBarContainer.addEventListener('touchstart', startScrub, { passive: true });
+        seekBarContainer.addEventListener('touchstart', startScrub, { passive: false });
 
         function startScrub(e) {
             e.stopPropagation();
+            if (e.cancelable) e.preventDefault(); // Prevent WebView page scroll/wiggle
             isScrubbing = true;
             seekBarContainer.classList.add('scrubbing');
             // Hide overlaying controls during seek preview
@@ -2747,12 +2750,13 @@
             updateScrub(e);
             document.addEventListener('mousemove', updateScrub);
             document.addEventListener('mouseup', endScrub);
-            document.addEventListener('touchmove', updateScrub, { passive: true });
+            document.addEventListener('touchmove', updateScrub, { passive: false });
             document.addEventListener('touchend', endScrub);
         }
 
         function updateScrub(e) {
             if (!isScrubbing) return;
+            if (e.cancelable) e.preventDefault(); // Prevent page scroll/wiggle during drag
             const pct = getSeekPercent(e);
             if (pct < 0) return;
             const p = pct * 100;
@@ -2782,6 +2786,7 @@
             if (pct >= 0) video.currentTime = pct * (video.duration || 0);
             isScrubbing = false;
             lastScrubTime = Date.now();
+            seekBarJustEnded = Date.now(); // Guard: prevent toggleControls from hiding UI immediately
             seekBarContainer.classList.remove('scrubbing');
             seekTooltip.classList.remove('visible');
             seekThumbnailContainer.classList.remove('visible');
@@ -2951,6 +2956,11 @@
         }
 
         function toggleControls() {
+            // Guard: don't hide controls immediately after a seek just finished
+            if (seekBarJustEnded && (Date.now() - seekBarJustEnded) < 500) {
+                seekBarJustEnded = 0;
+                return;
+            }
             if (controlsVisible) hideUI();
             else showControls();
         }
