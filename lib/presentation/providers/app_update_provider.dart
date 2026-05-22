@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,7 +65,8 @@ class AppUpdateDownloadError extends AppUpdateState {
 /// Install intent triggered, waiting for user to confirm in Android installer.
 class AppUpdateInstalling extends AppUpdateState {
   final AppUpdateInfo info;
-  const AppUpdateInstalling(this.info);
+  final String apkPath;
+  const AppUpdateInstalling(this.info, this.apkPath);
 }
 
 /// User needs to enable "Install from unknown sources" permission.
@@ -86,34 +88,36 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
   /// Initialize: check for updates and determine starting state.
   Future<void> initialize() async {
     state = const AppUpdateChecking();
+    debugPrint('🔄 AppUpdateProvider: Initializing...');
 
     // 1. Check if an update is available
     final updateInfo = await _service.checkForUpdate();
 
     if (updateInfo == null) {
+      debugPrint('🔄 AppUpdateProvider: No update needed');
       state = const AppUpdateUpToDate();
       return;
     }
+
+    debugPrint('🔄 AppUpdateProvider: Update available: ${updateInfo.version}');
 
     // 2. Check if we have a prior download for this version
     final persisted = await _service.getPersistedState(updateInfo.version);
 
     if (persisted == null) {
-      // No prior state — fresh download needed
+      debugPrint('🔄 AppUpdateProvider: No prior download → ReadyToDownload');
       state = AppUpdateReadyToDownload(updateInfo);
       return;
     }
 
     final downloadState = persisted['state'] as String;
+    debugPrint('🔄 AppUpdateProvider: Found persisted state: $downloadState');
 
     if (downloadState == 'complete') {
-      // APK fully downloaded — ready to install
-      state = AppUpdateReadyToInstall(
-        updateInfo,
-        persisted['path'] as String,
-      );
+      final path = persisted['path'] as String;
+      debugPrint('🔄 AppUpdateProvider: APK ready at $path → ReadyToInstall');
+      state = AppUpdateReadyToInstall(updateInfo, path);
     } else {
-      // Partial download — can resume
       state = AppUpdateReadyToResume(
         updateInfo,
         persisted['bytesDownloaded'] as int,
@@ -127,6 +131,7 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     final info = _getUpdateInfo();
     if (info == null) return;
 
+    debugPrint('🔄 AppUpdateProvider: Starting download for ${info.version}');
     state = AppUpdateDownloading(info, 0.0, 0, 0);
 
     try {
@@ -139,7 +144,7 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
         },
       );
 
-      // Download complete — transition to ready to install
+      debugPrint('🔄 AppUpdateProvider: Download complete → $apkPath');
       state = AppUpdateReadyToInstall(info, apkPath);
 
       // Auto-trigger install after a brief delay for UI feedback
@@ -147,7 +152,6 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
       await startInstall();
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
-        // User cancelled — go back to resume state
         final persisted = await _service.getPersistedState(info.version);
         if (persisted != null) {
           state = AppUpdateReadyToResume(
@@ -172,6 +176,7 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
           message = 'Download failed: ${e.message ?? 'Unknown error'}';
         }
       }
+      debugPrint('🔄 AppUpdateProvider: Download error: $message');
       state = AppUpdateDownloadError(info, message);
     }
   }
@@ -188,54 +193,56 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     } else if (currentState is AppUpdateNeedsPermission) {
       apkPath = currentState.apkPath;
       info = currentState.info;
+    } else if (currentState is AppUpdateInstalling) {
+      apkPath = currentState.apkPath;
+      info = currentState.info;
     }
 
-    if (apkPath == null || info == null) return;
+    if (apkPath == null || info == null) {
+      debugPrint('🔄 AppUpdateProvider: startInstall called but no apkPath/info (state: ${state.runtimeType})');
+      return;
+    }
 
-    state = AppUpdateInstalling(info);
+    debugPrint('🔄 AppUpdateProvider: Triggering install for $apkPath');
+    state = AppUpdateInstalling(info, apkPath);
 
     try {
       final result = await _service.installApk(apkPath);
+      debugPrint('🔄 AppUpdateProvider: Install result: $result');
 
       if (result == 'needs_permission') {
-        // User needs to enable "Install unknown apps" 
+        debugPrint('🔄 AppUpdateProvider: Needs install permission → NeedsPermission');
         state = AppUpdateNeedsPermission(info, apkPath);
       }
       // If result == 'success', the Android installer is now open.
-      // The app lifecycle observer will handle what happens next.
       // We stay in "Installing" state until onAppResumed() is called.
     } on PlatformException catch (e) {
+      debugPrint('🔄 AppUpdateProvider: PlatformException: ${e.code} - ${e.message}');
       if (e.code == 'NEEDS_PERMISSION') {
         state = AppUpdateNeedsPermission(info, apkPath);
       } else {
         state = AppUpdateReadyToInstall(info, apkPath);
       }
     } catch (e) {
+      debugPrint('🔄 AppUpdateProvider: Install error: $e');
       state = AppUpdateReadyToInstall(info, apkPath);
     }
   }
 
-  /// Called when the app returns to foreground after install intent.
-  /// If we're still alive, the install was cancelled by the user.
+  /// Called when the app returns to foreground after install/settings intent.
   void onAppResumed() {
     final currentState = state;
+    debugPrint('🔄 AppUpdateProvider: onAppResumed (state: ${currentState.runtimeType})');
+
     if (currentState is AppUpdateInstalling) {
-      // We're still alive → install was cancelled
-      // Find the APK path from persisted state and transition to ReadyToInstall
-      _restoreToReadyToInstall(currentState.info);
+      // We're still alive → install was cancelled by user
+      // Show "Install Update" button again
+      debugPrint('🔄 AppUpdateProvider: Install was cancelled → ReadyToInstall');
+      state = AppUpdateReadyToInstall(currentState.info, currentState.apkPath);
     } else if (currentState is AppUpdateNeedsPermission) {
       // User came back from Settings — retry install
+      debugPrint('🔄 AppUpdateProvider: Returned from Settings → retrying install');
       startInstall();
-    }
-  }
-
-  Future<void> _restoreToReadyToInstall(AppUpdateInfo info) async {
-    final persisted = await _service.getPersistedState(info.version);
-    if (persisted != null && persisted['state'] == 'complete') {
-      state = AppUpdateReadyToInstall(info, persisted['path'] as String);
-    } else {
-      // Shouldn't happen, but fallback
-      state = AppUpdateReadyToDownload(info);
     }
   }
 
