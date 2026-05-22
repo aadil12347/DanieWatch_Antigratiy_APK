@@ -1470,9 +1470,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         await Future.delayed(const Duration(milliseconds: 300));
         return url;
       },
-      onSuccess: (embedUrl) {
+      onSuccess: (embedUrl) async {
         if (!mounted) return;
-        Navigator.of(context, rootNavigator: true).push(
+        final result = await Navigator.of(context, rootNavigator: true).push(
           PageRouteBuilder(
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
@@ -1489,6 +1489,59 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ),
           ),
         );
+        if (result == 'error' && mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: true,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+              ),
+              icon: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.error_outline_rounded,
+                  color: AppColors.primary.withValues(alpha: 0.8),
+                  size: 32,
+                ),
+              ),
+              title: const Text(
+                'Playback Error',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: Text(
+                'Failed to load the video. Please try again.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 14,
+                ),
+              ),
+              actionsAlignment: MainAxisAlignment.center,
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  ),
+                  child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          );
+        }
       },
       onError: () {
         _showToastError('Try Again');

@@ -366,23 +366,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           return;
         }
 
-        debugPrint('[Discovery] No valid links found. Showing error.');
-        setState(() {
-          _isExtracting = false;
-          _hasError = true;
-          _discoveryComplete = true;
-          _webViewController = null;
-          _extractionError = 'Please close and open again';
-        });
+        debugPrint('[Discovery] No valid links found. Closing with error.');
         _autoClickTimer?.cancel();
         _bgDiscoveryTimer?.cancel();
         _masterWaitTimer?.cancel();
         _extractionTimer?.cancel();
-        
-        // Auto-close after 5 seconds on error
-        _errorAutoCloseTimer = Timer(const Duration(seconds: 5), () {
-          if (mounted) _goBack();
-        });
+        _discoveryComplete = true;
+        _goBack(error: 'error');
       }
     }
   }
@@ -761,27 +751,29 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildDiscoveryProgress({Key? key}) {
-    final epLabel = widget.mediaType != 'movie' && _currentEpisode != null
-        ? 'Episode $_currentEpisode'
-        : widget.title;
-    return Container(
-      key: key,
-      color: Colors.black,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(
-              width: 44,
-              height: 44,
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 3,
-              ),
-            ),
-          ],
-        ),
+    final contentAsync = ref.read(
+      detailProvider(
+        DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
       ),
+    );
+    final content = contentAsync.valueOrNull;
+
+    final String? seasonEpisode;
+    if (widget.mediaType != 'movie' && _currentEpisode != null) {
+      seasonEpisode = 'Season ${_currentSeason ?? 1} · Episode $_currentEpisode';
+    } else {
+      seasonEpisode = null;
+    }
+
+    return _DiscoveryLoadingView(
+      key: key,
+      backdropUrl: content?.backdropUrl,
+      posterUrl: content?.posterUrl,
+      title: widget.title,
+      logoUrl: content?.displayLogoUrl,
+      seasonEpisode: seasonEpisode,
+      genres: content?.genres,
+      overview: content?.overview ?? content?.description,
     );
   }
 
@@ -825,7 +817,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     setState(() {});
   }
 
-  Future<void> _goBack() async {
+  Future<void> _goBack({String? error}) async {
     // Prevent double execution — once _isClosing is true, nothing else runs
     if (!mounted || _isClosing) return;
     _isClosing = true;
@@ -871,7 +863,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     // 4. Pop WITHOUT setState — directly set field and pop to avoid rebuild crash
     _canPop = true;
     if (mounted) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(error);
     }
   }
 
@@ -1712,40 +1704,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         Positioned.fill(
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 500),
-            child: _hasError
-                ? _buildErrorOverlay()
-                : _isExtracting
-                    ? _buildDiscoveryProgress(key: const ValueKey('loader'))
-                    : _useWebViewEngine
-                        ? _buildWebPlayer(key: const ValueKey('web_player'))
-                        : (!_isInitialized || _isLoading)
-                            ? _buildLoadingState(key: const ValueKey('prep'))
-                            : _buildPlayerInterface(),
+            child: _isExtracting
+                ? _buildDiscoveryProgress(key: const ValueKey('loader'))
+                : _useWebViewEngine
+                    ? _buildWebPlayer(key: const ValueKey('web_player'))
+                    : (!_isInitialized || _isLoading)
+                        ? _buildLoadingState(key: const ValueKey('prep'))
+                        : _buildPlayerInterface(),
           ),
         ),
 
         // 4. Back button during extraction
-        if (!_hasError && _isExtracting && !_useWebViewEngine)
+        if (_isExtracting && !_useWebViewEngine)
           Positioned(
             top: 0,
             left: 0,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 child: LiquidTapEffect(
                   onTap: _goBack,
                   child: Container(
-                    width: 52,
-                    height: 52,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
+                      color: Colors.black.withValues(alpha: 0.5),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white10),
+                      border: Border.all(color: Colors.white12),
                     ),
                     child: const Icon(
                       Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white,
-                      size: 26,
+                      color: Colors.white70,
+                      size: 16,
                     ),
                   ),
                 ),
@@ -2071,6 +2061,282 @@ class _CinematicLoaderState extends State<_CinematicLoader>
       child: isCompleted
           ? const Icon(Icons.check, size: 16, color: Colors.white)
           : null,
+    );
+  }
+}
+
+// ─── Discovery Loading View (animated, self-contained) ───────────────────────
+class _DiscoveryLoadingView extends StatefulWidget {
+  final String? backdropUrl;
+  final String? posterUrl;
+  final String title;
+  final String? logoUrl;
+  final String? seasonEpisode;
+  final List<String>? genres;
+  final String? overview;
+
+  const _DiscoveryLoadingView({
+    super.key,
+    this.backdropUrl,
+    this.posterUrl,
+    required this.title,
+    this.logoUrl,
+    this.seasonEpisode,
+    this.genres,
+    this.overview,
+  });
+
+  @override
+  State<_DiscoveryLoadingView> createState() => _DiscoveryLoadingViewState();
+}
+
+class _DiscoveryLoadingViewState extends State<_DiscoveryLoadingView>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.03),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOut,
+    ));
+
+    // Wait for screen rotation to fully settle, then animate everything in
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) _animController.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final screenH = MediaQuery.of(context).size.height;
+    final posterH = screenH * 0.68;
+    final posterW = posterH * 0.67;
+
+    return Container(
+      color: Colors.black,
+      child: FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ── Background: Backdrop image (dulled) ──
+              if (widget.backdropUrl != null && widget.backdropUrl!.isNotEmpty) ...[
+                Positioned.fill(
+                  child: CachedNetworkImage(
+                    imageUrl: widget.backdropUrl!,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.88),
+                          Colors.black.withValues(alpha: 0.72),
+                          Colors.black.withValues(alpha: 0.80),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              // ── Main Content: Poster LEFT, Info RIGHT ──
+              Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenW * 0.06,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ── LEFT: Poster only ──
+                      if (widget.posterUrl != null && widget.posterUrl!.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: CachedNetworkImage(
+                            imageUrl: widget.posterUrl!,
+                            height: posterH,
+                            width: posterW,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(
+                              height: posterH,
+                              width: posterW,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                          ),
+                        ),
+
+                      const SizedBox(width: 28),
+
+                      // ── RIGHT: Title + Season + Genres + Description ──
+                      // Constrained so description wraps nicely
+                      SizedBox(
+                        width: screenW * 0.45,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Logo or Title
+                            if (widget.logoUrl != null && widget.logoUrl!.isNotEmpty)
+                              CachedNetworkImage(
+                                imageUrl: widget.logoUrl!,
+                                height: 48,
+                                fit: BoxFit.contain,
+                                alignment: Alignment.centerLeft,
+                                errorWidget: (_, __, ___) => Text(
+                                  widget.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                              )
+                            else
+                              Text(
+                                widget.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+
+                            // Season / Episode (same white color, series only)
+                            if (widget.seasonEpisode != null) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                widget.seasonEpisode!,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+
+                            const SizedBox(height: 14),
+
+                            // Genres (smaller)
+                            if (widget.genres != null && widget.genres!.isNotEmpty) ...[
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: widget.genres!.take(5).map((g) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.15),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    g,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.7),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                )).toList(),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+
+                            // Description (constrained, wraps to more lines)
+                            if (widget.overview != null && widget.overview!.isNotEmpty)
+                              Text(
+                                widget.overview!,
+                                maxLines: 8,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.5,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── CENTER BOTTOM: Spinner ──
+              Positioned(
+                bottom: screenH * 0.05,
+                left: 0,
+                right: 0,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Loading...',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
