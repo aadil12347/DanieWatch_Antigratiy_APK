@@ -1097,15 +1097,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               source: "updateEpisodeButton('$epText')",
             );
 
-            final displayTitle = widget.mediaType != 'movie' &&
-                    _currentSeason != null &&
-                    _currentEpisode != null
-                ? 'S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}'
-                : widget.title;
-
-            await controller.evaluateJavascript(
-              source: "videoTitle('$displayTitle')",
-            );
+            final escapedTitle = widget.title.replaceAll("'", "\\'");
+            if (widget.mediaType != 'movie' &&
+                _currentSeason != null &&
+                _currentEpisode != null) {
+              final epLabel = 'S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}';
+              await controller.evaluateJavascript(
+                source: "videoTitle('$escapedTitle', '$epLabel')",
+              );
+            } else {
+              await controller.evaluateJavascript(
+                source: "videoTitle('$escapedTitle')",
+              );
+            }
             await controller.evaluateJavascript(
               source: "setMediaType('${widget.mediaType}')",
             );
