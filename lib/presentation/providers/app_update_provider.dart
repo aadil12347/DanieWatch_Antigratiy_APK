@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/app_update_service.dart';
+import '../../core/config/env.dart';
 import '../../domain/models/app_update_info.dart';
 
 // ─────────────────────────────────────────────────────────
@@ -84,8 +87,10 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
   AppUpdateStateNotifier() : super(const AppUpdateChecking());
 
   final _service = AppUpdateService.instance;
+  RealtimeChannel? _realtimeChannel;
 
-  /// Initialize: check for updates and determine starting state.
+  /// Initialize: check for updates, determine starting state, and
+  /// subscribe to Supabase Realtime for instant update detection.
   Future<void> initialize() async {
     state = const AppUpdateChecking();
     debugPrint('🔄 AppUpdateProvider: Initializing...');
@@ -96,33 +101,87 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     if (updateInfo == null) {
       debugPrint('🔄 AppUpdateProvider: No update needed');
       state = const AppUpdateUpToDate();
-      return;
-    }
-
-    debugPrint('🔄 AppUpdateProvider: Update available: ${updateInfo.version}');
-
-    // 2. Check if we have a prior download for this version
-    final persisted = await _service.getPersistedState(updateInfo.version);
-
-    if (persisted == null) {
-      debugPrint('🔄 AppUpdateProvider: No prior download → ReadyToDownload');
-      state = AppUpdateReadyToDownload(updateInfo);
-      return;
-    }
-
-    final downloadState = persisted['state'] as String;
-    debugPrint('🔄 AppUpdateProvider: Found persisted state: $downloadState');
-
-    if (downloadState == 'complete') {
-      final path = persisted['path'] as String;
-      debugPrint('🔄 AppUpdateProvider: APK ready at $path → ReadyToInstall');
-      state = AppUpdateReadyToInstall(updateInfo, path);
     } else {
-      state = AppUpdateReadyToResume(
-        updateInfo,
-        persisted['bytesDownloaded'] as int,
-        persisted['totalBytes'] as int,
-      );
+      debugPrint('🔄 AppUpdateProvider: Update available: ${updateInfo.version}');
+
+      // 2. Check if we have a prior download for this version
+      final persisted = await _service.getPersistedState(updateInfo.version);
+
+      if (persisted == null) {
+        debugPrint('🔄 AppUpdateProvider: No prior download → ReadyToDownload');
+        state = AppUpdateReadyToDownload(updateInfo);
+      } else {
+        final downloadState = persisted['state'] as String;
+        debugPrint('🔄 AppUpdateProvider: Found persisted state: $downloadState');
+
+        if (downloadState == 'complete') {
+          final path = persisted['path'] as String;
+          debugPrint('🔄 AppUpdateProvider: APK ready at $path → ReadyToInstall');
+          state = AppUpdateReadyToInstall(updateInfo, path);
+        } else {
+          state = AppUpdateReadyToResume(
+            updateInfo,
+            persisted['bytesDownloaded'] as int,
+            persisted['totalBytes'] as int,
+          );
+        }
+      }
+    }
+
+    // 3. Subscribe to Supabase Realtime for live updates
+    _subscribeToRealtime();
+  }
+
+  /// Subscribe to Supabase Realtime on the `app_config` table.
+  /// When the `app_update` row is updated, re-check for updates instantly.
+  void _subscribeToRealtime() {
+    try {
+      _realtimeChannel?.unsubscribe();
+
+      final supabase = Supabase.instance.client;
+      _realtimeChannel = supabase
+          .channel('app_config_updates')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'app_config',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'key',
+              value: 'app_update',
+            ),
+            callback: (payload) {
+              debugPrint('🔄 AppUpdate: Realtime update received!');
+              _handleRealtimeUpdate(payload);
+            },
+          )
+          .subscribe();
+
+      debugPrint('🔄 AppUpdate: Subscribed to Supabase Realtime');
+    } catch (e) {
+      debugPrint('🔄 AppUpdate: Realtime subscription error: $e');
+    }
+  }
+
+  /// Handle a realtime update from Supabase — re-fetch fresh data.
+  void _handleRealtimeUpdate(PostgresChangePayload payload) async {
+    try {
+      debugPrint('🔄 AppUpdate: Re-fetching update info after realtime event...');
+
+      // Always re-fetch from Supabase to get the latest data reliably
+      final updateInfo = await _service.checkForUpdate();
+
+      if (updateInfo != null) {
+        debugPrint('🔄 AppUpdate: Realtime → new update ${updateInfo.version}!');
+        // Clear stale download state if version changed
+        await _service.clearStaleState();
+        state = AppUpdateReadyToDownload(updateInfo);
+      } else {
+        debugPrint('🔄 AppUpdate: Realtime → no update needed');
+        state = const AppUpdateUpToDate();
+      }
+    } catch (e) {
+      debugPrint('🔄 AppUpdate: Error handling realtime update: $e');
     }
   }
 
@@ -214,8 +273,6 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
         debugPrint('🔄 AppUpdateProvider: Needs install permission → NeedsPermission');
         state = AppUpdateNeedsPermission(info, apkPath);
       }
-      // If result == 'success', the Android installer is now open.
-      // We stay in "Installing" state until onAppResumed() is called.
     } on PlatformException catch (e) {
       debugPrint('🔄 AppUpdateProvider: PlatformException: ${e.code} - ${e.message}');
       if (e.code == 'NEEDS_PERMISSION') {
@@ -235,12 +292,9 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     debugPrint('🔄 AppUpdateProvider: onAppResumed (state: ${currentState.runtimeType})');
 
     if (currentState is AppUpdateInstalling) {
-      // We're still alive → install was cancelled by user
-      // Show "Install Update" button again
       debugPrint('🔄 AppUpdateProvider: Install was cancelled → ReadyToInstall');
       state = AppUpdateReadyToInstall(currentState.info, currentState.apkPath);
     } else if (currentState is AppUpdateNeedsPermission) {
-      // User came back from Settings — retry install
       debugPrint('🔄 AppUpdateProvider: Returned from Settings → retrying install');
       startInstall();
     }
@@ -257,6 +311,12 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     if (s is AppUpdateInstalling) return s.info;
     if (s is AppUpdateNeedsPermission) return s.info;
     return null;
+  }
+
+  @override
+  void dispose() {
+    _realtimeChannel?.unsubscribe();
+    super.dispose();
   }
 }
 

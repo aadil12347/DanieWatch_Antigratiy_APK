@@ -6,15 +6,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide Headers;
 
 import '../../domain/models/app_update_info.dart';
 import '../config/env.dart';
 
 /// Singleton service for checking, downloading, and installing app updates.
 ///
-/// Uses a JSON file hosted on GitHub (`app_update.json`) to determine if
-/// an update is available. Supports resumable downloads and persistent
-/// state tracking across app restarts.
+/// Uses a Supabase `app_config` table to determine if an update is available.
+/// Supports resumable downloads and persistent state tracking across app restarts.
 class AppUpdateService {
   AppUpdateService._();
   static final AppUpdateService instance = AppUpdateService._();
@@ -40,32 +40,30 @@ class AppUpdateService {
   // A. CHECK FOR UPDATES
   // ─────────────────────────────────────────────────────────
 
-  /// Fetches `app_update.json` from GitHub and returns [AppUpdateInfo]
-  /// if an update is available (remote version ≠ current app version).
+  /// Fetches update info from Supabase `app_config` table and returns
+  /// [AppUpdateInfo] if an update is available (remote version > current).
   /// Returns `null` if app is up-to-date or if the check fails.
   Future<AppUpdateInfo?> checkForUpdate() async {
     try {
-      final url = '${Env.githubRawBaseUrl}/app_update.json';
-      debugPrint('🔄 AppUpdate: Checking for updates at $url');
+      debugPrint('🔄 AppUpdate: Checking for updates via Supabase...');
 
-      final response = await _dio.get<String>(
-        url,
-        options: Options(
-          // Bypass any GitHub CDN cache
-          headers: {'Cache-Control': 'no-cache'},
-        ),
-      );
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('app_config')
+          .select('value')
+          .eq('key', 'app_update')
+          .maybeSingle();
 
-      if (response.statusCode != 200 || response.data == null) {
-        debugPrint('🔄 AppUpdate: Non-200 response or null data');
+      if (response == null) {
+        debugPrint('🔄 AppUpdate: No app_update record found in Supabase');
         return null;
       }
 
-      final json = jsonDecode(response.data!) as Map<String, dynamic>;
+      final json = response['value'] as Map<String, dynamic>;
       final info = AppUpdateInfo.fromJson(json);
 
       if (info.version.isEmpty || info.downloadUrl.isEmpty) {
-        debugPrint('🔄 AppUpdate: Invalid update JSON (missing version or URL)');
+        debugPrint('🔄 AppUpdate: Invalid update data (missing version or URL)');
         return null;
       }
 
