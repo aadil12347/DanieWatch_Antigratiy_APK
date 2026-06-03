@@ -4,9 +4,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../domain/models/manifest_item.dart';
+import '../../domain/models/catalog_page.dart';
 import 'database.dart';
 
-/// Data access object for manifest_cache table.
+/// Data access object for manifest_cache + paginated catalog cache tables.
 class ManifestDao {
   Database get _db => AppDatabase.instance.db;
 
@@ -142,6 +143,203 @@ class ManifestDao {
             ))
         .where((r) => r.itemId > 0)
         .toList();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGINATED CATALOG CACHE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Save a single page of catalog data to cache.
+  Future<void> savePage(String category, CatalogPage page) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final dataJson = jsonEncode(page.toJson());
+    await _db.insert(
+      'catalog_page_cache',
+      {
+        'category': category,
+        'page': page.page,
+        'data': dataJson,
+        'total_pages': page.totalPages,
+        'total_items': page.totalItems,
+        'cached_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Load a cached page. Returns null if not cached.
+  Future<CatalogPage?> loadPage(String category, int page) async {
+    try {
+      final rows = await _db.query(
+        'catalog_page_cache',
+        where: 'category = ? AND page = ?',
+        whereArgs: [category, page],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      final json = jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+      return CatalogPage.fromJson(json);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Check if a cached page is still fresh (< 30 minutes old).
+  Future<bool> isPageFresh(String category, int page) async {
+    final rows = await _db.query(
+      'catalog_page_cache',
+      columns: ['cached_at'],
+      where: 'category = ? AND page = ?',
+      whereArgs: [category, page],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    final cachedAt = rows.first['cached_at'] as int;
+    final age = DateTime.now().millisecondsSinceEpoch - cachedAt;
+    return age < _cacheTableMs;
+  }
+
+  /// Invalidate all cached pages for a specific category.
+  Future<void> invalidateCategory(String category) async {
+    await _db.delete(
+      'catalog_page_cache',
+      where: 'category = ?',
+      whereArgs: [category],
+    );
+  }
+
+  /// Invalidate all cached pages across all categories.
+  Future<void> invalidateAllPages() async {
+    await _db.delete('catalog_page_cache');
+  }
+
+  // ─── Catalog Metadata ───────────────────────────────────────────────────
+
+  /// Save catalog metadata (version, page counts).
+  Future<void> saveCatalogMeta(CatalogMeta meta) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _db.insert(
+      'catalog_meta',
+      {
+        'id': 1,
+        'version': meta.version,
+        'data': jsonEncode(meta.toJson()),
+        'cached_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Load cached catalog metadata.
+  Future<CatalogMeta?> loadCatalogMeta() async {
+    try {
+      final rows = await _db.query('catalog_meta', where: 'id = 1', limit: 1);
+      if (rows.isEmpty) return null;
+      final json = jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+      return CatalogMeta.fromJson(json);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Get the cached catalog version string.
+  Future<String?> getCatalogVersion() async {
+    final rows = await _db.query(
+      'catalog_meta',
+      columns: ['version'],
+      where: 'id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['version'] as String?;
+  }
+
+  // ─── Search Index ───────────────────────────────────────────────────────
+
+  /// Save the lightweight search index.
+  Future<void> saveSearchIndex(List<SearchIndexEntry> entries, String? version) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final dataJson = jsonEncode(entries.map((e) => e.toJson()).toList());
+    await _db.insert(
+      'search_index_cache',
+      {
+        'id': 1,
+        'data': dataJson,
+        'version': version,
+        'cached_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Load cached search index.
+  Future<List<SearchIndexEntry>?> loadSearchIndex() async {
+    try {
+      final rows = await _db.query('search_index_cache', where: 'id = 1', limit: 1);
+      if (rows.isEmpty) return null;
+      final jsonList = jsonDecode(rows.first['data'] as String) as List<dynamic>;
+      return jsonList
+          .map((e) => SearchIndexEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Get the cached search index version.
+  Future<String?> getSearchIndexVersion() async {
+    final rows = await _db.query(
+      'search_index_cache',
+      columns: ['version'],
+      where: 'id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['version'] as String?;
+  }
+
+  // ─── Home Sections ──────────────────────────────────────────────────────
+
+  /// Save pre-built home sections data.
+  Future<void> saveHomeSections(HomeSectionsData sections, String? version) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final dataJson = jsonEncode(sections.toJson());
+    await _db.insert(
+      'home_sections_cache',
+      {
+        'id': 1,
+        'data': dataJson,
+        'version': version,
+        'cached_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Load cached home sections data.
+  Future<HomeSectionsData?> loadHomeSections() async {
+    try {
+      final rows = await _db.query('home_sections_cache', where: 'id = 1', limit: 1);
+      if (rows.isEmpty) return null;
+      final json = jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+      return HomeSectionsData.fromJson(json);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Check if home sections cache is fresh.
+  Future<bool> isHomeSectionsFresh() async {
+    final rows = await _db.query(
+      'home_sections_cache',
+      columns: ['cached_at'],
+      where: 'id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    final cachedAt = rows.first['cached_at'] as int;
+    final age = DateTime.now().millisecondsSinceEpoch - cachedAt;
+    return age < _cacheTableMs;
   }
 }
 

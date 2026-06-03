@@ -1,16 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer' as dev;
 
-import 'package:http/http.dart' as http;
-
-import '../core/config/env.dart';
-import '../domain/models/manifest_item.dart';
-import '../data/local/manifest_dao.dart';
-import '../data/local/category_storage.dart';
-import '../domain/policies/visibility_policy.dart';
+import '../data/clients/github_catalog_client.dart';
 import '../data/clients/tmdb_client.dart';
-import '../data/repositories/posting_record_repository.dart';
+import '../data/local/manifest_dao.dart';
+import '../domain/models/catalog_page.dart';
+import '../domain/models/manifest_item.dart';
 
 /// Result of a sync operation
 class SyncResult {
@@ -27,212 +22,217 @@ class SyncResult {
   });
 }
 
-/// Stale-while-revalidate manifest sync engine.
+/// Paginated stale-while-revalidate sync engine.
 ///
 /// On app open:
-///   1. Read from SQLite immediately → render cached content
-///   2. Background: fetch from GitHub → parse index.json
-///   3. Enrich items with TMDB trending/popular data
-///   4. Update SQLite, rebuild FTS index, notify listeners
-class ManifestSyncEngine {
-  ManifestSyncEngine._();
-  static final ManifestSyncEngine instance = ManifestSyncEngine._();
+///   1. Read cached home sections + search index → render instantly
+///   2. Background: fetch meta.json → compare version
+///   3. If changed: re-fetch home sections + page 1 of categories
+///   4. Enrich visible items with TMDB trending/popular data
+///   5. Update SQLite caches, notify listeners
+class PaginatedSyncEngine {
+  PaginatedSyncEngine._();
+  static final PaginatedSyncEngine instance = PaginatedSyncEngine._();
 
   final ManifestDao _dao = ManifestDao();
-  final _updateController = StreamController<Manifest>.broadcast();
+  final GitHubCatalogClient _client = GitHubCatalogClient.instance;
 
-  Stream<Manifest> get onManifestUpdated => _updateController.stream;
+  final _homeSectionsController = StreamController<HomeSectionsData>.broadcast();
+  final _searchIndexController = StreamController<List<SearchIndexEntry>>.broadcast();
+  final _pageController = StreamController<({String category, CatalogPage page})>.broadcast();
 
-  /// Read cached manifest from SQLite (instant, no network).
-  Future<Manifest?> readCache() async {
-    final manifest = await _dao.readManifest();
-    if (manifest != null) {
-      _dao.ensureSearchIndex(manifest.items);
-    }
-    return manifest;
+  Stream<HomeSectionsData> get onHomeSectionsUpdated => _homeSectionsController.stream;
+  Stream<List<SearchIndexEntry>> get onSearchIndexUpdated => _searchIndexController.stream;
+  Stream<({String category, CatalogPage page})> get onPageUpdated => _pageController.stream;
+
+  /// All known category slugs
+  static const categories = [
+    'all', 'bollywood', 'korean', 'anime',
+    'hollywood', 'chinese', 'punjabi', 'pakistani',
+  ];
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // READ CACHE (instant, no network)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Read cached home sections from SQLite (instant).
+  Future<HomeSectionsData?> readCachedHomeSections() async {
+    return _dao.loadHomeSections();
   }
 
-  /// Fetch manifest from GitHub, enrich with TMDB, and update SQLite cache.
+  /// Read cached search index from SQLite (instant).
+  Future<List<SearchIndexEntry>?> readCachedSearchIndex() async {
+    return _dao.loadSearchIndex();
+  }
+
+  /// Read a cached catalog page from SQLite.
+  Future<CatalogPage?> readCachedPage(String category, int page) async {
+    return _dao.loadPage(category, page);
+  }
+
+  /// Read cached catalog metadata.
+  Future<CatalogMeta?> readCachedMeta() async {
+    return _dao.loadCatalogMeta();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SYNC (background, with network)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Main sync: fetch meta → compare version → refresh changed data.
+  ///
+  /// This is the Netflix-style approach:
+  /// 1. Fetch meta.json (~500 bytes)
+  /// 2. Compare version with cached version
+  /// 3. If same → skip (no changes since last sync)
+  /// 4. If different → re-fetch home sections + search index + page 1 of each category
+  /// 5. Enrich with TMDB trending/popular
+  /// 6. Cache everything in SQLite
   Future<SyncResult> sync() async {
     try {
-      // Snapshot the current index before overwriting (for auto-add comparison)
-      await CategoryStorage.instance.snapshotCurrentIndex();
+      // Step 1: Fetch meta.json (~500 bytes)
+      final remoteMeta = await _client.fetchMeta();
+      if (remoteMeta == null) {
+        return const SyncResult(
+          updated: false,
+          itemCount: 0,
+          error: 'Failed to fetch catalog metadata',
+        );
+      }
 
-      // ━━━ Fetch index.json + posting_record.json in parallel ━━━
-      final indexUrl = Uri.parse('${Env.githubRawBaseUrl}/index.json');
+      // Step 2: Compare version
+      final cachedVersion = await _dao.getCatalogVersion();
+      final versionChanged = cachedVersion != remoteMeta.version;
+
+      if (!versionChanged) {
+        dev.log('[SyncEngine] Catalog version unchanged: ${remoteMeta.version}');
+        // Still refresh TMDB trending/popular (changes daily)
+        _refreshTmdbEnrichment();
+        return SyncResult(
+          updated: false,
+          newVersion: remoteMeta.version,
+          itemCount: remoteMeta.totalItems,
+        );
+      }
+
+      dev.log('[SyncEngine] Catalog version changed: $cachedVersion → ${remoteMeta.version}');
+
+      // Step 3: Save new metadata
+      await _dao.saveCatalogMeta(remoteMeta);
+
+      // Step 4: Fetch home sections + search index in parallel
       final results = await Future.wait([
-        http.get(indexUrl),
-        PostingRecordRepository.instance.fetch(),
+        _client.fetchHomeSections(),
+        _client.fetchSearchIndex(),
       ]);
 
-      final response = results[0] as http.Response;
-      // posting_record result is handled by PostingRecordRepository internally
+      final homeSections = results[0] as HomeSectionsData?;
+      final searchIndex = results[1] as List<SearchIndexEntry>?;
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to fetch manifest: ${response.statusCode}');
+      // Step 5: Cache and broadcast home sections
+      if (homeSections != null) {
+        await _dao.saveHomeSections(homeSections, remoteMeta.version);
+        _homeSectionsController.add(homeSections);
+        dev.log('[SyncEngine] Home sections cached: ${homeSections.sections.length} sections, ${homeSections.carousel.length} carousel items');
       }
 
-      final jsonMap = jsonDecode(response.body) as Map<String, dynamic>;
-
-      // Handle both formats: { posts: [...] } or { items: [...] }
-      List<ManifestItem> items;
-      if (jsonMap.containsKey('posts')) {
-        items = (jsonMap['posts'] as List)
-            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } else if (jsonMap.containsKey('items')) {
-        items = (jsonMap['items'] as List)
-            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } else {
-        items = [];
+      // Step 6: Cache and broadcast search index
+      if (searchIndex != null) {
+        await _dao.saveSearchIndex(searchIndex, remoteMeta.version);
+        _searchIndexController.add(searchIndex);
+        dev.log('[SyncEngine] Search index cached: ${searchIndex.length} entries');
       }
 
-      // ━━━ TMDB Enrichment: cross-reference trending/popular lists ━━━
-      items = await _enrichWithTmdb(items);
+      // Step 7: Invalidate old page caches and prefetch page 1 of each category
+      await _dao.invalidateAllPages();
+      await _prefetchFirstPages();
 
-      // ━━━ Posting Record Priority Sort ━━━
-      // Build priority map from posting_record.json batches.
-      // Batches are sorted by batch_id DESC internally, so newest batch content
-      // (highest batch number) gets the lowest priority values and appears first.
-      final priorityMap = await PostingRecordRepository.instance.buildPriorityMap();
+      // Step 8: TMDB enrichment for visible items
+      _refreshTmdbEnrichment();
 
-      items.sort((a, b) {
-        final yearA = a.releaseYear ?? 0;
-        final yearB = b.releaseYear ?? 0;
-
-        // 1. Year DESC (2026 before 2025)
-        if (yearB != yearA) return yearB.compareTo(yearA);
-
-        // 2. Within same year: posting_record items first
-        final keyA = '${a.id}-${a.mediaType}';
-        final keyB = '${b.id}-${b.mediaType}';
-        final prA = priorityMap[keyA];
-        final prB = priorityMap[keyB];
-
-        final inPrA = prA != null;
-        final inPrB = prB != null;
-
-        if (inPrA && !inPrB) return -1; // A is PR item, comes first
-        if (!inPrA && inPrB) return 1;  // B is PR item, comes first
-        if (inPrA && inPrB) {
-          return prA.compareTo(prB); // Both PR: batch order preserved
-        }
-
-        // 3. Neither in PR: sort by ID DESC (higher ID = newer)
-        return b.id.compareTo(a.id);
-      });
-
-      final manifest = Manifest(
-        items: items,
-        generatedAt: (jsonMap['last_updated'] ?? jsonMap['generated_at'])?.toString(),
-        version: jsonMap['version']?.toString(),
-        totalCount: items.length,
-      );
-
-      dev.log('[SyncEngine] Manifest sync complete: ${items.length} items');
-      await _dao.saveManifest(manifest, Env.appVersion);
-
-      // ━━━ Category File Generation (New requirement) ━━━
-      await _generateCategoryFiles(items);
-
-      _updateController.add(manifest);
+      dev.log('[SyncEngine] Sync complete: ${remoteMeta.totalItems} items, version ${remoteMeta.version}');
 
       return SyncResult(
         updated: true,
-        newVersion: manifest.version,
-        itemCount: manifest.items.length,
+        newVersion: remoteMeta.version,
+        itemCount: remoteMeta.totalItems,
       );
     } catch (e, stack) {
       dev.log('[SyncEngine] Sync failed: $e', error: e, stackTrace: stack);
-      // IMPORTANT: Do NOT clear the cache here. The existing cache is the
-      // user's last-known-good data. Destroying it on a transient network
-      // failure creates a death spiral where the app can never recover
-      // (readCache returns null → sync fails again → stuck forever).
-      // The old cache will only be replaced when a NEW sync succeeds.
       return SyncResult(updated: false, itemCount: 0, error: e.toString());
     }
   }
 
-  /// Partitions items into categories and saves them as JSON files
-  Future<void> _generateCategoryFiles(List<ManifestItem> allItems) async {
-    try {
-      dev.log('[SyncEngine] Generating category files...');
-      
-      // 1. Global index (everything)
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.indexFile, 
-        allItems
-      );
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PAGE FETCHING (on-demand, triggered by scroll)
+  // ═══════════════════════════════════════════════════════════════════════════
 
-      // 2. Bollywood (Indian)
-      final bollywood = VisibilityPolicy.filterBollywood(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.bollywoodFile, 
-        bollywood
-      );
-
-      // 4. Korean (KR, JP, CN, etc)
-      final korean = VisibilityPolicy.filterKorean(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.koreanFile, 
-        korean
-      );
-
-      // 5. Anime (Animation genre)
-      final anime = VisibilityPolicy.filterAnime(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.animeFile, 
-        anime
-      );
-
-      // 6. Hollywood (US/UK/EN)
-      final hollywood = VisibilityPolicy.filterHollywood(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.hollywoodFile, 
-        hollywood
-      );
-
-      // 7. Chinese (CN/HK/TW)
-      final chinese = VisibilityPolicy.filterChinese(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.chineseFile, 
-        chinese
-      );
-
-      // 8. Punjabi
-      final punjabi = VisibilityPolicy.filterPunjabi(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.punjabiFile, 
-        punjabi
-      );
-
-      // 9. Pakistani
-      final pakistani = VisibilityPolicy.filterPakistani(allItems);
-      await CategoryStorage.instance.saveCategory(
-        CategoryStorage.pakistaniFile, 
-        pakistani
-      );
-
-      dev.log('[SyncEngine] Category files generated successfully');
-    } catch (e) {
-      dev.log('[SyncEngine] Failed to generate category files: $e', error: e);
+  /// Fetch a specific page of a category. Uses cache if fresh, otherwise fetches.
+  Future<CatalogPage?> fetchPage(String category, int page) async {
+    // Check cache first
+    if (await _dao.isPageFresh(category, page)) {
+      return _dao.loadPage(category, page);
     }
+
+    // Fetch from GitHub
+    final catalogPage = await _client.fetchPage(category, page);
+    if (catalogPage != null) {
+      await _dao.savePage(category, catalogPage);
+      _pageController.add((category: category, page: catalogPage));
+      dev.log('[SyncEngine] Fetched $category/page_$page: ${catalogPage.items.length} items');
+    }
+    return catalogPage;
   }
 
-  /// Enrich manifest items with TMDB trending/popular data.
-  /// Fetches trending + popular for both movies and TV, then cross-references
-  /// by TMDB ID to add genre_ids, vote info, language, and poster paths.
-  Future<List<ManifestItem>> _enrichWithTmdb(List<ManifestItem> items) async {
-    try {
-      dev.log('[SyncEngine] Starting deep TMDB enrichment (5 pages each)...');
+  /// Prefetch the next page for smooth scrolling.
+  Future<void> prefetchNextPage(String category, int currentPage) async {
+    final nextPage = currentPage + 1;
+    final meta = await _dao.loadCatalogMeta();
+    final maxPages = meta?.pageCount(category) ?? 0;
+    if (nextPage > maxPages) return;
 
-      // 1. Fetch 5 pages of Trending and Popular (Movies & TV)
+    // Don't wait, fire and forget
+    fetchPage(category, nextPage);
+  }
+
+  // ─── Internal Helpers ───────────────────────────────────────────────────
+
+  /// Prefetch page 1 of all categories in parallel.
+  Future<void> _prefetchFirstPages() async {
+    final futures = categories.map((cat) async {
+      try {
+        final page = await _client.fetchPage(cat, 1);
+        if (page != null) {
+          await _dao.savePage(cat, page);
+          _pageController.add((category: cat, page: page));
+        }
+      } catch (e) {
+        dev.log('[SyncEngine] Failed to prefetch $cat/page_1: $e');
+      }
+    });
+    await Future.wait(futures);
+    dev.log('[SyncEngine] Prefetched page 1 of ${categories.length} categories');
+  }
+
+  /// Refresh TMDB trending/popular enrichment for cached home sections.
+  /// Fire-and-forget — doesn't block sync.
+  void _refreshTmdbEnrichment() {
+    _doTmdbEnrichment().catchError((e) {
+      dev.log('[SyncEngine] TMDB enrichment failed: $e');
+    });
+  }
+
+  Future<void> _doTmdbEnrichment() async {
+    try {
+      final homeSections = await _dao.loadHomeSections();
+      if (homeSections == null) return;
+
+      // Fetch TMDB trending + popular for movies and TV
       final results = await Future.wait([
-        TmdbClient.instance.getTrendingPages('movie', 5),
-        TmdbClient.instance.getTrendingPages('tv', 5),
-        TmdbClient.instance.getPopularPages('movie', 5),
-        TmdbClient.instance.getPopularPages('tv', 5),
+        TmdbClient.instance.getTrendingPages('movie', 3),
+        TmdbClient.instance.getTrendingPages('tv', 3),
+        TmdbClient.instance.getPopularPages('movie', 3),
+        TmdbClient.instance.getPopularPages('tv', 3),
       ]);
 
       final trendingMovies = results[0];
@@ -240,122 +240,115 @@ class ManifestSyncEngine {
       final popularMovies = results[2];
       final popularTv = results[3];
 
-      // 2. Build a deduplicated map of all TMDB data found, 
-      //    mapping TMDB_ID-MEDIA_TYPE -> Metadata
-      //    We use Trending first so it's "source of truth" for metadata if overlaps occur.
+      // Build TMDB lookup map
       final tmdbMap = <String, Map<String, dynamic>>{};
-      
-      // Store ranking information
-      final trendingRanks = <String, int>{}; // Key -> Rank
-      final isPopularSet = <String>{};
+      final trendingSet = <String>{};
+      final popularSet = <String>{};
+      final trendingRanks = <String, int>{};
 
-      // Process Trending (Preserves rank based on loop index)
       for (int i = 0; i < trendingMovies.length; i++) {
-        final tmdb = trendingMovies[i];
-        final id = tmdb['id']?.toString();
+        final id = trendingMovies[i]['id']?.toString();
         if (id == null) continue;
         final key = '$id-movie';
-        tmdbMap[key] = tmdb;
+        tmdbMap[key] = trendingMovies[i];
+        trendingSet.add(key);
         trendingRanks[key] = i + 1;
       }
       for (int i = 0; i < trendingTv.length; i++) {
-        final tmdb = trendingTv[i];
-        final id = tmdb['id']?.toString();
+        final id = trendingTv[i]['id']?.toString();
         if (id == null) continue;
         final key = '$id-tv';
-        // If already in movie (unlikely for same ID, but just in case), don't overwrite if it's the wrong type
-        if (!tmdbMap.containsKey(key)) {
-           tmdbMap[key] = tmdb;
-           trendingRanks[key] = i + 1;
-        }
+        tmdbMap.putIfAbsent(key, () => trendingTv[i]);
+        trendingSet.add(key);
+        trendingRanks.putIfAbsent(key, () => i + 1);
       }
-
-      // Process Popular
-      for (final tmdb in popularMovies) {
-        final id = tmdb['id']?.toString();
+      for (final m in popularMovies) {
+        final id = m['id']?.toString();
         if (id == null) continue;
-        final key = '$id-movie';
-        tmdbMap.putIfAbsent(key, () => tmdb);
-        isPopularSet.add(key);
+        tmdbMap.putIfAbsent('$id-movie', () => m);
+        popularSet.add('$id-movie');
       }
-      for (final tmdb in popularTv) {
-        final id = tmdb['id']?.toString();
+      for (final m in popularTv) {
+        final id = m['id']?.toString();
         if (id == null) continue;
-        final key = '$id-tv';
-        tmdbMap.putIfAbsent(key, () => tmdb);
-        isPopularSet.add(key);
+        tmdbMap.putIfAbsent('$id-tv', () => m);
+        popularSet.add('$id-tv');
       }
 
-      // 3. Update ALL items in manifest if they exist in our TMDB results
-      int enrichedCount = 0;
-      for (int i = 0; i < items.length; i++) {
-        final item = items[i];
-        final key = '${item.id}-${item.mediaType}';
-        
-        if (tmdbMap.containsKey(key)) {
-          final tmdb = tmdbMap[key]!;
-          items[i] = _enrichItem(
-            item, 
-            tmdb, 
-            isTrending: trendingRanks.containsKey(key),
-            isPopular: isPopularSet.contains(key),
-            rank: trendingRanks[key],
-          );
-          enrichedCount++;
-        } else {
-          // Reset trending/popular flags if they are no longer in the top results
-          // This ensures the "updated TMDB trending" requirement
-          if (item.isTrending || item.isPopular || item.trendingRank != null) {
-            items[i] = item.copyWith(
-              isTrending: false,
-              isPopular: false,
-              trendingRank: null, // This will clear the rank
-            );
-          }
-        }
-      }
+      // Enrich carousel items
+      final enrichedCarousel = _enrichItems(
+          homeSections.carousel, tmdbMap, trendingSet, popularSet, trendingRanks);
 
-      dev.log('[SyncEngine] TMDB enrichment complete: $enrichedCount items matched/updated');
-      return items;
-    } catch (e, stack) {
-      dev.log('[SyncEngine] TMDB enrichment failed: $e', error: e, stackTrace: stack);
-      return items;
+      // Enrich section items
+      final enrichedSections = homeSections.sections.map((section) {
+        return HomeSection(
+          title: section.title,
+          items: _enrichItems(
+              section.items, tmdbMap, trendingSet, popularSet, trendingRanks),
+          isRanked: section.isRanked,
+        );
+      }).toList();
+
+      final enriched = HomeSectionsData(
+        carousel: enrichedCarousel,
+        sections: enrichedSections,
+      );
+
+      final version = await _dao.getCatalogVersion();
+      await _dao.saveHomeSections(enriched, version);
+      _homeSectionsController.add(enriched);
+
+      dev.log('[SyncEngine] TMDB enrichment applied to home sections');
+    } catch (e) {
+      dev.log('[SyncEngine] TMDB enrichment error: $e');
     }
   }
 
-  /// Enrich a single ManifestItem with TMDB data
-  ManifestItem _enrichItem(ManifestItem item, Map<String, dynamic> tmdb, 
-      {bool isTrending = false, bool isPopular = false, int? rank}) {
-    final genreIds = (tmdb['genre_ids'] as List<dynamic>?)
-        ?.map((e) => e is int ? e : int.tryParse(e.toString()) ?? 0)
-        .toList();
-    final voteAvg = (tmdb['vote_average'] as num?)?.toDouble();
-    final voteCount = (tmdb['vote_count'] as num?)?.toInt();
-    final origLang = tmdb['original_language']?.toString();
-    final originCountry = (tmdb['origin_country'] as List<dynamic>?)
-        ?.map((e) => e.toString())
-        .toList();
-    final overview = tmdb['overview']?.toString();
-    final posterPath = tmdb['poster_path']?.toString();
-    final backdropPath = tmdb['backdrop_path']?.toString();
+  /// Enrich a list of ManifestItems with TMDB data.
+  List<ManifestItem> _enrichItems(
+    List<ManifestItem> items,
+    Map<String, Map<String, dynamic>> tmdbMap,
+    Set<String> trendingSet,
+    Set<String> popularSet,
+    Map<String, int> trendingRanks,
+  ) {
+    return items.map((item) {
+      final key = '${item.id}-${item.mediaType}';
+      final tmdb = tmdbMap[key];
+      if (tmdb == null) return item;
 
-    return item.copyWith(
-      genreIds: (genreIds != null && genreIds.isNotEmpty) ? genreIds : null,
-      voteAverage: voteAvg != null && voteAvg > 0 ? voteAvg : null,
-      voteCount: voteCount != null && voteCount > 0 ? voteCount : null,
-      originalLanguage: origLang?.isNotEmpty == true ? origLang : null,
-      originCountry: (originCountry != null && originCountry.isNotEmpty) ? originCountry : null,
-      overview: (overview != null && overview.isNotEmpty) ? overview : null,
-      tmdbPosterPath: posterPath,
-      tmdbBackdropPath: backdropPath,
-      isTrending: isTrending,
-      isPopular: isPopular,
-      trendingRank: rank,
-    );
+      final genreIds = (tmdb['genre_ids'] as List<dynamic>?)
+          ?.map((e) => e is int ? e : int.tryParse(e.toString()) ?? 0)
+          .toList();
+      final posterPath = tmdb['poster_path']?.toString();
+      final backdropPath = tmdb['backdrop_path']?.toString();
+      final voteAvg = (tmdb['vote_average'] as num?)?.toDouble();
+      final voteCount = (tmdb['vote_count'] as num?)?.toInt();
+      final origLang = tmdb['original_language']?.toString();
+      final originCountry = (tmdb['origin_country'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList();
+      final overview = tmdb['overview']?.toString();
+
+      return item.copyWith(
+        genreIds: (genreIds != null && genreIds.isNotEmpty) ? genreIds : null,
+        voteAverage: voteAvg != null && voteAvg > 0 ? voteAvg : null,
+        voteCount: voteCount != null && voteCount > 0 ? voteCount : null,
+        originalLanguage: origLang?.isNotEmpty == true ? origLang : null,
+        originCountry: (originCountry != null && originCountry.isNotEmpty) ? originCountry : null,
+        overview: (overview != null && overview.isNotEmpty) ? overview : null,
+        tmdbPosterPath: posterPath,
+        tmdbBackdropPath: backdropPath,
+        isTrending: trendingSet.contains(key),
+        isPopular: popularSet.contains(key),
+        trendingRank: trendingRanks[key],
+      );
+    }).toList();
   }
 
   void dispose() {
-    _updateController.close();
+    _homeSectionsController.close();
+    _searchIndexController.close();
+    _pageController.close();
   }
 }
-

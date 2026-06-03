@@ -56,18 +56,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final manifestAsync = ref.watch(manifestProvider);
+    final homeSectionsAsync = ref.watch(homeSectionsDataProvider);
     final sectionsAsync = ref.watch(homeSectionsProvider);
     final carouselAsync = ref.watch(mergedCarouselProvider);
 
-    return manifestAsync.when(
-      loading: () => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, carouselAsync) : const _LoadingHome(),
-      error: (e, _) => manifestAsync.hasValue ? _buildHomeContent(manifestAsync.value!, sectionsAsync, carouselAsync) : _ErrorHome(error: e.toString()),
-      data: (manifest) {
-        if (manifest == null || manifest.items.isEmpty) {
+    return homeSectionsAsync.when(
+      loading: () => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value, sectionsAsync, carouselAsync) : const _LoadingHome(),
+      error: (e, _) => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value, sectionsAsync, carouselAsync) : _ErrorHome(error: e.toString()),
+      data: (data) {
+        if (data == null || (data.carousel.isEmpty && data.sections.isEmpty)) {
           return const _EmptyHome();
         }
-        return _buildHomeContent(manifest, sectionsAsync, carouselAsync);
+        return _buildHomeContent(data, sectionsAsync, carouselAsync);
       },
     );
   }

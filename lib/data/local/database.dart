@@ -8,7 +8,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _dbName = 'daniewatch.db';
-  static const _schemaVersion = 1;
+  static const _schemaVersion = 2;
 
   Database? _db;
 
@@ -135,11 +135,68 @@ class AppDatabase {
     // Indexes for performance
     await db.execute(
         'CREATE INDEX idx_entry_cache_cached ON entry_cache(cached_at)');
+
+    // ━━━ Paginated Catalog Cache Tables (v2) ━━━
+    await _createPaginatedTables(db);
+  }
+
+  /// Create tables for paginated catalog caching.
+  /// Separated so they can be called from both _onCreate and _onUpgrade.
+  Future<void> _createPaginatedTables(Database db) async {
+    // Per-page cache: stores individual pages of each category
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_page_cache (
+        category TEXT NOT NULL,
+        page INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        total_pages INTEGER,
+        total_items INTEGER,
+        cached_at INTEGER NOT NULL,
+        PRIMARY KEY (category, page)
+      )
+    ''');
+
+    // Catalog metadata: version + page counts (tiny, single row)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_meta (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        version TEXT NOT NULL,
+        data TEXT NOT NULL,
+        cached_at INTEGER NOT NULL
+      )
+    ''');
+
+    // Search index cache: lightweight id+title+type+language for all items
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS search_index_cache (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        data TEXT NOT NULL,
+        version TEXT,
+        cached_at INTEGER NOT NULL
+      )
+    ''');
+
+    // Home sections cache: pre-built home screen data
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS home_sections_cache (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        data TEXT NOT NULL,
+        version TEXT,
+        cached_at INTEGER NOT NULL
+      )
+    ''');
+
+    // Index for page cache lookups
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_page_cache_cat ON catalog_page_cache(category, cached_at)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Future migrations: add ALTER TABLE statements here
-    // Never DROP tables in migrations — prefer addColumn
+    // v1 → v2: Add paginated catalog cache tables
+    // Preserves: watchlist, continue_watching, sync_meta, entry_cache
+    if (oldVersion < 2) {
+      await _createPaginatedTables(db);
+    }
   }
 
   Future<void> close() async {
@@ -155,6 +212,11 @@ class AppDatabase {
       await txn.delete('entry_cache');
       await txn.execute('DELETE FROM search_fts');
       await txn.delete('enrichment_queue');
+      // Paginated cache tables
+      await txn.delete('catalog_page_cache');
+      await txn.delete('catalog_meta');
+      await txn.delete('search_index_cache');
+      await txn.delete('home_sections_cache');
     });
   }
 
@@ -169,6 +231,11 @@ class AppDatabase {
       await txn.delete('continue_watching');
       await txn.delete('sync_meta');
       await txn.delete('enrichment_queue');
+      // Paginated cache tables
+      await txn.delete('catalog_page_cache');
+      await txn.delete('catalog_meta');
+      await txn.delete('search_index_cache');
+      await txn.delete('home_sections_cache');
     });
   }
 }

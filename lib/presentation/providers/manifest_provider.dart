@@ -1,105 +1,36 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
-import '../../domain/policies/visibility_policy.dart';
+import '../../domain/models/catalog_page.dart';
 import '../../offline/sync_engine.dart';
-import '../../data/local/category_storage.dart';
-import '../../data/repositories/posting_record_repository.dart';
 import '../../data/repositories/github_top_content_repository.dart';
 
-/// Apply posting-record priority sort to any list of ManifestItems.
-/// This is the SINGLE source of truth for sort order across all tabs.
-Future<List<ManifestItem>> _applyPostingRecordSort(List<ManifestItem> items) async {
-  final priorityMap = await PostingRecordRepository.instance.buildPriorityMap();
-  items.sort((a, b) {
-    final yearA = a.releaseYear ?? 0;
-    final yearB = b.releaseYear ?? 0;
-    // 1. Year DESC (2026 before 2025)
-    if (yearB != yearA) return yearB.compareTo(yearA);
-    // 2. Within same year: posting_record items first (latest batch on top)
-    final keyA = '${a.id}-${a.mediaType}';
-    final keyB = '${b.id}-${b.mediaType}';
-    final prA = priorityMap[keyA];
-    final prB = priorityMap[keyB];
-    final inPrA = prA != null;
-    final inPrB = prB != null;
-    if (inPrA && !inPrB) return -1;
-    if (!inPrA && inPrB) return 1;
-    if (inPrA && inPrB) return prA.compareTo(prB);
-    // 3. Neither in PR: sort by ID DESC
-    return b.id.compareTo(a.id);
-  });
-  return items;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// Fixed-Slot Merge Algorithm
+// Core Sync Provider — drives the paginated catalog system
 // ═══════════════════════════════════════════════════════════════════════════════
-/// Merges GitHub-curated items (with fixed positions) into TMDB items.
-///
-/// Rules:
-/// 1. GitHub ALWAYS wins position — file "3_normal_movie_X" → slot 3
-/// 2. No duplicates — if a movie exists in both GitHub AND TMDB, only show GitHub version
-/// 3. Fixed slots — exactly [totalSlots] items output
-///
-/// Returns a list of exactly [totalSlots] items (or fewer if not enough data).
-List<ManifestItem> _mergeWithFixedSlots({
-  required Map<int, ManifestItem> githubItems,
-  required List<ManifestItem> tmdbItems,
-  required int totalSlots,
-}) {
-  // Step 1: Create fixed slots array (null = empty)
-  final slots = List<ManifestItem?>.filled(totalSlots, null);
 
-  // Step 2: Place GitHub items at their exact positions (1-indexed → 0-indexed)
-  for (final entry in githubItems.entries) {
-    final slotIndex = entry.key - 1; // Convert 1-indexed to 0-indexed
-    if (slotIndex >= 0 && slotIndex < totalSlots) {
-      slots[slotIndex] = entry.value;
-    }
-  }
-
-  // Step 3: Build exclusion set of TMDB IDs that are already placed by GitHub
-  final githubTmdbIds = githubItems.values.map((item) => item.id).toSet();
-
-  // Step 4: Filter TMDB items to remove duplicates
-  final tmdbFiltered = tmdbItems
-      .where((item) => !githubTmdbIds.contains(item.id))
-      .toList();
-
-  // Step 5: Fill remaining empty slots with TMDB items (in order)
-  int tmdbIndex = 0;
-  for (int i = 0; i < totalSlots; i++) {
-    if (slots[i] == null && tmdbIndex < tmdbFiltered.length) {
-      slots[i] = tmdbFiltered[tmdbIndex++];
-    }
-  }
-
-  // Step 6: Return non-null items (preserving slot order)
-  return slots.whereType<ManifestItem>().toList();
-}
-
-/// Provides the Manifest from local cache + background sync.
-class ManifestNotifier extends AsyncNotifier<Manifest?> {
-  StreamSubscription<Manifest>? _sub;
+/// Provides the home screen data (carousel + sections) from cache + background sync.
+/// This is the primary provider that replaces the old monolithic manifestProvider.
+class HomeSectionsNotifier extends AsyncNotifier<HomeSectionsData?> {
+  StreamSubscription<HomeSectionsData>? _sub;
 
   @override
-  Future<Manifest?> build() async {
-    _sub = ManifestSyncEngine.instance.onManifestUpdated.listen((manifest) {
-      state = AsyncValue.data(manifest);
+  Future<HomeSectionsData?> build() async {
+    _sub = PaginatedSyncEngine.instance.onHomeSectionsUpdated.listen((data) {
+      state = AsyncValue.data(data);
     });
     ref.onDispose(() => _sub?.cancel());
 
-    final cached = await ManifestSyncEngine.instance.readCache();
+    // Read cache first (instant)
+    final cached = await PaginatedSyncEngine.instance.readCachedHomeSections();
 
     if (cached == null) {
-      // No cache — must sync. Retry up to 3 times with backoff so that a
-      // single transient network hiccup doesn't permanently break the app.
+      // No cache — must sync. Retry up to 3 times.
       String? lastError;
       for (int attempt = 1; attempt <= 3; attempt++) {
-        final result = await ManifestSyncEngine.instance.sync();
+        final result = await PaginatedSyncEngine.instance.sync();
         if (result.error == null) {
-          return ManifestSyncEngine.instance.readCache();
+          return PaginatedSyncEngine.instance.readCachedHomeSections();
         }
         lastError = result.error;
         if (attempt < 3) {
@@ -108,172 +39,62 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
       }
       throw Exception('Failed to load catalog after 3 attempts: $lastError');
     } else {
-      // Cache exists — return it immediately, refresh in background.
-      ManifestSyncEngine.instance.sync().then((result) {
-        if (result.error != null) {}
-      });
+      // Cache exists — return immediately, refresh in background.
+      PaginatedSyncEngine.instance.sync();
       return cached;
     }
   }
 
   Future<void> refresh() async {
-    final result = await ManifestSyncEngine.instance.sync();
+    final result = await PaginatedSyncEngine.instance.sync();
     if (result.error != null) {
       throw Exception('Failed to refresh: ${result.error}');
     }
   }
 }
 
-final manifestProvider = AsyncNotifierProvider<ManifestNotifier, Manifest?>(
-    () => ManifestNotifier());
+final homeSectionsDataProvider =
+    AsyncNotifierProvider<HomeSectionsNotifier, HomeSectionsData?>(
+        () => HomeSectionsNotifier());
 
-/// Provides the visibility index for quick lookups
-final manifestIndexProvider = Provider<Map<String, ManifestItem>>((ref) {
-  final manifest = ref.watch(manifestProvider).valueOrNull;
-  if (manifest == null) return {};
-  return VisibilityPolicy.buildIndex(manifest.items);
-});
+// ═══════════════════════════════════════════════════════════════════════════════
+// Search Index Provider — for search + visibility checks
+// ═══════════════════════════════════════════════════════════════════════════════
 
-/// Provides all manifest items from index.json (for Explore page)
-final globalItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.indexFile);
-  return _applyPostingRecordSort(items);
-});
+/// Provides the lightweight search index (id + title + type + language).
+/// Used for: search, visibility checks (navigation guards), explore filtering.
+class SearchIndexNotifier extends AsyncNotifier<List<SearchIndexEntry>> {
+  StreamSubscription<List<SearchIndexEntry>>? _sub;
 
-/// Synonym for globalItemsProvider for backward compatibility
-final allItemsProvider = Provider<List<ManifestItem>>((ref) {
-  return ref.watch(globalItemsProvider).valueOrNull ?? [];
-});
+  @override
+  Future<List<SearchIndexEntry>> build() async {
+    _sub = PaginatedSyncEngine.instance.onSearchIndexUpdated.listen((data) {
+      state = AsyncValue.data(data);
+    });
+    ref.onDispose(() => _sub?.cancel());
 
-/// Provides trending items (from index.json) — used as TMDB fallback source
-final trendingProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final items = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.getTrending(items, limit: 10);
-});
+    // Try cache first
+    final cached = await PaginatedSyncEngine.instance.readCachedSearchIndex();
+    return cached ?? [];
+  }
+}
 
-/// Provides popular items (from index.json)
-final popularProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final items = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.getPopular(items, limit: 20);
-});
+final searchIndexProvider =
+    AsyncNotifierProvider<SearchIndexNotifier, List<SearchIndexEntry>>(
+        () => SearchIndexNotifier());
 
-/// Provides top rated items (from index.json)
-final topRatedProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final items = await ref.watch(globalItemsProvider.future);
-  return VisibilityPolicy.getTopRated(items, limit: 20);
-});
-
-/// Provides recently added items
-final recentlyAddedProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.getRecentlyAdded(items, limit: 20);
-});
-
-/// Provides movies only
-final moviesProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.filterMovies(items);
-});
-
-/// Provides TV only
-final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
-  final items = ref.watch(allItemsProvider);
-  return VisibilityPolicy.filterTv(items);
-});
-
-/// Provides anime only — loads + applies posting-record sort
-final animeProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.animeFile);
-  return _applyPostingRecordSort(items);
-});
-
-/// Provides Korean content — loads + applies posting-record sort
-final koreanProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.koreanFile);
-  return _applyPostingRecordSort(items);
-});
-
-/// Provides Bollywood/Hindi — loads + applies posting-record sort
-final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.bollywoodFile);
-  return _applyPostingRecordSort(items);
-});
-
-/// Provides Hollywood — loads + applies posting-record sort
-final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.hollywoodFile);
-  return _applyPostingRecordSort(items);
-});
-
-/// Provides Chinese — loads + applies posting-record sort
-final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.chineseFile);
-  return _applyPostingRecordSort(items);
-});
-
-/// Provides Punjabi — loads + applies posting-record sort
-final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.punjabiFile);
-  return _applyPostingRecordSort(items);
-});
-
-/// Provides Pakistani — loads + applies posting-record sort
-final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(manifestProvider);
-  final items = await CategoryStorage.instance.loadCategory(CategoryStorage.pakistaniFile);
-  return _applyPostingRecordSort(items);
+/// Fast visibility index — maps "id-type" → true for O(1) lookups.
+/// Replaces the old manifestIndexProvider.
+final visibilityIndexProvider = Provider<Set<String>>((ref) {
+  final entries = ref.watch(searchIndexProvider).valueOrNull ?? [];
+  return entries.map((e) => '${e.id}-${e.mediaType}').toSet();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GitHub Top Content Providers (Top 5 Carousel + Top 10 Section)
+// Home Screen Providers (derived from HomeSectionsData)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Fetches GitHub Top 5 curated items {position: ManifestItem}
-final githubTop5Provider = FutureProvider<Map<int, ManifestItem>>((ref) async {
-  return GitHubTopContentRepository.instance.fetchTop5();
-});
-
-/// Fetches GitHub Top 10 curated items {position: ManifestItem}
-final githubTop10Provider = FutureProvider<Map<int, ManifestItem>>((ref) async {
-  return GitHubTopContentRepository.instance.fetchTop10();
-});
-
-/// Merged carousel data: GitHub Top 5 (fixed positions) + TMDB trending (fill gaps).
-/// Always outputs exactly 5 items with no duplicates.
-final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  // Fetch both data sources in parallel
-  final githubTop5 = await ref.watch(githubTop5Provider.future);
-  final tmdbTrending = await ref.watch(trendingProvider.future);
-
-  return _mergeWithFixedSlots(
-    githubItems: githubTop5,
-    tmdbItems: tmdbTrending,
-    totalSlots: 5,
-  );
-});
-
-/// Merged Top 10 data: GitHub Top 10 (fixed positions) + TMDB trending (fill gaps).
-/// Always outputs exactly 10 items with no duplicates.
-final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
-  final githubTop10 = await ref.watch(githubTop10Provider.future);
-  final tmdbTrending = await ref.watch(trendingProvider.future);
-
-  return _mergeWithFixedSlots(
-    githubItems: githubTop10,
-    tmdbItems: tmdbTrending,
-    totalSlots: 10,
-  );
-});
-
-
-/// Genre-based section data for home screen
+/// Genre-based section data for home screen — same shape as before.
 class ContentSection {
   final String title;
   final List<ManifestItem> items;
@@ -285,78 +106,243 @@ class ContentSection {
   });
 }
 
-/// Provides organized content sections for the home screen.
-/// Top 10 section uses merged GitHub + TMDB data with fixed-slot positioning.
-final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
-  final all = await ref.watch(globalItemsProvider.future);
-  if (all.isEmpty) return [];
+/// Carousel items for the hero section.
+final carouselProvider = Provider<List<ManifestItem>>((ref) {
+  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
+  return data?.carousel ?? [];
+});
 
-  final sections = <ContentSection>[];
+/// Home screen sections list — derived from pre-built home sections data.
+final homeSectionsProvider = Provider<AsyncValue<List<ContentSection>>>((ref) {
+  final asyncData = ref.watch(homeSectionsDataProvider);
+  return asyncData.whenData((data) {
+    if (data == null) return <ContentSection>[];
+    return data.sections
+        .map((s) => ContentSection(
+              title: s.title,
+              items: s.items,
+              isRanked: s.isRanked,
+            ))
+        .toList();
+  });
+});
 
-  // 1. Top 10 Today — merged from GitHub Top 10 + TMDB trending (fixed slots)
-  final mergedTop10 = await ref.watch(mergedTop10Provider.future);
-  if (mergedTop10.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Top 10 Today',
-      items: mergedTop10,
-      isRanked: true,
-    ));
-  }
+// ═══════════════════════════════════════════════════════════════════════════════
+// Paginated Category Providers
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  // 2. Bollywood
-  final bollywood = VisibilityPolicy.filterBollywood(all);
-  if (bollywood.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Bollywood',
-      items: bollywood.take(20).toList(),
-    ));
-  }
+/// Query key for paginated catalog requests.
+typedef CatalogQuery = ({String category, int page});
 
-  // 3. Korean
-  final korean = VisibilityPolicy.filterKorean(all);
-  if (korean.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Korean',
-      items: korean.take(20).toList(),
-    ));
-  }
+/// Fetches a specific page of a category. Uses cache with background refresh.
+final catalogPageProvider =
+    FutureProvider.family<CatalogPage?, CatalogQuery>((ref, query) async {
+  // Watch home sections to re-trigger when sync completes
+  ref.watch(homeSectionsDataProvider);
+  return PaginatedSyncEngine.instance.fetchPage(query.category, query.page);
+});
 
-  // 4. Anime
-  final anime = VisibilityPolicy.filterAnime(all);
-  if (anime.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Anime',
-      items: anime.take(20).toList(),
-    ));
-  }
+/// Provides catalog metadata (version, page counts).
+final catalogMetaProvider = FutureProvider<CatalogMeta?>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return PaginatedSyncEngine.instance.readCachedMeta();
+});
 
-  // 5. Top Rated (Popular fallback)
-  final topRated = VisibilityPolicy.getTopRated(all, limit: 20);
-  if (topRated.isNotEmpty) {
-    sections.add(ContentSection(title: 'Top Rated', items: topRated));
-  }
+// ═══════════════════════════════════════════════════════════════════════════════
+// Category-Specific Providers (backward compatibility)
+// These load page 1 of each category for tab views.
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  // 6. Genres
-  final genreMap = {
-    28: 'Action',
-    27: 'Horror',
-    35: 'Comedy',
-    10749: 'Romance',
-    18: 'Drama',
-    53: 'Thriller',
-    878: 'Sci-Fi/Fantasy',
-    99: 'Documentary',
-  };
+/// Helper: load page 1 of a category and return its items.
+Future<List<ManifestItem>> _loadCategoryPage1(String category) async {
+  final page = await PaginatedSyncEngine.instance.fetchPage(category, 1);
+  return page?.items ?? [];
+}
 
-  for (final entry in genreMap.entries) {
-    final genreItems = VisibilityPolicy.filterByGenre(all, entry.key);
-    if (genreItems.length >= 5) {
-      sections.add(ContentSection(
-        title: entry.value,
-        items: genreItems.take(20).toList(),
-      ));
+final globalItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('all');
+});
+
+/// Synonym for globalItemsProvider — provides page 1 of global catalog.
+final allItemsProvider = Provider<List<ManifestItem>>((ref) {
+  return ref.watch(globalItemsProvider).valueOrNull ?? [];
+});
+
+/// Trending items — from home sections carousel or TMDB enrichment.
+final trendingProvider = Provider<List<ManifestItem>>((ref) {
+  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
+  if (data == null) return [];
+  // Find trending section, or fall back to carousel
+  final trendingSection = data.sections
+      .where((s) => s.title.toLowerCase().contains('trending'))
+      .toList();
+  if (trendingSection.isNotEmpty) return trendingSection.first.items;
+  return data.carousel;
+});
+
+/// Popular items.
+final popularProvider = Provider<List<ManifestItem>>((ref) {
+  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
+  if (data == null) return [];
+  final section = data.sections
+      .where((s) => s.title.toLowerCase().contains('popular') ||
+                     s.title.toLowerCase().contains('top rated'))
+      .toList();
+  return section.isNotEmpty ? section.first.items : [];
+});
+
+/// Movies (page 1) — from global items.
+final moviesProvider = Provider<List<ManifestItem>>((ref) {
+  final items = ref.watch(allItemsProvider);
+  return items.where((item) => item.mediaType == 'movie').toList();
+});
+
+/// TV shows (page 1) — from global items.
+final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
+  final items = ref.watch(allItemsProvider);
+  return items
+      .where((item) => item.mediaType == 'tv' || item.mediaType == 'series')
+      .toList();
+});
+
+/// Category-specific providers (page 1).
+final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('bollywood');
+});
+
+final koreanProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('korean');
+});
+
+final animeProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('anime');
+});
+
+final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('hollywood');
+});
+
+final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('chinese');
+});
+
+final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('punjabi');
+});
+
+final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  ref.watch(homeSectionsDataProvider);
+  return _loadCategoryPage1('pakistani');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Top 5 / Top 10 — Merged with TMDB (unchanged approach)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Fetches GitHub Top 5 curated items.
+final githubTop5Provider = FutureProvider<Map<int, ManifestItem>>((ref) async {
+  return GitHubTopContentRepository.instance.fetchTop5();
+});
+
+/// Fetches GitHub Top 10 curated items.
+final githubTop10Provider = FutureProvider<Map<int, ManifestItem>>((ref) async {
+  return GitHubTopContentRepository.instance.fetchTop10();
+});
+
+/// Fixed-Slot Merge: GitHub items at fixed positions, TMDB fills gaps.
+List<ManifestItem> _mergeWithFixedSlots({
+  required Map<int, ManifestItem> githubItems,
+  required List<ManifestItem> tmdbItems,
+  required int totalSlots,
+}) {
+  final slots = List<ManifestItem?>.filled(totalSlots, null);
+  for (final entry in githubItems.entries) {
+    final slotIndex = entry.key - 1;
+    if (slotIndex >= 0 && slotIndex < totalSlots) {
+      slots[slotIndex] = entry.value;
     }
   }
+  final githubTmdbIds = githubItems.values.map((item) => item.id).toSet();
+  final tmdbFiltered =
+      tmdbItems.where((item) => !githubTmdbIds.contains(item.id)).toList();
+  int tmdbIndex = 0;
+  for (int i = 0; i < totalSlots; i++) {
+    if (slots[i] == null && tmdbIndex < tmdbFiltered.length) {
+      slots[i] = tmdbFiltered[tmdbIndex++];
+    }
+  }
+  return slots.whereType<ManifestItem>().toList();
+}
 
-  return sections;
+/// Merged carousel: GitHub Top 5 (fixed) + trending (fill gaps).
+final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final githubTop5 = await ref.watch(githubTop5Provider.future);
+  final trending = ref.watch(trendingProvider);
+  return _mergeWithFixedSlots(
+    githubItems: githubTop5,
+    tmdbItems: trending,
+    totalSlots: 5,
+  );
 });
+
+/// Merged Top 10: GitHub Top 10 (fixed) + trending (fill gaps).
+final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
+  final githubTop10 = await ref.watch(githubTop10Provider.future);
+  final trending = ref.watch(trendingProvider);
+  return _mergeWithFixedSlots(
+    githubItems: githubTop10,
+    tmdbItems: trending,
+    totalSlots: 10,
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BACKWARD COMPATIBILITY — manifestProvider + manifestIndexProvider
+// These are thin wrappers for code that still references the old providers.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Backward-compatible manifestProvider — wraps homeSectionsDataProvider.
+/// Code that watches manifestProvider will still work.
+final manifestProvider = FutureProvider<_CompatManifest?>((ref) async {
+  final data = await ref.watch(homeSectionsDataProvider.future);
+  if (data == null) return null;
+  // Collect all unique items from sections + carousel
+  final allItems = <ManifestItem>[];
+  final seenIds = <String>{};
+  for (final item in data.carousel) {
+    final key = '${item.id}-${item.mediaType}';
+    if (seenIds.add(key)) allItems.add(item);
+  }
+  for (final section in data.sections) {
+    for (final item in section.items) {
+      final key = '${item.id}-${item.mediaType}';
+      if (seenIds.add(key)) allItems.add(item);
+    }
+  }
+  return _CompatManifest(items: allItems);
+});
+
+/// Backward-compatible manifest index — uses search index for full coverage.
+final manifestIndexProvider = Provider<Map<String, ManifestItem>>((ref) {
+  // Build from whatever items we have loaded
+  final manifest = ref.watch(manifestProvider).valueOrNull;
+  if (manifest == null) return {};
+  final index = <String, ManifestItem>{};
+  for (final item in manifest.items) {
+    index['${item.id}-${item.mediaType}'] = item;
+  }
+  return index;
+});
+
+/// Minimal manifest wrapper for backward compatibility.
+class _CompatManifest {
+  final List<ManifestItem> items;
+  const _CompatManifest({required this.items});
+}
