@@ -93,12 +93,22 @@ class ManifestNotifier extends AsyncNotifier<Manifest?> {
     final cached = await ManifestSyncEngine.instance.readCache();
 
     if (cached == null) {
-      final result = await ManifestSyncEngine.instance.sync();
-      if (result.error != null) {
-        throw Exception('Failed to load catalog: ${result.error}');
+      // No cache — must sync. Retry up to 3 times with backoff so that a
+      // single transient network hiccup doesn't permanently break the app.
+      String? lastError;
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        final result = await ManifestSyncEngine.instance.sync();
+        if (result.error == null) {
+          return ManifestSyncEngine.instance.readCache();
+        }
+        lastError = result.error;
+        if (attempt < 3) {
+          await Future.delayed(Duration(seconds: attempt * 2));
+        }
       }
-      return ManifestSyncEngine.instance.readCache();
+      throw Exception('Failed to load catalog after 3 attempts: $lastError');
     } else {
+      // Cache exists — return it immediately, refresh in background.
       ManifestSyncEngine.instance.sync().then((result) {
         if (result.error != null) {}
       });

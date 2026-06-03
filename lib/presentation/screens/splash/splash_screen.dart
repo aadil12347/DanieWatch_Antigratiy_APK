@@ -46,6 +46,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   bool _isTransitioning = false;
   bool _hasNavigated = false;
 
+  // Safety timeout — prevents the splash screen from being stuck forever.
+  Timer? _safetyTimer;
+  // Track manifest retry attempts to avoid infinite retry loops.
+  int _manifestRetryCount = 0;
+  static const _maxManifestRetries = 3;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +64,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     _startTime = DateTime.now();
     _checkFirstRun();
+
+    // Safety timeout: if splash hasn't resolved after 15 seconds, force a decision.
+    _safetyTimer = Timer(const Duration(seconds: 15), () {
+      if (!_hasNavigated && mounted) {
+        debugPrint('SplashScreen: ⚠️ SAFETY TIMEOUT (15s) — forcing navigation');
+        _forceNavigateHome();
+      }
+    });
 
     // CRITICAL FIX: To listen outside of build, we must use ref.listenManual
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -72,7 +86,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       });
 
       _manifestSub = ref.listenManual(manifestProvider, (previous, next) {
-        debugPrint('SplashScreen: manifest changed. Available: ${next.valueOrNull != null}');
+        debugPrint('SplashScreen: manifest changed. hasError: ${next.hasError}, hasValue: ${next.hasValue}');
         _evaluateTransition();
       });
 
@@ -136,20 +150,39 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     _isTransitioning = true;
 
     final authState = ref.read(authStateProvider);
-    final user = authState.valueOrNull;
+    // Use stream value if available, fall back to synchronous Supabase check
+    final user = authState.valueOrNull ?? ref.read(currentUserProvider);
     final manifestAsync = ref.read(manifestProvider);
     final manifest = manifestAsync.valueOrNull;
 
     // ── CASE 1: Auth is still resolving ──────────────────────────────────────
-    if (authState.isLoading) {
+    if (authState.isLoading && user == null) {
       _isTransitioning = false; // Release lock — wait for listener to call us again
       return;
     }
 
     // ── CASE 2: User IS logged in ─────────────────────────────────────────────
     if (user != null) {
+      // Handle manifest ERROR state: retry instead of waiting forever
+      if (manifestAsync.hasError && !manifestAsync.isLoading) {
+        if (_manifestRetryCount < _maxManifestRetries) {
+          _manifestRetryCount++;
+          debugPrint('SplashScreen: manifest ERROR — retry attempt $_manifestRetryCount/$_maxManifestRetries');
+          ref.invalidate(manifestProvider);
+          _isTransitioning = false;
+          return;
+        } else {
+          // All retries exhausted — force navigate to home.
+          // The home screen can show its own error/retry UI.
+          debugPrint('SplashScreen: manifest retries exhausted — forcing navigation to home');
+          _safetyTimer?.cancel();
+          _forceNavigateHome();
+          return;
+        }
+      }
+
       if (manifest == null) {
-        // Manifest not ready yet. Release lock and wait for manifest listener.
+        // Manifest still loading. Release lock and wait for manifest listener.
         _isTransitioning = false;
         return;
       }
@@ -172,6 +205,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
       // SET THE PERMANENT LATCH synchronously — this guarantees context.go()
       // is called EXACTLY once, no matter how many listeners fire.
+      _safetyTimer?.cancel();
       _hasNavigated = true;
       try {
         // Check for pending notification deep link
@@ -246,9 +280,29 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     _isTransitioning = false;
   }
 
+  /// Force-navigate to home when timeout or retries are exhausted.
+  /// This is a last-resort safety valve to prevent the splash from being stuck.
+  void _forceNavigateHome() {
+    if (_hasNavigated || !mounted) return;
+    _hasNavigated = true;
+    debugPrint('SplashScreen: 🚀 Force navigating to /home');
+    try {
+      if (AppRouter.rootNavKey.currentContext != null) {
+        AppRouter.rootNavKey.currentContext!.go('/home');
+      } else if (context.mounted) {
+        context.go('/home');
+      }
+      DeepLinkService.instance.setAppReady();
+      fetchAndCachePosters();
+    } catch (e) {
+      debugPrint('SplashScreen: Exception during force navigate: $e');
+    }
+  }
+
   @override
   void dispose() {
     debugPrint('SplashScreen: DISPOSED.');
+    _safetyTimer?.cancel();
     _authSub?.close();
     _manifestSub?.close();
     _postersSub?.close();

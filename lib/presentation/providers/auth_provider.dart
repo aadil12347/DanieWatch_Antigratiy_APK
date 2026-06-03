@@ -22,6 +22,14 @@ final sessionProvider = Provider<Session?>((ref) {
   return supabaseClient.auth.currentSession;
 });
 
+/// Synchronous fallback: checks Supabase's in-memory current user.
+/// Used by splash screen when the auth stream hasn't emitted yet.
+final currentUserProvider = Provider<User?>((ref) {
+  // Also watch authStateProvider so this updates when auth changes
+  ref.watch(authStateProvider);
+  return supabaseClient.auth.currentUser;
+});
+
 /// Notifier for the User Profile
 class ProfileNotifier extends AsyncNotifier<UserProfile?> {
   @override

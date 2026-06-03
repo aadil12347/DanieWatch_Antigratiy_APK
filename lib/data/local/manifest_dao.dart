@@ -1,5 +1,6 @@
 import 'dart:convert';
-
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../domain/models/manifest_item.dart';
@@ -11,10 +12,21 @@ class ManifestDao {
 
   static const _cacheTableMs = 30 * 60 * 1000; // 30 minutes in ms
 
+  Future<File> get _manifestFile async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/manifest_data.json');
+  }
+
   Future<ManifestCacheEntry?> getManifest() async {
-    final rows = await _db.query('manifest_cache', where: 'id = 1', limit: 1);
-    if (rows.isEmpty) return null;
-    return ManifestCacheEntry.fromMap(rows.first);
+    try {
+      final rows = await _db.query('manifest_cache', where: 'id = 1', limit: 1);
+      if (rows.isEmpty) return null;
+      return ManifestCacheEntry.fromMap(rows.first);
+    } catch (e) {
+      // If the table is corrupt or row is too large from a previous version, clear it.
+      await _db.delete('manifest_cache');
+      return null;
+    }
   }
 
   Future<bool> isCacheValid(String appVersion) async {
@@ -35,7 +47,11 @@ class ManifestDao {
     final entry = await getManifest();
     if (entry == null) return null;
     try {
-      final json = jsonDecode(entry.data) as Map<String, dynamic>;
+      final file = await _manifestFile;
+      if (!await file.exists()) return null;
+      
+      final dataString = await file.readAsString();
+      final json = jsonDecode(dataString) as Map<String, dynamic>;
       return Manifest.fromJson(json);
     } catch (e) {
       return null;
@@ -43,14 +59,19 @@ class ManifestDao {
   }
 
   Future<void> saveManifest(Manifest manifest, String appVersion) async {
-    final data = jsonEncode(manifest.toJson());
+    final dataString = jsonEncode(manifest.toJson());
+    final file = await _manifestFile;
+    await file.writeAsString(dataString);
+
     final now = DateTime.now().millisecondsSinceEpoch;
 
+    // We store an empty string in the 'data' column so it doesn't exceed the 2MB
+    // SQLite CursorWindow limit on Android. The actual data is in manifest_data.json
     await _db.insert(
       'manifest_cache',
       {
         'id': 1,
-        'data': data,
+        'data': '', 
         'version': manifest.version,
         'generated_at': manifest.generatedAt,
         'cached_at': now,

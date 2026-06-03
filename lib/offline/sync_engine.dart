@@ -145,13 +145,11 @@ class ManifestSyncEngine {
       );
     } catch (e, stack) {
       dev.log('[SyncEngine] Sync failed: $e', error: e, stackTrace: stack);
-      
-      try {
-        await _dao.clearCache();
-        await CategoryStorage.instance.clearAll();
-        dev.log('[SyncEngine] Cleared stale cache and category files');
-      } catch (_) {}
-      
+      // IMPORTANT: Do NOT clear the cache here. The existing cache is the
+      // user's last-known-good data. Destroying it on a transient network
+      // failure creates a death spiral where the app can never recover
+      // (readCache returns null → sync fails again → stuck forever).
+      // The old cache will only be replaced when a NEW sync succeeds.
       return SyncResult(updated: false, itemCount: 0, error: e.toString());
     }
   }
