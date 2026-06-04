@@ -123,6 +123,7 @@ flutter:
     - assets/logo.png
     - assets/logo.svg
     - assets/html/
+    - assets/base_index.json
     - poster/
 
 dependency_overrides:

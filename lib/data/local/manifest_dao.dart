@@ -378,6 +378,7 @@ class ManifestSearchResult {
   final List<String> genres;
   final int releaseYear;
   final List<String> originCountry;
+  final String? originalLanguage;
 
   const ManifestSearchResult({
     required this.itemId,
@@ -389,5 +390,6 @@ class ManifestSearchResult {
     this.genres = const [],
     this.releaseYear = 0,
     this.originCountry = const [],
+    this.originalLanguage,
   });
 }

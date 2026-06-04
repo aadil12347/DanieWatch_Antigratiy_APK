@@ -302,18 +302,9 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
       data: (pagState) {
         final rawItems = pagState.items;
 
-        // Defense filter: for non-Explore tabs, re-filter through client-side
-        // category matcher to catch any server-side categorization errors.
-        // Items without metadata (no originalLanguage/originCountry) stay in Explore only.
-        final items = _slug == 'all'
-            ? rawItems
-            : rawItems.where((item) {
-                final hasMetadata = (item.originalLanguage != null &&
-                        item.originalLanguage!.isNotEmpty) ||
-                    item.originCountry.isNotEmpty;
-                if (!hasMetadata) return false;
-                return FilterUtils.matchesCategorySlug(item, _slug);
-              }).toList();
+        // Trust the catalog's pre-categorized data — no strict metadata re-filtering.
+        // The catalog generator already handles categorization with fallbacks.
+        final items = rawItems;
 
         // Determine enforced category for FilterUtils
         String? enforceCategory;

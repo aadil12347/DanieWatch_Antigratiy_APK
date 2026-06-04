@@ -17,6 +17,7 @@ import 'pip/pip_controller.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/app_update_service.dart';
+import 'data/services/sync_service.dart';
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -84,6 +85,10 @@ Future<void> main() async {
 
     // Initialize local SQLite database
     await AppDatabase.instance.initialize();
+
+    // Initialize local search catalog (loads base_index from assets on first run,
+    // then syncs delta updates in background)
+    await SyncService.instance.initialize();
 
     // Initialize Download Manager
     await DownloadManager.instance.initialize();

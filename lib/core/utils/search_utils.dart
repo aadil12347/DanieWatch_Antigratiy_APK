@@ -34,7 +34,9 @@ class FilterUtils {
               language: r.languages,
               genres: r.genres,
               originCountry: r.originCountry,
-              originalLanguage: r.languages.isNotEmpty ? r.languages.first : null,
+              originalLanguage: r.originalLanguage?.isNotEmpty == true
+                  ? r.originalLanguage
+                  : (r.languages.isNotEmpty ? r.languages.first : null),
               posterUrl: r.posterUrl,
             );
           })
@@ -51,13 +53,9 @@ class FilterUtils {
         };
 
         if (categoryPages.contains(enforceCategory)) {
-          // Category pages: the fuzzy engine already scoped results,
-          // but apply safety filter for items that may have slipped through
+          // Category pages: apply category filter without strict metadata check.
+          // Items may have originalLanguage from Algolia even without originCountry.
           baseList = baseList.where((item) {
-            final hasMetadata = (item.originalLanguage != null &&
-                    item.originalLanguage!.isNotEmpty) ||
-                item.originCountry.isNotEmpty;
-            if (!hasMetadata) return false;
             return _matchesCategory(item, enforceCategory);
           }).toList();
         }
@@ -81,10 +79,6 @@ class FilterUtils {
       // Safety check: if an enforceCategory was passed, ensure everything matches
       if (enforceCategory != null) {
         baseList = baseList.where((item) {
-          final hasMetadata = (item.originalLanguage != null &&
-                  item.originalLanguage!.isNotEmpty) ||
-              item.originCountry.isNotEmpty;
-          if (!hasMetadata) return false;
           return _matchesCategory(item, enforceCategory);
         }).toList();
       }

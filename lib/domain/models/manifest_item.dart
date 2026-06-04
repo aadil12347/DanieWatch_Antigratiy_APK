@@ -86,8 +86,19 @@ class ManifestItem {
   }
 
   factory ManifestItem.fromJson(Map<String, dynamic> json) {
+    // Convert string IDs (ULIDs like "0HHVROFDOD9M80V12IHZQ345F2") to stable positive ints
+    final rawId = json['id'];
+    int id;
+    if (rawId is int) {
+      id = rawId;
+    } else if (rawId != null) {
+      final parsed = int.tryParse(rawId.toString());
+      id = parsed ?? (rawId.toString().hashCode & 0x7FFFFFFF);
+    } else {
+      id = 0;
+    }
     return ManifestItem(
-      id: _safeInt(json['id']) ?? 0,
+      id: id,
       mediaType: (json['media_type'] ?? json['type'] ?? 'movie').toString(),
       title: (json['title'] ?? '').toString(),
       posterUrl: _sanitizePosterUrl((json['poster_url'] ?? json['poster'])?.toString()),
