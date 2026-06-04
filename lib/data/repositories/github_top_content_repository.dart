@@ -141,26 +141,36 @@ class GitHubTopContentRepository {
   }
 
   // ─── Filename Parser ────────────────────────────────────────────────────────
-  /// Parses "3_normal_movie_1239134.json" → (position: 3, mediaType: "movie", tmdbId: 1239134)
-  /// Also handles "1_admin_tv_249765.json" patterns.
+  /// Flexibly parses filenames like:
+  ///   "3_normal_movie_1239134.json"
+  ///   "1_admin_tv_249765.json"
+  ///   "5_edit_movie_98765.json"
+  /// Only requires: leading number (position) + "movie"/"tv" somewhere + trailing number (tmdbId).
   static ({int position, String mediaType, int tmdbId})? _parseFileName(
       String name) {
     // Remove .json extension
     final base = name.replaceAll('.json', '');
-    // Pattern: {position}_{admin/normal}_{movie/tv}_{tmdbId}
     final parts = base.split('_');
-    if (parts.length < 4) return null;
+    if (parts.length < 3) return null;
 
+    // Position = first part (must be a number >= 1)
     final position = int.tryParse(parts[0]);
     if (position == null || position < 1) return null;
 
-    // parts[1] = "normal" or "admin" (ignored for display)
-    // parts[2] = "movie" or "tv"
-    final mediaType = parts[2];
-    if (mediaType != 'movie' && mediaType != 'tv') return null;
+    // Media type = find "movie" or "tv" anywhere in the parts
+    String? mediaType;
+    for (final part in parts) {
+      if (part == 'movie') { mediaType = 'movie'; break; }
+      if (part == 'tv') { mediaType = 'tv'; break; }
+    }
+    if (mediaType == null) return null;
 
-    // parts[3] = tmdbId (may contain extra underscores in rare edge cases)
-    final tmdbId = int.tryParse(parts[3]);
+    // TMDB ID = last numeric part in the filename
+    int? tmdbId;
+    for (int i = parts.length - 1; i >= 1; i--) {
+      tmdbId = int.tryParse(parts[i]);
+      if (tmdbId != null) break;
+    }
     if (tmdbId == null) return null;
 
     return (position: position, mediaType: mediaType, tmdbId: tmdbId);

@@ -222,7 +222,6 @@ class PaginatedSyncEngine {
         SearchDatabase.instance.getLatestByCategory('anime', limit: 15),
         SearchDatabase.instance.getLatestByCategory('hollywood', limit: 15),
         SearchDatabase.instance.getLatestByCategory('punjabi', limit: 15),
-        SearchDatabase.instance.getLatestByCategory('pakistani', limit: 15),
         SearchDatabase.instance.getLatestByCategory('chinese', limit: 15),
       ]);
 
@@ -262,7 +261,7 @@ class PaginatedSyncEngine {
       }
 
       // Category sections
-      final categoryNames = ['Indian', 'Korean', 'Anime', 'Hollywood', 'Punjabi', 'Pakistani', 'Chinese'];
+      final categoryNames = ['Indian', 'Korean', 'Anime', 'Hollywood', 'Punjabi', 'Chinese'];
       for (int i = 0; i < categoryNames.length; i++) {
         final items = categoryResults[i].map(resultToItem).toList();
         if (items.isNotEmpty) {
@@ -345,6 +344,8 @@ class PaginatedSyncEngine {
   }
 
   /// Build the Top 10 list from TMDB daily trending, filtered to items in the index.
+  /// If fewer than 10 items exist in the index, fills remaining slots with
+  /// unfiltered TMDB trending items to always show 10.
   List<ManifestItem> _buildTop10FromTmdb({
     required List<Map<String, dynamic>> trendingMovies,
     required List<Map<String, dynamic>> trendingTv,
@@ -353,7 +354,7 @@ class PaginatedSyncEngine {
     // Interleave movies and TV, prioritizing by TMDB trending rank
     final combined = <Map<String, dynamic>>[];
     int mi = 0, ti = 0;
-    while (combined.length < 20 && (mi < trendingMovies.length || ti < trendingTv.length)) {
+    while (combined.length < 40 && (mi < trendingMovies.length || ti < trendingTv.length)) {
       if (mi < trendingMovies.length) {
         combined.add({...trendingMovies[mi], '_mediaType': 'movie'});
         mi++;
@@ -364,14 +365,27 @@ class PaginatedSyncEngine {
       }
     }
 
-    // Filter to items in the app index
-    final filtered = combined.where((item) {
+    // First: items that exist in the app index (preferred)
+    final inIndex = combined.where((item) {
       final id = (item['id'] as num?)?.toInt();
       return id != null && existingIds.contains(id);
     }).toList();
 
-    // Take top 10
-    return filtered.take(10).map((item) {
+    // Then: remaining items not in index (fill to 10)
+    final usedIds = inIndex.map((item) => (item['id'] as num?)?.toInt()).toSet();
+    final notInIndex = combined.where((item) {
+      final id = (item['id'] as num?)?.toInt();
+      return id != null && !usedIds.contains(id);
+    }).toList();
+
+    // Combine: index items first, then fill with non-index to reach 10
+    final top10Source = <Map<String, dynamic>>[];
+    top10Source.addAll(inIndex.take(10));
+    if (top10Source.length < 10) {
+      top10Source.addAll(notInIndex.take(10 - top10Source.length));
+    }
+
+    return top10Source.take(10).map((item) {
       final id = (item['id'] as num?)?.toInt() ?? 0;
       final mediaType = item['_mediaType']?.toString() ?? 'movie';
       final posterPath = item['poster_path']?.toString();

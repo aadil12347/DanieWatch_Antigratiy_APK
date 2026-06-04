@@ -173,8 +173,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       filters = filters.copyWith(categories: {'Hollywood'});
     } else if (title == 'Punjabi') {
       filters = filters.copyWith(categories: {'Punjabi'});
-    } else if (title == 'Pakistani') {
-      filters = filters.copyWith(categories: {'Pakistani'});
     } else if (title == 'Chinese') {
       filters = filters.copyWith(categories: {'Chinese'});
     } else if (title == 'Action' || title == 'Thriller' || title == 'Romance' || title == 'Comedy') {
