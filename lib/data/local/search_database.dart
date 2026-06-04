@@ -339,11 +339,12 @@ class SearchDatabase {
               break;
             case 'anime':
             case 'japanese':
+              // Anime = Japanese + Animation genre (not all Japanese content)
               catClauses.add(
-                "(i.originalLanguage = 'ja'"
+                "((i.originalLanguage = 'ja'"
                 " OR i.originCountry LIKE '%JP%'"
-                " OR (i.originalLanguage = '' AND i.languages LIKE '%Japanese%')"
-                ")"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Japanese%'))"
+                " AND (i.genres LIKE '%Animation%' OR i.genres LIKE '%Anime%' OR i.genres LIKE '%16%'))"
               );
               break;
             case 'chinese':

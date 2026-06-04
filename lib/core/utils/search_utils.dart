@@ -258,9 +258,16 @@ class FilterUtils {
       case 'TV Shows' || 'Season' || 'Series':
         return item.mediaType == 'tv' || item.mediaType == 'series';
       case 'Anime':
-        return item.originalLanguage == 'ja' ||
+        // Anime = Japanese + Animation genre (not all Japanese content)
+        final isJapanese = item.originalLanguage == 'ja' ||
             item.originCountry.contains('JP') ||
             fallbackLang('Japanese');
+        if (!isJapanese) return false;
+        return item.genreIds.contains(16) ||
+            item.genres.any((g) {
+              final gl = g.toLowerCase();
+              return gl == 'animation' || gl == 'anime';
+            });
       case 'K-Drama' || 'Korean':
         return item.originCountry.contains('KR') ||
             item.originalLanguage == 'ko' ||

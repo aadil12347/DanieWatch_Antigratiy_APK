@@ -102,7 +102,12 @@ class VisibilityPolicy {
         .where((item) =>
             _hasMetadata(item) &&
             (item.originalLanguage == 'ja' ||
-                item.originCountry.contains('JP')))
+                item.originCountry.contains('JP')) &&
+            (item.genreIds.contains(16) ||
+                item.genres.any((g) {
+                  final gl = g.toLowerCase();
+                  return gl == 'animation' || gl == 'anime';
+                })))
         .toList();
   }
 
