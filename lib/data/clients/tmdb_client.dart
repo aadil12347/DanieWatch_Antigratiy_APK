@@ -148,6 +148,28 @@ class TmdbClient {
     return results.expand((x) => x).toList();
   }
 
+  /// Get top rated content
+  Future<List<Map<String, dynamic>>> getTopRated(String mediaType, {int page = 1}) async {
+    try {
+      final res = await _dio.get('/$mediaType/top_rated', queryParameters: {'page': page});
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Top rated $mediaType error: ${e.message}');
+      return [];
+    }
+  }
+
+  /// Batch fetch top rated content
+  Future<List<Map<String, dynamic>>> getTopRatedPages(String mediaType, int pageCount) async {
+    final futures = <Future<List<Map<String, dynamic>>>>[];
+    for (int i = 1; i <= pageCount; i++) {
+      futures.add(getTopRated(mediaType, page: i));
+    }
+    final results = await Future.wait(futures);
+    return results.expand((x) => x).toList();
+  }
+
   /// Lightweight: fetch only images (logos) for a given media item
   Future<Map<String, dynamic>?> getImages(int id, String mediaType) async {
     try {

@@ -282,18 +282,14 @@ final allItemsProvider = Provider<List<ManifestItem>>((ref) {
   return ref.watch(globalItemsProvider).valueOrNull ?? [];
 });
 
-/// Trending items — from home sections carousel or TMDB enrichment.
+/// Trending items — derived from carousel (Trending Now section removed).
 final trendingProvider = Provider<List<ManifestItem>>((ref) {
   final data = ref.watch(homeSectionsDataProvider).valueOrNull;
   if (data == null) return [];
-  final trendingSection = data.sections
-      .where((s) => s.title.toLowerCase().contains('trending'))
-      .toList();
-  if (trendingSection.isNotEmpty) return trendingSection.first.items;
   return data.carousel;
 });
 
-/// Popular items.
+/// Popular items — from dynamic home sections.
 final popularProvider = Provider<List<ManifestItem>>((ref) {
   final data = ref.watch(homeSectionsDataProvider).valueOrNull;
   if (data == null) return [];
@@ -385,13 +381,22 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
   );
 });
 
-/// Merged Top 10: GitHub Top 10 (fixed) + trending (fill gaps).
+/// Merged Top 10: TMDB daily trending (filtered by index) + GitHub Top 10 overrides.
+/// The Top 10 section in home is built by the sync engine, but this provider
+/// allows the GitHub Top 10 folder to override specific ranked positions.
 final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
   final githubTop10 = await ref.watch(githubTop10Provider.future);
-  final trending = ref.watch(trendingProvider);
+  // Get the Top 10 section from dynamic home data (built by sync engine)
+  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
+  final top10Section = data?.sections
+      .where((s) => s.title == 'Top 10 Today')
+      .toList();
+  final tmdbTop10 = (top10Section != null && top10Section.isNotEmpty)
+      ? top10Section.first.items
+      : <ManifestItem>[];
   return _mergeWithFixedSlots(
     githubItems: githubTop10,
-    tmdbItems: trending,
+    tmdbItems: tmdbTop10,
     totalSlots: 10,
   );
 });

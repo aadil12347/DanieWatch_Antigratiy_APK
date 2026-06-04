@@ -4,6 +4,7 @@ import 'dart:developer' as dev;
 import '../data/clients/github_catalog_client.dart';
 import '../data/clients/tmdb_client.dart';
 import '../data/local/manifest_dao.dart';
+import '../data/local/search_database.dart';
 import '../domain/models/catalog_page.dart';
 import '../domain/models/manifest_item.dart';
 
@@ -28,7 +29,7 @@ class SyncResult {
 ///   1. Read cached home sections → render instantly
 ///   2. Background: fetch meta.json → compare version
 ///   3. If changed: re-fetch home sections
-///   4. Enrich visible items with TMDB trending/popular data
+///   4. Build dynamic sections from TMDB + SQLite index
 ///   5. Update SQLite caches, notify listeners
 ///
 /// Note: Actual full catalog sync is handled by SyncService using delta updates.
@@ -81,8 +82,8 @@ class PaginatedSyncEngine {
 
       if (!versionChanged) {
         dev.log('[SyncEngine] Catalog version unchanged: ${remoteMeta.version}');
-        // Still refresh TMDB trending/popular (changes daily)
-        _refreshTmdbEnrichment();
+        // Still rebuild dynamic sections (TMDB data changes daily)
+        _buildDynamicSections();
         return SyncResult(
           updated: false,
           newVersion: remoteMeta.version,
@@ -95,7 +96,7 @@ class PaginatedSyncEngine {
       // Step 3: Save new metadata
       await _dao.saveCatalogMeta(remoteMeta);
 
-      // Step 4: Fetch home sections
+      // Step 4: Fetch home sections (for carousel)
       final homeSections = await _client.fetchHomeSections();
 
       // Step 5: Cache and broadcast home sections
@@ -108,8 +109,8 @@ class PaginatedSyncEngine {
       // Old page caches are no longer used since categories come from SQLite
       await _dao.invalidateAllPages();
 
-      // Step 6: TMDB enrichment for visible items
-      _refreshTmdbEnrichment();
+      // Step 6: Build dynamic sections from TMDB + SQLite
+      _buildDynamicSections();
 
       dev.log('[SyncEngine] Sync complete: ${remoteMeta.totalItems} items, version ${remoteMeta.version}');
 
@@ -126,33 +127,169 @@ class PaginatedSyncEngine {
 
   // ─── Internal Helpers ───────────────────────────────────────────────────
 
-  /// Refresh TMDB trending/popular enrichment for cached home sections.
-  /// Fire-and-forget — doesn't block sync.
-  void _refreshTmdbEnrichment() {
-    _doTmdbEnrichment().catchError((e) {
-      dev.log('[SyncEngine] TMDB enrichment failed: $e');
+  /// Build dynamic home sections — fire-and-forget, doesn't block sync.
+  void _buildDynamicSections() {
+    _doBuildDynamicSections().catchError((e) {
+      dev.log('[SyncEngine] Dynamic section build failed: $e');
     });
   }
 
-  Future<void> _doTmdbEnrichment() async {
+  /// Build home sections dynamically from TMDB + SQLite index.
+  ///
+  /// Sections built:
+  ///   - Top 10 Today (TMDB daily trending → filtered by index)
+  ///   - Indian, Korean, Anime, Hollywood, Punjabi, Pakistani, Chinese (from SQLite)
+  ///   - Popular, Top Rated (TMDB → filtered by index)
+  ///   - Action, Thriller, Romance, Comedy (genre-based from SQLite)
+  Future<void> _doBuildDynamicSections() async {
     try {
+      // Wait for SQLite to be ready
+      int waitCount = 0;
+      while (!SearchDatabase.instance.isReady && waitCount < 50) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        waitCount++;
+      }
+      if (!SearchDatabase.instance.isReady) {
+        dev.log('[SyncEngine] SQLite not ready after 10s, skipping dynamic sections');
+        return;
+      }
+
       final homeSections = await _dao.loadHomeSections();
       if (homeSections == null) return;
 
-      // Fetch TMDB trending + popular for movies and TV
-      final results = await Future.wait([
-        TmdbClient.instance.getTrendingPages('movie', 3),
-        TmdbClient.instance.getTrendingPages('tv', 3),
-        TmdbClient.instance.getPopularPages('movie', 3),
-        TmdbClient.instance.getPopularPages('tv', 3),
+      // ═══ Step 1: Fetch TMDB data in parallel ═══
+      final tmdbResults = await Future.wait([
+        TmdbClient.instance.getTrending('movie', timeWindow: 'day'),       // 0
+        TmdbClient.instance.getTrending('tv', timeWindow: 'day'),          // 1
+        TmdbClient.instance.getPopularPages('movie', 1),                   // 2
+        TmdbClient.instance.getPopularPages('tv', 1),                      // 3
+        TmdbClient.instance.getTopRatedPages('movie', 1),                  // 4
+        TmdbClient.instance.getTopRatedPages('tv', 1),                     // 5
       ]);
 
-      final trendingMovies = results[0];
-      final trendingTv = results[1];
-      final popularMovies = results[2];
-      final popularTv = results[3];
+      final trendingMovies = tmdbResults[0];
+      final trendingTv = tmdbResults[1];
+      final popularMovies = tmdbResults[2];
+      final popularTv = tmdbResults[3];
+      final topRatedMovies = tmdbResults[4];
+      final topRatedTv = tmdbResults[5];
 
-      // Build TMDB lookup map
+      // ═══ Step 2: Collect all TMDB IDs and check which exist in index ═══
+      final allTmdbItems = <Map<String, dynamic>>[];
+      allTmdbItems.addAll(trendingMovies);
+      allTmdbItems.addAll(trendingTv);
+      allTmdbItems.addAll(popularMovies);
+      allTmdbItems.addAll(popularTv);
+      allTmdbItems.addAll(topRatedMovies);
+      allTmdbItems.addAll(topRatedTv);
+
+      final allTmdbIds = allTmdbItems
+          .map((item) => (item['id'] as num?)?.toInt())
+          .where((id) => id != null)
+          .cast<int>()
+          .toSet()
+          .toList();
+
+      final existingIds = await SearchDatabase.instance.existsByTmdbIds(allTmdbIds);
+      dev.log('[SyncEngine] ${existingIds.length}/${allTmdbIds.length} TMDB items exist in index');
+
+      // ═══ Step 3: Build Top 10 Today ═══
+      final top10Items = _buildTop10FromTmdb(
+        trendingMovies: trendingMovies,
+        trendingTv: trendingTv,
+        existingIds: existingIds,
+      );
+
+      // ═══ Step 4: Build TMDB-sourced sections (filtered by index) ═══
+      final popularItems = _buildFilteredTmdbSection(
+        movies: popularMovies,
+        tv: popularTv,
+        existingIds: existingIds,
+        limit: 15,
+      );
+
+      final topRatedItems = _buildFilteredTmdbSection(
+        movies: topRatedMovies,
+        tv: topRatedTv,
+        existingIds: existingIds,
+        limit: 15,
+      );
+
+      // ═══ Step 5: Build category sections from SQLite ═══
+      final categoryResults = await Future.wait([
+        SearchDatabase.instance.getLatestByCategory('indian', limit: 15),
+        SearchDatabase.instance.getLatestByCategory('korean', limit: 15),
+        SearchDatabase.instance.getLatestByCategory('anime', limit: 15),
+        SearchDatabase.instance.getLatestByCategory('hollywood', limit: 15),
+        SearchDatabase.instance.getLatestByCategory('punjabi', limit: 15),
+        SearchDatabase.instance.getLatestByCategory('pakistani', limit: 15),
+        SearchDatabase.instance.getLatestByCategory('chinese', limit: 15),
+      ]);
+
+      // ═══ Step 6: Build genre sections from SQLite ═══
+      final genreResults = await Future.wait([
+        SearchDatabase.instance.getLatestByGenre('Action', limit: 15),
+        SearchDatabase.instance.getLatestByGenre('Thriller', limit: 15),
+        SearchDatabase.instance.getLatestByGenre('Romance', limit: 15),
+        SearchDatabase.instance.getLatestByGenre('Comedy', limit: 15),
+      ]);
+
+      // ═══ Step 7: Convert search results to ManifestItems ═══
+      ManifestItem resultToItem(ManifestSearchResult r) {
+        return ManifestItem(
+          id: r.itemId,
+          mediaType: r.mediaType,
+          title: r.title,
+          posterUrl: r.posterUrl,
+          releaseYear: r.releaseYear,
+          language: r.languages,
+          genres: r.genres,
+          originalLanguage: r.originalLanguage,
+          originCountry: r.originCountry,
+        );
+      }
+
+      // ═══ Step 8: Assemble sections list ═══
+      final sections = <HomeSection>[];
+
+      // Top 10 Today (always first, ranked)
+      if (top10Items.isNotEmpty) {
+        sections.add(HomeSection(
+          title: 'Top 10 Today',
+          items: top10Items,
+          isRanked: true,
+        ));
+      }
+
+      // Category sections
+      final categoryNames = ['Indian', 'Korean', 'Anime', 'Hollywood', 'Punjabi', 'Pakistani', 'Chinese'];
+      for (int i = 0; i < categoryNames.length; i++) {
+        final items = categoryResults[i].map(resultToItem).toList();
+        if (items.isNotEmpty) {
+          sections.add(HomeSection(title: categoryNames[i], items: items));
+        }
+      }
+
+      // Popular (TMDB-sourced)
+      if (popularItems.isNotEmpty) {
+        sections.add(HomeSection(title: 'Popular', items: popularItems));
+      }
+
+      // Top Rated (TMDB-sourced)
+      if (topRatedItems.isNotEmpty) {
+        sections.add(HomeSection(title: 'Top Rated', items: topRatedItems));
+      }
+
+      // Genre sections
+      final genreNames = ['Action', 'Thriller', 'Romance', 'Comedy'];
+      for (int i = 0; i < genreNames.length; i++) {
+        final items = genreResults[i].map(resultToItem).toList();
+        if (items.isNotEmpty) {
+          sections.add(HomeSection(title: genreNames[i], items: items));
+        }
+      }
+
+      // ═══ Step 9: Enrich carousel with TMDB data ═══
       final tmdbMap = <String, Map<String, dynamic>>{};
       final trendingSet = <String>{};
       final popularSet = <String>{};
@@ -187,33 +324,127 @@ class PaginatedSyncEngine {
         popularSet.add('$id-tv');
       }
 
-      // Enrich carousel items
       final enrichedCarousel = _enrichItems(
-          homeSections.carousel, tmdbMap, trendingSet, popularSet, trendingRanks);
+        homeSections.carousel, tmdbMap, trendingSet, popularSet, trendingRanks,
+      );
 
-      // Enrich section items
-      final enrichedSections = homeSections.sections.map((section) {
-        return HomeSection(
-          title: section.title,
-          items: _enrichItems(
-              section.items, tmdbMap, trendingSet, popularSet, trendingRanks),
-          isRanked: section.isRanked,
-        );
-      }).toList();
-
-      final enriched = HomeSectionsData(
+      // ═══ Step 10: Save and broadcast ═══
+      final dynamicData = HomeSectionsData(
         carousel: enrichedCarousel,
-        sections: enrichedSections,
+        sections: sections,
       );
 
       final version = await _dao.getCatalogVersion();
-      await _dao.saveHomeSections(enriched, version);
-      _homeSectionsController.add(enriched);
+      await _dao.saveHomeSections(dynamicData, version);
+      _homeSectionsController.add(dynamicData);
 
-      dev.log('[SyncEngine] TMDB enrichment applied to home sections');
-    } catch (e) {
-      dev.log('[SyncEngine] TMDB enrichment error: $e');
+      dev.log('[SyncEngine] Dynamic sections built: ${sections.length} sections');
+    } catch (e, stack) {
+      dev.log('[SyncEngine] Dynamic section build error: $e', stackTrace: stack);
     }
+  }
+
+  /// Build the Top 10 list from TMDB daily trending, filtered to items in the index.
+  List<ManifestItem> _buildTop10FromTmdb({
+    required List<Map<String, dynamic>> trendingMovies,
+    required List<Map<String, dynamic>> trendingTv,
+    required Set<int> existingIds,
+  }) {
+    // Interleave movies and TV, prioritizing by TMDB trending rank
+    final combined = <Map<String, dynamic>>[];
+    int mi = 0, ti = 0;
+    while (combined.length < 20 && (mi < trendingMovies.length || ti < trendingTv.length)) {
+      if (mi < trendingMovies.length) {
+        combined.add({...trendingMovies[mi], '_mediaType': 'movie'});
+        mi++;
+      }
+      if (ti < trendingTv.length) {
+        combined.add({...trendingTv[ti], '_mediaType': 'tv'});
+        ti++;
+      }
+    }
+
+    // Filter to items in the app index
+    final filtered = combined.where((item) {
+      final id = (item['id'] as num?)?.toInt();
+      return id != null && existingIds.contains(id);
+    }).toList();
+
+    // Take top 10
+    return filtered.take(10).map((item) {
+      final id = (item['id'] as num?)?.toInt() ?? 0;
+      final mediaType = item['_mediaType']?.toString() ?? 'movie';
+      final posterPath = item['poster_path']?.toString();
+      final backdropPath = item['backdrop_path']?.toString();
+      return ManifestItem(
+        id: id,
+        mediaType: mediaType,
+        title: (item['title'] ?? item['name'] ?? 'Unknown').toString(),
+        posterUrl: posterPath != null ? TmdbClient.posterUrl(posterPath) : null,
+        backdropUrl: backdropPath != null ? TmdbClient.backdropUrl(backdropPath) : null,
+        voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
+        voteCount: (item['vote_count'] as num?)?.toInt() ?? 0,
+        releaseYear: _extractYear(item['release_date']?.toString() ?? item['first_air_date']?.toString()),
+        overview: item['overview']?.toString(),
+        originalLanguage: item['original_language']?.toString(),
+        tmdbPosterPath: posterPath,
+        tmdbBackdropPath: backdropPath,
+        isTrending: true,
+      );
+    }).toList();
+  }
+
+  /// Build a section from TMDB data, filtered to items in the index.
+  List<ManifestItem> _buildFilteredTmdbSection({
+    required List<Map<String, dynamic>> movies,
+    required List<Map<String, dynamic>> tv,
+    required Set<int> existingIds,
+    required int limit,
+  }) {
+    final combined = <Map<String, dynamic>>[];
+    int mi = 0, ti = 0;
+    while (combined.length < (limit * 3) && (mi < movies.length || ti < tv.length)) {
+      if (mi < movies.length) {
+        combined.add({...movies[mi], '_mediaType': 'movie'});
+        mi++;
+      }
+      if (ti < tv.length) {
+        combined.add({...tv[ti], '_mediaType': 'tv'});
+        ti++;
+      }
+    }
+
+    final filtered = combined.where((item) {
+      final id = (item['id'] as num?)?.toInt();
+      return id != null && existingIds.contains(id);
+    }).toList();
+
+    return filtered.take(limit).map((item) {
+      final id = (item['id'] as num?)?.toInt() ?? 0;
+      final mediaType = item['_mediaType']?.toString() ?? 'movie';
+      final posterPath = item['poster_path']?.toString();
+      final backdropPath = item['backdrop_path']?.toString();
+      return ManifestItem(
+        id: id,
+        mediaType: mediaType,
+        title: (item['title'] ?? item['name'] ?? 'Unknown').toString(),
+        posterUrl: posterPath != null ? TmdbClient.posterUrl(posterPath) : null,
+        backdropUrl: backdropPath != null ? TmdbClient.backdropUrl(backdropPath) : null,
+        voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
+        voteCount: (item['vote_count'] as num?)?.toInt() ?? 0,
+        releaseYear: _extractYear(item['release_date']?.toString() ?? item['first_air_date']?.toString()),
+        overview: item['overview']?.toString(),
+        originalLanguage: item['original_language']?.toString(),
+        tmdbPosterPath: posterPath,
+        tmdbBackdropPath: backdropPath,
+      );
+    }).toList();
+  }
+
+  /// Extract year from date string like "2025-04-30"
+  int? _extractYear(String? dateStr) {
+    if (dateStr == null || dateStr.length < 4) return null;
+    return int.tryParse(dateStr.substring(0, 4));
   }
 
   /// Enrich a list of ManifestItems with TMDB data.

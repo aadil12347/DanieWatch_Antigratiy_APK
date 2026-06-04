@@ -157,16 +157,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _handleSeeAll(String title) {
     SearchFilters filters = const SearchFilters();
 
-    if (title == 'Top 10 Today' || title == 'Trending Now') {
+    if (title == 'Top 10 Today') {
       filters = filters.copyWith(sortBy: 'Popularity');
     } else if (title == 'Top Rated') {
       filters = filters.copyWith(sortBy: 'Latest Release');
+    } else if (title == 'Popular') {
+      filters = filters.copyWith(sortBy: 'Popularity');
     } else if (title == 'Anime') {
       filters = filters.copyWith(categories: {'Anime'});
     } else if (title == 'Korean') {
       filters = filters.copyWith(categories: {'K-Drama'});
+    } else if (title == 'Indian') {
+      filters = filters.copyWith(categories: {'Indian'});
+    } else if (title == 'Hollywood') {
+      filters = filters.copyWith(categories: {'Hollywood'});
+    } else if (title == 'Punjabi') {
+      filters = filters.copyWith(categories: {'Punjabi'});
+    } else if (title == 'Pakistani') {
+      filters = filters.copyWith(categories: {'Pakistani'});
+    } else if (title == 'Chinese') {
+      filters = filters.copyWith(categories: {'Chinese'});
+    } else if (title == 'Action' || title == 'Thriller' || title == 'Romance' || title == 'Comedy') {
+      filters = filters.copyWith(genres: {title});
     } else {
-      // Possible genre
+      // Fallback: treat as genre
       filters = filters.copyWith(genres: {title});
     }
 

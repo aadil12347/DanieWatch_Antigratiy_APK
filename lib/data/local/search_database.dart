@@ -480,6 +480,185 @@ class SearchDatabase {
     return id.hashCode & 0x7FFFFFFF;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Dynamic Home Section Helpers
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Check which TMDB IDs exist in the local index.
+  /// Returns a Set of IDs that are present.
+  Future<Set<int>> existsByTmdbIds(List<int> ids) async {
+    if (ids.isEmpty) return {};
+    final db = await _getDb();
+    final result = <int>{};
+    
+    // Process in batches of 500 to avoid SQLite variable limits
+    for (int i = 0; i < ids.length; i += 500) {
+      final batch = ids.sublist(i, (i + 500).clamp(0, ids.length));
+      final placeholders = batch.map((_) => '?').join(',');
+      final rows = await db.rawQuery(
+        'SELECT DISTINCT itemId FROM items WHERE itemId IN ($placeholders)',
+        batch.map((id) => id.toString()).toList(),
+      );
+      for (final row in rows) {
+        final id = int.tryParse(row['itemId']?.toString() ?? '');
+        if (id != null) result.add(id);
+      }
+    }
+    return result;
+  }
+
+  /// Get latest items by category, sorted by release date descending.
+  /// Uses the same category filter logic as search().
+  Future<List<ManifestSearchResult>> getLatestByCategory(String category, {int limit = 15}) async {
+    final db = await _getDb();
+    final List<String> whereClauses = [];
+    final List<dynamic> whereArgs = [];
+
+    switch (category.toLowerCase()) {
+      case 'indian':
+      case 'bollywood':
+        whereClauses.add(
+          "(i.originalLanguage IN ('hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh')"
+          " OR i.originCountry LIKE '%IN%'"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Hindi%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Tamil%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Telugu%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Malayalam%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Kannada%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Bengali%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Marathi%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Gujarati%')"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Bhojpuri%')"
+          ")"
+        );
+        break;
+      case 'korean':
+      case 'k-drama':
+        whereClauses.add(
+          "(i.originalLanguage = 'ko'"
+          " OR i.originCountry LIKE '%KR%'"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Korean%')"
+          ")"
+        );
+        break;
+      case 'anime':
+        whereClauses.add(
+          "((i.originalLanguage = 'ja'"
+          " OR i.originCountry LIKE '%JP%'"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Japanese%'))"
+          " AND (i.genres LIKE '%Animation%' OR i.genres LIKE '%Anime%' OR i.genres LIKE '%16%'))"
+        );
+        break;
+      case 'hollywood':
+        final excludedLangs = ['hi', 'ja', 'ko', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'];
+        final placeholders = excludedLangs.map((_) => '?').join(',');
+        whereClauses.add(
+          "(i.originalLanguage NOT IN ($placeholders)"
+          " AND i.originCountry NOT LIKE '%IN%'"
+          " AND i.originCountry NOT LIKE '%KR%'"
+          " AND i.originCountry NOT LIKE '%JP%'"
+          " AND i.originCountry NOT LIKE '%PK%'"
+          " AND i.originCountry NOT LIKE '%CN%'"
+          " AND i.originCountry NOT LIKE '%HK%'"
+          " AND i.originCountry NOT LIKE '%TW%'"
+          " AND NOT (i.originalLanguage = '' AND ("
+          "   i.languages LIKE '%Tamil%'"
+          "   OR i.languages LIKE '%Telugu%'"
+          "   OR i.languages LIKE '%Malayalam%'"
+          "   OR i.languages LIKE '%Kannada%'"
+          "   OR i.languages LIKE '%Bengali%'"
+          "   OR i.languages LIKE '%Marathi%'"
+          "   OR i.languages LIKE '%Japanese%'"
+          "   OR i.languages LIKE '%Korean%'"
+          "   OR i.languages LIKE '%Urdu%'"
+          "   OR UPPER(i.languages) LIKE '%PUNJABI%'"
+          "))"
+          ")"
+        );
+        whereArgs.addAll(excludedLangs);
+        break;
+      case 'punjabi':
+        whereClauses.add(
+          "(i.originalLanguage = 'pa'"
+          " OR (i.originalLanguage = '' AND UPPER(i.languages) LIKE '%PUNJABI%')"
+          ")"
+        );
+        break;
+      case 'pakistani':
+        whereClauses.add(
+          "(i.originalLanguage = 'ur'"
+          " OR i.originCountry LIKE '%PK%'"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Urdu%')"
+          ")"
+        );
+        break;
+      case 'chinese':
+        whereClauses.add(
+          "(i.originalLanguage IN ('zh', 'cn')"
+          " OR i.originCountry LIKE '%CN%'"
+          " OR i.originCountry LIKE '%TW%'"
+          " OR i.originCountry LIKE '%HK%'"
+          " OR (i.originalLanguage = '' AND i.languages LIKE '%Chinese%')"
+          ")"
+        );
+        break;
+      default:
+        return [];
+    }
+
+    final whereString = whereClauses.isEmpty ? '' : 'WHERE ${whereClauses.join(' AND ')}';
+    final sql = '''
+      SELECT i.* FROM items i
+      $whereString
+      ORDER BY i.releaseYear DESC, i.releaseDate DESC, i.addedAt DESC
+      LIMIT ?
+    ''';
+    whereArgs.add(limit);
+
+    final rows = await db.rawQuery(sql, whereArgs);
+    return _rowsToResults(rows);
+  }
+
+  /// Get latest items by genre, sorted by release date descending.
+  Future<List<ManifestSearchResult>> getLatestByGenre(String genre, {int limit = 15}) async {
+    final db = await _getDb();
+    final sql = '''
+      SELECT i.* FROM items i
+      WHERE i.genres LIKE ?
+      ORDER BY i.releaseYear DESC, i.releaseDate DESC, i.addedAt DESC
+      LIMIT ?
+    ''';
+    final rows = await db.rawQuery(sql, ['%"$genre"%', limit]);
+    return _rowsToResults(rows);
+  }
+
+  /// Convert raw DB rows to ManifestSearchResult list.
+  List<ManifestSearchResult> _rowsToResults(List<Map<String, dynamic>> rows) {
+    List<String> parseJsonList(String? json) {
+      if (json == null || json.isEmpty || json == '[]') return [];
+      try {
+        return (jsonDecode(json) as List).map((e) => e.toString()).toList();
+      } catch (_) {
+        return [];
+      }
+    }
+
+    return rows.map((row) {
+      return ManifestSearchResult(
+        itemId: _stableIntId(row['itemId']?.toString() ?? ''),
+        mediaType: row['mediaType']?.toString() ?? 'movie',
+        title: row['title']?.toString() ?? '',
+        score: 1.0,
+        posterUrl: row['posterUrl']?.toString(),
+        languages: parseJsonList(row['languages']?.toString()),
+        genres: parseJsonList(row['genres']?.toString()),
+        releaseYear: row['releaseYear'] as int? ?? 0,
+        originCountry: parseJsonList(row['originCountry']?.toString()),
+        originalLanguage: row['originalLanguage']?.toString(),
+      );
+    }).toList();
+  }
+
   /// Close the database
   Future<void> close() async {
     await _db?.close();
