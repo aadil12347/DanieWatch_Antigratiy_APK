@@ -48,7 +48,7 @@ class SearchDatabase {
     final path = p.join(dbPath, 'search_catalog.db');
     _db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -74,31 +74,28 @@ class SearchDatabase {
       )
     ''');
 
-    // FTS5 for full-text search on title
+    // FTS4 for full-text search on title (standard table for maximum compatibility)
     await db.execute('''
-      CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+      CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts4(
         title,
-        content='items',
-        content_rowid='rowid',
-        tokenize='unicode61 remove_diacritics 2'
+        tokenize=unicode61
       )
     ''');
 
     // Triggers to keep FTS in sync
     await db.execute('''
       CREATE TRIGGER IF NOT EXISTS items_ai AFTER INSERT ON items BEGIN
-        INSERT INTO items_fts(rowid, title) VALUES (new.rowid, new.title);
+        INSERT INTO items_fts(docid, title) VALUES (new.rowid, new.title);
       END
     ''');
     await db.execute('''
       CREATE TRIGGER IF NOT EXISTS items_ad AFTER DELETE ON items BEGIN
-        INSERT INTO items_fts(items_fts, rowid, title) VALUES('delete', old.rowid, old.title);
+        DELETE FROM items_fts WHERE docid = old.rowid;
       END
     ''');
     await db.execute('''
       CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE ON items BEGIN
-        INSERT INTO items_fts(items_fts, rowid, title) VALUES('delete', old.rowid, old.title);
-        INSERT INTO items_fts(rowid, title) VALUES (new.rowid, new.title);
+        UPDATE items_fts SET title = new.title WHERE docid = old.rowid;
       END
     ''');
 
@@ -207,7 +204,8 @@ class SearchDatabase {
     final List<dynamic> whereArgs = [];
 
     // --- Full-text search ---
-    String orderBy = 'i.addedAt DESC'; // default: newest first
+    // Default sorting: Year (latest), then Date (latest), then recently added.
+    String orderBy = 'i.releaseYear DESC, i.releaseDate DESC, i.addedAt DESC';
     bool useFts = query.trim().isNotEmpty;
 
     if (useFts) {
@@ -218,14 +216,57 @@ class SearchDatabase {
         whereClauses.add("i.title LIKE ?");
         whereArgs.add('%$q%');
       } else {
-        // FTS5 prefix search
-        whereClauses.add("i.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)");
+        // FTS4 prefix search
+        whereClauses.add("i.rowid IN (SELECT docid FROM items_fts WHERE items_fts MATCH ?)");
         whereArgs.add('"$q"*');
       }
     }
 
     // --- Filters ---
     if (filters != null) {
+      // Category filter (from navbar)
+      if (filters.categories.isNotEmpty) {
+        final List<String> catClauses = [];
+        
+        for (final cat in filters.categories) {
+          switch (cat.toLowerCase()) {
+            case 'hollywood':
+              // The user requested Hollywood to contain ALL posts OTHER THAN:
+              // indian, anime, korean, japanese, turkish, punjabi, pakistani, chinese
+              final excludedLangs = ['hi', 'ja', 'ko', 'tr', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr'];
+              final placeholders = excludedLangs.map((_) => '?').join(',');
+              catClauses.add("(i.originalLanguage NOT IN ($placeholders) AND i.originCountry NOT LIKE '%IN%' AND i.originCountry NOT LIKE '%KR%' AND i.originCountry NOT LIKE '%JP%' AND i.originCountry NOT LIKE '%TR%' AND i.originCountry NOT LIKE '%PK%' AND i.originCountry NOT LIKE '%CN%')");
+              whereArgs.addAll(excludedLangs);
+              break;
+            case 'indian':
+            case 'bollywood':
+              catClauses.add("(i.originalLanguage IN ('hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr') OR i.originCountry LIKE '%IN%')");
+              break;
+            case 'korean':
+            case 'k-drama':
+              catClauses.add("(i.originalLanguage = 'ko' OR i.originCountry LIKE '%KR%')");
+              break;
+            case 'anime':
+            case 'japanese':
+              catClauses.add("(i.originalLanguage = 'ja' OR i.originCountry LIKE '%JP%')");
+              break;
+            case 'chinese':
+              catClauses.add("(i.originalLanguage IN ('zh', 'cn') OR i.originCountry LIKE '%CN%' OR i.originCountry LIKE '%TW%')");
+              break;
+            case 'punjabi':
+              catClauses.add("i.originalLanguage = 'pa'");
+              break;
+            case 'pakistani':
+              catClauses.add("(i.originalLanguage = 'ur' OR i.originCountry LIKE '%PK%')");
+              break;
+          }
+        }
+        
+        if (catClauses.isNotEmpty) {
+          whereClauses.add('(${catClauses.join(' OR ')})');
+        }
+      }
+
       // Genre filter
       if (filters.genres.isNotEmpty) {
         final genreClauses = filters.genres.map((g) {
