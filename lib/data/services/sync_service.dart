@@ -19,7 +19,7 @@ class SyncService {
   SyncService._();
 
   static const _lastSyncKey = 'search_last_sync_timestamp';
-  static const _dbInitializedKey = 'search_db_initialized_v3';
+  static const _dbInitializedKey = 'search_db_initialized_v4';
 
   static const _baseUrl =
       'https://raw.githubusercontent.com/aadil12347/DanieWatch_Antigratiy_APK/main';

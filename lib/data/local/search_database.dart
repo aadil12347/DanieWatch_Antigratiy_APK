@@ -11,6 +11,35 @@ class SearchDatabase {
   static SearchDatabase get instance => _instance ??= SearchDatabase._();
   SearchDatabase._();
 
+  /// Display-name language → ISO 639-1 code mapping.
+  /// Used to infer originalLanguage for non-TMDB (ULID) items.
+  static const _displayLangToIso = {
+    'hindi': 'hi',
+    'english': 'en',
+    'tamil': 'ta',
+    'telugu': 'te',
+    'malayalam': 'ml',
+    'kannada': 'kn',
+    'bengali': 'bn',
+    'marathi': 'mr',
+    'punjabi': 'pa',
+    'urdu': 'ur',
+    'japanese': 'ja',
+    'korean': 'ko',
+    'chinese': 'zh',
+    'french': 'fr',
+    'spanish': 'es',
+    'german': 'de',
+    'italian': 'it',
+    'portuguese': 'pt',
+    'russian': 'ru',
+    'arabic': 'ar',
+    'turkish': 'tr',
+    'thai': 'th',
+    'gujarati': 'gu',
+    'bhojpuri': 'bh',
+  };
+
   Database? _db;
   bool _isInitialized = false;
 
@@ -151,6 +180,20 @@ class SearchDatabase {
       // release_date comes as snake_case from streaming_links JSON
       final releaseDate = (item['release_date'] ?? item['releaseDate'] ?? '').toString();
 
+      // Derive originalLanguage:
+      // - For TMDB items (numeric ID): trust original_language from TMDB
+      // - For ULID items (non-numeric ID): if original_language is missing/en,
+      //   infer from the display-name language array
+      String origLang = (item['original_language'] ?? '').toString().toLowerCase();
+      final isUlid = int.tryParse(id) == null;
+      if (isUlid && (origLang.isEmpty || origLang == 'en')) {
+        final langs = lang is List ? lang : [];
+        if (langs.isNotEmpty) {
+          final displayName = langs.first.toString().toLowerCase();
+          origLang = _displayLangToIso[displayName] ?? origLang;
+        }
+      }
+
       batch.insert(
         'items',
         {
@@ -160,7 +203,7 @@ class SearchDatabase {
           'title': item['title']?.toString() ?? '',
           'posterUrl': posterUrl,
           'genres': genresJson,
-          'originalLanguage': (item['original_language'] ?? '').toString().toLowerCase(),
+          'originalLanguage': origLang,
           'languages': langJson,
           'releaseYear': year,
           'originCountry': countryJson,
@@ -234,33 +277,89 @@ class SearchDatabase {
         for (final cat in filters.categories) {
           switch (cat.toLowerCase()) {
             case 'hollywood':
-              // The user requested Hollywood to contain ALL posts OTHER THAN:
-              // indian, anime, korean, japanese, turkish, punjabi, pakistani, chinese
-              final excludedLangs = ['hi', 'ja', 'ko', 'tr', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr'];
+              // Hollywood = everything NOT in the regional/language categories
+              final excludedLangs = ['hi', 'ja', 'ko', 'tr', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'];
               final placeholders = excludedLangs.map((_) => '?').join(',');
-              catClauses.add("(i.originalLanguage NOT IN ($placeholders) AND i.originCountry NOT LIKE '%IN%' AND i.originCountry NOT LIKE '%KR%' AND i.originCountry NOT LIKE '%JP%' AND i.originCountry NOT LIKE '%TR%' AND i.originCountry NOT LIKE '%PK%' AND i.originCountry NOT LIKE '%CN%')");
+              catClauses.add(
+                "(i.originalLanguage NOT IN ($placeholders)"
+                " AND i.originCountry NOT LIKE '%IN%'"
+                " AND i.originCountry NOT LIKE '%KR%'"
+                " AND i.originCountry NOT LIKE '%JP%'"
+                " AND i.originCountry NOT LIKE '%TR%'"
+                " AND i.originCountry NOT LIKE '%PK%'"
+                " AND i.originCountry NOT LIKE '%CN%'"
+                // Also exclude by display-name languages (fallback for items with wrong TMDB metadata)
+                " AND i.languages NOT LIKE '%Hindi%'"
+                " AND UPPER(i.languages) NOT LIKE '%PUNJABI%'"
+                " AND i.languages NOT LIKE '%Tamil%'"
+                " AND i.languages NOT LIKE '%Telugu%'"
+                " AND i.languages NOT LIKE '%Malayalam%'"
+                " AND i.languages NOT LIKE '%Kannada%'"
+                " AND i.languages NOT LIKE '%Bengali%'"
+                " AND i.languages NOT LIKE '%Marathi%'"
+                " AND i.languages NOT LIKE '%Japanese%'"
+                " AND i.languages NOT LIKE '%Korean%'"
+                " AND i.languages NOT LIKE '%Urdu%'"
+                ")"
+              );
               whereArgs.addAll(excludedLangs);
               break;
             case 'indian':
             case 'bollywood':
-              catClauses.add("(i.originalLanguage IN ('hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr') OR i.originCountry LIKE '%IN%')");
+              catClauses.add(
+                "(i.originalLanguage IN ('hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh')"
+                " OR i.originCountry LIKE '%IN%'"
+                // Fallback: check display-name languages
+                " OR i.languages LIKE '%Tamil%'"
+                " OR i.languages LIKE '%Telugu%'"
+                " OR i.languages LIKE '%Malayalam%'"
+                " OR i.languages LIKE '%Kannada%'"
+                " OR i.languages LIKE '%Bengali%'"
+                " OR i.languages LIKE '%Marathi%'"
+                ")"
+              );
               break;
             case 'korean':
             case 'k-drama':
-              catClauses.add("(i.originalLanguage = 'ko' OR i.originCountry LIKE '%KR%')");
+              catClauses.add(
+                "(i.originalLanguage = 'ko'"
+                " OR i.originCountry LIKE '%KR%'"
+                " OR i.languages LIKE '%Korean%'"
+                ")"
+              );
               break;
             case 'anime':
             case 'japanese':
-              catClauses.add("(i.originalLanguage = 'ja' OR i.originCountry LIKE '%JP%')");
+              catClauses.add(
+                "(i.originalLanguage = 'ja'"
+                " OR i.originCountry LIKE '%JP%'"
+                " OR i.languages LIKE '%Japanese%'"
+                ")"
+              );
               break;
             case 'chinese':
-              catClauses.add("(i.originalLanguage IN ('zh', 'cn') OR i.originCountry LIKE '%CN%' OR i.originCountry LIKE '%TW%')");
+              catClauses.add(
+                "(i.originalLanguage IN ('zh', 'cn')"
+                " OR i.originCountry LIKE '%CN%'"
+                " OR i.originCountry LIKE '%TW%'"
+                " OR i.languages LIKE '%Chinese%'"
+                ")"
+              );
               break;
             case 'punjabi':
-              catClauses.add("i.originalLanguage = 'pa'");
+              catClauses.add(
+                "(i.originalLanguage = 'pa'"
+                " OR UPPER(i.languages) LIKE '%PUNJABI%'"
+                ")"
+              );
               break;
             case 'pakistani':
-              catClauses.add("(i.originalLanguage = 'ur' OR i.originCountry LIKE '%PK%')");
+              catClauses.add(
+                "(i.originalLanguage = 'ur'"
+                " OR i.originCountry LIKE '%PK%'"
+                " OR i.languages LIKE '%Urdu%'"
+                ")"
+              );
               break;
           }
         }
