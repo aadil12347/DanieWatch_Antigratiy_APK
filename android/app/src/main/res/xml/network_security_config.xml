@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration for DanieWatch.
+  
+  Cleartext (HTTP) is permitted ONLY because many video CDN
+  servers serve HLS/M3U8 streams over plain HTTP.
+  
+  To further harden in the future:
+    1. Add <domain-config> entries for known CDN domains
+    2. Set base-config cleartextTrafficPermitted="false"
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

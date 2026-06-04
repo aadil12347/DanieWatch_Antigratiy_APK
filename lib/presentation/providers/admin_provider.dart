@@ -1,0 +1,654 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../domain/models/notification_entry.dart';
+import '../../domain/models/app_notification.dart';
+import '../../domain/models/manifest_item.dart';
+import '../../domain/models/posting_record.dart';
+import '../../core/services/notification_service.dart';
+import '../../data/local/category_storage.dart';
+import '../../data/repositories/posting_record_repository.dart';
+
+final _supabase = Supabase.instance.client;
+
+// ─── Admin Status Provider ────────────────────────────────────────────────
+/// Checks if current user is an admin (database-backed)
+final isAdminProvider = FutureProvider<bool>((ref) async {
+  final user = _supabase.auth.currentUser;
+  if (user == null) return false;
+
+  try {
+    final data = await _supabase
+        .from('admins')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    return data != null;
+  } catch (e) {
+    debugPrint('Admin check error: $e');
+    return false;
+  }
+});
+
+// ─── Notification Entries Provider (Optimistic) ──────────────────────────
+/// Stateful notifier for entries that supports optimistic add/remove.
+class NotificationEntriesNotifier extends FamilyAsyncNotifier<List<NotificationEntry>, String> {
+  @override
+  Future<List<NotificationEntry>> build(String category) async {
+    try {
+      final data = await _supabase
+          .from('notification_entries')
+          .select()
+          .eq('category', category)
+          .order('created_at', ascending: false);
+
+      return (data as List).map((e) => NotificationEntry.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('Error loading entries: $e');
+      return [];
+    }
+  }
+
+  /// Optimistically add an entry — shows instantly, syncs in background.
+  /// Handles duplicates: if an entry with the same tmdb_id already exists
+  /// in this category, it removes the old one and re-adds at the top.
+  Future<bool> addEntry(NotificationEntry entry) async {
+    final current = state.valueOrNull ?? [];
+    // Remove any existing entry with same tmdb_id to prevent duplicates (move to top)
+    final deduped = current.where((e) => e.tmdbId != entry.tmdbId).toList();
+    // Optimistic: add to top of list with a temp ID
+    final tempEntry = NotificationEntry(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      tmdbId: entry.tmdbId,
+      mediaType: entry.mediaType,
+      title: entry.title,
+      posterUrl: entry.posterUrl,
+      backdropUrl: entry.backdropUrl,
+      releaseYear: entry.releaseYear,
+      voteAverage: entry.voteAverage,
+      category: entry.category,
+      createdAt: DateTime.now(),
+    );
+    state = AsyncData([tempEntry, ...deduped]);
+
+    // Background sync — delete old duplicate then insert new
+    try {
+      // Remove existing entry with same tmdb_id in this category (no-op if none)
+      try {
+        await _supabase
+            .from('notification_entries')
+            .delete()
+            .eq('tmdb_id', entry.tmdbId)
+            .eq('category', entry.category);
+      } catch (_) {}
+      await AdminService.instance.addEntry(entry);
+      // Re-fetch to get real IDs
+      ref.invalidateSelf();
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+
+  /// Optimistically remove a single entry.
+  Future<bool> removeEntry(String entryId) async {
+    final current = state.valueOrNull ?? [];
+    // Optimistic: remove from list instantly
+    state = AsyncData(current.where((e) => e.id != entryId).toList());
+
+    // Background sync
+    try {
+      await AdminService.instance.removeEntry(entryId);
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+
+  /// Optimistically remove multiple entries.
+  Future<bool> removeEntries(List<String> entryIds) async {
+    final current = state.valueOrNull ?? [];
+    final idSet = entryIds.toSet();
+    // Optimistic: remove from list instantly
+    state = AsyncData(current.where((e) => !idSet.contains(e.id)).toList());
+
+    // Background sync
+    try {
+      await AdminService.instance.removeEntries(entryIds);
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+
+  /// Optimistically update an entry's title.
+  Future<bool> updateEntryTitle(String entryId, String newTitle) async {
+    final current = state.valueOrNull ?? [];
+    // Optimistic: update title instantly
+    state = AsyncData(
+      current.map((e) => e.id == entryId ? e.copyWith(title: newTitle) : e).toList(),
+    );
+
+    // Background sync
+    try {
+      await AdminService.instance.updateEntry(entryId, title: newTitle);
+      return true;
+    } catch (e) {
+      // Rollback
+      state = AsyncData(current);
+      return false;
+    }
+  }
+}
+
+final notificationEntriesProvider =
+    AsyncNotifierProvider.family<NotificationEntriesNotifier, List<NotificationEntry>, String>(
+  () => NotificationEntriesNotifier(),
+);
+
+/// Alias for notificationEntriesProvider — used by send_notification_screen
+final categoryEntriesProvider = notificationEntriesProvider;
+
+// ─── Notification History Provider ────────────────────────────────────────
+final notificationHistoryProvider = FutureProvider<List<AppNotification>>((ref) async {
+  try {
+    final data = await _supabase
+        .from('notifications')
+        .select()
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    return (data as List).map((e) => AppNotification.fromJson(e)).toList();
+  } catch (e) {
+    debugPrint('Error loading notification history: $e');
+    return [];
+  }
+});
+
+// ─── Admin List Provider ──────────────────────────────────────────────────
+final adminListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  try {
+    final data = await _supabase
+        .from('admins')
+        .select('id, user_id, email, created_at')
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(data);
+  } catch (e) {
+    debugPrint('Error loading admin list: $e');
+    return [];
+  }
+});
+
+// ─── User Notification Preferences ────────────────────────────────────────
+class NotificationPrefs {
+  final bool newlyAdded;
+  final bool recentlyReleased;
+  final bool adminMessages;
+
+  const NotificationPrefs({
+    this.newlyAdded = true,
+    this.recentlyReleased = true,
+    this.adminMessages = true,
+  });
+
+  factory NotificationPrefs.fromJson(Map<String, dynamic> json) {
+    return NotificationPrefs(
+      newlyAdded: json['newly_added'] ?? true,
+      recentlyReleased: json['recently_released'] ?? true,
+      adminMessages: json['admin_messages'] ?? true,
+    );
+  }
+}
+
+class NotificationPrefsNotifier extends AsyncNotifier<NotificationPrefs> {
+  @override
+  Future<NotificationPrefs> build() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return const NotificationPrefs();
+
+    try {
+      final data = await _supabase
+          .from('user_notification_prefs')
+          .select()
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (data != null) {
+        return NotificationPrefs.fromJson(data);
+      }
+      return const NotificationPrefs();
+    } catch (e) {
+      return const NotificationPrefs();
+    }
+  }
+
+  Future<void> updatePref(String field, bool value) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    // 1. Optimistic update — flip the toggle INSTANTLY
+    final oldPrefs = state.valueOrNull ?? const NotificationPrefs();
+    final newPrefs = NotificationPrefs(
+      newlyAdded: field == 'newly_added' ? value : oldPrefs.newlyAdded,
+      recentlyReleased: field == 'recently_released' ? value : oldPrefs.recentlyReleased,
+      adminMessages: field == 'admin_messages' ? value : oldPrefs.adminMessages,
+    );
+    state = AsyncData(newPrefs);
+
+    // 2. Background sync — don't block UI
+    try {
+      await _supabase.from('user_notification_prefs').upsert({
+        'user_id': user.id,
+        field: value,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'user_id');
+
+      // FCM topic subscription (fire-and-forget)
+      final topicMap = {
+        'newly_added': 'daniewatch_newly_added',
+        'recently_released': 'daniewatch_recently_released',
+        'admin_messages': 'daniewatch_admin_messages',
+      };
+
+      final topic = topicMap[field];
+      if (topic != null) {
+        if (value) {
+          NotificationService.instance.subscribeToTopic(topic);
+        } else {
+          NotificationService.instance.unsubscribeFromTopic(topic);
+        }
+      }
+    } catch (e) {
+      // 3. Rollback on failure
+      debugPrint('Error updating notification pref: $e');
+      state = AsyncData(oldPrefs);
+    }
+  }
+}
+
+final notificationPrefsProvider =
+    AsyncNotifierProvider<NotificationPrefsNotifier, NotificationPrefs>(
+  () => NotificationPrefsNotifier(),
+);
+
+// ─── Per-Category Notification History (last 7 days) ──────────────────────
+final categoryNotificationHistoryProvider =
+    FutureProvider.family<List<AppNotification>, String>((ref, category) async {
+  try {
+    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+    final data = await _supabase
+        .from('notifications')
+        .select()
+        .eq('type', category)
+        .gte('created_at', sevenDaysAgo.toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    return (data as List).map((e) => AppNotification.fromJson(e)).toList();
+  } catch (e) {
+    debugPrint('Error loading category notification history: $e');
+    return [];
+  }
+});
+
+// ─── Posting Record Batches Provider ──────────────────────────────────────
+/// Provides the list of batches from posting_record.json, sorted newest-first.
+final postingRecordBatchesProvider = FutureProvider<List<PostingBatch>>((ref) async {
+  final record = await PostingRecordRepository.instance.fetch();
+  if (record == null) return [];
+  final sorted = List<PostingBatch>.from(record.batches);
+  sorted.sort((a, b) => b.batchId.compareTo(a.batchId));
+  return sorted;
+});
+
+// ─── Admin Actions Service ────────────────────────────────────────────────
+class AdminService {
+  static final AdminService instance = AdminService._();
+  AdminService._();
+
+  /// Category label mapping: DB value → UI label
+  static String getCategoryLabel(String dbCategory) {
+    switch (dbCategory) {
+      case 'newly_added':
+        return 'Latest Released';
+      case 'recently_released':
+        return 'Recently Added';
+      default:
+        return dbCategory;
+    }
+  }
+
+  /// Add a content entry to a category
+  Future<void> addEntry(NotificationEntry entry) async {
+    await _supabase.from('notification_entries').insert(entry.toInsertJson());
+  }
+
+  /// Remove a single entry
+  Future<void> removeEntry(String entryId) async {
+    await _supabase.from('notification_entries').delete().eq('id', entryId);
+  }
+
+  /// Remove multiple entries
+  Future<void> removeEntries(List<String> entryIds) async {
+    await _supabase.from('notification_entries').delete().inFilter('id', entryIds);
+  }
+
+  /// Update an existing entry's details (for admin editing before sending)
+  Future<void> updateEntry(String entryId, {
+    String? title,
+    String? posterUrl,
+    String? mediaType,
+    int? releaseYear,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (title != null && title.isNotEmpty) updates['title'] = title;
+    if (posterUrl != null) updates['poster_url'] = posterUrl.isEmpty ? null : posterUrl;
+    if (mediaType != null) updates['media_type'] = mediaType;
+    if (releaseYear != null) updates['release_year'] = releaseYear;
+    if (updates.isEmpty) return;
+    await _supabase.from('notification_entries').update(updates).eq('id', entryId);
+  }
+
+  /// Add a new admin by email
+  Future<bool> addAdmin(String email) async {
+    final userData = await _supabase
+        .from('profiles')
+        .select('id, email')
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
+
+    if (userData == null) return false;
+
+    await _supabase.from('admins').insert({
+      'user_id': userData['id'],
+      'email': email.trim().toLowerCase(),
+      'added_by': _supabase.auth.currentUser?.id,
+    });
+    return true;
+  }
+
+  /// Remove an admin
+  Future<void> removeAdmin(String adminId) async {
+    await _supabase.from('admins').delete().eq('id', adminId);
+  }
+
+  /// Auto-add recently added items by comparing old vs new index files.
+  /// Returns the count of newly added entries.
+  Future<int> autoAddRecentlyAdded() async {
+    try {
+      final oldItems = await CategoryStorage.instance.loadPreviousIndex();
+      final newItems = await CategoryStorage.instance.loadCategory(CategoryStorage.indexFile);
+
+      if (oldItems.isEmpty || newItems.isEmpty) {
+        debugPrint('[AutoAdd] Old or new index is empty (old=${oldItems.length}, new=${newItems.length})');
+        return 0;
+      }
+
+      // Build set of old IDs (tmdbId-mediaType as unique key)
+      final oldIdSet = <String>{};
+      for (final item in oldItems) {
+        oldIdSet.add('${item.id}-${item.mediaType}');
+      }
+
+      // Find items in new but not in old
+      final newlyAddedItems = <ManifestItem>[];
+      for (final item in newItems) {
+        final key = '${item.id}-${item.mediaType}';
+        if (!oldIdSet.contains(key)) {
+          newlyAddedItems.add(item);
+        }
+      }
+
+      if (newlyAddedItems.isEmpty) return 0;
+
+      // Also check which ones are already in DB to avoid duplicates
+      final existingData = await _supabase
+          .from('notification_entries')
+          .select('tmdb_id')
+          .eq('category', 'recently_released');
+      final existingTmdbIds = <int>{};
+      for (final row in existingData) {
+        final id = row['tmdb_id'];
+        if (id is int) existingTmdbIds.add(id);
+      }
+
+      int addedCount = 0;
+      for (final item in newlyAddedItems) {
+        if (existingTmdbIds.contains(item.id)) continue;
+
+        final entry = NotificationEntry(
+          id: '',
+          tmdbId: item.id,
+          mediaType: item.mediaType,
+          title: item.title,
+          posterUrl: item.posterUrl,
+          backdropUrl: item.backdropUrl,
+          releaseYear: item.releaseYear,
+          voteAverage: item.voteAverage,
+          category: 'recently_released',
+          createdAt: DateTime.now(),
+        );
+
+        try {
+          await _supabase.from('notification_entries').insert(entry.toInsertJson());
+          addedCount++;
+        } catch (e) {
+          debugPrint('[AutoAdd] Failed to insert ${item.title}: $e');
+        }
+      }
+
+      return addedCount;
+    } catch (e) {
+      debugPrint('[AutoAdd] Error: $e');
+      return 0;
+    }
+  }
+
+  /// Add an entire batch of posts to a notification category.
+  /// Looks up each post's full data from the manifest items list.
+  /// Returns the count of newly added entries (skips duplicates).
+  Future<int> addBatchToCategory({
+    required PostingBatch batch,
+    required String category,
+    required List<ManifestItem> allItems,
+  }) async {
+    try {
+      // Build lookup map from allItems: key = "tmdbId-type"
+      final itemMap = <String, ManifestItem>{};
+      for (final item in allItems) {
+        itemMap['${item.id}-${item.mediaType}'] = item;
+      }
+
+      // Check which ones are already in DB to avoid duplicates
+      final existingData = await _supabase
+          .from('notification_entries')
+          .select('tmdb_id')
+          .eq('category', category);
+      final existingTmdbIds = <int>{};
+      for (final row in existingData) {
+        final id = row['tmdb_id'];
+        if (id is int) existingTmdbIds.add(id);
+      }
+
+      int addedCount = 0;
+      for (final post in batch.posts) {
+        if (existingTmdbIds.contains(post.tmdbId)) continue;
+
+        // Look up full item data from manifest
+        final key = '${post.tmdbId}-${post.type}';
+        final manifestItem = itemMap[key];
+
+        final entry = NotificationEntry(
+          id: '',
+          tmdbId: post.tmdbId,
+          mediaType: post.type,
+          title: manifestItem?.title ?? post.title,
+          posterUrl: manifestItem?.posterUrl,
+          backdropUrl: manifestItem?.backdropUrl,
+          releaseYear: manifestItem?.releaseYear ?? post.year,
+          voteAverage: manifestItem?.voteAverage ?? 0,
+          category: category,
+          createdAt: DateTime.now(),
+        );
+
+        try {
+          await _supabase.from('notification_entries').insert(entry.toInsertJson());
+          addedCount++;
+        } catch (e) {
+          debugPrint('[BatchAdd] Failed to insert ${post.title}: $e');
+        }
+      }
+
+      return addedCount;
+    } catch (e) {
+      debugPrint('[BatchAdd] Error: $e');
+      return 0;
+    }
+  }
+
+  /// Send a notification (records it in DB and calls Edge Function for FCM)
+  Future<bool> sendNotification({
+    required String type,
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+    String? imageUrl,
+  }) async {
+    try {
+      await _supabase.from('notifications').insert({
+        'type': type,
+        'title': title,
+        'body': body,
+        'data': data ?? {},
+        'sent_by': _supabase.auth.currentUser?.id,
+      });
+
+      try {
+        final pushBody = <String, dynamic>{
+          'type': type,
+          'title': title,
+          'body': body,
+          'data': data ?? {},
+        };
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          pushBody['image'] = imageUrl;
+        }
+        await _supabase.functions.invoke(
+          'send-push-notification',
+          body: pushBody,
+        );
+      } catch (e) {
+        debugPrint('Edge function call failed (notification still recorded): $e');
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error sending notification: $e');
+      return false;
+    }
+  }
+
+  /// Send category-based notifications with smart grouping
+  Future<int> sendCategoryNotifications(String category) async {
+    try {
+      final data = await _supabase
+          .from('notification_entries')
+          .select()
+          .eq('category', category)
+          .order('created_at', ascending: false);
+
+      final entries = (data as List).map((e) => NotificationEntry.fromJson(e)).toList();
+      if (entries.isEmpty) return 0;
+
+      final uiLabel = getCategoryLabel(category);
+
+      if (category == 'recently_released') {
+        // Generate a unique group_id for this batch so each send
+        // creates a separate expandable card on the bell page.
+        final groupId = DateTime.now().millisecondsSinceEpoch.toString();
+
+        for (final entry in entries) {
+          await _supabase.from('notifications').insert({
+            'type': category,
+            'title': '🎬 ${entry.title}',
+            'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
+            'data': {
+              'group_id': groupId,
+              'poster_url': entry.posterUrl ?? '',
+              'backdrop_url': entry.backdropUrl ?? '',
+              'media_type': entry.mediaType,
+              'release_year': (entry.releaseYear ?? '').toString(),
+              'tmdb_id': entry.tmdbId.toString(),
+              'vote_average': (entry.voteAverage ?? 0).toString(),
+            },
+            'sent_by': _supabase.auth.currentUser?.id,
+          });
+        }
+
+        final titles = entries.map((e) => e.title).take(3).join(', ');
+        final summaryBody = entries.length > 3
+            ? '$titles and ${entries.length - 3} more'
+            : titles;
+        try {
+          await _supabase.functions.invoke(
+            'send-push-notification',
+            body: {
+              'type': category,
+              'title': '🎬 ${entries.length} $uiLabel',
+              'body': summaryBody,
+              'data': {'type': category},
+            },
+          );
+        } catch (e) {
+          debugPrint('Summary FCM push failed: $e');
+        }
+      } else if (category == 'newly_added') {
+        for (final entry in entries) {
+          final entryData = {
+            'poster_url': entry.posterUrl ?? '',
+            'backdrop_url': entry.backdropUrl ?? '',
+            'media_type': entry.mediaType,
+            'release_year': (entry.releaseYear ?? '').toString(),
+            'tmdb_id': entry.tmdbId.toString(),
+            'vote_average': (entry.voteAverage ?? 0).toString(),
+            'type': category,
+          };
+
+          await _supabase.from('notifications').insert({
+            'type': category,
+            'title': '🎬 ${entry.title}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
+            'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}',
+            'data': entryData,
+            'sent_by': _supabase.auth.currentUser?.id,
+          });
+
+          try {
+            await _supabase.functions.invoke(
+              'send-push-notification',
+              body: {
+                'type': category,
+                'title': '🎬 ${entry.title}${entry.releaseYear != null ? " (${entry.releaseYear})" : ""}',
+                'body': '$uiLabel • ${entry.mediaType == "tv" ? "TV Show" : "Movie"}',
+                'image': entry.posterUrl,
+                'data': entryData,
+              },
+            );
+          } catch (e) {
+            debugPrint('Individual FCM push failed for ${entry.title}: $e');
+          }
+        }
+      }
+
+      return entries.length;
+    } catch (e) {
+      debugPrint('Error sending category notifications: $e');
+      return 0;
+    }
+  }
+}

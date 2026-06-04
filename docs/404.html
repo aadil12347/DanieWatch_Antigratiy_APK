@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DanieWatch — Open in App</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(145deg, #0a0a1a 0%, #1a0a2e 50%, #0a0a1a 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      text-align: center;
+      padding: 48px 32px;
+      max-width: 400px;
+      width: 90%;
+    }
+    .logo { font-size: 48px; margin-bottom: 8px; }
+    .app-name {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, #E91E63, #FF5252);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+    .type-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: rgba(233, 30, 99, 0.15);
+      color: #E91E63;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 32px;
+    }
+    .open-btn {
+      display: inline-block;
+      padding: 16px 48px;
+      background: linear-gradient(135deg, #E91E63, #C2185B);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: 700;
+      box-shadow: 0 4px 24px rgba(233, 30, 99, 0.3);
+    }
+    .fallback {
+      margin-top: 24px;
+      color: rgba(255,255,255,0.4);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🎬</div>
+    <div class="app-name">DanieWatch</div>
+    <div class="subtitle">Stream. Download. Enjoy.</div>
+    <div class="type-badge" id="content-type"></div>
+    <br/><br/>
+    <a href="#" class="open-btn" id="open-btn">Open in DanieWatch</a>
+    <p class="fallback">Make sure DanieWatch is installed on your device.</p>
+  </div>
+  <script>
+    (function() {
+      var parts = window.location.pathname.split('/').filter(Boolean);
+      // Backward compat: strip old repo subpath if present
+      if (parts.length > 0 && parts[0] === 'daniewatch-app.github.io') parts.shift();
+      var mediaType = parts[0];
+      var id = parts[1];
+      if (mediaType && id) {
+        var label = mediaType === 'tv' ? 'TV Show' : 'Movie';
+        document.getElementById('content-type').textContent = label;
+        document.getElementById('open-btn').href = 'daniewatch://' + mediaType + '/' + id;
+        // Auto-try to open
+        window.location.href = 'daniewatch://' + mediaType + '/' + id;
+      }
+    })();
+  </script>
+</body>
+</html>

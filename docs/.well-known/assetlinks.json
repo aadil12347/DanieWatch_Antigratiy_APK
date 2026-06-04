@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.daniewatch.app",
+      "sha256_cert_fingerprints": [
+        "F1:8D:C3:B1:43:43:D3:DF:35:19:33:6A:30:13:E8:D0:AA:CD:84:4B:4C:11:4E:4B:C1:3B:5A:9A:CA:5D:9B:26"
+      ]
+    }
+  }
+]
