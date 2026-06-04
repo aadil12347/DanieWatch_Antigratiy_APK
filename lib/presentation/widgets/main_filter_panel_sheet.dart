@@ -26,7 +26,7 @@ class _MainFilterPanelContentState
   }
 
   // ── Categories ──
-  static const _categories = ['Movie', 'TV Shows', 'Anime', 'K-Drama', 'Bollywood'];
+  static const _categories = ['Movie', 'TV Shows', 'Anime', 'K-Drama', 'Indian'];
 
   // ── Genres ──
   static const _genres = [
@@ -215,7 +215,7 @@ class _MainFilterPanelContentState
     final activeCategory = filters.categories.isNotEmpty ? filters.categories.first : null;
     final isRegionalPage = activeCategory == 'Korean' || 
                           activeCategory == 'Anime' || 
-                          activeCategory == 'Bollywood';
+                          activeCategory == 'Indian';
 
     return Container(
       constraints:

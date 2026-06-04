@@ -305,7 +305,7 @@ final paginatedCategoryProvider = StateNotifierProvider.family<
 String categoryLabelToSlug(String label) {
   const map = {
     'Explore': 'all',
-    'Bollywood': 'bollywood',
+    'Indian': 'bollywood',
     'Hollywood': 'hollywood',
     'Anime': 'anime',
     'Korean': 'korean',
@@ -370,9 +370,12 @@ final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
 });
 
 /// Category-specific providers (backward compat — returns all loaded items).
-final bollywoodProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+final indianProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
   return ref.watch(paginatedCategoryProvider('bollywood')).whenData((s) => s.items);
 });
+
+/// Backward compat alias.
+final bollywoodProvider = indianProvider;
 
 final koreanProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
   return ref.watch(paginatedCategoryProvider('korean')).whenData((s) => s.items);

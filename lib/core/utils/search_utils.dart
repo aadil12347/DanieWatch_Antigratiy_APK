@@ -31,7 +31,7 @@ class FilterUtils {
         // Check if this is a genre filter (not a category page)
         // Genre pages should search ALL items, not scope by genre
         const categoryPages = {
-          'Anime', 'Korean', 'K-Drama', 'Bollywood',
+          'Anime', 'Korean', 'K-Drama', 'Indian', 'Bollywood',
           'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
         };
 
@@ -233,6 +233,7 @@ class FilterUtils {
         // Strict Korean: KR origin or ko language
         return item.originCountry.contains('KR') ||
             item.originalLanguage == 'ko';
+      case 'Indian':
       case 'Bollywood':
         // Strict Bollywood: IN origin or hi language (Hindi)
         return item.originCountry.contains('IN') ||

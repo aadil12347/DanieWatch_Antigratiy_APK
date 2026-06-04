@@ -109,7 +109,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     // Top-level categories that should scope search
     const categoryPages = {
-      'Anime', 'Korean', 'K-Drama', 'Bollywood',
+      'Anime', 'Korean', 'K-Drama', 'Indian', 'Bollywood',
       'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
     };
 
@@ -210,7 +210,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
       const categoryMap = {
         'Korean': 'Korean',
         'Anime': 'Anime',
-        'Bollywood': 'Bollywood',
+        'Indian': 'Indian',
+        'Bollywood': 'Indian',
         'Hollywood': 'Hollywood',
         'Chinese': 'Chinese',
         'Punjabi': 'Punjabi',

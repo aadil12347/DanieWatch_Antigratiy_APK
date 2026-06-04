@@ -305,7 +305,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         // Determine enforced category for FilterUtils
         String? enforceCategory;
         const categoryPages = {
-          'Anime', 'Korean', 'K-Drama', 'Bollywood',
+          'Anime', 'Korean', 'K-Drama', 'Indian', 'Bollywood',
           'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
         };
         final filterCat = searchState.filters.categories;

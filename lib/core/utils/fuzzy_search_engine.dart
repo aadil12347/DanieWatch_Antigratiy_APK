@@ -257,9 +257,9 @@ class FuzzySearchEngine {
     if (item.originCountry.contains('KR') || item.originalLanguage == 'ko') {
       return 'Korean';
     }
-    // Bollywood
+    // Indian (formerly Bollywood)
     if (item.originCountry.contains('IN') || item.originalLanguage == 'hi') {
-      return 'Bollywood';
+      return 'Indian';
     }
     // Chinese
     if (item.originCountry.contains('CN') ||
@@ -295,8 +295,9 @@ class FuzzySearchEngine {
       case 'K-Drama':
       case 'Korean':
         return entry.category == 'Korean';
+      case 'Indian':
       case 'Bollywood':
-        return entry.category == 'Bollywood';
+        return entry.category == 'Indian';
       case 'Hollywood':
         return entry.category == 'Hollywood';
       case 'Chinese':
