@@ -277,29 +277,35 @@ class SearchDatabase {
         for (final cat in filters.categories) {
           switch (cat.toLowerCase()) {
             case 'hollywood':
-              // Hollywood = everything NOT in the regional/language categories
-              final excludedLangs = ['hi', 'ja', 'ko', 'tr', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'];
+              // Hollywood = everything NOT in the regional/language categories.
+              // ONLY filter by originalLanguage (from TMDB) and originCountry.
+              // Do NOT filter by display-name languages[] — those are DUB languages,
+              // not original languages (e.g. The Godfather dubbed in Hindi is still Hollywood).
+              final excludedLangs = ['hi', 'ja', 'ko', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'];
               final placeholders = excludedLangs.map((_) => '?').join(',');
               catClauses.add(
                 "(i.originalLanguage NOT IN ($placeholders)"
                 " AND i.originCountry NOT LIKE '%IN%'"
                 " AND i.originCountry NOT LIKE '%KR%'"
                 " AND i.originCountry NOT LIKE '%JP%'"
-                " AND i.originCountry NOT LIKE '%TR%'"
                 " AND i.originCountry NOT LIKE '%PK%'"
                 " AND i.originCountry NOT LIKE '%CN%'"
-                // Also exclude by display-name languages (fallback for items with wrong TMDB metadata)
-                " AND i.languages NOT LIKE '%Hindi%'"
-                " AND UPPER(i.languages) NOT LIKE '%PUNJABI%'"
-                " AND i.languages NOT LIKE '%Tamil%'"
-                " AND i.languages NOT LIKE '%Telugu%'"
-                " AND i.languages NOT LIKE '%Malayalam%'"
-                " AND i.languages NOT LIKE '%Kannada%'"
-                " AND i.languages NOT LIKE '%Bengali%'"
-                " AND i.languages NOT LIKE '%Marathi%'"
-                " AND i.languages NOT LIKE '%Japanese%'"
-                " AND i.languages NOT LIKE '%Korean%'"
-                " AND i.languages NOT LIKE '%Urdu%'"
+                " AND i.originCountry NOT LIKE '%HK%'"
+                " AND i.originCountry NOT LIKE '%TW%'"
+                // For items with NO originalLanguage metadata, use display language as fallback
+                // to exclude genuinely regional content (not dubs)
+                " AND NOT (i.originalLanguage = '' AND ("
+                "   i.languages LIKE '%Tamil%'"
+                "   OR i.languages LIKE '%Telugu%'"
+                "   OR i.languages LIKE '%Malayalam%'"
+                "   OR i.languages LIKE '%Kannada%'"
+                "   OR i.languages LIKE '%Bengali%'"
+                "   OR i.languages LIKE '%Marathi%'"
+                "   OR i.languages LIKE '%Japanese%'"
+                "   OR i.languages LIKE '%Korean%'"
+                "   OR i.languages LIKE '%Urdu%'"
+                "   OR UPPER(i.languages) LIKE '%PUNJABI%'"
+                "))"
                 ")"
               );
               whereArgs.addAll(excludedLangs);
@@ -309,13 +315,16 @@ class SearchDatabase {
               catClauses.add(
                 "(i.originalLanguage IN ('hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh')"
                 " OR i.originCountry LIKE '%IN%'"
-                // Fallback: check display-name languages
-                " OR i.languages LIKE '%Tamil%'"
-                " OR i.languages LIKE '%Telugu%'"
-                " OR i.languages LIKE '%Malayalam%'"
-                " OR i.languages LIKE '%Kannada%'"
-                " OR i.languages LIKE '%Bengali%'"
-                " OR i.languages LIKE '%Marathi%'"
+                // Fallback: check display-name languages for items missing originalLanguage
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Hindi%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Tamil%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Telugu%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Malayalam%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Kannada%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Bengali%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Marathi%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Gujarati%')"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Bhojpuri%')"
                 ")"
               );
               break;
@@ -324,7 +333,7 @@ class SearchDatabase {
               catClauses.add(
                 "(i.originalLanguage = 'ko'"
                 " OR i.originCountry LIKE '%KR%'"
-                " OR i.languages LIKE '%Korean%'"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Korean%')"
                 ")"
               );
               break;
@@ -333,7 +342,7 @@ class SearchDatabase {
               catClauses.add(
                 "(i.originalLanguage = 'ja'"
                 " OR i.originCountry LIKE '%JP%'"
-                " OR i.languages LIKE '%Japanese%'"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Japanese%')"
                 ")"
               );
               break;
@@ -342,14 +351,15 @@ class SearchDatabase {
                 "(i.originalLanguage IN ('zh', 'cn')"
                 " OR i.originCountry LIKE '%CN%'"
                 " OR i.originCountry LIKE '%TW%'"
-                " OR i.languages LIKE '%Chinese%'"
+                " OR i.originCountry LIKE '%HK%'"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Chinese%')"
                 ")"
               );
               break;
             case 'punjabi':
               catClauses.add(
                 "(i.originalLanguage = 'pa'"
-                " OR UPPER(i.languages) LIKE '%PUNJABI%'"
+                " OR (i.originalLanguage = '' AND UPPER(i.languages) LIKE '%PUNJABI%')"
                 ")"
               );
               break;
@@ -357,7 +367,7 @@ class SearchDatabase {
               catClauses.add(
                 "(i.originalLanguage = 'ur'"
                 " OR i.originCountry LIKE '%PK%'"
-                " OR i.languages LIKE '%Urdu%'"
+                " OR (i.originalLanguage = '' AND i.languages LIKE '%Urdu%')"
                 ")"
               );
               break;

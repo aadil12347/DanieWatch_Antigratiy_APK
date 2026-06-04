@@ -240,8 +240,17 @@ class FilterUtils {
 
   static bool _matchesCategory(ManifestItem item, String cat) {
     // Helper: check if item.language array contains a display-name (case-insensitive)
+    // ONLY used as fallback when originalLanguage is empty (to avoid
+    // mis-categorizing dubbed content, e.g. Hindi-dubbed Hollywood movies).
     bool hasLang(String name) =>
         item.language.any((l) => l.toLowerCase() == name.toLowerCase());
+
+    // Whether item has TMDB-sourced original language metadata
+    final hasOrigLang = item.originalLanguage != null &&
+        item.originalLanguage!.isNotEmpty;
+
+    // Fallback display-lang check: only match if originalLanguage is empty
+    bool fallbackLang(String name) => !hasOrigLang && hasLang(name);
 
     switch (cat) {
       case 'Movie':
@@ -251,30 +260,40 @@ class FilterUtils {
       case 'Anime':
         return item.originalLanguage == 'ja' ||
             item.originCountry.contains('JP') ||
-            hasLang('Japanese');
+            fallbackLang('Japanese');
       case 'K-Drama' || 'Korean':
         return item.originCountry.contains('KR') ||
             item.originalLanguage == 'ko' ||
-            hasLang('Korean');
+            fallbackLang('Korean');
       case 'Indian':
       case 'Bollywood':
         return item.originCountry.contains('IN') ||
             ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh']
                 .contains(item.originalLanguage) ||
-            hasLang('Tamil') ||
-            hasLang('Telugu') ||
-            hasLang('Malayalam') ||
-            hasLang('Kannada') ||
-            hasLang('Bengali') ||
-            hasLang('Marathi');
+            fallbackLang('Hindi') ||
+            fallbackLang('Tamil') ||
+            fallbackLang('Telugu') ||
+            fallbackLang('Malayalam') ||
+            fallbackLang('Kannada') ||
+            fallbackLang('Bengali') ||
+            fallbackLang('Marathi') ||
+            fallbackLang('Gujarati') ||
+            fallbackLang('Bhojpuri');
       case 'Hollywood':
-        // Everything NOT in regional categories
-        final excludedLangs = {'hi', 'ja', 'ko', 'tr', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'};
-        final excludedCountries = {'IN', 'KR', 'JP', 'TR', 'PK', 'CN'};
-        final excludedDisplayLangs = {'hindi', 'japanese', 'korean', 'punjabi', 'tamil', 'telugu', 'malayalam', 'kannada', 'bengali', 'marathi', 'urdu'};
+        // Everything NOT in regional categories.
+        // Only exclude by originalLanguage and originCountry (TMDB metadata).
+        // Do NOT exclude by display language — those are DUB languages,
+        // not original languages (e.g. The Godfather dubbed in Hindi = Hollywood).
+        final excludedLangs = {'hi', 'ja', 'ko', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'};
+        final excludedCountries = {'IN', 'KR', 'JP', 'PK', 'CN', 'HK', 'TW'};
         if (excludedLangs.contains(item.originalLanguage)) return false;
         if (item.originCountry.any((c) => excludedCountries.contains(c))) return false;
-        if (item.language.any((l) => excludedDisplayLangs.contains(l.toLowerCase()))) return false;
+        // For items with NO originalLanguage, use display language as fallback
+        // to exclude genuinely regional content (not dubs)
+        if (!hasOrigLang) {
+          final excludedDisplayLangs = {'tamil', 'telugu', 'malayalam', 'kannada', 'bengali', 'marathi', 'japanese', 'korean', 'urdu', 'punjabi'};
+          if (item.language.any((l) => excludedDisplayLangs.contains(l.toLowerCase()))) return false;
+        }
         return true;
       case 'Chinese':
         return item.originCountry.contains('CN') ||
@@ -282,14 +301,14 @@ class FilterUtils {
             item.originCountry.contains('TW') ||
             item.originalLanguage == 'zh' ||
             item.originalLanguage == 'cn' ||
-            hasLang('Chinese');
+            fallbackLang('Chinese');
       case 'Punjabi':
         return item.originalLanguage == 'pa' ||
-            hasLang('Punjabi');
+            fallbackLang('Punjabi');
       case 'Pakistani':
         return item.originCountry.contains('PK') ||
             item.originalLanguage == 'ur' ||
-            hasLang('Urdu');
+            fallbackLang('Urdu');
       default:
         return false;
     }

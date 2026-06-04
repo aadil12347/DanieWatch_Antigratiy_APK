@@ -101,9 +101,8 @@ class VisibilityPolicy {
     return all
         .where((item) =>
             _hasMetadata(item) &&
-            item.originalLanguage == 'ja' &&
-            (item.genreIds.contains(16) ||
-                item.genres.any((g) => g.toLowerCase() == 'animation')))
+            (item.originalLanguage == 'ja' ||
+                item.originCountry.contains('JP')))
         .toList();
   }
 
@@ -115,9 +114,9 @@ class VisibilityPolicy {
     }).toList();
   }
 
-  /// Filter for Bollywood content: strictly Indian origin or Hindi/Urdu/Punjabi
+  /// Filter for Bollywood/Indian content: Indian origin or Indian languages
   static List<ManifestItem> filterBollywood(List<ManifestItem> all) {
-    final targetLangs = {'hi', 'ur', 'pa'};
+    final targetLangs = {'hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh', 'ur', 'pa'};
 
     return all.where((item) {
       if (!_hasMetadata(item)) return false;
@@ -126,14 +125,18 @@ class VisibilityPolicy {
     }).toList();
   }
 
-  /// Hollywood: Origin US/UK or English language
+  /// Hollywood: Everything NOT in regional categories.
+  /// Only excludes by originalLanguage and originCountry (TMDB metadata).
+  /// Does NOT exclude by dub language (e.g. Hindi-dubbed Hollywood = still Hollywood).
   static List<ManifestItem> filterHollywood(List<ManifestItem> all) {
+    final excludedLangs = {'hi', 'ja', 'ko', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'};
+    final excludedCountries = {'IN', 'KR', 'JP', 'PK', 'CN', 'HK', 'TW'};
+
     return all.where((item) {
       if (!_hasMetadata(item)) return false;
-      return item.originCountry.contains('US') ||
-          item.originCountry.contains('GB') ||
-          item.originCountry.contains('UK') ||
-          item.originalLanguage == 'en';
+      if (excludedLangs.contains(item.originalLanguage)) return false;
+      if (item.originCountry.any((c) => excludedCountries.contains(c))) return false;
+      return true;
     }).toList();
   }
 
