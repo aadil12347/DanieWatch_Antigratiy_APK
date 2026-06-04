@@ -94,8 +94,19 @@ class FilterUtils {
     // that was already applied by the provider.
     final sortBy = f.sortBy;
     if (sortBy == 'Latest' || sortBy == 'Latest Release') {
-      baseList
-          .sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
+      baseList.sort((a, b) {
+        // Primary: sort by release_date (ISO string, lexicographic = chronological)
+        final dateA = a.releaseDate ?? '';
+        final dateB = b.releaseDate ?? '';
+        if (dateA.isNotEmpty && dateB.isNotEmpty) {
+          return dateB.compareTo(dateA); // DESC
+        }
+        // Fallback: items with date come before items without
+        if (dateA.isNotEmpty) return -1;
+        if (dateB.isNotEmpty) return 1;
+        // Final fallback: releaseYear
+        return (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+      });
     } else if (sortBy == 'Top Rated' || sortBy == 'Rating (High to Low)') {
       baseList.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
     }
