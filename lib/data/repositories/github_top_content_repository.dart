@@ -96,7 +96,7 @@ class GitHubTopContentRepository {
 
     final listing = jsonDecode(listingRes.body) as List<dynamic>;
 
-    // Step 2: Filter to only .json files, parse filenames
+    // Step 2: Filter to only .json files, parse filenames for position
     final entries = <_ParsedEntry>[];
     for (final item in listing) {
       final name = item['name']?.toString() ?? '';
@@ -121,7 +121,9 @@ class GitHubTopContentRepository {
         if (res.statusCode != 200) return null;
 
         final json = jsonDecode(res.body) as Map<String, dynamic>;
-        final item = _jsonToManifestItem(json, entry.mediaType);
+        // Use media type from filename if available, otherwise from JSON content
+        final mediaType = entry.mediaType ?? json['type']?.toString() ?? 'movie';
+        final item = _jsonToManifestItem(json, mediaType);
         return MapEntry(entry.position, item);
       } catch (e) {
         dev.log('[GitHubTopContent] Failed to fetch ${entry.path}: $e');
@@ -141,37 +143,40 @@ class GitHubTopContentRepository {
   }
 
   // ─── Filename Parser ────────────────────────────────────────────────────────
-  /// Flexibly parses filenames like:
-  ///   "3_normal_movie_1239134.json"
-  ///   "1_admin_tv_249765.json"
-  ///   "5_edit_movie_98765.json"
-  /// Only requires: leading number (position) + "movie"/"tv" somewhere + trailing number (tmdbId).
-  static ({int position, String mediaType, int tmdbId})? _parseFileName(
+  /// Flexibly parses filenames in two formats:
+  ///
+  /// **Simple format**: "10.json" → position=10, mediaType/tmdbId from JSON content
+  /// **Full format**: "3_normal_movie_1239134.json" → position=3, mediaType=movie, tmdbId=1239134
+  ///
+  /// The only REQUIRED part is a leading number (the position/rank).
+  static ({int position, String? mediaType, int? tmdbId})? _parseFileName(
       String name) {
     // Remove .json extension
     final base = name.replaceAll('.json', '');
     final parts = base.split('_');
-    if (parts.length < 3) return null;
 
     // Position = first part (must be a number >= 1)
     final position = int.tryParse(parts[0]);
     if (position == null || position < 1) return null;
 
-    // Media type = find "movie" or "tv" anywhere in the parts
+    // Simple format: just "10.json" — no underscores, no media type, no TMDB ID
+    if (parts.length == 1) {
+      return (position: position, mediaType: null, tmdbId: null);
+    }
+
+    // Full format: find "movie" or "tv" anywhere in the parts
     String? mediaType;
     for (final part in parts) {
       if (part == 'movie') { mediaType = 'movie'; break; }
       if (part == 'tv') { mediaType = 'tv'; break; }
     }
-    if (mediaType == null) return null;
 
-    // TMDB ID = last numeric part in the filename
+    // TMDB ID = last numeric part in the filename (after position)
     int? tmdbId;
     for (int i = parts.length - 1; i >= 1; i--) {
       tmdbId = int.tryParse(parts[i]);
       if (tmdbId != null) break;
     }
-    if (tmdbId == null) return null;
 
     return (position: position, mediaType: mediaType, tmdbId: tmdbId);
   }
@@ -211,14 +216,15 @@ class GitHubTopContentRepository {
 /// Internal helper for parsed file entries
 class _ParsedEntry {
   final int position;
-  final String mediaType;
-  final int tmdbId;
+  final String? mediaType;  // nullable — will be read from JSON if missing
+  final int? tmdbId;        // nullable — will be read from JSON if missing
   final String path;
 
   _ParsedEntry({
     required this.position,
-    required this.mediaType,
-    required this.tmdbId,
+    this.mediaType,
+    this.tmdbId,
     required this.path,
   });
 }
+
