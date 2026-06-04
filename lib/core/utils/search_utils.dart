@@ -263,10 +263,10 @@ class FilterUtils {
   }
 
   /// Public method to match by catalog slug (used by defense filter in search_screen).
-  /// Maps catalog slugs like 'bollywood', 'korean' to category names.
+  /// Maps catalog slugs like 'indian', 'korean' to category names.
   static bool matchesCategorySlug(ManifestItem item, String slug) {
     const slugToCategory = {
-      'bollywood': 'Indian',
+      'indian': 'Indian',
       'korean': 'Korean',
       'anime': 'Anime',
       'hollywood': 'Hollywood',

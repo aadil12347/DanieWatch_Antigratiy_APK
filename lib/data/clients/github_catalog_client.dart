@@ -14,7 +14,7 @@ import '../../domain/models/manifest_item.dart';
 ///     search_index.json         ← id+title+type+language for all items
 ///     home/sections.json        ← pre-built home screen data
 ///     all/page_1.json           ← paginated global catalog
-///     bollywood/page_1.json     ← paginated category pages
+///     indian/page_1.json        ← paginated category pages
 ///     ...
 class GitHubCatalogClient {
   GitHubCatalogClient._();
@@ -61,7 +61,7 @@ class GitHubCatalogClient {
   // ─── Paginated Category Pages ───────────────────────────────────────────────
 
   /// Fetch a specific page of a category.
-  /// Categories: 'all', 'bollywood', 'korean', 'anime', 'hollywood',
+  /// Categories: 'all', 'indian', 'korean', 'anime', 'hollywood',
   ///             'chinese', 'punjabi', 'pakistani'
   Future<CatalogPage?> fetchPage(String category, int page) async {
     try {

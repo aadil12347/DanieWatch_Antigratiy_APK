@@ -10,7 +10,7 @@ class CategoryStorage {
   static final CategoryStorage instance = CategoryStorage._();
 
   static const String indexFile = 'index.json';
-  static const String bollywoodFile = 'bollywood.json';
+  static const String indianFile = 'indian.json';
   static const String koreanFile = 'korean.json';
   static const String animeFile = 'anime.json';
   static const String hollywoodFile = 'hollywood.json';
@@ -67,7 +67,7 @@ class CategoryStorage {
   /// Clear all category files
   Future<void> clearAll() async {
     final files = [
-      bollywoodFile,
+      indianFile,
       koreanFile,
       animeFile,
       hollywoodFile,

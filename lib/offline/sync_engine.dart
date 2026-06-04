@@ -47,7 +47,7 @@ class PaginatedSyncEngine {
 
   /// All known category slugs
   static const categories = [
-    'all', 'bollywood', 'korean', 'anime',
+    'all', 'indian', 'korean', 'anime',
     'hollywood', 'chinese', 'punjabi', 'pakistani',
   ];
 
