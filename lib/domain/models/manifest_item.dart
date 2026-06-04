@@ -30,6 +30,7 @@ class ManifestItem {
   final int? trendingRank;
   final String? tmdbPosterPath;
   final String? tmdbBackdropPath;
+  final String? releaseDate; // ISO format: "2026-05-15" from TMDB
 
   ManifestItem({
     required this.id,
@@ -60,6 +61,7 @@ class ManifestItem {
     this.trendingRank,
     this.tmdbPosterPath,
     this.tmdbBackdropPath,
+    this.releaseDate,
   });
 
   /// Safe int parser — handles both int and String values from JSON
@@ -125,6 +127,7 @@ class ManifestItem {
       trendingRank: _safeInt(json['trending_rank']),
       tmdbPosterPath: json['tmdb_poster_path']?.toString(),
       tmdbBackdropPath: json['tmdb_backdrop_path']?.toString(),
+      releaseDate: json['release_date']?.toString(),
     );
   }
 
@@ -158,6 +161,7 @@ class ManifestItem {
       'trending_rank': trendingRank,
       'tmdb_poster_path': tmdbPosterPath,
       'tmdb_backdrop_path': tmdbBackdropPath,
+      'release_date': releaseDate,
     };
   }
 
@@ -203,6 +207,7 @@ class ManifestItem {
     int? trendingRank,
     String? tmdbPosterPath,
     String? tmdbBackdropPath,
+    String? releaseDate,
   }) {
     return ManifestItem(
       id: id ?? this.id,
@@ -233,6 +238,7 @@ class ManifestItem {
       trendingRank: trendingRank ?? this.trendingRank,
       tmdbPosterPath: tmdbPosterPath ?? this.tmdbPosterPath,
       tmdbBackdropPath: tmdbBackdropPath ?? this.tmdbBackdropPath,
+      releaseDate: releaseDate ?? this.releaseDate,
     );
   }
 }

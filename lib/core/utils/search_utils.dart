@@ -261,4 +261,21 @@ class FilterUtils {
         return false;
     }
   }
+
+  /// Public method to match by catalog slug (used by defense filter in search_screen).
+  /// Maps catalog slugs like 'bollywood', 'korean' to category names.
+  static bool matchesCategorySlug(ManifestItem item, String slug) {
+    const slugToCategory = {
+      'bollywood': 'Indian',
+      'korean': 'Korean',
+      'anime': 'Anime',
+      'hollywood': 'Hollywood',
+      'chinese': 'Chinese',
+      'punjabi': 'Punjabi',
+      'pakistani': 'Pakistani',
+    };
+    final cat = slugToCategory[slug];
+    if (cat == null) return true; // 'all' → no filter
+    return _matchesCategory(item, cat);
+  }
 }
