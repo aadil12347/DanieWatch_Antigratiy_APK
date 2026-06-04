@@ -59,37 +59,8 @@ final homeSectionsDataProvider =
         () => HomeSectionsNotifier());
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Search Index Provider — for search + visibility checks
+// Search Index Provider (Removed - Replaced by Algolia)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/// Provides the lightweight search index (id + title + type + language).
-/// Used for: search, visibility checks (navigation guards), explore filtering.
-class SearchIndexNotifier extends AsyncNotifier<List<SearchIndexEntry>> {
-  StreamSubscription<List<SearchIndexEntry>>? _sub;
-
-  @override
-  Future<List<SearchIndexEntry>> build() async {
-    _sub = PaginatedSyncEngine.instance.onSearchIndexUpdated.listen((data) {
-      state = AsyncValue.data(data);
-    });
-    ref.onDispose(() => _sub?.cancel());
-
-    // Try cache first
-    final cached = await PaginatedSyncEngine.instance.readCachedSearchIndex();
-    return cached ?? [];
-  }
-}
-
-final searchIndexProvider =
-    AsyncNotifierProvider<SearchIndexNotifier, List<SearchIndexEntry>>(
-        () => SearchIndexNotifier());
-
-/// Fast visibility index — maps "id-type" → true for O(1) lookups.
-/// Replaces the old manifestIndexProvider.
-final visibilityIndexProvider = Provider<Set<String>>((ref) {
-  final entries = ref.watch(searchIndexProvider).valueOrNull ?? [];
-  return entries.map((e) => '${e.id}-${e.mediaType}').toSet();
-});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Home Screen Providers (derived from HomeSectionsData)

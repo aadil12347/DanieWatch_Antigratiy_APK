@@ -373,11 +373,21 @@ class ManifestSearchResult {
   final String mediaType;
   final String title;
   final double score;
+  final String? posterUrl;
+  final List<String> languages;
+  final List<String> genres;
+  final int releaseYear;
+  final List<String> originCountry;
 
   const ManifestSearchResult({
     required this.itemId,
     required this.mediaType,
     required this.title,
     this.score = 0.0,
+    this.posterUrl,
+    this.languages = const [],
+    this.genres = const [],
+    this.releaseYear = 0,
+    this.originCountry = const [],
   });
 }

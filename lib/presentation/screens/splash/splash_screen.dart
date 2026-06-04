@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
+import '../../providers/search_provider.dart';
 import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/notification_service.dart';
@@ -95,6 +96,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
           _initializePosters(next.value!);
         }
       });
+
+      // Trigger search provider initialization immediately
+      ref.read(searchProvider('global'));
     });
   }
 

@@ -21,8 +21,23 @@ class FilterUtils {
       }
 
       baseList = searchState.results
-          .map((r) => index['${r.itemId}-${r.mediaType}'])
-          .whereType<ManifestItem>()
+          .map((r) {
+            final existing = index['${r.itemId}-${r.mediaType}'];
+            if (existing != null) return existing;
+            
+            // Create a stub ManifestItem for items not yet in memory
+            return ManifestItem(
+              id: r.itemId,
+              mediaType: r.mediaType,
+              title: r.title,
+              releaseYear: r.releaseYear > 0 ? r.releaseYear : null,
+              language: r.languages,
+              genres: r.genres,
+              originCountry: r.originCountry,
+              originalLanguage: r.languages.isNotEmpty ? r.languages.first : null,
+              posterUrl: r.posterUrl,
+            );
+          })
           .toList();
 
       // If a category is enforced AND the fuzzy engine didn't already scope

@@ -38,11 +38,9 @@ class PaginatedSyncEngine {
   final GitHubCatalogClient _client = GitHubCatalogClient.instance;
 
   final _homeSectionsController = StreamController<HomeSectionsData>.broadcast();
-  final _searchIndexController = StreamController<List<SearchIndexEntry>>.broadcast();
   final _pageController = StreamController<({String category, CatalogPage page})>.broadcast();
 
   Stream<HomeSectionsData> get onHomeSectionsUpdated => _homeSectionsController.stream;
-  Stream<List<SearchIndexEntry>> get onSearchIndexUpdated => _searchIndexController.stream;
   Stream<({String category, CatalogPage page})> get onPageUpdated => _pageController.stream;
 
   /// All known category slugs
@@ -58,11 +56,6 @@ class PaginatedSyncEngine {
   /// Read cached home sections from SQLite (instant).
   Future<HomeSectionsData?> readCachedHomeSections() async {
     return _dao.loadHomeSections();
-  }
-
-  /// Read cached search index from SQLite (instant).
-  Future<List<SearchIndexEntry>?> readCachedSearchIndex() async {
-    return _dao.loadSearchIndex();
   }
 
   /// Read a cached catalog page from SQLite.
@@ -120,27 +113,14 @@ class PaginatedSyncEngine {
       // Step 3: Save new metadata
       await _dao.saveCatalogMeta(remoteMeta);
 
-      // Step 4: Fetch home sections + search index in parallel
-      final results = await Future.wait([
-        _client.fetchHomeSections(),
-        _client.fetchSearchIndex(),
-      ]);
-
-      final homeSections = results[0] as HomeSectionsData?;
-      final searchIndex = results[1] as List<SearchIndexEntry>?;
+      // Step 4: Fetch home sections
+      final homeSections = await _client.fetchHomeSections();
 
       // Step 5: Cache and broadcast home sections
       if (homeSections != null) {
         await _dao.saveHomeSections(homeSections, remoteMeta.version);
         _homeSectionsController.add(homeSections);
         dev.log('[SyncEngine] Home sections cached: ${homeSections.sections.length} sections, ${homeSections.carousel.length} carousel items');
-      }
-
-      // Step 6: Cache and broadcast search index
-      if (searchIndex != null) {
-        await _dao.saveSearchIndex(searchIndex, remoteMeta.version);
-        _searchIndexController.add(searchIndex);
-        dev.log('[SyncEngine] Search index cached: ${searchIndex.length} entries');
       }
 
       // Step 7: Invalidate old page caches and prefetch page 1 of each category
@@ -348,7 +328,6 @@ class PaginatedSyncEngine {
 
   void dispose() {
     _homeSectionsController.close();
-    _searchIndexController.close();
     _pageController.close();
   }
 }

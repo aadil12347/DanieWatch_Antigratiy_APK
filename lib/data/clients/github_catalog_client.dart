@@ -101,25 +101,38 @@ class GitHubCatalogClient {
     }
   }
 
-  // ─── Search Index ───────────────────────────────────────────────────────────
+  // ─── Search Index (Removed) ─────────────────────────────────────────────────
+  // Search is now handled by Algolia directly via AlgoliaClient
 
-  /// Fetch lightweight search index (id + title + type + language for all items).
-  /// Used for: search, visibility checks, navigation guards.
-  Future<List<SearchIndexEntry>?> fetchSearchIndex() async {
+  // ─── Fallback Item Fetching ─────────────────────────────────────────────────
+
+  /// Fetch a single item's JSON directly from streaming_links if not found in TMDB.
+  Future<ManifestItem?> fetchSingleItemFallback(String id, String type) async {
     try {
-      final url = '$_baseUrl/search_index.json';
-      dev.log('[CatalogClient] Fetching search index: $url');
+      // streaming_links are stored in root/streaming_links
+      final url = '${Env.githubRawBaseUrl}/streaming_links/$type/$id.json';
+      dev.log('[CatalogClient] Fetching fallback item: $url');
       final response = await _deduplicatedGet(url);
       if (response.statusCode != 200) {
-        dev.log('[CatalogClient] search_index.json failed: ${response.statusCode}');
+        dev.log('[CatalogClient] fallback item failed: ${response.statusCode}');
         return null;
       }
-      final jsonList = jsonDecode(response.body) as List<dynamic>;
-      return jsonList
-          .map((e) => SearchIndexEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
+      
+      final dynamic decoded = jsonDecode(response.body);
+      
+      // streaming_links can sometimes be an array with one object
+      Map<String, dynamic> json;
+      if (decoded is List && decoded.isNotEmpty) {
+        json = decoded.first as Map<String, dynamic>;
+      } else if (decoded is Map<String, dynamic>) {
+        json = decoded;
+      } else {
+        return null;
+      }
+
+      return ManifestItem.fromJson(json);
     } catch (e) {
-      dev.log('[CatalogClient] fetchSearchIndex error: $e');
+      dev.log('[CatalogClient] fetchSingleItemFallback error: $e');
       return null;
     }
   }

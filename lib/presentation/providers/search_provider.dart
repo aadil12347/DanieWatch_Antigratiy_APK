@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/local/manifest_dao.dart';
-import '../../core/utils/fuzzy_search_engine.dart';
+import '../../data/clients/algolia_client.dart';
 import 'manifest_provider.dart';
 
 /// Comprehensive filter state
@@ -86,14 +86,11 @@ class SearchState {
   }
 }
 
-/// Search provider using hybrid FTS + Fuzzy search engine
 class SearchNotifier extends StateNotifier<SearchState> {
-  final ManifestDao _dao = ManifestDao();
-  final FuzzySearchEngine _fuzzyEngine;
   Timer? _debounce;
   List<ManifestSearchResult> _unfilteredResults = [];
 
-  SearchNotifier(this._fuzzyEngine) : super(const SearchState());
+  SearchNotifier() : super(const SearchState());
 
   @override
   void dispose() {
@@ -137,39 +134,17 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     state = state.copyWith(query: query);
 
-    _debounce = Timer(const Duration(milliseconds: 250), () async {
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
 
       state = state.copyWith(isSearching: true);
 
       try {
-        final categoryFilter = _activeCategoryContext;
-
-        // === Primary: Use fuzzy search engine ===
-        List<ManifestSearchResult> results = [];
-
-        if (_fuzzyEngine.isBuilt) {
-          final fuzzyResults = _fuzzyEngine.search(
-            query,
-            categoryFilter: categoryFilter,
-            limit: 80,
-          );
-
-          results = fuzzyResults
-              .map((r) => ManifestSearchResult(
-                    itemId: r.itemId,
-                    mediaType: r.mediaType,
-                    title: r.title,
-                    score: r.score,
-                  ))
-              .toList();
-        }
-
-        // === Fallback: FTS4 if fuzzy engine has no results ===
-        if (results.isEmpty) {
-          final ftsResults = await _dao.searchFts(query);
-          results = ftsResults;
-        }
+        final results = await AlgoliaClient.instance.search(
+          query,
+          filters: state.filters,
+          limit: 80,
+        );
 
         if (mounted) {
           _unfilteredResults = results;
@@ -261,43 +236,31 @@ class SearchNotifier extends StateNotifier<SearchState> {
       return;
     }
 
-    _debounce = Timer(const Duration(milliseconds: 200), () {
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
       state = state.copyWith(isSearching: true);
 
-      // Build a temporary mini fuzzy engine for this item list
-      final miniEngine = FuzzySearchEngine();
-      miniEngine.buildIndex(items);
-      final fuzzyResults = miniEngine.search(query, limit: 50);
-
-      final List<ManifestSearchResult> results = fuzzyResults
-          .map((r) => ManifestSearchResult(
-                itemId: r.itemId,
-                mediaType: r.mediaType,
-                title: r.title,
-                score: r.score,
-              ))
-          .toList();
+      // We just call Algolia again for simplicity, even if searching in a list.
+      // Or we can just filter the list directly.
+      // Since it's a small list, direct filter is fine.
+      final q = query.toLowerCase();
+      final results = items.where((item) => item.title.toLowerCase().contains(q)).map((item) {
+          return ManifestSearchResult(
+             itemId: item.id,
+             mediaType: item.mediaType,
+             title: item.title,
+             score: 1.0,
+          );
+      }).toList();
 
       state = state.copyWith(results: results, isSearching: false);
     });
   }
 }
 
-/// Global fuzzy search engine provider — built from all manifest items
-final fuzzySearchEngineProvider = Provider<FuzzySearchEngine>((ref) {
-  final engine = FuzzySearchEngine();
-  final items = ref.watch(allItemsProvider);
-  if (items.isNotEmpty) {
-    engine.buildIndex(items);
-  }
-  return engine;
-});
-
 final searchProvider =
     StateNotifierProvider.family<SearchNotifier, SearchState, String>((ref, contextId) {
-  final engine = ref.watch(fuzzySearchEngineProvider);
-  return SearchNotifier(engine);
+  return SearchNotifier();
 });
 
 /// Tracks if the global header search is expanded (legacy, kept for app_shell compat)

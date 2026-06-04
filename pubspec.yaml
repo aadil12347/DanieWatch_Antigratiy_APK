@@ -90,6 +90,7 @@ dependencies:
   device_info_plus: ^12.4.0
   palette_generator: ^0.3.3+7
   ffmpeg_kit_flutter_new_min: ^3.1.0
+  csv: ^8.0.0
 
 dev_dependencies:
   flutter_driver:
