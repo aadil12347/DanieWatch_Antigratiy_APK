@@ -6,21 +6,17 @@ import '../../core/config/env.dart';
 import '../../domain/models/catalog_page.dart';
 import '../../domain/models/manifest_item.dart';
 
-/// Client for fetching paginated catalog data from GitHub raw files.
+/// Client for fetching catalog data from GitHub raw files.
 ///
 /// GitHub repo structure:
-///   catalog/
-///     meta.json                 ← version + page counts (~500 bytes)
-///     search_index.json         ← id+title+type+language for all items
+///   index/
+///     meta.json                 ← version + category counts
 ///     home/sections.json        ← pre-built home screen data
-///     all/page_1.json           ← paginated global catalog
-///     indian/page_1.json        ← paginated category pages
-///     ...
 class GitHubCatalogClient {
   GitHubCatalogClient._();
   static final GitHubCatalogClient instance = GitHubCatalogClient._();
 
-  String get _baseUrl => '${Env.githubRawBaseUrl}/catalog';
+  String get _baseUrl => '${Env.githubRawBaseUrl}/index';
 
   // ─── In-Memory Request Dedup ────────────────────────────────────────────────
   final Map<String, Future<http.Response>> _inflightRequests = {};
@@ -40,7 +36,7 @@ class GitHubCatalogClient {
   // ─── Catalog Metadata ───────────────────────────────────────────────────────
 
   /// Fetch catalog metadata (tiny, ~500 bytes).
-  /// Contains version string + page counts per category.
+  /// Contains version string + item counts.
   Future<CatalogMeta?> fetchMeta() async {
     try {
       final url = '$_baseUrl/meta.json';
@@ -54,28 +50,6 @@ class GitHubCatalogClient {
       return CatalogMeta.fromJson(json);
     } catch (e) {
       dev.log('[CatalogClient] fetchMeta error: $e');
-      return null;
-    }
-  }
-
-  // ─── Paginated Category Pages ───────────────────────────────────────────────
-
-  /// Fetch a specific page of a category.
-  /// Categories: 'all', 'indian', 'korean', 'anime', 'hollywood',
-  ///             'chinese', 'punjabi', 'pakistani'
-  Future<CatalogPage?> fetchPage(String category, int page) async {
-    try {
-      final url = '$_baseUrl/$category/page_$page.json';
-      dev.log('[CatalogClient] Fetching page: $url');
-      final response = await _deduplicatedGet(url);
-      if (response.statusCode != 200) {
-        dev.log('[CatalogClient] Page $category/$page failed: ${response.statusCode}');
-        return null;
-      }
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return CatalogPage.fromJson(json);
-    } catch (e) {
-      dev.log('[CatalogClient] fetchPage($category, $page) error: $e');
       return null;
     }
   }
@@ -101,18 +75,31 @@ class GitHubCatalogClient {
     }
   }
 
-  // ─── Search Index (Removed) ─────────────────────────────────────────────────
-  // Search is now handled by Algolia directly via AlgoliaClient
-
   // ─── Fallback Item Fetching ─────────────────────────────────────────────────
 
-  /// Fetch a single item's JSON directly from streaming_links if not found in TMDB.
+  /// Fetch a single item's JSON directly from streaming_links.
+  /// (Watch links are now fetched from here when detail page opens).
   Future<ManifestItem?> fetchSingleItemFallback(String id, String type) async {
     try {
       // streaming_links are stored in root/streaming_links
-      final url = '${Env.githubRawBaseUrl}/streaming_links/$type/$id.json';
+      final url = '${Env.githubRawBaseUrl}/streaming_links/${type == 'movie' ? 'admin_movie' : 'admin_tv'}_$id.json';
       dev.log('[CatalogClient] Fetching fallback item: $url');
-      final response = await _deduplicatedGet(url);
+      var response = await _deduplicatedGet(url);
+      
+      if (response.statusCode != 200) {
+        // Try the normal prefix if admin fails
+        final normalUrl = '${Env.githubRawBaseUrl}/streaming_links/${type == 'movie' ? 'normal_movie' : 'normal_tv'}_$id.json';
+        dev.log('[CatalogClient] Fetching fallback item (normal): $normalUrl');
+        response = await _deduplicatedGet(normalUrl);
+      }
+
+      if (response.statusCode != 200) {
+         // One last attempt without prefix
+         final bareUrl = '${Env.githubRawBaseUrl}/streaming_links/$type/$id.json';
+         dev.log('[CatalogClient] Fetching fallback item (bare): $bareUrl');
+         response = await _deduplicatedGet(bareUrl);
+      }
+
       if (response.statusCode != 200) {
         dev.log('[CatalogClient] fallback item failed: ${response.statusCode}');
         return null;
@@ -135,32 +122,5 @@ class GitHubCatalogClient {
       dev.log('[CatalogClient] fetchSingleItemFallback error: $e');
       return null;
     }
-  }
-
-  // ─── Multiple Pages (Prefetch) ──────────────────────────────────────────────
-
-  /// Prefetch multiple pages of a category in parallel.
-  /// Used for smooth scroll pre-loading.
-  Future<List<CatalogPage>> prefetchPages(
-    String category,
-    List<int> pageNumbers,
-  ) async {
-    final futures = pageNumbers.map((p) => fetchPage(category, p));
-    final results = await Future.wait(futures);
-    return results.whereType<CatalogPage>().toList();
-  }
-
-  /// Fetch first page of multiple categories in parallel.
-  /// Used on app startup to populate home sections quickly.
-  Future<Map<String, CatalogPage>> fetchFirstPages(
-    List<String> categories,
-  ) async {
-    final result = <String, CatalogPage>{};
-    final futures = categories.map((cat) async {
-      final page = await fetchPage(cat, 1);
-      if (page != null) result[cat] = page;
-    });
-    await Future.wait(futures);
-    return result;
   }
 }

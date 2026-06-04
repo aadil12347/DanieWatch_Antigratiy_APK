@@ -5,17 +5,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../local/search_database.dart';
 
 /// Handles loading the base index from assets and syncing delta updates.
+///
+/// Flow:
+///   1. First launch: load base_index.json from bundled assets → insert ALL into SQLite
+///   2. Every subsequent launch: fetch update_manifest.json → download only new daily diffs
+///   3. Sorting is always app-side: SQLite ORDER BY releaseYear DESC, releaseDate DESC
+///
+/// Watch links are NOT in the index — they are fetched on-demand from
+/// streaming_links/ when the detail page is opened.
 class SyncService {
   static SyncService? _instance;
   static SyncService get instance => _instance ??= SyncService._();
   SyncService._();
 
   static const _lastSyncKey = 'search_last_sync_timestamp';
-  static const _dbInitializedKey = 'search_db_initialized_v2';
+  static const _dbInitializedKey = 'search_db_initialized_v3';
 
-  // TODO: Update this to your actual GitHub raw content URL
   static const _baseUrl =
-      'https://raw.githubusercontent.com/aadil12347/DanieWatch_Antigratiy_APK/main/catalog/updates';
+      'https://raw.githubusercontent.com/aadil12347/DanieWatch_Antigratiy_APK/main';
 
   final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
@@ -74,7 +81,7 @@ class SyncService {
   Future<void> _syncDeltas(SearchDatabase db, SharedPreferences prefs) async {
     try {
       // Fetch the update manifest
-      final manifestUrl = '$_baseUrl/update_manifest.json';
+      final manifestUrl = '$_baseUrl/updates/update_manifest.json';
       final response = await _dio.get(manifestUrl);
 
       if (response.statusCode != 200) {
@@ -113,7 +120,7 @@ class SyncService {
         final timestamp = update['timestamp'] as int? ?? 0;
 
         try {
-          final updateUrl = '$_baseUrl/$fileName';
+          final updateUrl = '$_baseUrl/updates/$fileName';
           final updateResp = await _dio.get(updateUrl);
 
           if (updateResp.statusCode == 200) {
@@ -122,16 +129,25 @@ class SyncService {
             // Process removals first
             final List<dynamic> removals = updateData['removals'] ?? [];
             if (removals.isNotEmpty) {
-              await db.deleteByUids(removals.map((r) => r.toString()).toList());
+              final removalUids = removals.map((r) {
+                final id = r['id']?.toString() ?? '';
+                final type = r['type']?.toString() ?? 'movie';
+                return '$id-$type';
+              }).toList();
+              await db.deleteByUids(removalUids);
               print('[SyncService] Removed ${removals.length} items');
             }
 
             // Then insert/update items
             final List<dynamic> items = updateData['items'] ?? [];
             if (items.isNotEmpty) {
-              final count = await db.insertItems(
-                items.map((i) => Map<String, dynamic>.from(i)).toList(),
-              );
+              final now = DateTime.now().toUtc().toIso8601String();
+              final mapped = items.map((i) {
+                final map = Map<String, dynamic>.from(i);
+                map['addedAt'] ??= now;
+                return map;
+              }).toList();
+              final count = await db.insertItems(mapped);
               print('[SyncService] Applied $count items from $fileName');
             }
 

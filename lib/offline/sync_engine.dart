@@ -22,14 +22,17 @@ class SyncResult {
   });
 }
 
-/// Paginated stale-while-revalidate sync engine.
+/// Sync engine for Home Sections and TMDB enrichment.
 ///
 /// On app open:
-///   1. Read cached home sections + search index → render instantly
+///   1. Read cached home sections → render instantly
 ///   2. Background: fetch meta.json → compare version
-///   3. If changed: re-fetch home sections + page 1 of categories
+///   3. If changed: re-fetch home sections
 ///   4. Enrich visible items with TMDB trending/popular data
 ///   5. Update SQLite caches, notify listeners
+///
+/// Note: Actual full catalog sync is handled by SyncService using delta updates.
+/// This engine is now just for Home sections + TMDB data.
 class PaginatedSyncEngine {
   PaginatedSyncEngine._();
   static final PaginatedSyncEngine instance = PaginatedSyncEngine._();
@@ -38,16 +41,8 @@ class PaginatedSyncEngine {
   final GitHubCatalogClient _client = GitHubCatalogClient.instance;
 
   final _homeSectionsController = StreamController<HomeSectionsData>.broadcast();
-  final _pageController = StreamController<({String category, CatalogPage page})>.broadcast();
 
   Stream<HomeSectionsData> get onHomeSectionsUpdated => _homeSectionsController.stream;
-  Stream<({String category, CatalogPage page})> get onPageUpdated => _pageController.stream;
-
-  /// All known category slugs
-  static const categories = [
-    'all', 'indian', 'korean', 'anime',
-    'hollywood', 'chinese', 'punjabi', 'pakistani',
-  ];
 
   // ═══════════════════════════════════════════════════════════════════════════
   // READ CACHE (instant, no network)
@@ -56,11 +51,6 @@ class PaginatedSyncEngine {
   /// Read cached home sections from SQLite (instant).
   Future<HomeSectionsData?> readCachedHomeSections() async {
     return _dao.loadHomeSections();
-  }
-
-  /// Read a cached catalog page from SQLite.
-  Future<CatalogPage?> readCachedPage(String category, int page) async {
-    return _dao.loadPage(category, page);
   }
 
   /// Read cached catalog metadata.
@@ -72,15 +62,7 @@ class PaginatedSyncEngine {
   // SYNC (background, with network)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /// Main sync: fetch meta → compare version → refresh changed data.
-  ///
-  /// This is the Netflix-style approach:
-  /// 1. Fetch meta.json (~500 bytes)
-  /// 2. Compare version with cached version
-  /// 3. If same → skip (no changes since last sync)
-  /// 4. If different → re-fetch home sections + search index + page 1 of each category
-  /// 5. Enrich with TMDB trending/popular
-  /// 6. Cache everything in SQLite
+  /// Main sync: fetch meta → compare version → refresh home sections.
   Future<SyncResult> sync() async {
     try {
       // Step 1: Fetch meta.json (~500 bytes)
@@ -123,11 +105,10 @@ class PaginatedSyncEngine {
         dev.log('[SyncEngine] Home sections cached: ${homeSections.sections.length} sections, ${homeSections.carousel.length} carousel items');
       }
 
-      // Step 7: Invalidate old page caches and prefetch page 1 of each category
+      // Old page caches are no longer used since categories come from SQLite
       await _dao.invalidateAllPages();
-      await _prefetchFirstPages();
 
-      // Step 8: TMDB enrichment for visible items
+      // Step 6: TMDB enrichment for visible items
       _refreshTmdbEnrichment();
 
       dev.log('[SyncEngine] Sync complete: ${remoteMeta.totalItems} items, version ${remoteMeta.version}');
@@ -143,56 +124,7 @@ class PaginatedSyncEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PAGE FETCHING (on-demand, triggered by scroll)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /// Fetch a specific page of a category. Uses cache if fresh, otherwise fetches.
-  Future<CatalogPage?> fetchPage(String category, int page) async {
-    // Check cache first
-    if (await _dao.isPageFresh(category, page)) {
-      return _dao.loadPage(category, page);
-    }
-
-    // Fetch from GitHub
-    final catalogPage = await _client.fetchPage(category, page);
-    if (catalogPage != null) {
-      await _dao.savePage(category, catalogPage);
-      _pageController.add((category: category, page: catalogPage));
-      dev.log('[SyncEngine] Fetched $category/page_$page: ${catalogPage.items.length} items');
-    }
-    return catalogPage;
-  }
-
-  /// Prefetch the next page for smooth scrolling.
-  Future<void> prefetchNextPage(String category, int currentPage) async {
-    final nextPage = currentPage + 1;
-    final meta = await _dao.loadCatalogMeta();
-    final maxPages = meta?.pageCount(category) ?? 0;
-    if (nextPage > maxPages) return;
-
-    // Don't wait, fire and forget
-    fetchPage(category, nextPage);
-  }
-
   // ─── Internal Helpers ───────────────────────────────────────────────────
-
-  /// Prefetch page 1 of all categories in parallel.
-  Future<void> _prefetchFirstPages() async {
-    final futures = categories.map((cat) async {
-      try {
-        final page = await _client.fetchPage(cat, 1);
-        if (page != null) {
-          await _dao.savePage(cat, page);
-          _pageController.add((category: cat, page: page));
-        }
-      } catch (e) {
-        dev.log('[SyncEngine] Failed to prefetch $cat/page_1: $e');
-      }
-    });
-    await Future.wait(futures);
-    dev.log('[SyncEngine] Prefetched page 1 of ${categories.length} categories');
-  }
 
   /// Refresh TMDB trending/popular enrichment for cached home sections.
   /// Fire-and-forget — doesn't block sync.
@@ -328,6 +260,5 @@ class PaginatedSyncEngine {
 
   void dispose() {
     _homeSectionsController.close();
-    _pageController.close();
   }
 }

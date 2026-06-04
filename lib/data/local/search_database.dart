@@ -136,7 +136,7 @@ class SearchDatabase {
       final lang = item['language'];
       final langJson = lang is List ? jsonEncode(lang) : '[]';
 
-      final country = item['country'];
+      final country = item['origin_country'] ?? item['country'];
       final countryJson = country is List ? jsonEncode(country) : '[]';
 
       int year = 0;
@@ -144,9 +144,12 @@ class SearchDatabase {
         year = int.parse(item['year']?.toString() ?? '0');
       } catch (_) {}
 
-      // Poster: use 'poster' key from index.json
+      // Poster: use 'poster' key from index
       String posterUrl = item['poster']?.toString() ?? '';
       if (posterUrl.toLowerCase().endsWith('.avif')) posterUrl = '';
+
+      // release_date comes as snake_case from streaming_links JSON
+      final releaseDate = (item['release_date'] ?? item['releaseDate'] ?? '').toString();
 
       batch.insert(
         'items',
@@ -163,7 +166,7 @@ class SearchDatabase {
           'originCountry': countryJson,
           'imdbId': item['imdb_id']?.toString() ?? '',
           'addedAt': item['addedAt']?.toString() ?? '',
-          'releaseDate': item['releaseDate']?.toString() ?? '',
+          'releaseDate': releaseDate,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -299,7 +302,7 @@ class SearchDatabase {
       // Sort
       switch (filters.sortBy) {
         case 'Release Year':
-          orderBy = 'i.releaseYear DESC, i.addedAt DESC';
+          orderBy = 'i.releaseYear DESC, i.releaseDate DESC, i.addedAt DESC';
           break;
         case 'Title A-Z':
           orderBy = 'i.title ASC';
@@ -308,10 +311,12 @@ class SearchDatabase {
           orderBy = 'i.title DESC';
           break;
         case 'Latest Added':
-          orderBy = 'i.addedAt DESC';
+          orderBy = 'i.addedAt DESC, i.releaseYear DESC, i.releaseDate DESC';
           break;
+        case 'Popularity':
         default:
-          orderBy = 'i.addedAt DESC';
+          // Default sorting: Newest release first
+          orderBy = 'i.releaseYear DESC, i.releaseDate DESC, i.addedAt DESC';
       }
     }
 
