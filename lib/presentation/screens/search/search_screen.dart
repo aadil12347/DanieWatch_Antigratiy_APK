@@ -230,7 +230,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 }
 
 /// Individual content page for each category tab.
-/// Each page has its own scroll controller and shows a grid of items.
+/// Supports infinite scroll — loads more pages as user scrolls down.
 class _CategoryPage extends ConsumerStatefulWidget {
   final String categoryLabel;
   final TextEditingController searchController;
@@ -254,11 +254,27 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   @override
   bool get wantKeepAlive => true;
 
+  /// The catalog slug for this category tab.
+  String get _slug => categoryLabelToSlug(widget.categoryLabel);
+
+  /// Trigger loading the next page when scroll is near the bottom.
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollUpdateNotification) {
+      final metrics = notification.metrics;
+      // Trigger when within 400px of the bottom
+      if (metrics.pixels >= metrics.maxScrollExtent - 400) {
+        ref.read(paginatedCategoryProvider(_slug).notifier).loadNextPage();
+      }
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
     final searchState = ref.watch(searchProvider('explore'));
     final index = ref.watch(manifestIndexProvider);
+    final paginatedState = ref.watch(paginatedCategoryProvider(_slug));
 
     final hasSearch = searchState.query.trim().isNotEmpty;
     // Check for user-applied filters BEYOND the nav category.
@@ -274,10 +290,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         f.categories.any((c) => c != searchState.navCategory);
     final showResults = hasSearch || hasUserFilters;
 
-    // Get the correct data source for this category
-    final categoryItems = _getCategoryItems(widget.categoryLabel);
-
-    return categoryItems.when(
+    return paginatedState.when(
       loading: () => CustomScrollView(
         slivers: [_buildShimmerGrid()],
       ),
@@ -286,7 +299,9 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           SliverToBoxAdapter(child: Center(child: Text('Error: $err'))),
         ],
       ),
-      data: (items) {
+      data: (pagState) {
+        final items = pagState.items;
+
         // Determine enforced category for FilterUtils
         String? enforceCategory;
         const categoryPages = {
@@ -308,31 +323,24 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
               )
             : items;
 
-        return CustomScrollView(
-          // Let NestedScrollView manage the scroll controller
-          key: PageStorageKey('scroll_${widget.categoryLabel}'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: _buildContentSlivers(
-            searchState,
-            hasSearch,
-            showResults,
-            itemsToDisplay,
-            items,
+        return NotificationListener<ScrollNotification>(
+          onNotification: _onScrollNotification,
+          child: CustomScrollView(
+            // Let NestedScrollView manage the scroll controller
+            key: PageStorageKey('scroll_${widget.categoryLabel}'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: _buildContentSlivers(
+              searchState,
+              hasSearch,
+              showResults,
+              itemsToDisplay,
+              items,
+              pagState,
+            ),
           ),
         );
       },
     );
-  }
-
-  AsyncValue<List<ManifestItem>> _getCategoryItems(String label) {
-    if (label == 'Korean') return ref.watch(koreanProvider);
-    if (label == 'Anime') return ref.watch(animeProvider);
-    if (label == 'Bollywood') return ref.watch(bollywoodProvider);
-    if (label == 'Hollywood') return ref.watch(hollywoodProvider);
-    if (label == 'Chinese') return ref.watch(chineseProvider);
-    if (label == 'Punjabi') return ref.watch(punjabiProvider);
-    // Explore — show all items
-    return ref.watch(globalItemsProvider);
   }
 
   List<Widget> _buildContentSlivers(
@@ -341,6 +349,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     bool showResults,
     List<ManifestItem> itemsToDisplay,
     List<ManifestItem> allItems,
+    PaginatedCategoryState pagState,
   ) {
     // Searching shimmer
     if (searchState.isSearching) {
@@ -358,12 +367,49 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     }
 
     // Active search or filter with results → show ONLY filtered items
+    // (no infinite scroll for filtered results — filters apply on loaded data)
     if (showResults && itemsToDisplay.isNotEmpty) {
       return [_buildResultsGrid(itemsToDisplay)];
     }
 
-    // No search or filter active → grid of all items
-    return [_buildResultsGrid(allItems)];
+    // No search or filter active → grid of all items + loading indicator
+    return [
+      _buildResultsGrid(allItems),
+      // Loading indicator for infinite scroll
+      if (pagState.isLoadingMore)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      // "No more items" indicator
+      if (!pagState.hasMore && allItems.isNotEmpty && !pagState.isLoadingMore)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 24),
+            child: Center(
+              child: Text(
+                'You\'ve reached the end',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
   Widget _buildResultsGrid(List<ManifestItem> items) {

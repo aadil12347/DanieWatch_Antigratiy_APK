@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../domain/models/catalog_page.dart';
@@ -149,19 +150,181 @@ final catalogMetaProvider = FutureProvider<CatalogMeta?>((ref) async {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Category-Specific Providers (backward compatibility)
-// These load page 1 of each category for tab views.
+// Infinite Scroll Paginated Category System
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Helper: load page 1 of a category and return its items.
-Future<List<ManifestItem>> _loadCategoryPage1(String category) async {
-  final page = await PaginatedSyncEngine.instance.fetchPage(category, 1);
-  return page?.items ?? [];
+/// State for a paginated category — accumulates items across pages.
+class PaginatedCategoryState {
+  final List<ManifestItem> items;
+  final int currentPage;
+  final int totalPages;
+  final int totalItems;
+  final bool isLoadingMore;
+  final bool hasMore;
+  final String? error;
+
+  const PaginatedCategoryState({
+    this.items = const [],
+    this.currentPage = 0,
+    this.totalPages = 1,
+    this.totalItems = 0,
+    this.isLoadingMore = false,
+    this.hasMore = true,
+    this.error,
+  });
+
+  PaginatedCategoryState copyWith({
+    List<ManifestItem>? items,
+    int? currentPage,
+    int? totalPages,
+    int? totalItems,
+    bool? isLoadingMore,
+    bool? hasMore,
+    String? Function()? errorOverride,
+  }) {
+    return PaginatedCategoryState(
+      items: items ?? this.items,
+      currentPage: currentPage ?? this.currentPage,
+      totalPages: totalPages ?? this.totalPages,
+      totalItems: totalItems ?? this.totalItems,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMore: hasMore ?? this.hasMore,
+      error: errorOverride != null ? errorOverride() : error,
+    );
+  }
 }
+
+/// Notifier that manages paginated loading for a single category.
+/// Loads page 1 on init, then appends more pages as user scrolls.
+class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCategoryState>> {
+  final String category;
+
+  PaginatedCategoryNotifier(this.category) : super(const AsyncValue.loading()) {
+    _loadFirstPage();
+  }
+
+  Future<void> _loadFirstPage() async {
+    try {
+      final page = await PaginatedSyncEngine.instance.fetchPage(category, 1);
+      if (page == null) {
+        state = AsyncValue.data(const PaginatedCategoryState(
+          items: [],
+          currentPage: 1,
+          hasMore: false,
+        ));
+        return;
+      }
+      state = AsyncValue.data(PaginatedCategoryState(
+        items: page.items,
+        currentPage: 1,
+        totalPages: page.totalPages,
+        totalItems: page.totalItems,
+        hasMore: page.hasMore,
+      ));
+      // Prefetch page 2 in background for smooth scrolling
+      if (page.hasMore) {
+        PaginatedSyncEngine.instance.prefetchNextPage(category, 1);
+      }
+    } catch (e, stack) {
+      dev.log('[PaginatedCategory] $category page 1 error: $e', stackTrace: stack);
+      state = AsyncValue.error(e, stack);
+    }
+  }
+
+  /// Load the next page — called when user scrolls near the bottom.
+  Future<void> loadNextPage() async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    if (current.isLoadingMore || !current.hasMore) return;
+
+    final nextPage = current.currentPage + 1;
+    dev.log('[PaginatedCategory] $category loading page $nextPage/${current.totalPages}');
+
+    // Set loading flag
+    state = AsyncValue.data(current.copyWith(isLoadingMore: true, errorOverride: () => null));
+
+    try {
+      final page = await PaginatedSyncEngine.instance.fetchPage(category, nextPage);
+      if (!mounted) return;
+
+      if (page == null) {
+        state = AsyncValue.data(current.copyWith(
+          isLoadingMore: false,
+          hasMore: false,
+        ));
+        return;
+      }
+
+      // Append new items to existing list
+      final updatedItems = [...current.items, ...page.items];
+      state = AsyncValue.data(PaginatedCategoryState(
+        items: updatedItems,
+        currentPage: nextPage,
+        totalPages: page.totalPages,
+        totalItems: page.totalItems,
+        isLoadingMore: false,
+        hasMore: page.hasMore,
+      ));
+
+      // Prefetch the next-next page for smooth scrolling
+      if (page.hasMore) {
+        PaginatedSyncEngine.instance.prefetchNextPage(category, nextPage);
+      }
+
+      dev.log('[PaginatedCategory] $category page $nextPage loaded: ${page.items.length} items (total: ${updatedItems.length})');
+    } catch (e, stack) {
+      dev.log('[PaginatedCategory] $category page $nextPage error: $e', stackTrace: stack);
+      if (mounted) {
+        state = AsyncValue.data(current.copyWith(
+          isLoadingMore: false,
+          errorOverride: () => e.toString(),
+        ));
+      }
+    }
+  }
+
+  /// Reset and reload from page 1.
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    await _loadFirstPage();
+  }
+}
+
+/// Paginated category provider — keyed by category slug.
+/// Each category tab gets its own independent pagination state.
+final paginatedCategoryProvider = StateNotifierProvider.family<
+    PaginatedCategoryNotifier, AsyncValue<PaginatedCategoryState>, String>(
+  (ref, category) {
+    // Re-create when home sections sync completes (new catalog version)
+    ref.watch(homeSectionsDataProvider);
+    return PaginatedCategoryNotifier(category);
+  },
+);
+
+/// Maps UI category labels to catalog slugs used by the sync engine.
+String categoryLabelToSlug(String label) {
+  const map = {
+    'Explore': 'all',
+    'Bollywood': 'bollywood',
+    'Hollywood': 'hollywood',
+    'Anime': 'anime',
+    'Korean': 'korean',
+    'Chinese': 'chinese',
+    'Punjabi': 'punjabi',
+    'Pakistani': 'pakistani',
+  };
+  return map[label] ?? 'all';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Category-Specific Providers (backward compatibility)
+// These derive from the paginated provider, returning currently loaded items.
+// ═══════════════════════════════════════════════════════════════════════════════
 
 final globalItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
   ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('all');
+  final page = await PaginatedSyncEngine.instance.fetchPage('all', 1);
+  return page?.items ?? [];
 });
 
 /// Synonym for globalItemsProvider — provides page 1 of global catalog.
@@ -192,13 +355,13 @@ final popularProvider = Provider<List<ManifestItem>>((ref) {
   return section.isNotEmpty ? section.first.items : [];
 });
 
-/// Movies (page 1) — from global items.
+/// Movies — from all loaded paginated items.
 final moviesProvider = Provider<List<ManifestItem>>((ref) {
   final items = ref.watch(allItemsProvider);
   return items.where((item) => item.mediaType == 'movie').toList();
 });
 
-/// TV shows (page 1) — from global items.
+/// TV shows — from all loaded paginated items.
 final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
   final items = ref.watch(allItemsProvider);
   return items
@@ -206,40 +369,33 @@ final tvShowsProvider = Provider<List<ManifestItem>>((ref) {
       .toList();
 });
 
-/// Category-specific providers (page 1).
-final bollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('bollywood');
+/// Category-specific providers (backward compat — returns all loaded items).
+final bollywoodProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('bollywood')).whenData((s) => s.items);
 });
 
-final koreanProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('korean');
+final koreanProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('korean')).whenData((s) => s.items);
 });
 
-final animeProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('anime');
+final animeProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('anime')).whenData((s) => s.items);
 });
 
-final hollywoodProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('hollywood');
+final hollywoodProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('hollywood')).whenData((s) => s.items);
 });
 
-final chineseProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('chinese');
+final chineseProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('chinese')).whenData((s) => s.items);
 });
 
-final punjabiProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('punjabi');
+final punjabiProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('punjabi')).whenData((s) => s.items);
 });
 
-final pakistaniProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return _loadCategoryPage1('pakistani');
+final pakistaniProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('pakistani')).whenData((s) => s.items);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
