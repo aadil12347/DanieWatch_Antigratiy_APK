@@ -240,7 +240,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _discoveryComplete = true;
           _webViewController = null;
         });
-        _startPlayback(bestStream);
+        _startPlayback(bestStream.url, extractedStream: bestStream);
       }
     } else {
       if (_retryCount == 0) {
@@ -258,7 +258,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
   }
 
-  void _startPlayback(String link, {bool isOffline = false}) {
+  void _startPlayback(String link, {bool isOffline = false, ExtractedVideasyStream? extractedStream}) {
     debugPrint('[Playback] Starting for link: $link (isOffline: $isOffline)');
     setState(() {
       _extractedLink = link;
@@ -275,14 +275,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (isOffline) {
       _initializeBetterPlayer(link, isOffline: true);
     } else {
-      // Custom Player Restoration: Favor Web Engine (hls.js) as per commit 133b287
-      _switchToWebEngine();
+      // We now prefer BetterPlayer (Native) for online streams as per analysis recommendations
+      _initializeBetterPlayer(link, isOffline: false, extractedStream: extractedStream);
     }
   }
 
   Future<void> _initializeBetterPlayer(
     String url, {
     bool isOffline = false,
+    ExtractedVideasyStream? extractedStream,
   }) async {
     try {
       if (_betterPlayerController != null) {
@@ -293,6 +294,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         '[BetterPlayer] Initializing for: $url (isOffline: $isOffline)',
       );
 
+      List<BetterPlayerSubtitlesSource>? subtitles;
+      if (extractedStream != null && extractedStream.tracks.isNotEmpty) {
+        subtitles = extractedStream.tracks
+            .where((t) => t['kind'] == 'captions' || t['kind'] == 'subtitles')
+            .map((t) {
+          return BetterPlayerSubtitlesSource(
+            type: BetterPlayerSubtitlesSourceType.network,
+            name: t['label']?.toString() ?? 'Subtitle',
+            urls: [t['file']?.toString() ?? ''],
+          );
+        }).toList();
+      }
+
       BetterPlayerDataSource dataSource = BetterPlayerDataSource(
         isOffline
             ? BetterPlayerDataSourceType.file
@@ -301,6 +315,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         useAsmsAudioTracks: true,
         useAsmsTracks: true,
         useAsmsSubtitles: true,
+        subtitles: subtitles,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
           title: widget.mediaType != 'movie' &&

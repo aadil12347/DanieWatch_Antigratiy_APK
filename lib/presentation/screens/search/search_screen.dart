@@ -273,7 +273,6 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
     final searchState = ref.watch(searchProvider('explore'));
-    final index = ref.watch(manifestIndexProvider);
     final paginatedState = ref.watch(paginatedCategoryProvider(_slug));
 
     final hasSearch = searchState.query.trim().isNotEmpty;
@@ -322,7 +321,6 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
             ? FilterUtils.getFilteredItems(
                 allItems: items,
                 searchState: searchState,
-                index: index,
                 enforceCategory: enforceCategory,
               )
             : items;

@@ -33,6 +33,7 @@ import '../../widgets/pressable_scale.dart';
 import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
+import '../video_player/videasy_extractor_screen.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -308,26 +309,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Action Buttons ────────────────────────────────────────────────────────
   Widget _buildActionButtons(ContentDetail content, bool isInWatchlist) {
-    String? watchLink;
-
-    if (content.isMovie) {
-      watchLink = content.primaryWatchLink;
-    } else {
-      // For TV: get first episode link from current season episodes
-      final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
-      final episodes = episodesAsync.valueOrNull ?? [];
-      if (episodes.isNotEmpty) {
-        watchLink = episodes.first.playLink;
-      }
-    }
-
-    final bool hasWatch = watchLink != null && watchLink.isNotEmpty;
+    final bool hasWatch = true;
     return Row(
       children: [
-        // Play Button
         LiquidTapEffect(
           onTap: hasWatch
-              ? () => _handlePlay(watchLink!,
+              ? () => _handlePlay(
                   season: content.isTv ? 1 : null,
                   episode: content.isTv ? 1 : null)
               : null,
@@ -373,7 +360,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         if (content.isMovie) ...[
           _AnimatedActionButton(
             icon: Icons.download_rounded,
-            onTap: hasWatch ? () => _handleDownload(watchLink!) : null,
+            onTap: hasWatch ? () => _handleDownload('') : null,
             isActive: false,
           ),
           const SizedBox(width: 12),
@@ -1079,8 +1066,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   Widget _buildEpisodeCard(EpisodeData episode, ContentDetail content) {
-    final hasPlayLink =
-        episode.playLink != null && episode.playLink!.isNotEmpty;
+    final hasPlayLink = true;
     final epNum = episode.episodeNumber ?? 0;
 
     return PressableScale(
@@ -1100,7 +1086,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: hasPlayLink
-                    ? () => _handlePlay(episode.playLink!,
+                    ? () => _handlePlay(
                         season: _selectedSeason, episode: epNum)
                     : () => _showToastError(
                         'No play link available for ${episode.title}'),
@@ -1448,89 +1434,24 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   // ─── Playback ──────────────────────────────────────────────────────────────
-  Future<void> _handlePlay(String url, {int? season, int? episode}) async {
+  Future<void> _handlePlay({int? season, int? episode}) async {
     HapticFeedback.lightImpact();
-
-    if (url.isEmpty) {
-      _showToastError('Invalid video link');
-      return;
-    }
 
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
 
-    // Navigate directly to VideoPlayerScreen with the raw embed URL.
-    // The player handles extraction internally via its own WebView
-    // and shows its own discovery loading view (poster + backdrop + logo).
-    final result = await Navigator.of(context, rootNavigator: true).push(
-      PageRouteBuilder(
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, __, ___) => VideoPlayerScreen(
-          url: url,
-          originalUrl: url,
-          title: content?.title ?? '',
+    // Navigate to our new VideasyExtractorScreen
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => VideasyExtractorScreen(
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
-          seasons: content?.seasonNumbers,
           season: season,
           episode: episode,
-          isDirectLink: false,
+          title: content?.title ?? '',
+          seasons: content?.seasonNumbers,
         ),
       ),
     );
-    if (result == 'error' && mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: true,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
-          icon: Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.error_outline_rounded,
-              color: AppColors.primary.withValues(alpha: 0.8),
-              size: 32,
-            ),
-          ),
-          title: const Text(
-            'Playback Error',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: Text(
-            'Failed to load the video. Please try again.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 14,
-            ),
-          ),
-          actionsAlignment: MainAxisAlignment.center,
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              ),
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      );
-    }
   }
 
   Future<void> _handleDownload(String url) async {

@@ -2,70 +2,47 @@ import 'dart:async';
 import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
-import '../../domain/models/catalog_page.dart';
-import '../../offline/sync_engine.dart';
-import '../../data/repositories/github_top_content_repository.dart';
-import '../../data/local/search_database.dart';
-import '../../data/local/manifest_dao.dart';
-import 'search_provider.dart';
+import '../../data/clients/tmdb_client.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Core Sync Provider — drives the home screen content
+// Core TMDB Conversion Helper
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Provides the home screen data (carousel + sections) from cache + background sync.
-class HomeSectionsNotifier extends AsyncNotifier<HomeSectionsData?> {
-  StreamSubscription<HomeSectionsData>? _sub;
-
-  @override
-  Future<HomeSectionsData?> build() async {
-    _sub = PaginatedSyncEngine.instance.onHomeSectionsUpdated.listen((data) {
-      state = AsyncValue.data(data);
-    });
-    ref.onDispose(() => _sub?.cancel());
-
-    // Read cache first (instant)
-    final cached = await PaginatedSyncEngine.instance.readCachedHomeSections();
-
-    if (cached == null) {
-      // No cache — must sync. Retry up to 3 times.
-      String? lastError;
-      for (int attempt = 1; attempt <= 3; attempt++) {
-        final result = await PaginatedSyncEngine.instance.sync();
-        if (result.error == null) {
-          return PaginatedSyncEngine.instance.readCachedHomeSections();
-        }
-        lastError = result.error;
-        if (attempt < 3) {
-          await Future.delayed(Duration(seconds: attempt * 2));
-        }
-      }
-      throw Exception('Failed to load catalog after 3 attempts: $lastError');
-    } else {
-      // Cache exists — return immediately, refresh in background.
-      PaginatedSyncEngine.instance.sync();
-      return cached;
-    }
+ManifestItem _tmdbToManifestItem(Map<String, dynamic> item, {bool isTrending = false, bool isPopular = false, int? rank}) {
+  final id = (item['id'] as num?)?.toInt() ?? 0;
+  final mediaType = item['media_type']?.toString() ?? (item['name'] != null ? 'tv' : 'movie');
+  final posterPath = item['poster_path']?.toString();
+  final backdropPath = item['backdrop_path']?.toString();
+  
+  int? releaseYear;
+  final releaseDate = (item['release_date'] ?? item['first_air_date'])?.toString();
+  if (releaseDate != null && releaseDate.length >= 4) {
+    releaseYear = int.tryParse(releaseDate.substring(0, 4));
   }
 
-  Future<void> refresh() async {
-    final result = await PaginatedSyncEngine.instance.sync();
-    if (result.error != null) {
-      throw Exception('Failed to refresh: ${result.error}');
-    }
-  }
+  return ManifestItem(
+    id: id,
+    mediaType: mediaType,
+    title: (item['title'] ?? item['name'] ?? 'Unknown').toString(),
+    posterUrl: posterPath != null ? TmdbClient.posterUrl(posterPath) : null,
+    backdropUrl: backdropPath != null ? TmdbClient.backdropUrl(backdropPath) : null,
+    voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
+    voteCount: (item['vote_count'] as num?)?.toInt() ?? 0,
+    releaseYear: releaseYear,
+    overview: item['overview']?.toString(),
+    originalLanguage: item['original_language']?.toString(),
+    tmdbPosterPath: posterPath,
+    tmdbBackdropPath: backdropPath,
+    isTrending: isTrending,
+    isPopular: isPopular,
+    trendingRank: rank,
+  );
 }
 
-final homeSectionsDataProvider =
-    AsyncNotifierProvider<HomeSectionsNotifier, HomeSectionsData?>(
-        () => HomeSectionsNotifier());
-
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// Home Screen Providers (derived from HomeSectionsData)
+// Home Screen Providers (TMDB Powered)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Genre-based section data for home screen — same shape as before.
 class ContentSection {
   final String title;
   final List<ManifestItem> items;
@@ -77,38 +54,109 @@ class ContentSection {
   });
 }
 
-/// Carousel items for the hero section.
-final carouselProvider = Provider<List<ManifestItem>>((ref) {
-  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
-  return data?.carousel ?? [];
+/// Trending content for the Carousel
+final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final movies = await TmdbClient.instance.getTrending('movie', timeWindow: 'day');
+  final tv = await TmdbClient.instance.getTrending('tv', timeWindow: 'day');
+  
+  final combined = <Map<String, dynamic>>[];
+  int mi = 0, ti = 0;
+  while (combined.length < 10 && (mi < movies.length || ti < tv.length)) {
+    if (mi < movies.length) combined.add({...movies[mi++], 'media_type': 'movie'});
+    if (ti < tv.length) combined.add({...tv[ti++], 'media_type': 'tv'});
+  }
+  
+  return combined.take(5).toList().asMap().entries.map((entry) {
+    return _tmdbToManifestItem(entry.value, isTrending: true, rank: entry.key + 1);
+  }).toList();
 });
 
-/// Home screen sections list — derived from pre-built home sections data.
-final homeSectionsProvider = Provider<AsyncValue<List<ContentSection>>>((ref) {
-  final asyncData = ref.watch(homeSectionsDataProvider);
-  return asyncData.whenData((data) {
-    if (data == null) return <ContentSection>[];
-    return data.sections
-        .map((s) => ContentSection(
-              title: s.title,
-              items: s.items,
-              isRanked: s.isRanked,
-            ))
-        .toList();
-  });
+/// Trending content for Top 10 Today
+final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
+  final movies = await TmdbClient.instance.getTrending('movie', timeWindow: 'day');
+  final tv = await TmdbClient.instance.getTrending('tv', timeWindow: 'day');
+  
+  final combined = <Map<String, dynamic>>[];
+  int mi = 0, ti = 0;
+  while (combined.length < 20 && (mi < movies.length || ti < tv.length)) {
+    if (mi < movies.length) combined.add({...movies[mi++], 'media_type': 'movie'});
+    if (ti < tv.length) combined.add({...tv[ti++], 'media_type': 'tv'});
+  }
+  
+  return combined.take(10).toList().asMap().entries.map((entry) {
+    return _tmdbToManifestItem(entry.value, isTrending: true, rank: entry.key + 1);
+  }).toList();
+});
+
+/// Home screen sections (DynamicTMDB)
+final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
+  final sections = <ContentSection>[];
+  
+  // 1. Top 10 Today
+  final top10 = await ref.watch(mergedTop10Provider.future);
+  if (top10.isNotEmpty) {
+    sections.add(ContentSection(title: 'Top 10 Today', items: top10, isRanked: true));
+  }
+  
+  // 2. Popular
+  final popularMovies = await TmdbClient.instance.getPopular('movie');
+  final popularTv = await TmdbClient.instance.getPopular('tv');
+  final popularCombined = <Map<String, dynamic>>[];
+  int mi = 0, ti = 0;
+  while (popularCombined.length < 15 && (mi < popularMovies.length || ti < popularTv.length)) {
+    if (mi < popularMovies.length) popularCombined.add({...popularMovies[mi++], 'media_type': 'movie'});
+    if (ti < popularTv.length) popularCombined.add({...popularTv[ti++], 'media_type': 'tv'});
+  }
+  if (popularCombined.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Popular',
+      items: popularCombined.map((e) => _tmdbToManifestItem(e, isPopular: true)).toList()
+    ));
+  }
+
+  // 3. Indian
+  final indianMovies = await TmdbClient.instance.discoverMovie(withOriginCountry: 'IN');
+  if (indianMovies.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Indian',
+      items: indianMovies.map((e) => _tmdbToManifestItem({...e, 'media_type': 'movie'})).toList()
+    ));
+  }
+
+  // 4. Anime
+  final animeTv = await TmdbClient.instance.discoverTv(withGenres: '16', withOriginCountry: 'JP');
+  if (animeTv.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Anime',
+      items: animeTv.map((e) => _tmdbToManifestItem({...e, 'media_type': 'tv'})).toList()
+    ));
+  }
+  
+  // 5. Korean
+  final koreanTv = await TmdbClient.instance.discoverTv(withOriginCountry: 'KR');
+  if (koreanTv.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Korean',
+      items: koreanTv.map((e) => _tmdbToManifestItem({...e, 'media_type': 'tv'})).toList()
+    ));
+  }
+
+  // 6. Top Rated
+  final topRatedMovies = await TmdbClient.instance.getTopRated('movie');
+  if (topRatedMovies.isNotEmpty) {
+    sections.add(ContentSection(
+      title: 'Top Rated',
+      items: topRatedMovies.take(15).map((e) => _tmdbToManifestItem({...e, 'media_type': 'movie'})).toList()
+    ));
+  }
+
+  return sections;
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Category Pagination via SQLite Database
+// Category Pagination via TMDB
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Provides catalog metadata (version, counts).
-final catalogMetaProvider = FutureProvider<CatalogMeta?>((ref) async {
-  ref.watch(homeSectionsDataProvider);
-  return PaginatedSyncEngine.instance.readCachedMeta();
-});
-
-/// State for a paginated category — loaded incrementally from SQLite.
 class PaginatedCategoryState {
   final List<ManifestItem> items;
   final int currentPage;
@@ -141,34 +189,8 @@ class PaginatedCategoryState {
   }
 }
 
-/// Maps UI category labels to SQLite SearchDatabase filter.
-SearchFilters _getFiltersForCategory(String category) {
-  if (category == 'all') {
-    return const SearchFilters();
-  }
-  return SearchFilters(categories: {category});
-}
-
-/// Helper to convert ManifestSearchResult to ManifestItem.
-ManifestItem _searchResultToManifestItem(ManifestSearchResult result) {
-  return ManifestItem(
-    id: result.itemId,
-    mediaType: result.mediaType,
-    title: result.title,
-    posterUrl: result.posterUrl,
-    releaseYear: result.releaseYear,
-    language: result.languages,
-    genres: result.genres,
-    originalLanguage: result.originalLanguage,
-    originCountry: result.originCountry,
-  );
-}
-
-/// Notifier that manages pagination via SQLite.
-/// Fetches items in chunks of 50.
 class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCategoryState>> {
   final String category;
-  static const int _pageSize = 50;
 
   PaginatedCategoryNotifier(this.category) : super(const AsyncValue.loading()) {
     _loadFirstPage();
@@ -176,18 +198,11 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
 
   Future<void> _loadFirstPage() async {
     try {
-      final filters = _getFiltersForCategory(category);
-      // Wait for DB to be ready
-      while (!SearchDatabase.instance.isReady) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      
-      final results = await SearchDatabase.instance.search('', filters: filters, limit: _pageSize);
-      
+      final results = await _fetchPage(1);
       state = AsyncValue.data(PaginatedCategoryState(
-        items: results.map(_searchResultToManifestItem).toList(),
+        items: results,
         currentPage: 1,
-        hasMore: results.length == _pageSize,
+        hasMore: results.isNotEmpty,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page 1 error: $e', stackTrace: stack);
@@ -195,30 +210,24 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     }
   }
 
-  /// Load the next page.
   Future<void> loadNextPage() async {
     final current = state.valueOrNull;
     if (current == null) return;
     if (current.isLoadingMore || !current.hasMore) return;
 
     final nextPage = current.currentPage + 1;
-    final limit = nextPage * _pageSize;
-
     state = AsyncValue.data(current.copyWith(isLoadingMore: true, errorOverride: () => null));
 
     try {
-      final filters = _getFiltersForCategory(category);
-      final results = await SearchDatabase.instance.search('', filters: filters, limit: limit);
-      
-      final items = results.map(_searchResultToManifestItem).toList();
+      final results = await _fetchPage(nextPage);
 
       if (!mounted) return;
 
       state = AsyncValue.data(PaginatedCategoryState(
-        items: items,
+        items: [...current.items, ...results],
         currentPage: nextPage,
         isLoadingMore: false,
-        hasMore: results.length == limit,
+        hasMore: results.isNotEmpty,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page $nextPage error: $e', stackTrace: stack);
@@ -231,24 +240,60 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     }
   }
 
-  /// Reset and reload from page 1.
+  Future<List<ManifestItem>> _fetchPage(int page) async {
+    final slug = category.toLowerCase();
+    List<Map<String, dynamic>> rawResults = [];
+    String type = 'movie';
+
+    if (slug == 'all') {
+      rawResults = await TmdbClient.instance.getTrending('all', timeWindow: 'week', page: page);
+      type = 'mixed';
+    } else if (slug == 'indian' || slug == 'bollywood') {
+      rawResults = await TmdbClient.instance.discoverMovie(page: page, withOriginCountry: 'IN');
+      type = 'movie';
+    } else if (slug == 'hollywood') {
+      rawResults = await TmdbClient.instance.discoverMovie(page: page, withOriginCountry: 'US');
+      type = 'movie';
+    } else if (slug == 'anime') {
+      rawResults = await TmdbClient.instance.discoverTv(page: page, withGenres: '16', withOriginCountry: 'JP');
+      type = 'tv';
+    } else if (slug == 'korean') {
+      rawResults = await TmdbClient.instance.discoverTv(page: page, withOriginCountry: 'KR');
+      type = 'tv';
+    } else if (slug == 'chinese') {
+      rawResults = await TmdbClient.instance.discoverTv(page: page, withOriginCountry: 'CN');
+      type = 'tv';
+    } else if (slug == 'punjabi') {
+      rawResults = await TmdbClient.instance.discoverMovie(page: page, withOriginalLanguage: 'pa');
+      type = 'movie';
+    } else if (slug == 'pakistani') {
+      rawResults = await TmdbClient.instance.discoverTv(page: page, withOriginCountry: 'PK');
+      type = 'tv';
+    } else {
+      // Default to trending
+      rawResults = await TmdbClient.instance.getTrending('all', timeWindow: 'week', page: page);
+      type = 'mixed';
+    }
+
+    return rawResults.map((e) {
+      final mediaType = type == 'mixed' ? (e['media_type'] ?? 'movie') : type;
+      return _tmdbToManifestItem({...e, 'media_type': mediaType});
+    }).toList();
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     await _loadFirstPage();
   }
 }
 
-/// Paginated category provider — keyed by category slug.
 final paginatedCategoryProvider = StateNotifierProvider.family<
     PaginatedCategoryNotifier, AsyncValue<PaginatedCategoryState>, String>(
   (ref, category) {
-    // Re-create when home sections sync completes (new catalog version)
-    ref.watch(homeSectionsDataProvider);
     return PaginatedCategoryNotifier(category);
   },
 );
 
-/// Maps UI category labels to catalog slugs.
 String categoryLabelToSlug(String label) {
   const map = {
     'Explore': 'all',
@@ -263,44 +308,14 @@ String categoryLabelToSlug(String label) {
   return map[label] ?? 'all';
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Category-Specific Providers (backward compatibility)
-// These derive from the paginated provider, returning currently loaded items.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-final globalItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  // Return just the first 50 items for global
-  while (!SearchDatabase.instance.isReady) {
-    await Future.delayed(const Duration(milliseconds: 100));
-  }
-  final results = await SearchDatabase.instance.search('', limit: 50);
-  return results.map(_searchResultToManifestItem).toList();
+final globalItemsProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
+  return ref.watch(paginatedCategoryProvider('all')).whenData((s) => s.items);
 });
 
-/// Synonym for globalItemsProvider.
 final allItemsProvider = Provider<List<ManifestItem>>((ref) {
   return ref.watch(globalItemsProvider).valueOrNull ?? [];
 });
 
-/// Trending items — derived from carousel (Trending Now section removed).
-final trendingProvider = Provider<List<ManifestItem>>((ref) {
-  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
-  if (data == null) return [];
-  return data.carousel;
-});
-
-/// Popular items — from dynamic home sections.
-final popularProvider = Provider<List<ManifestItem>>((ref) {
-  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
-  if (data == null) return [];
-  final section = data.sections
-      .where((s) => s.title.toLowerCase().contains('popular') ||
-                     s.title.toLowerCase().contains('top rated'))
-      .toList();
-  return section.isNotEmpty ? section.first.items : [];
-});
-
-/// Category-specific providers (backward compat — returns all loaded items).
 final indianProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
   return ref.watch(paginatedCategoryProvider('indian')).whenData((s) => s.items);
 });
@@ -330,110 +345,3 @@ final punjabiProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
 final pakistaniProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
   return ref.watch(paginatedCategoryProvider('pakistani')).whenData((s) => s.items);
 });
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Top 5 / Top 10 — Merged with TMDB (unchanged approach)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Fetches GitHub Top 5 curated items.
-final githubTop5Provider = FutureProvider<Map<int, ManifestItem>>((ref) async {
-  return GitHubTopContentRepository.instance.fetchTop5();
-});
-
-/// Fetches GitHub Top 10 curated items.
-final githubTop10Provider = FutureProvider<Map<int, ManifestItem>>((ref) async {
-  return GitHubTopContentRepository.instance.fetchTop10();
-});
-
-/// Fixed-Slot Merge: GitHub items at fixed positions, TMDB fills gaps.
-List<ManifestItem> _mergeWithFixedSlots({
-  required Map<int, ManifestItem> githubItems,
-  required List<ManifestItem> tmdbItems,
-  required int totalSlots,
-}) {
-  final slots = List<ManifestItem?>.filled(totalSlots, null);
-  for (final entry in githubItems.entries) {
-    final slotIndex = entry.key - 1;
-    if (slotIndex >= 0 && slotIndex < totalSlots) {
-      slots[slotIndex] = entry.value;
-    }
-  }
-  final githubTmdbIds = githubItems.values.map((item) => item.id).toSet();
-  final tmdbFiltered =
-      tmdbItems.where((item) => !githubTmdbIds.contains(item.id)).toList();
-  int tmdbIndex = 0;
-  for (int i = 0; i < totalSlots; i++) {
-    if (slots[i] == null && tmdbIndex < tmdbFiltered.length) {
-      slots[i] = tmdbFiltered[tmdbIndex++];
-    }
-  }
-  return slots.whereType<ManifestItem>().toList();
-}
-
-/// Merged carousel: GitHub Top 5 (fixed) + trending (fill gaps).
-final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final githubTop5 = await ref.watch(githubTop5Provider.future);
-  final trending = ref.watch(trendingProvider);
-  return _mergeWithFixedSlots(
-    githubItems: githubTop5,
-    tmdbItems: trending,
-    totalSlots: 5,
-  );
-});
-
-/// Merged Top 10: TMDB daily trending (filtered by index) + GitHub Top 10 overrides.
-/// The Top 10 section in home is built by the sync engine, but this provider
-/// allows the GitHub Top 10 folder to override specific ranked positions.
-final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
-  final githubTop10 = await ref.watch(githubTop10Provider.future);
-  // Get the Top 10 section from dynamic home data (built by sync engine)
-  final data = ref.watch(homeSectionsDataProvider).valueOrNull;
-  final top10Section = data?.sections
-      .where((s) => s.title == 'Top 10 Today')
-      .toList();
-  final tmdbTop10 = (top10Section != null && top10Section.isNotEmpty)
-      ? top10Section.first.items
-      : <ManifestItem>[];
-  return _mergeWithFixedSlots(
-    githubItems: githubTop10,
-    tmdbItems: tmdbTop10,
-    totalSlots: 10,
-  );
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BACKWARD COMPATIBILITY — manifestProvider + manifestIndexProvider
-// ═══════════════════════════════════════════════════════════════════════════════
-
-final manifestProvider = FutureProvider<_CompatManifest?>((ref) async {
-  final data = await ref.watch(homeSectionsDataProvider.future);
-  if (data == null) return null;
-  final allItems = <ManifestItem>[];
-  final seenIds = <String>{};
-  for (final item in data.carousel) {
-    final key = '${item.id}-${item.mediaType}';
-    if (seenIds.add(key)) allItems.add(item);
-  }
-  for (final section in data.sections) {
-    for (final item in section.items) {
-      final key = '${item.id}-${item.mediaType}';
-      if (seenIds.add(key)) allItems.add(item);
-    }
-  }
-  return _CompatManifest(items: allItems);
-});
-
-final manifestIndexProvider = Provider<Map<String, ManifestItem>>((ref) {
-  final manifest = ref.watch(manifestProvider).valueOrNull;
-  if (manifest == null) return {};
-  final index = <String, ManifestItem>{};
-  for (final item in manifest.items) {
-    index['${item.id}-${item.mediaType}'] = item;
-  }
-  return index;
-});
-
-class _CompatManifest {
-  final List<ManifestItem> items;
-  const _CompatManifest({required this.items});
-}

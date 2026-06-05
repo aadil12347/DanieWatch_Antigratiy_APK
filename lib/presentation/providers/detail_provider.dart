@@ -85,18 +85,6 @@ final similarProvider = FutureProvider.family<List<SimilarItem>, DetailParams>(
   },
 );
 
-/// Manifest filtered similar content
-final manifestFilteredSimilarProvider = FutureProvider.family<List<SimilarItem>, DetailParams>(
-  (ref, params) async {
-    final allSimilar = await ref.watch(similarProvider(params).future);
-    final manifestIndex = ref.watch(manifestIndexProvider);
-    
-    return allSimilar.where((item) {
-      final key = '${item.mediaType}_${item.id}';
-      return manifestIndex.containsKey(key);
-    }).toList();
-  },
-);
 
 /// Reviews content
 final reviewsProvider = FutureProvider.family<List<ReviewItem>, DetailParams>(

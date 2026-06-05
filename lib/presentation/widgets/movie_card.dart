@@ -9,7 +9,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../data/clients/tmdb_client.dart';
-import '../../data/clients/github_catalog_client.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/active_card_provider.dart';
@@ -497,19 +496,6 @@ class _PosterImageState extends State<_PosterImage> {
         return;
       }
     } catch (_) {}
-    
-    // If TMDB fails or has no poster, try fallback to GitHub JSON
-    if (mounted) {
-      try {
-        final client = GitHubCatalogClient.instance;
-        final fallbackItem = await client.fetchSingleItemFallback(widget.tmdbId.toString(), widget.mediaType);
-        if (fallbackItem != null && fallbackItem.posterUrl != null && mounted) {
-          setState(() {
-            _fallbackUrl = fallbackItem.posterUrl;
-          });
-        }
-      } catch (_) {}
-    }
   }
 
   @override

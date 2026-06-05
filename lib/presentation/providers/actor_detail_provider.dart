@@ -112,11 +112,7 @@ final actorFilmographyProvider = FutureProvider.family<List<ManifestItem>, int>(
     // 1. Fetch all combined credits from TMDB
     final credits = await TmdbClient.instance.getPersonCombinedCredits(actorId);
 
-    // 2. Get the manifest index (all items in the app's JSON)
-    final manifestIndex = ref.watch(manifestIndexProvider);
-    if (manifestIndex.isEmpty) return [];
-
-    // 3. Cross-reference: only keep credits that exist in the manifest
+    // 2. Map directly to ManifestItems
     final List<ManifestItem> result = [];
     final seen = <String>{}; // Avoid duplicates
 
@@ -132,10 +128,30 @@ final actorFilmographyProvider = FutureProvider.family<List<ManifestItem>, int>(
       final key = '$tmdbId-$normalizedType';
       if (seen.contains(key)) continue;
 
-      if (manifestIndex.containsKey(key)) {
-        result.add(manifestIndex[key]!);
-        seen.add(key);
+      final posterPath = credit['poster_path']?.toString();
+      final backdropPath = credit['backdrop_path']?.toString();
+      
+      int? releaseYear;
+      final releaseDate = (credit['release_date'] ?? credit['first_air_date'])?.toString();
+      if (releaseDate != null && releaseDate.length >= 4) {
+        releaseYear = int.tryParse(releaseDate.substring(0, 4));
       }
+
+      result.add(ManifestItem(
+        id: tmdbId,
+        mediaType: normalizedType,
+        title: (credit['title'] ?? credit['name'] ?? 'Unknown').toString(),
+        posterUrl: posterPath != null ? TmdbClient.posterUrl(posterPath) : null,
+        backdropUrl: backdropPath != null ? TmdbClient.backdropUrl(backdropPath) : null,
+        voteAverage: (credit['vote_average'] as num?)?.toDouble() ?? 0.0,
+        voteCount: (credit['vote_count'] as num?)?.toInt() ?? 0,
+        releaseYear: releaseYear,
+        overview: credit['overview']?.toString(),
+        originalLanguage: credit['original_language']?.toString(),
+        tmdbPosterPath: posterPath,
+        tmdbBackdropPath: backdropPath,
+      ));
+      seen.add(key);
     }
 
     // Sort by vote count descending (most popular first)

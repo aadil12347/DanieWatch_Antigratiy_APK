@@ -56,29 +56,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final homeSectionsAsync = ref.watch(homeSectionsDataProvider);
-    final sectionsAsync = ref.watch(homeSectionsProvider);
+    final homeSectionsAsync = ref.watch(homeSectionsProvider);
     final carouselAsync = ref.watch(mergedCarouselProvider);
 
     return homeSectionsAsync.when(
-      loading: () => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value, sectionsAsync, carouselAsync) : const _LoadingHome(),
-      error: (e, _) => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value, sectionsAsync, carouselAsync) : _ErrorHome(error: e.toString()),
-      data: (data) {
-        if (data == null || (data.carousel.isEmpty && data.sections.isEmpty)) {
+      loading: () => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value!, carouselAsync.valueOrNull ?? []) : const _LoadingHome(),
+      error: (e, _) => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value!, carouselAsync.valueOrNull ?? []) : _ErrorHome(error: e.toString()),
+      data: (sections) {
+        final carouselItems = carouselAsync.valueOrNull ?? [];
+        if (sections.isEmpty && carouselItems.isEmpty) {
           return const _EmptyHome();
         }
-        return _buildHomeContent(data, sectionsAsync, carouselAsync);
+        return _buildHomeContent(sections, carouselItems);
       },
     );
   }
 
   Widget _buildHomeContent(
-    dynamic manifest,
-    AsyncValue<List<ContentSection>> sectionsAsync,
-    AsyncValue<List<ManifestItem>> carouselAsync
+    List<ContentSection> sections,
+    List<ManifestItem> carouselItems
   ) {
-    final carouselItems = carouselAsync.valueOrNull ?? [];
-    final sections = sectionsAsync.valueOrNull ?? [];
 
 
     return Scaffold(

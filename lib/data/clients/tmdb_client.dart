@@ -231,4 +231,75 @@ class TmdbClient {
       return [];
     }
   }
+
+  /// Global search across movies and TV shows
+  Future<List<Map<String, dynamic>>> searchMulti(String query, {int page = 1}) async {
+    try {
+      if (query.trim().isEmpty) return [];
+      final res = await _dio.get('/search/multi', queryParameters: {
+        'query': query,
+        'page': page,
+        'include_adult': false,
+      });
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Search multi error: ${e.message}');
+      return [];
+    }
+  }
+
+  /// Discover movies with dynamic filters (e.g. genres, languages, origin_country)
+  Future<List<Map<String, dynamic>>> discoverMovie({
+    int page = 1,
+    String? withGenres,
+    String? withOriginalLanguage,
+    String? withOriginCountry,
+    String sortBy = 'popularity.desc',
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': page,
+        'sort_by': sortBy,
+        'include_adult': false,
+      };
+      if (withGenres != null) queryParams['with_genres'] = withGenres;
+      if (withOriginalLanguage != null) queryParams['with_original_language'] = withOriginalLanguage;
+      if (withOriginCountry != null) queryParams['with_origin_country'] = withOriginCountry;
+
+      final res = await _dio.get('/discover/movie', queryParameters: queryParams);
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Discover movie error: ${e.message}');
+      return [];
+    }
+  }
+
+  /// Discover TV shows with dynamic filters
+  Future<List<Map<String, dynamic>>> discoverTv({
+    int page = 1,
+    String? withGenres,
+    String? withOriginalLanguage,
+    String? withOriginCountry,
+    String sortBy = 'popularity.desc',
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': page,
+        'sort_by': sortBy,
+        'include_adult': false,
+      };
+      if (withGenres != null) queryParams['with_genres'] = withGenres;
+      if (withOriginalLanguage != null) queryParams['with_original_language'] = withOriginalLanguage;
+      if (withOriginCountry != null) queryParams['with_origin_country'] = withOriginCountry;
+
+      final res = await _dio.get('/discover/tv', queryParameters: queryParams);
+      final results = res.data['results'] as List?;
+      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+    } on DioException catch (e) {
+      dev.log('[TMDB] Discover TV error: ${e.message}');
+      return [];
+    }
+  }
 }

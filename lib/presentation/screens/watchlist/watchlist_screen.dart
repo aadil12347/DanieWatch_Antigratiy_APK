@@ -78,7 +78,6 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   Widget build(BuildContext context) {
     final watchlistAsync = ref.watch(watchlistProvider);
     final searchState = ref.watch(searchProvider('watchlist'));
-    final index = ref.watch(manifestIndexProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -141,19 +140,14 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                           ];
                         }
 
-                        // Map watchlist items to ManifestItems, enriching from manifest index
+                        // Map watchlist items to ManifestItems
                         final manifestItems = items.map((item) {
-                          final key = '${item.tmdbId}-${item.mediaType}';
-                          final manifestEntry = index[key];
                           return ManifestItem(
                             id: item.tmdbId,
                             mediaType: item.mediaType,
                             title: item.title,
                             posterUrl: item.posterPath,
                             voteAverage: item.voteAverage,
-                            releaseYear: manifestEntry?.releaseYear,
-                            genreIds: manifestEntry?.genreIds ?? [],
-                            language: manifestEntry?.language ?? [],
                           );
                         }).toList();
 
@@ -161,7 +155,6 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                         final filteredItems = FilterUtils.getFilteredItems(
                           allItems: manifestItems,
                           searchState: searchState,
-                          index: index,
                         );
 
                         if (filteredItems.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters)) {

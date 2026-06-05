@@ -86,8 +86,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         _evaluateTransition();
       });
 
-      _manifestSub = ref.listenManual(manifestProvider, (previous, next) {
-        debugPrint('SplashScreen: manifest changed. hasError: ${next.hasError}, hasValue: ${next.hasValue}');
+      _manifestSub = ref.listenManual(homeSectionsProvider, (previous, next) {
+        debugPrint('SplashScreen: homeSections changed. hasError: ${next.hasError}, hasValue: ${next.hasValue}');
         _evaluateTransition();
       });
 
@@ -156,7 +156,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     final authState = ref.read(authStateProvider);
     // Use stream value if available, fall back to synchronous Supabase check
     final user = authState.valueOrNull ?? ref.read(currentUserProvider);
-    final manifestAsync = ref.read(manifestProvider);
+    final manifestAsync = ref.read(homeSectionsProvider);
     final manifest = manifestAsync.valueOrNull;
 
     // ── CASE 1: Auth is still resolving ──────────────────────────────────────
@@ -172,7 +172,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         if (_manifestRetryCount < _maxManifestRetries) {
           _manifestRetryCount++;
           debugPrint('SplashScreen: manifest ERROR — retry attempt $_manifestRetryCount/$_maxManifestRetries');
-          ref.invalidate(manifestProvider);
+          ref.invalidate(homeSectionsProvider);
           _isTransitioning = false;
           return;
         } else {

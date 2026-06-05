@@ -3,16 +3,30 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+class ExtractedVideasyStream {
+  final String server;
+  final String url;
+  final List<dynamic> sources;
+  final List<dynamic> tracks;
+
+  ExtractedVideasyStream({
+    required this.server,
+    required this.url,
+    required this.sources,
+    required this.tracks,
+  });
+}
+
 class VideasyExtractorService {
   static final VideasyExtractorService _instance = VideasyExtractorService._internal();
   factory VideasyExtractorService() => _instance;
   VideasyExtractorService._internal();
 
-  /// Map of { "Server Name": "m3u8 URL" }
-  Future<Map<String, String>?> extractAllStreams(String embedUrl) async {
+  /// Map of { "Server Name": ExtractedVideasyStream }
+  Future<Map<String, ExtractedVideasyStream>?> extractAllStreams(String embedUrl) async {
     developer.log('[VideasyExtractor] Starting extraction for: $embedUrl', name: 'Videasy');
     
-    final completer = Completer<Map<String, String>?>();
+    final completer = Completer<Map<String, ExtractedVideasyStream>?>();
     HeadlessInAppWebView? headlessWebView;
     Timer? absoluteTimer;
     bool completed = false;
@@ -52,6 +66,8 @@ class VideasyExtractorService {
                   window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
                     server: serverName,
                     url: m3u8Url,
+                    sources: data.sources,
+                    tracks: data.tracks || [],
                     allStreams: window.extractedStreams
                   }));
                 }
@@ -98,7 +114,7 @@ class VideasyExtractorService {
       })();
     """;
 
-    final Map<String, String> finalStreams = {};
+    final Map<String, ExtractedVideasyStream> finalStreams = {};
 
     headlessWebView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(embedUrl)),
@@ -119,9 +135,17 @@ class VideasyExtractorService {
               final payload = jsonDecode(args[0] as String);
               final server = payload['server'] as String;
               final url = payload['url'] as String;
-              finalStreams[server] = url;
+              final sources = payload['sources'] as List<dynamic>? ?? [];
+              final tracks = payload['tracks'] as List<dynamic>? ?? [];
               
-              developer.log('[VideasyExtractor] Captured $server: $url', name: 'Videasy');
+              finalStreams[server] = ExtractedVideasyStream(
+                server: server,
+                url: url,
+                sources: sources,
+                tracks: tracks,
+              );
+              
+              developer.log('[VideasyExtractor] Captured $server: $url with ${tracks.length} tracks', name: 'Videasy');
               
               // We could complete immediately, or wait a bit to collect more.
               // Let's complete after 1.5 seconds of receiving the first one to allow others to resolve
