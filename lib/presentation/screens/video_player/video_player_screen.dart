@@ -20,6 +20,7 @@ import '../../widgets/sticky_dropdown_modal.dart';
 import '../../widgets/liquid_tap_effect.dart';
 import '../../../pip/pip_controller.dart';
 import '../../../services/videasy_extractor.dart';
+import '../../../services/hls_resolution_parser.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -231,11 +232,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
-  /// Start extraction using WebView tapping approach.
-  /// Goes directly to the in-widget WebView extraction that reliably
-  /// discovers m3u8 links by rendering the embed page and auto-clicking.
+  /// Extract the Fade Hindi stream from Videasy using headless WebView,
+  /// then play natively in BetterPlayer. Falls back to WebView player
+  /// if extraction fails or times out.
   Future<void> _tryDirectExtraction() async {
-    debugPrint('[Engine] Bypassing extraction, using WebView Player directly');
     String videasyUrl;
     if (widget.mediaType == 'movie') {
       videasyUrl = 'https://player.videasy.net/movie/${widget.tmdbId}';
@@ -245,15 +245,60 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       videasyUrl = 'https://player.videasy.net/tv/${widget.tmdbId}/$s/$e';
     }
 
-    if (mounted) {
-      setState(() {
-        _extractedLink = videasyUrl;
-        _isExtracting = false;
-        _discoveryComplete = true;
-        _useWebViewEngine = true;
-        _isLoading = false;
-        _isInitialized = true;
-      });
+    debugPrint('[Engine] Starting Fade Hindi extraction from: $videasyUrl');
+
+    try {
+      final streams = await VideasyExtractorService().extractAllStreams(videasyUrl);
+
+      if (!mounted) return;
+
+      if (streams != null && streams.isNotEmpty) {
+        // Pick Fade Hindi server, or first available
+        String? bestServer;
+        for (final key in streams.keys) {
+          if (key.toLowerCase().contains('fade') || key.toLowerCase().contains('hindi')) {
+            bestServer = key;
+            break;
+          }
+        }
+        bestServer ??= streams.keys.first;
+
+        final stream = streams[bestServer]!;
+        debugPrint('[Engine] ✅ Extracted Fade Hindi: ${stream.url}');
+        debugPrint('[Engine]    Server: $bestServer, Sources: ${stream.sources.length}, Tracks: ${stream.tracks.length}');
+
+        setState(() {
+          _selectedServer = bestServer;
+          _isExtracting = false;
+          _discoveryComplete = true;
+        });
+
+        // Play in BetterPlayer (native)
+        _startPlayback(stream.url, extractedStream: stream);
+      } else {
+        // Extraction failed — fall back to WebView player
+        debugPrint('[Engine] ⚠️ Extraction failed, falling back to WebView player');
+        setState(() {
+          _extractedLink = videasyUrl;
+          _isExtracting = false;
+          _discoveryComplete = true;
+          _useWebViewEngine = true;
+          _isLoading = false;
+          _isInitialized = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Engine] ❌ Extraction error: $e — falling back to WebView');
+      if (mounted) {
+        setState(() {
+          _extractedLink = videasyUrl;
+          _isExtracting = false;
+          _discoveryComplete = true;
+          _useWebViewEngine = true;
+          _isLoading = false;
+          _isInitialized = true;
+        });
+      }
     }
   }
 
@@ -354,7 +399,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         headers: !isOffline ? {
           'Referer': 'https://player.videasy.net/',
           'Origin': 'https://player.videasy.net',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          'Accept': '*/*',
         } : null,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
@@ -394,22 +440,48 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         betterPlayerDataSource: dataSource,
       );
 
-      // Listen for errors to auto-switch to WebView if needed
+      // Listen for events
       _betterPlayerController!.addEventsListener((event) {
         if (event.betterPlayerEventType == BetterPlayerEventType.exception) {
           debugPrint('[BetterPlayer] Exception detected: ${event.parameters}');
           _switchToWebEngine();
         }
       });
+
       if (mounted) {
         setState(() {
           _isInitialized = true;
           _isLoading = false;
         });
       }
+
+      // Parse HLS master playlist for resolution options (async, non-blocking)
+      if (!isOffline && url.contains('.m3u8')) {
+        _parseHlsResolutions(url);
+      }
     } catch (e) {
       debugPrint('[BetterPlayer] Setup error: $e');
       _switchToWebEngine();
+    }
+  }
+
+  /// Fetches and parses the HLS master playlist to extract resolution variants.
+  /// Populates [_explicitResolutions] so the resolution dropdown appears.
+  Future<void> _parseHlsResolutions(String masterUrl) async {
+    try {
+      final resolutions = await HlsResolutionParser.parseResolutions(masterUrl);
+      if (resolutions.isNotEmpty && mounted) {
+        setState(() {
+          _explicitResolutions = resolutions;
+          // Default to highest available resolution
+          if (_selectedResolution == null || !resolutions.containsKey(_selectedResolution)) {
+            _selectedResolution = resolutions.keys.first;
+          }
+        });
+        debugPrint('[BetterPlayer] 🎬 Resolutions available: ${resolutions.keys.join(", ")}');
+      }
+    } catch (e) {
+      debugPrint('[BetterPlayer] Failed to parse HLS resolutions: $e');
     }
   }
 
