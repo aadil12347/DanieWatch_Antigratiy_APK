@@ -148,12 +148,92 @@ class _VideasyExtractorScreenState extends State<VideasyExtractorScreen> {
                 })();
               ''');
               
-              // Optionally inject script to auto-click the play button if present
+              // Smart Auto-clicker to mimic user interactions
               await controller.evaluateJavascript(source: '''
-                setTimeout(() => {
-                  const playBtn = document.querySelector('.vjs-big-play-button') || document.querySelector('.plyr__control--overlaid');
-                  if (playBtn) playBtn.click();
-                }, 1500);
+                (async function() {
+                  console.log('[AutoClicker] Starting...');
+                  var state = 0; 
+                  // state 0: wait for player/click play
+                  // state 1: click settings
+                  // state 2: click language/server
+                  // state 3: click 1080p resolution
+                  
+                  var checkAndClick = async function() {
+                    // Try to click play if paused to initialize player UI
+                    var v = document.querySelector('video');
+                    if (!v || v.paused) {
+                       var x = window.innerWidth / 2;
+                       var y = window.innerHeight / 2;
+                       var el = document.elementFromPoint(x, y);
+                       if (el && el.tagName !== 'IFRAME') { el.click(); }
+                    }
+
+                    if (state === 0) {
+                        // Open settings menu
+                        var settingsBtns = document.querySelectorAll('button.tabbable.p-2.rounded-full, [aria-label*="setting" i], [class*="setting" i], [class*="icon-settings" i]');
+                        var clicked = false;
+                        for(var i=0; i<settingsBtns.length; i++) { 
+                            try { settingsBtns[i].click(); clicked = true; } catch(e) {} 
+                        }
+                        if (clicked) {
+                            state = 1;
+                            console.log('[AutoClicker] Clicked settings');
+                        }
+                    } else if (state === 1) {
+                        // Find specific server by text
+                        var items = document.querySelectorAll('span.font-medium.truncate, p.text-xs.text-gray-500.truncate, li, [role="menuitem"]');
+                        var clicked = false;
+                        for (var i = 0; i < items.length; i++) {
+                           var text = items[i].innerText ? items[i].innerText.toLowerCase() : '';
+                           if (text.includes('fade') || text.includes('hindi') || text.includes('hdmovie')) {
+                               try {
+                                   items[i].click();
+                                   clicked = true;
+                                   console.log('[AutoClicker] Switched to Hindi/Fade server!');
+                               } catch(e) {}
+                           }
+                        }
+                        if (clicked) {
+                            state = 2;
+                        } else {
+                            // sometimes we need to click "Servers" first
+                            for (var i = 0; i < items.length; i++) {
+                               var text = items[i].innerText ? items[i].innerText.toLowerCase() : '';
+                               if (text === 'servers' || text === 'languages') {
+                                   try { items[i].click(); } catch(e) {}
+                               }
+                            }
+                        }
+                    } else if (state === 2) {
+                        // Wait a bit, click settings again to set resolution
+                        var settingsBtns = document.querySelectorAll('button.tabbable.p-2.rounded-full, [aria-label*="setting" i], [class*="setting" i]');
+                        for(var i=0; i<settingsBtns.length; i++) { 
+                            try { settingsBtns[i].click(); } catch(e) {} 
+                        }
+                        state = 3;
+                    } else if (state === 3) {
+                        var resButtons = document.querySelectorAll('button.w-full.flex.items-center.justify-between.p-3');
+                        var clicked = false;
+                        for (var i = 0; i < resButtons.length; i++) {
+                           var text = resButtons[i].innerText ? resButtons[i].innerText.toLowerCase() : '';
+                           if (text.includes('1080p')) {
+                               try {
+                                   resButtons[i].click();
+                                   clicked = true;
+                                   console.log('[AutoClicker] Switched to 1080p!');
+                               } catch(e) {}
+                           }
+                        }
+                        if (clicked) state = 4; // done
+                    }
+
+                    if (state < 4) {
+                       setTimeout(checkAndClick, 800);
+                    }
+                  };
+                  
+                  setTimeout(checkAndClick, 1000);
+                })();
               ''');
             },
             shouldInterceptAjaxRequest: (controller, ajaxRequest) async {

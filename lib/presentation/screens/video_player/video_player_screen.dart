@@ -35,6 +35,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final bool isDirectLink;
   final String? posterUrl;
   final double? startPosition;
+  final Map<String, ExtractedVideasyStream>? extractedStreams;
 
   const VideoPlayerScreen({
     super.key,
@@ -50,6 +51,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.isDirectLink = false,
     this.posterUrl,
     this.startPosition,
+    this.extractedStreams,
   });
 
   @override
@@ -111,6 +113,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _currentExtractionUrl;
   bool _canPop = false;
   bool _isClosing = false; // Prevents double pops/crashes when pressing back
+  String? _selectedServer;
+  String? _selectedResolution;
+  Map<String, String>? _explicitResolutions;
 
   @override
   void initState() {
@@ -196,8 +201,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (widget.isOffline || widget.isDirectLink) {
       _isExtracting = false;
       _isLoading = false;
+      if (widget.extractedStreams != null && widget.extractedStreams!.isNotEmpty) {
+        _selectedServer = widget.extractedStreams!.keys.first;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _startPlayback(widget.url, isOffline: widget.isOffline);
+        if (_selectedServer != null && widget.extractedStreams != null) {
+          final stream = widget.extractedStreams![_selectedServer!];
+          if (stream != null) {
+            _startPlayback(stream.url, extractedStream: stream);
+          } else {
+            _startPlayback(widget.url);
+          }
+        } else {
+          _startPlayback(widget.url, isOffline: widget.isOffline);
+        }
       });
       return;
     }
@@ -218,7 +235,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   /// Goes directly to the in-widget WebView extraction that reliably
   /// discovers m3u8 links by rendering the embed page and auto-clicking.
   Future<void> _tryDirectExtraction() async {
-    debugPrint('[Extraction] Starting Videasy extraction for TMDB ID: ${widget.tmdbId}');
+    debugPrint('[Engine] Bypassing extraction, using WebView Player directly');
     String videasyUrl;
     if (widget.mediaType == 'movie') {
       videasyUrl = 'https://player.videasy.net/movie/${widget.tmdbId}';
@@ -228,33 +245,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       videasyUrl = 'https://player.videasy.net/tv/${widget.tmdbId}/$s/$e';
     }
 
-    final extractor = VideasyExtractorService();
-    final streams = await extractor.extractAllStreams(videasyUrl);
-
-    if (streams != null && streams.isNotEmpty) {
-      // For now, default to the first server's stream if "Default" is available, or anything else
-      final bestStream = streams.values.first;
-      if (mounted) {
-        setState(() {
-          _isExtracting = false;
-          _discoveryComplete = true;
-          _webViewController = null;
-        });
-        _startPlayback(bestStream.url, extractedStream: bestStream);
-      }
-    } else {
-      if (_retryCount == 0) {
-        _retry();
-        return;
-      }
-
-      if (mounted) {
-        setState(() {
-          _isExtracting = false;
-          _discoveryComplete = true;
-        });
-        _goBack(error: 'error');
-      }
+    if (mounted) {
+      setState(() {
+        _extractedLink = videasyUrl;
+        _isExtracting = false;
+        _discoveryComplete = true;
+        _useWebViewEngine = true;
+        _isLoading = false;
+        _isInitialized = true;
+      });
     }
   }
 
@@ -271,6 +270,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _masterWaitTimer?.cancel();
     _autoClickTimer?.cancel();
     _extractionTimer?.cancel();
+
+    // Fallback to web engine if we were passed an HTML page due to failed extraction
+    final lowerLink = link.toLowerCase();
+    if (!lowerLink.contains('.m3u8') && !lowerLink.contains('.mp4') && !lowerLink.contains('.mkv')) {
+      debugPrint('[Playback] URL is not a known video format. Falling back to Web Engine.');
+      _switchToWebEngine();
+      return;
+    }
 
     if (isOffline) {
       _initializeBetterPlayer(link, isOffline: true);
@@ -307,15 +314,48 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         }).toList();
       }
 
+      Map<String, String>? explicitResolutions;
+      if (extractedStream != null && extractedStream.sources.isNotEmpty) {
+        final Map<String, String> resMap = {};
+        for (var source in extractedStream.sources) {
+           final label = source['label']?.toString();
+           final sUrl = source['url']?.toString();
+           // Only add valid explicit MP4 resolutions
+           if (label != null && sUrl != null && sUrl.isNotEmpty && source['type'] == 'mp4') {
+               resMap[label] = sUrl;
+           }
+        }
+        if (resMap.isNotEmpty) {
+           explicitResolutions = resMap;
+           _explicitResolutions = resMap;
+           if (_selectedResolution == null || !resMap.containsKey(_selectedResolution)) {
+             _selectedResolution = resMap.keys.first;
+           }
+           debugPrint('[BetterPlayer] Added explicit resolutions: \${resMap.keys.join(", ")}');
+        }
+      } else {
+        _explicitResolutions = null;
+        _selectedResolution = null;
+      }
+
       BetterPlayerDataSource dataSource = BetterPlayerDataSource(
-        isOffline
-            ? BetterPlayerDataSourceType.file
-            : BetterPlayerDataSourceType.network,
+        isOffline ? BetterPlayerDataSourceType.file : BetterPlayerDataSourceType.network,
         url,
+        subtitles: subtitles,
+        cacheConfiguration: const BetterPlayerCacheConfiguration(
+          useCache: true,
+          preCacheSize: 10 * 1024 * 1024,
+          maxCacheSize: 500 * 1024 * 1024,
+          maxCacheFileSize: 100 * 1024 * 1024,
+        ),
         useAsmsAudioTracks: true,
         useAsmsTracks: true,
         useAsmsSubtitles: true,
-        subtitles: subtitles,
+        headers: !isOffline ? {
+          'Referer': 'https://player.videasy.net/',
+          'Origin': 'https://player.videasy.net',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        } : null,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
           title: widget.mediaType != 'movie' &&
@@ -847,7 +887,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       key: key,
       child: InAppWebView(
         key: webKey,
-        initialFile: 'assets/html/player.html',
+        initialUrlRequest: URLRequest(
+          url: WebUri(_extractedLink ?? 'about:blank'),
+          headers: {
+            'Referer': 'https://player.videasy.net/',
+            'Origin': 'https://player.videasy.net',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        ),
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
           Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
         },
@@ -858,6 +905,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           useShouldOverrideUrlLoading: true,
           disableContextMenu: true,
           disableLongPressContextMenuOnLinks: true,
+          supportMultipleWindows: true,
+          javaScriptCanOpenWindowsAutomatically: false,
         ),
         onWebViewCreated: (controller) {
           if (_isClosing) return; // Don't set up handlers if already closing
@@ -939,92 +988,150 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               }
             },
           );
+          controller.addJavaScriptHandler(
+            handlerName: 'logClick',
+            callback: (args) {
+              if (args.isNotEmpty) {
+                debugPrint('[WebView Click] ${args[0]}');
+              }
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'logNetwork',
+            callback: (args) {
+              if (args.isNotEmpty) {
+                debugPrint('[WebView Network] ${args[0]}');
+              }
+            },
+          );
+        },
+        onLoadStart: (controller, url) async {
+          // Prevent removeChild errors early
+          await controller.evaluateJavascript(source: """
+            (function() {
+              if (window.__safeRemoveChildInjected) return;
+              window.__safeRemoveChildInjected = true;
+              var originalRemoveChild = Node.prototype.removeChild;
+              Node.prototype.removeChild = function(child) {
+                if (child && child.parentNode === this) {
+                  try {
+                    return originalRemoveChild.call(this, child);
+                  } catch (e) {
+                    console.warn('Safely caught removeChild error', e);
+                  }
+                }
+                return child;
+              };
+            })();
+          """);
+        },
+        shouldOverrideUrlLoading: (controller, navigationAction) async {
+          final url = navigationAction.request.url.toString();
+          if (navigationAction.isForMainFrame && !url.contains('videasy.net')) {
+            return NavigationActionPolicy.CANCEL;
+          }
+          return NavigationActionPolicy.ALLOW;
         },
         onLoadStop: (controller, url) async {
           debugPrint('[Engine] Web Player Loaded: $url');
-          if (_extractedLink != null) {
-            await controller.evaluateJavascript(
-              source: "playVideo('$_extractedLink')",
-            );
-
-            // Seek to saved position for Continue Watching resume using a robust watcher
-            if (!_startPositionApplied && widget.startPosition != null && widget.startPosition! > 1) {
-              _startPositionApplied = true;
-              await controller.evaluateJavascript(
-                source: """
-                  (function() {
-                    var v = document.querySelector('video');
-                    if (!v) return;
-                    var seekHandler = function() {
-                      if (v.currentTime >= 0.5) {
-                        v.currentTime = ${widget.startPosition};
-                        v.removeEventListener('timeupdate', seekHandler);
-                        console.log('Antigravity: Seeked to ${widget.startPosition}s after play started');
-                      }
-                    };
-                    v.addEventListener('timeupdate', seekHandler);
-                  })();
-                """,
-              );
-              debugPrint('[Resume] Injected robust seek watcher for ${widget.startPosition}s');
-            }
-
-            const epText = 'Episodes';
-            await controller.evaluateJavascript(
-              source: "updateEpisodeButton('$epText')",
-            );
-
-            final escapedTitle = widget.title.replaceAll("'", "\\'");
-            if (widget.mediaType != 'movie' &&
-                _currentSeason != null &&
-                _currentEpisode != null) {
-              final epLabel = 'S${_currentSeason.toString().padLeft(2, '0')} E${_currentEpisode.toString().padLeft(2, '0')}';
-              await controller.evaluateJavascript(
-                source: "videoTitle('$escapedTitle', '$epLabel')",
-              );
-            } else {
-              await controller.evaluateJavascript(
-                source: "videoTitle('$escapedTitle')",
-              );
-            }
-            await controller.evaluateJavascript(
-              source: "setMediaType('${widget.mediaType}')",
-            );
-
-            // Send current system volume to web player
-            try {
-              final vol = await VolumeController.instance.getVolume();
-              await controller.evaluateJavascript(
-                source: "initSystemVolume($vol)",
-              );
-            } catch (_) {}
-
-            // Send next episode title for auto-play overlay
-            if (widget.mediaType != 'movie') {
-              final episodesAsync = ref.read(
-                episodesProvider(
-                  EpisodeParams(
-                    tmdbId: widget.tmdbId,
-                    seasonNumber: _currentSeason ?? 1,
-                  ),
-                ),
-              );
-              final epsList = episodesAsync.valueOrNull;
-              if (epsList != null) {
-                final curIdx = epsList.indexWhere(
-                  (e) => e.episodeNumber == _currentEpisode,
-                );
-                if (curIdx >= 0 && curIdx + 1 < epsList.length) {
-                  final nextEp = epsList[curIdx + 1];
-                  final nextTitle = 'EP ${nextEp.episodeNumber}: ${nextEp.title ?? 'Episode ${nextEp.episodeNumber}'}';
-                  final escaped = nextTitle.replaceAll("'", "\\'");
-                  await controller.evaluateJavascript(
-                    source: "setNextEpisodeInfo('$escaped')",
-                  );
-                }
+          
+          await controller.evaluateJavascript(
+            source: """
+            (function() {
+              // Re-inject safe removeChild just in case
+              if (!window.__safeRemoveChildInjected) {
+                window.__safeRemoveChildInjected = true;
+                var originalRemoveChild = Node.prototype.removeChild;
+                Node.prototype.removeChild = function(child) {
+                  if (child && child.parentNode === this) {
+                    try { return originalRemoveChild.call(this, child); } catch (e) {}
+                  }
+                  return child;
+                };
               }
-            }
-          }
+
+              // Hide annoying UI if any
+              var style = document.createElement('style');
+              style.innerHTML = `
+                .header, .footer, .ad-banner { display: none !important; }
+              `;
+              document.head.appendChild(style);
+
+              // Click interception for debugging
+              document.addEventListener('click', function(e) {
+                try {
+                  var el = e.target;
+                  var path = [];
+                  var curr = el;
+                  while (curr && curr.nodeType === Node.ELEMENT_NODE) {
+                    var selector = curr.nodeName.toLowerCase();
+                    if (curr.id) {
+                      selector += '#' + curr.id;
+                    } else if (curr.className && typeof curr.className === 'string') {
+                      selector += '.' + curr.className.trim().replace(/\s+/g, '.');
+                    }
+                    path.unshift(selector);
+                    curr = curr.parentNode;
+                  }
+                  
+                  window.flutter_inappwebview.callHandler('logClick', {
+                    tagName: el.tagName,
+                    className: el.className,
+                    id: el.id,
+                    text: el.textContent ? el.textContent.trim().substring(0, 100) : '',
+                    src: el.src || '',
+                    path: path.join(' > ')
+                  });
+                } catch(err) {}
+              }, true);
+
+              // Fetch interception for debugging
+              const originalFetch = window.fetch;
+              window.fetch = async function(...args) {
+                try {
+                  window.flutter_inappwebview.callHandler('logNetwork', {
+                    type: 'fetch',
+                    url: args[0]
+                  });
+                } catch(err) {}
+                return await originalFetch.apply(this, args);
+              };
+
+              // XHR interception for debugging
+              const originalXHR = window.XMLHttpRequest.prototype.open;
+              window.XMLHttpRequest.prototype.open = function(method, url) {
+                try {
+                  window.flutter_inappwebview.callHandler('logNetwork', {
+                    type: 'xhr',
+                    method: method,
+                    url: url
+                  });
+                } catch(err) {}
+                return originalXHR.apply(this, arguments);
+              };
+              
+              // No auto-clicker for now to let user interact and we observe
+
+              // Seek to saved position for Continue Watching resume using a robust watcher
+              if (${widget.startPosition ?? 0} > 1) {
+                var seekHandler = function() {
+                  var v = document.querySelector('video');
+                  if (v && v.currentTime >= 0.5) {
+                    v.currentTime = ${widget.startPosition ?? 0};
+                    v.removeEventListener('timeupdate', seekHandler);
+                  }
+                };
+                setInterval(function() {
+                   var v = document.querySelector('video');
+                   if (v && !v.__seekListenerAdded) {
+                      v.__seekListenerAdded = true;
+                      v.addEventListener('timeupdate', seekHandler);
+                   }
+                }, 1000);
+              }
+            })();
+            """,
+          );
         },
       ),
     );
@@ -1606,14 +1713,116 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 key: const ValueKey('native_player'),
                 controller: _betterPlayerController!,
               ),
-              // Hide all overlays when in PiP mode — they flash on top of video otherwise
               if (!_isInPipMode) _buildTopBar(),
+              if (!_isInPipMode) _buildBottomControlsOverlay(),
               if (!_isInPipMode) _buildEpisodeInfoOverlay(),
               if (!_isInPipMode) _buildControlHints(),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBottomControlsOverlay() {
+    // Only show if we have languages or resolutions to switch
+    final hasLanguages = widget.extractedStreams != null && widget.extractedStreams!.length > 1;
+    final hasResolutions = _explicitResolutions != null && _explicitResolutions!.length > 1;
+
+    if (!hasLanguages && !hasResolutions) return const SizedBox.shrink();
+
+    return Positioned(
+      bottom: 80, // Sit above the native BetterPlayer bottom controls
+      right: 16,
+      child: SafeArea(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasLanguages)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    dropdownColor: Colors.black87,
+                    value: _selectedServer,
+                    icon: const Icon(Icons.language, color: Colors.white, size: 18),
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                    onChanged: (String? newValue) {
+                      if (newValue != null && newValue != _selectedServer) {
+                        setState(() {
+                          _selectedServer = newValue;
+                          // Reset resolution when changing server
+                          _selectedResolution = null; 
+                        });
+                        final newStream = widget.extractedStreams![newValue]!;
+                        _startPlayback(newStream.url, extractedStream: newStream);
+                      }
+                    },
+                    items: widget.extractedStreams!.keys.map<DropdownMenuItem<String>>((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: Text(value.toUpperCase()),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+
+            if (hasResolutions)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    dropdownColor: Colors.black87,
+                    value: _selectedResolution,
+                    icon: const Icon(Icons.high_quality, color: Colors.white, size: 18),
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                    onChanged: (String? newValue) {
+                      if (newValue != null && newValue != _selectedResolution) {
+                        setState(() {
+                          _selectedResolution = newValue;
+                        });
+                        final resUrl = _explicitResolutions![newValue]!;
+                        // BetterPlayer setResolution handles keeping the current position
+                        try {
+                           _betterPlayerController?.setResolution(resUrl);
+                        } catch (e) {
+                           debugPrint('[BetterPlayer] Error setting resolution: $e');
+                        }
+                      }
+                    },
+                    items: _explicitResolutions!.keys.map<DropdownMenuItem<String>>((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: Text(value.toUpperCase()),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

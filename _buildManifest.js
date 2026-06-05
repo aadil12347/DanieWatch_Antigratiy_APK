@@ -1,0 +1,1 @@
+self.__BUILD_MANIFEST=function(s,a){return{__rewrites:{afterFiles:[],beforeFiles:[],fallback:[]},\

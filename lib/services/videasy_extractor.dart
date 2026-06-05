@@ -31,86 +31,74 @@ class VideasyExtractorService {
     Timer? absoluteTimer;
     bool completed = false;
 
-    // We inject a script that intercepts fetch requests
-    final String networkHookJS = """
+    // We inject a script that hooks JSON.parse to catch the decrypted payload instantly
+    final String hookJS = """
       (function() {
-        console.log('[VideasyHook] Injecting fetch interceptor');
-        var originalFetch = window.fetch;
+        console.log('[VideasyHook] Injecting JSON.parse interceptor');
+        var originalParse = JSON.parse;
         window.extractedStreams = {};
         
+        JSON.parse = function(text, reviver) {
+          var result = originalParse(text, reviver);
+          try {
+            // The decrypted payload usually contains 'sources' array
+            if (result && result.sources && Array.isArray(result.sources) && result.sources.length > 0) {
+              var source = result.sources[0];
+              var m3u8Url = source.url || source.file;
+              
+              if (m3u8Url && m3u8Url.includes('.m3u8')) {
+                console.log('[VideasyHook] Intercepted decrypted stream: ' + m3u8Url);
+                
+                // We don't have the exact server name easily here, but we can default it
+                var serverName = 'Default';
+                window.extractedStreams[serverName] = m3u8Url;
+                
+                window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
+                  server: serverName,
+                  url: m3u8Url,
+                  sources: result.sources,
+                  tracks: result.tracks || [],
+                  allStreams: window.extractedStreams
+                }));
+              }
+            }
+          } catch(e) {
+            console.error('[VideasyHook] Parse hook error:', e);
+          }
+          return result;
+        };
+        
+        // Backup: Intercept network requests to .m3u8 directly just in case JSON.parse hook misses
+        var originalFetch = window.fetch;
         window.fetch = async function() {
           var url = arguments[0];
-          
-          if (typeof url === 'string' && url.includes('api.videasy.net') && url.includes('sources-with-title')) {
-            console.log('[VideasyHook] Intercepted API call to: ' + url);
-            
-            // Extract the server name from the URL path, e.g., /mb-flix/
-            var serverName = 'Default';
-            var match = url.match(/api\\.videasy\\.net\\/([^\\/]+)\\//);
-            if (match && match[1]) {
-              serverName = match[1];
-            }
-
-            try {
-              var response = await originalFetch.apply(this, arguments);
-              var clone = response.clone();
-              var data = await clone.json();
-              
-              if (data && data.sources && data.sources.length > 0) {
-                var m3u8Url = data.sources[0].url;
-                if (m3u8Url) {
-                  console.log('[VideasyHook] Found stream for ' + serverName + ': ' + m3u8Url);
-                  window.extractedStreams[serverName] = m3u8Url;
-                  
-                  // Notify Flutter
-                  window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
-                    server: serverName,
-                    url: m3u8Url,
-                    sources: data.sources,
-                    tracks: data.tracks || [],
-                    allStreams: window.extractedStreams
-                  }));
-                }
-              }
-              return response;
-            } catch (e) {
-              console.error('[VideasyHook] Fetch error:', e);
-              return originalFetch.apply(this, arguments);
-            }
+          if (typeof url === 'string' && url.includes('.m3u8')) {
+             window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
+                  server: 'Default (Direct)',
+                  url: url,
+                  sources: [{url: url, type: 'hls'}],
+                  tracks: [],
+                  allStreams: window.extractedStreams
+             }));
           }
           return originalFetch.apply(this, arguments);
         };
       })();
     """;
 
-    // Script to find and click all server buttons concurrently
+    // Auto clicker just in case it needs interaction to start decrypting
     final String autoClickerJS = """
       (function() {
         console.log('[VideasyHook] Starting auto-clicker...');
-        
-        // 1. Clear overlays
-        var overlays = document.querySelectorAll('[class*="popup"], [class*="modal"], [id*="popup"], [id*="modal"], [class*="overlay"], [class*="close"]');
-        overlays.forEach(function(el) { 
-          if (el.offsetWidth > 0 || el.offsetHeight > 0) el.remove(); 
-        });
-
-        // 2. Click center to trigger initial play
         var x = window.innerWidth / 2;
         var y = window.innerHeight / 2;
         var el = document.elementFromPoint(x, y);
-        if (el) {
-          el.click();
-        }
+        if (el) el.click();
 
-        // Wait a moment for UI to build, then click all server buttons
         setTimeout(function() {
-          // Look for server buttons (typically inside a dropdown or server list)
-          // We will click anything that looks like a server or play button
-          var buttons = document.querySelectorAll('button, .server, .source');
-          buttons.forEach(function(btn) {
-             btn.click();
-          });
-        }, 2000);
+          var buttons = document.querySelectorAll('button, .server, .source, .play-btn');
+          buttons.forEach(function(btn) { btn.click(); });
+        }, 1000);
       })();
     """;
 
@@ -123,8 +111,6 @@ class VideasyExtractorService {
         allowsInlineMediaPlayback: true,
         mediaPlaybackRequiresUserGesture: false,
         useShouldOverrideUrlLoading: true,
-        javaScriptCanOpenWindowsAutomatically: false,
-        supportMultipleWindows: true,
       ),
       onWebViewCreated: (controller) async {
         controller.addJavaScriptHandler(
@@ -145,12 +131,11 @@ class VideasyExtractorService {
                 tracks: tracks,
               );
               
-              developer.log('[VideasyExtractor] Captured $server: $url with ${tracks.length} tracks', name: 'Videasy');
+              developer.log('[VideasyExtractor] Captured $server: $url', name: 'Videasy');
               
-              // We could complete immediately, or wait a bit to collect more.
-              // Let's complete after 1.5 seconds of receiving the first one to allow others to resolve
+              // Resolve extremely fast (500ms) after finding first valid stream
               if (!completer.isCompleted) {
-                 Timer(const Duration(milliseconds: 1500), () {
+                 Timer(const Duration(milliseconds: 500), () {
                     if (!completed) {
                       completed = true;
                       completer.complete(finalStreams);
@@ -164,25 +149,18 @@ class VideasyExtractorService {
         );
       },
       onLoadStart: (controller, url) async {
-        await controller.evaluateJavascript(source: networkHookJS);
+        await controller.evaluateJavascript(source: hookJS);
       },
       onLoadStop: (controller, url) async {
-        developer.log('[VideasyExtractor] Page loaded: $url', name: 'Videasy');
-        await controller.evaluateJavascript(source: networkHookJS);
+        await controller.evaluateJavascript(source: hookJS);
         await controller.evaluateJavascript(source: autoClickerJS);
       },
       shouldOverrideUrlLoading: (controller, navigationAction) async {
         final url = navigationAction.request.url.toString();
-        final isMainFrame = navigationAction.isForMainFrame;
-
-        // Block popups and ads
-        if (!isMainFrame || !url.contains(Uri.parse(embedUrl).host)) {
+        if (!navigationAction.isForMainFrame || !url.contains(Uri.parse(embedUrl).host)) {
           return NavigationActionPolicy.CANCEL;
         }
         return NavigationActionPolicy.ALLOW;
-      },
-      onCreateWindow: (controller, createWindowAction) async {
-        return true; // Block popup windows
       },
       onConsoleMessage: (controller, consoleMessage) {
         developer.log('[VideasyExtractor] Console: ${consoleMessage.message}', name: 'Videasy');
@@ -191,11 +169,11 @@ class VideasyExtractorService {
 
     await headlessWebView.run();
 
-    // Absolute timeout of 15 seconds
-    absoluteTimer = Timer(const Duration(seconds: 15), () {
+    // Reduced timeout to 8 seconds
+    absoluteTimer = Timer(const Duration(seconds: 8), () {
       if (!completed) {
         completed = true;
-        developer.log('[VideasyExtractor] Timeout reached. Streams found: \${finalStreams.length}', name: 'Videasy');
+        developer.log('[VideasyExtractor] Timeout reached. Streams found: ${finalStreams.length}', name: 'Videasy');
         completer.complete(finalStreams.isEmpty ? null : finalStreams);
       }
     });
