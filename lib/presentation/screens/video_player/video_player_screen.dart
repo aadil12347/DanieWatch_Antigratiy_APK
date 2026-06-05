@@ -232,107 +232,180 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
-  /// Extract the Fade Hindi stream from Videasy by intercepting the page's
-  /// fetch() call and redirecting `mb-flix` → `hdmovie`.
-  /// Then play natively in BetterPlayer. Falls back to WebView on failure.
-  Future<void> _tryDirectExtraction() async {
+  // 1px extraction WebView state
+  bool _extraction1pxActive = false;
+  String? _extraction1pxUrl;
+  ValueKey _extraction1pxKey = const ValueKey('extraction_1px_wv');
+  InAppWebViewController? _extraction1pxController;
+  Timer? _extraction1pxAutoClickTimer;
+  Timer? _extraction1pxSettleTimer;
+  Timer? _extraction1pxTimeoutTimer;
+  int _extraction1pxClickCount = 0;
+  ExtractedVideasyStream? _extractedStream;
+
+  /// Start the extraction by enabling the 1px WebView in the widget tree.
+  /// The WebView loads player.videasy.net with hooks injected at DOCUMENT_START.
+  /// An auto-clicker triggers playback. JSON.parse hook captures the m3u8.
+  void _tryDirectExtraction() {
     final s = _currentSeason ?? widget.season ?? 1;
     final e = _currentEpisode ?? widget.episode ?? 1;
 
-    // Try to get imdbId and year from cached detail provider
-    String? imdbId;
-    int? year;
-    try {
-      final detailAsync = ref.read(
-        detailProvider(DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType)),
-      );
-      final detail = detailAsync.valueOrNull;
-      if (detail != null) {
-        imdbId = detail.imdbId;
-        year = detail.releaseYear;
-      }
-    } catch (_) {}
+    final videasyUrl = VideasyExtractorService.buildPlayerUrl(
+      tmdbId: widget.tmdbId,
+      mediaType: widget.mediaType,
+      season: s,
+      episode: e,
+    );
 
-    debugPrint('[Engine] Starting Fade Hindi API extraction');
-    debugPrint('[Engine]   tmdbId=${widget.tmdbId}, title=${widget.title}');
-    debugPrint('[Engine]   imdbId=$imdbId, year=$year, S${s}E$e');
+    debugPrint('[Engine] Starting 1px WebView extraction');
+    debugPrint('[Engine]   URL: $videasyUrl');
 
-    // Build fallback URL for WebView
-    String videasyUrl;
-    if (widget.mediaType == 'movie') {
-      videasyUrl = 'https://player.videasy.net/movie/${widget.tmdbId}';
-    } else {
-      videasyUrl = 'https://player.videasy.net/tv/${widget.tmdbId}/$s/$e';
-    }
+    setState(() {
+      _extraction1pxActive = true;
+      _extraction1pxUrl = videasyUrl;
+      _extraction1pxKey = ValueKey('extraction_1px_wv_${DateTime.now().millisecondsSinceEpoch}');
+      _extraction1pxClickCount = 0;
+    });
 
-    try {
-      final streams = await VideasyExtractorService().extractFadeHindi(
-        tmdbId: widget.tmdbId,
-        title: widget.title,
-        mediaType: widget.mediaType,
-        imdbId: imdbId,
-        year: year,
-        season: s,
-        episode: e,
-      );
+    // Absolute timeout: 15 seconds
+    _extraction1pxTimeoutTimer?.cancel();
+    _extraction1pxTimeoutTimer = Timer(const Duration(seconds: 15), () {
+      debugPrint('[Engine] ⚠️ Extraction timeout (15s)');
+      _onExtractionFailed();
+    });
+  }
 
-      if (!mounted) return;
+  /// Called when the extraction 1px WebView is created
+  void _onExtraction1pxCreated(InAppWebViewController controller) {
+    if (_isClosing) return;
+    _extraction1pxController = controller;
 
-      if (streams != null && streams.isNotEmpty) {
-        // Pick Fade Hindi server, or first available
-        String? bestServer;
-        for (final key in streams.keys) {
-          if (key.toLowerCase().contains('fade') || key.toLowerCase().contains('hindi')) {
-            bestServer = key;
-            break;
-          }
+    // Register stream capture handler
+    controller.addJavaScriptHandler(
+      handlerName: 'StreamIntercepted',
+      callback: (args) {
+        if (_isClosing) return;
+        try {
+          final payload = jsonDecode(args[0] as String);
+          final server = payload['server'] as String? ?? 'Fade Hindi';
+          final url = payload['url'] as String;
+          final sources = payload['sources'] as List<dynamic>? ?? [];
+          final tracks = payload['tracks'] as List<dynamic>? ?? [];
+
+          debugPrint('[Engine] ✅ Stream captured: $url');
+
+          // Wait 200ms for settle (in case more data comes)
+          _extraction1pxSettleTimer?.cancel();
+          _extraction1pxSettleTimer = Timer(const Duration(milliseconds: 200), () {
+            _onExtractionSuccess(ExtractedVideasyStream(
+              server: server,
+              url: url,
+              sources: sources,
+              tracks: tracks,
+            ));
+          });
+        } catch (err) {
+          debugPrint('[Engine] Error parsing stream payload: $err');
         }
-        bestServer ??= streams.keys.first;
+      },
+    );
+  }
 
-        final stream = streams[bestServer]!;
-        debugPrint('[Engine] ✅ Extracted Fade Hindi: ${stream.url}');
-        debugPrint('[Engine]    Server: $bestServer, Sources: ${stream.sources.length}, Tracks: ${stream.tracks.length}');
+  /// Called when the extraction 1px WebView finishes loading
+  void _onExtraction1pxLoadStop(InAppWebViewController controller, WebUri? url) async {
+    debugPrint('[Engine] 1px WebView loaded: $url');
 
-        setState(() {
-          _selectedServer = bestServer;
-          _isExtracting = false;
-          _discoveryComplete = true;
-        });
-
-        // Play in custom WebView player (player.html with hls.js)
-        // This gives the user the custom glassmorphism controls
-        debugPrint('[Engine] 🎬 Playing extracted m3u8 in custom WebView player');
-        setState(() {
-          _extractedLink = stream.url;
-          _useWebViewEngine = true;
-          _isLoading = false;
-          _isInitialized = true;
-        });
-      } else {
-        // Extraction failed — fall back to WebView player
-        debugPrint('[Engine] ⚠️ Extraction failed, falling back to WebView player');
-        setState(() {
-          _extractedLink = videasyUrl;
-          _isExtracting = false;
-          _discoveryComplete = true;
-          _useWebViewEngine = true;
-          _isLoading = false;
-          _isInitialized = true;
-        });
-      }
-    } catch (err) {
-      debugPrint('[Engine] ❌ Extraction error: $err — falling back to WebView');
-      if (mounted) {
-        setState(() {
-          _extractedLink = videasyUrl;
-          _isExtracting = false;
-          _discoveryComplete = true;
-          _useWebViewEngine = true;
-          _isLoading = false;
-          _isInitialized = true;
-        });
+    // Check for pending stream (captured before handler was ready)
+    final pending = await controller.evaluateJavascript(
+      source: VideasyExtractorService.pendingStreamScript,
+    );
+    if (pending != null && pending != 'null' && pending is String) {
+      try {
+        final payload = jsonDecode(pending);
+        if (payload != null && payload['url'] != null) {
+          debugPrint('[Engine] ✅ Recovered pending stream: ${payload['url']}');
+          _onExtractionSuccess(ExtractedVideasyStream(
+            server: payload['server'] ?? 'Fade Hindi',
+            url: payload['url'],
+            sources: (payload['sources'] as List<dynamic>?) ?? [],
+            tracks: (payload['tracks'] as List<dynamic>?) ?? [],
+          ));
+          return;
+        }
+      } catch (e) {
+        debugPrint('[Engine] Error recovering pending: $e');
       }
     }
+
+    // Start auto-clicker: click every 800ms for up to 8 attempts
+    _extraction1pxAutoClickTimer?.cancel();
+    _extraction1pxAutoClickTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+      _extraction1pxClickCount++;
+      if (_extraction1pxClickCount > 8 || !_extraction1pxActive) {
+        timer.cancel();
+        return;
+      }
+      debugPrint('[Engine] Auto-click attempt #$_extraction1pxClickCount');
+      _extraction1pxController?.evaluateJavascript(
+        source: VideasyExtractorService.autoClickScript,
+      );
+    });
+  }
+
+  /// Stream extracted successfully — switch to custom player
+  void _onExtractionSuccess(ExtractedVideasyStream stream) {
+    if (!mounted || _isClosing) return;
+
+    // Cancel timers
+    _extraction1pxAutoClickTimer?.cancel();
+    _extraction1pxSettleTimer?.cancel();
+    _extraction1pxTimeoutTimer?.cancel();
+
+    debugPrint('[Engine] 🎬 Playing in custom glassmorphism player: ${stream.url}');
+
+    setState(() {
+      _extractedStream = stream;
+      _extractedLink = stream.url;
+      _extraction1pxActive = false; // Remove 1px WebView
+      _isExtracting = false;
+      _discoveryComplete = true;
+      _useWebViewEngine = true;
+      _isLoading = false;
+      _isInitialized = true;
+      _selectedServer = stream.server;
+    });
+  }
+
+  /// Extraction failed — show error with retry
+  void _onExtractionFailed() {
+    if (!mounted || _isClosing) return;
+
+    // Cancel timers
+    _extraction1pxAutoClickTimer?.cancel();
+    _extraction1pxSettleTimer?.cancel();
+    _extraction1pxTimeoutTimer?.cancel();
+
+    debugPrint('[Engine] ❌ Extraction failed');
+
+    // Fall back to loading videasy player page directly in the WebView
+    final s = _currentSeason ?? widget.season ?? 1;
+    final e = _currentEpisode ?? widget.episode ?? 1;
+    final videasyUrl = VideasyExtractorService.buildPlayerUrl(
+      tmdbId: widget.tmdbId,
+      mediaType: widget.mediaType,
+      season: s,
+      episode: e,
+    );
+
+    setState(() {
+      _extractedLink = videasyUrl;
+      _extraction1pxActive = false;
+      _isExtracting = false;
+      _discoveryComplete = true;
+      _useWebViewEngine = true;
+      _isLoading = false;
+      _isInitialized = true;
+    });
   }
 
   void _startPlayback(String link, {bool isOffline = false, ExtractedVideasyStream? extractedStream}) {
@@ -857,6 +930,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _bgAutoClickTimer?.cancel();
     _bgTimeoutTimer?.cancel();
     _bgMasterWaitTimer?.cancel();
+    _extraction1pxAutoClickTimer?.cancel();
+    _extraction1pxSettleTimer?.cancel();
+    _extraction1pxTimeoutTimer?.cancel();
 
     // 1b. Restore system brightness
     try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
@@ -983,17 +1059,27 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildWebPlayer({Key? key}) {
+    // Check if we have an extracted m3u8 URL (from our 1px extraction)
+    final bool isExtractedM3u8 = _extractedLink != null &&
+        (_extractedLink!.contains('.m3u8') || _extractedLink!.contains('.mp4'));
+
     // Unique key based on extracted link ensures WebView reloads for new episodes
     final webKey = _extractedLink != null
         ? ValueKey('web_player_${_extractedLink!.hashCode}')
         : const ValueKey('web_player_default');
+
+    // For extracted m3u8 URLs, load our custom player.html from assets
+    // For fallback (videasy page URLs), load them directly
+    final initialUrl = isExtractedM3u8
+        ? 'file:///android_asset/flutter_assets/assets/html/player.html'
+        : (_extractedLink ?? 'about:blank');
 
     return Container(
       key: key,
       child: InAppWebView(
         key: webKey,
         initialUrlRequest: URLRequest(
-          url: WebUri(_extractedLink ?? 'about:blank'),
+          url: WebUri(initialUrl),
           headers: {
             'Referer': 'https://player.videasy.net/',
             'Origin': 'https://player.videasy.net',
@@ -1012,9 +1098,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           disableLongPressContextMenuOnLinks: true,
           supportMultipleWindows: true,
           javaScriptCanOpenWindowsAutomatically: false,
+          allowFileAccessFromFileURLs: true,
+          allowUniversalAccessFromFileURLs: true,
         ),
         onWebViewCreated: (controller) {
-          if (_isClosing) return; // Don't set up handlers if already closing
+          if (_isClosing) return;
           _webViewController = controller;
           controller.addJavaScriptHandler(
             handlerName: 'goBack',
@@ -1111,7 +1199,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           );
         },
         onLoadStart: (controller, url) async {
-          // Prevent removeChild errors early
           await controller.evaluateJavascript(source: """
             (function() {
               if (window.__safeRemoveChildInjected) return;
@@ -1132,111 +1219,128 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         },
         shouldOverrideUrlLoading: (controller, navigationAction) async {
           final url = navigationAction.request.url.toString();
-          if (navigationAction.isForMainFrame && !url.contains('videasy.net')) {
+          // Allow file:// URLs (our player.html) and videasy.net
+          if (url.startsWith('file://') || url.contains('videasy.net')) {
+            return NavigationActionPolicy.ALLOW;
+          }
+          if (navigationAction.isForMainFrame) {
             return NavigationActionPolicy.CANCEL;
           }
           return NavigationActionPolicy.ALLOW;
         },
         onLoadStop: (controller, url) async {
           debugPrint('[Engine] Web Player Loaded: $url');
-          
-          await controller.evaluateJavascript(
-            source: """
-            (function() {
-              // Re-inject safe removeChild just in case
-              if (!window.__safeRemoveChildInjected) {
-                window.__safeRemoveChildInjected = true;
-                var originalRemoveChild = Node.prototype.removeChild;
-                Node.prototype.removeChild = function(child) {
-                  if (child && child.parentNode === this) {
-                    try { return originalRemoveChild.call(this, child); } catch (e) {}
-                  }
-                  return child;
-                };
-              }
 
-              // Hide annoying UI if any
-              var style = document.createElement('style');
-              style.innerHTML = `
-                .header, .footer, .ad-banner { display: none !important; }
-              `;
-              document.head.appendChild(style);
+          // If we loaded player.html, inject the m3u8 URL and start playback
+          if (isExtractedM3u8 && url.toString().contains('player.html')) {
+            final m3u8Url = _extractedLink!;
+            final escapedUrl = m3u8Url.replaceAll("'", "\\'")
+                .replaceAll('"', '\\"');
+            final titleEscaped = widget.title.replaceAll("'", "\\'")
+                .replaceAll('"', '\\"');
 
-              // Click interception for debugging
-              document.addEventListener('click', function(e) {
+            // Set title and media type
+            final s = _currentSeason ?? widget.season;
+            final e = _currentEpisode ?? widget.episode;
+            String episodeLabel = '';
+            if (widget.mediaType != 'movie' && s != null && e != null) {
+              episodeLabel = 'S$s E$e';
+            }
+
+            // Build subtitle tracks JS array if available
+            String tracksJs = '[]';
+            if (_extractedStream != null && _extractedStream!.tracks.isNotEmpty) {
+              final tracksList = _extractedStream!.tracks
+                  .where((t) => t['kind'] == 'captions' || t['kind'] == 'subtitles')
+                  .map((t) {
+                final file = (t['file'] ?? '').toString().replaceAll("'", "\\'")
+                    .replaceAll('"', '\\"');
+                final label = (t['label'] ?? 'Subtitle').toString().replaceAll("'", "\\'")
+                    .replaceAll('"', '\\"');
+                return '{file:"$file",label:"$label",kind:"captions"}';
+              }).toList();
+              tracksJs = '[${tracksList.join(',')}]';
+            }
+
+            await controller.evaluateJavascript(source: """
+              (function() {
+                // Set title
+                window.videoTitle('$titleEscaped', '$episodeLabel');
+
+                // Set media type (show/hide episodes button)
+                window.setMediaType('${widget.mediaType}');
+
+                // Play video with headers
+                window.playVideo('$escapedUrl', {
+                  Referer: 'https://player.videasy.net/',
+                  Origin: 'https://player.videasy.net'
+                });
+
+                // Add subtitle tracks if available
+                var tracks = $tracksJs;
+                if (tracks.length > 0 && typeof hls !== 'undefined') {
+                  tracks.forEach(function(t) {
+                    try {
+                      var track = document.createElement('track');
+                      track.kind = 'captions';
+                      track.label = t.label;
+                      track.src = t.file;
+                      document.querySelector('video').appendChild(track);
+                    } catch(e) {}
+                  });
+                }
+
+                // Seek to saved position for Continue Watching
+                if (${widget.startPosition ?? 0} > 1) {
+                  window.seekToPosition(${widget.startPosition ?? 0});
+                }
+
+                // Init system volume
                 try {
-                  var el = e.target;
-                  var path = [];
-                  var curr = el;
-                  while (curr && curr.nodeType === Node.ELEMENT_NODE) {
-                    var selector = curr.nodeName.toLowerCase();
-                    if (curr.id) {
-                      selector += '#' + curr.id;
-                    } else if (curr.className && typeof curr.className === 'string') {
-                      selector += '.' + curr.className.trim().replace(/\s+/g, '.');
+                  window.flutter_inappwebview.callHandler('getSystemVolume').then(function(vol) {
+                    if (vol !== undefined && vol !== null) window.initSystemVolume(vol);
+                  });
+                } catch(e) {}
+              })();
+            """);
+          } else {
+            // Fallback: loaded the Videasy player page directly
+            await controller.evaluateJavascript(
+              source: """
+              (function() {
+                if (!window.__safeRemoveChildInjected) {
+                  window.__safeRemoveChildInjected = true;
+                  var originalRemoveChild = Node.prototype.removeChild;
+                  Node.prototype.removeChild = function(child) {
+                    if (child && child.parentNode === this) {
+                      try { return originalRemoveChild.call(this, child); } catch (e) {}
                     }
-                    path.unshift(selector);
-                    curr = curr.parentNode;
-                  }
-                  
-                  window.flutter_inappwebview.callHandler('logClick', {
-                    tagName: el.tagName,
-                    className: el.className,
-                    id: el.id,
-                    text: el.textContent ? el.textContent.trim().substring(0, 100) : '',
-                    src: el.src || '',
-                    path: path.join(' > ')
-                  });
-                } catch(err) {}
-              }, true);
-
-              // Fetch interception for debugging
-              const originalFetch = window.fetch;
-              window.fetch = async function(...args) {
-                try {
-                  window.flutter_inappwebview.callHandler('logNetwork', {
-                    type: 'fetch',
-                    url: args[0]
-                  });
-                } catch(err) {}
-                return await originalFetch.apply(this, args);
-              };
-
-              // XHR interception for debugging
-              const originalXHR = window.XMLHttpRequest.prototype.open;
-              window.XMLHttpRequest.prototype.open = function(method, url) {
-                try {
-                  window.flutter_inappwebview.callHandler('logNetwork', {
-                    type: 'xhr',
-                    method: method,
-                    url: url
-                  });
-                } catch(err) {}
-                return originalXHR.apply(this, arguments);
-              };
-              
-              // No auto-clicker for now to let user interact and we observe
-
-              // Seek to saved position for Continue Watching resume using a robust watcher
-              if (${widget.startPosition ?? 0} > 1) {
-                var seekHandler = function() {
-                  var v = document.querySelector('video');
-                  if (v && v.currentTime >= 0.5) {
-                    v.currentTime = ${widget.startPosition ?? 0};
-                    v.removeEventListener('timeupdate', seekHandler);
-                  }
-                };
-                setInterval(function() {
-                   var v = document.querySelector('video');
-                   if (v && !v.__seekListenerAdded) {
-                      v.__seekListenerAdded = true;
-                      v.addEventListener('timeupdate', seekHandler);
-                   }
-                }, 1000);
-              }
-            })();
-            """,
-          );
+                    return child;
+                  };
+                }
+                var style = document.createElement('style');
+                style.innerHTML = '.header, .footer, .ad-banner { display: none !important; }';
+                document.head.appendChild(style);
+                if (${widget.startPosition ?? 0} > 1) {
+                  var seekHandler = function() {
+                    var v = document.querySelector('video');
+                    if (v && v.currentTime >= 0.5) {
+                      v.currentTime = ${widget.startPosition ?? 0};
+                      v.removeEventListener('timeupdate', seekHandler);
+                    }
+                  };
+                  setInterval(function() {
+                     var v = document.querySelector('video');
+                     if (v && !v.__seekListenerAdded) {
+                        v.__seekListenerAdded = true;
+                        v.addEventListener('timeupdate', seekHandler);
+                     }
+                  }, 1000);
+                }
+              })();
+              """,
+            );
+          }
         },
       ),
     );
@@ -1734,9 +1838,40 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         // 0. Base Layer
         const SizedBox.expand(child: ColoredBox(color: Colors.black)),
 
-        // 1. Discovery handled by headless service
+        // 1. Silent 1px Extraction WebView (invisible to user)
+        if (_extraction1pxActive && _extraction1pxUrl != null)
+          Offstage(
+            child: SizedBox(
+              width: 1,
+              height: 1,
+              child: InAppWebView(
+                key: _extraction1pxKey,
+                initialUrlRequest: URLRequest(
+                  url: WebUri(_extraction1pxUrl!),
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                  },
+                ),
+                initialSettings: VideasyExtractorService.extractionSettings,
+                initialUserScripts: VideasyExtractorService.initialUserScripts,
+                onWebViewCreated: _onExtraction1pxCreated,
+                onLoadStop: _onExtraction1pxLoadStop,
+                shouldOverrideUrlLoading: (controller, navigationAction) async {
+                  final url = navigationAction.request.url.toString();
+                  if (navigationAction.isForMainFrame && !url.contains('videasy.net')) {
+                    return NavigationActionPolicy.CANCEL;
+                  }
+                  return NavigationActionPolicy.ALLOW;
+                },
+                onCreateWindow: (controller, createWindowAction) async => false,
+                onConsoleMessage: (controller, consoleMessage) {
+                  debugPrint('[1px WV] ${consoleMessage.message}');
+                },
+              ),
+            ),
+          ),
 
-        // 2. Background Extraction for switching
+        // 2. Background Extraction for episode switching
         if (_isBgExtracting && _bgExtractionUrl != null)
           Offstage(
             child: SizedBox(

@@ -1969,7 +1969,7 @@
 
             try {
                 if (Hls.isSupported()) {
-                    previewHls = new Hls({
+                    var previewConfig = {
                         enableWorker: false,
                         lowLatencyMode: false,
                         maxBufferLength: 6,
@@ -1977,7 +1977,15 @@
                         startLevel: 0,
                         capLevelToPlayerSize: true,
                         backBufferLength: 60,
-                    });
+                    };
+                    // Inject same headers as main player
+                    if (globalHeaders && (globalHeaders.Referer || globalHeaders.Origin)) {
+                        previewConfig.xhrSetup = function(xhr, xhrUrl) {
+                            if (globalHeaders.Referer) xhr.setRequestHeader('Referer', globalHeaders.Referer);
+                            if (globalHeaders.Origin) xhr.setRequestHeader('Origin', globalHeaders.Origin);
+                        };
+                    }
+                    previewHls = new Hls(previewConfig);
                     previewHls.loadSource(url);
                     previewHls.attachMedia(previewVideo);
                     previewHls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -2688,8 +2696,12 @@
         }
 
         // ===== HLS LOADING =====
-        function loadVideo(url) {
+        // Store headers globally for preview video too
+        var globalHeaders = {};
+
+        function loadVideo(url, headers) {
             currentVideoUrl = url;
+            if (headers) globalHeaders = headers;
             nextEpTriggered = false;
             if (nextEpisodeTimer) { clearInterval(nextEpisodeTimer); nextEpisodeTimer = null; }
             document.getElementById('nextEpisodeOverlay').classList.remove('visible');
@@ -2697,7 +2709,15 @@
             if (hls) hls.destroy();
 
             if (Hls.isSupported()) {
-                hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+                var hlsConfig = { enableWorker: true, lowLatencyMode: true };
+                // Inject Referer/Origin headers into every HLS segment request
+                if (headers && (headers.Referer || headers.Origin)) {
+                    hlsConfig.xhrSetup = function(xhr, xhrUrl) {
+                        if (headers.Referer) xhr.setRequestHeader('Referer', headers.Referer);
+                        if (headers.Origin) xhr.setRequestHeader('Origin', headers.Origin);
+                    };
+                }
+                hls = new Hls(hlsConfig);
                 hls.loadSource(url);
                 hls.attachMedia(video);
 
@@ -3433,7 +3453,7 @@
         }
 
         // ===== PUBLIC API =====
-        window.playVideo = function (url) { loadVideo(url); };
+        window.playVideo = function (url, headers) { loadVideo(url, headers); };
         window.seekToPosition = function (seconds) {
             if (!seconds || seconds < 5) return;
             // If video is already ready, seek immediately

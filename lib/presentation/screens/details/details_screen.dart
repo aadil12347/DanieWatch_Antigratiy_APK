@@ -33,7 +33,6 @@ import '../../widgets/pressable_scale.dart';
 import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
-import '../video_player/videasy_extractor_screen.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -1439,16 +1438,21 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
 
-    // Navigate to our new VideasyExtractorScreen
+    // Navigate directly to VideoPlayerScreen — extraction happens silently
+    // inside it via a 1px invisible WebView
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => VideasyExtractorScreen(
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => VideoPlayerScreen(
+          url: '',
+          title: content?.title ?? '',
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
+          seasons: content?.seasonNumbers,
           season: season,
           episode: episode,
-          title: content?.title ?? '',
-          seasons: content?.seasonNumbers,
+          posterUrl: content?.posterUrl,
         ),
       ),
     );
