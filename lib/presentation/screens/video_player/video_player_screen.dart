@@ -232,23 +232,49 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
-  /// Extract the Fade Hindi stream from Videasy using headless WebView,
-  /// then play natively in BetterPlayer. Falls back to WebView player
-  /// if extraction fails or times out.
+  /// Extract the Fade Hindi stream from Videasy by intercepting the page's
+  /// fetch() call and redirecting `mb-flix` → `hdmovie`.
+  /// Then play natively in BetterPlayer. Falls back to WebView on failure.
   Future<void> _tryDirectExtraction() async {
+    final s = _currentSeason ?? widget.season ?? 1;
+    final e = _currentEpisode ?? widget.episode ?? 1;
+
+    // Try to get imdbId and year from cached detail provider
+    String? imdbId;
+    int? year;
+    try {
+      final detailAsync = ref.read(
+        detailProvider(DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType)),
+      );
+      final detail = detailAsync.valueOrNull;
+      if (detail != null) {
+        imdbId = detail.imdbId;
+        year = detail.releaseYear;
+      }
+    } catch (_) {}
+
+    debugPrint('[Engine] Starting Fade Hindi API extraction');
+    debugPrint('[Engine]   tmdbId=${widget.tmdbId}, title=${widget.title}');
+    debugPrint('[Engine]   imdbId=$imdbId, year=$year, S${s}E$e');
+
+    // Build fallback URL for WebView
     String videasyUrl;
     if (widget.mediaType == 'movie') {
       videasyUrl = 'https://player.videasy.net/movie/${widget.tmdbId}';
     } else {
-      final s = _currentSeason ?? widget.season ?? 1;
-      final e = _currentEpisode ?? widget.episode ?? 1;
       videasyUrl = 'https://player.videasy.net/tv/${widget.tmdbId}/$s/$e';
     }
 
-    debugPrint('[Engine] Starting Fade Hindi extraction from: $videasyUrl');
-
     try {
-      final streams = await VideasyExtractorService().extractAllStreams(videasyUrl);
+      final streams = await VideasyExtractorService().extractFadeHindi(
+        tmdbId: widget.tmdbId,
+        title: widget.title,
+        mediaType: widget.mediaType,
+        imdbId: imdbId,
+        year: year,
+        season: s,
+        episode: e,
+      );
 
       if (!mounted) return;
 
@@ -273,8 +299,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _discoveryComplete = true;
         });
 
-        // Play in BetterPlayer (native)
-        _startPlayback(stream.url, extractedStream: stream);
+        // Play in custom WebView player (player.html with hls.js)
+        // This gives the user the custom glassmorphism controls
+        debugPrint('[Engine] 🎬 Playing extracted m3u8 in custom WebView player');
+        setState(() {
+          _extractedLink = stream.url;
+          _useWebViewEngine = true;
+          _isLoading = false;
+          _isInitialized = true;
+        });
       } else {
         // Extraction failed — fall back to WebView player
         debugPrint('[Engine] ⚠️ Extraction failed, falling back to WebView player');
@@ -287,8 +320,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _isInitialized = true;
         });
       }
-    } catch (e) {
-      debugPrint('[Engine] ❌ Extraction error: $e — falling back to WebView');
+    } catch (err) {
+      debugPrint('[Engine] ❌ Extraction error: $err — falling back to WebView');
       if (mounted) {
         setState(() {
           _extractedLink = videasyUrl;

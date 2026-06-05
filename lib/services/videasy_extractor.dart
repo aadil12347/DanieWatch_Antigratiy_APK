@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
@@ -26,12 +27,102 @@ class VideasyExtractorService {
   factory VideasyExtractorService() => _instance;
   VideasyExtractorService._internal();
 
-  /// Extracts the Fade Hindi stream from Videasy player.
-  /// Returns a map with a single entry: { "Fade Hindi": ExtractedVideasyStream }
-  /// or the first available server if Fade Hindi is not found.
-  Future<Map<String, ExtractedVideasyStream>?> extractAllStreams(String embedUrl) async {
-    developer.log('[VideasyExtractor] Starting Fade Hindi extraction for: $embedUrl', name: 'Videasy');
-    
+  /// The hook script that:
+  /// 1. Intercepts JSON.parse to capture decrypted stream payloads
+  /// 2. Redirects fetch() from mb-flix → hdmovie for Hindi/Fade server
+  /// 3. Redirects XMLHttpRequest from mb-flix → hdmovie
+  ///
+  /// MUST be injected at DOCUMENT_START (before any page JS runs)
+  static const String _hookScript = """
+    (function() {
+      if (window.__videasyHookInjected) return;
+      window.__videasyHookInjected = true;
+      
+      // 1. Hook JSON.parse to capture decrypted stream payloads
+      var originalParse = JSON.parse;
+      JSON.parse = function(text, reviver) {
+        var result = originalParse(text, reviver);
+        try {
+          if (result && result.sources && Array.isArray(result.sources) && result.sources.length > 0) {
+            var source = result.sources[0];
+            var streamUrl = source.url || source.file;
+            
+            if (streamUrl && (streamUrl.includes('.m3u8') || streamUrl.includes('.mp4'))) {
+              console.log('[VideasyHook] CAPTURED stream: ' + streamUrl);
+              
+              try {
+                window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
+                  server: 'Fade Hindi',
+                  url: streamUrl,
+                  sources: result.sources,
+                  tracks: result.tracks || []
+                }));
+              } catch(e) {
+                // Handler may not be ready yet, store for later
+                window.__pendingStream = {
+                  server: 'Fade Hindi',
+                  url: streamUrl,
+                  sources: result.sources,
+                  tracks: result.tracks || []
+                };
+              }
+            }
+          }
+        } catch(e) {}
+        return result;
+      };
+      
+      // 2. Intercept fetch() to redirect mb-flix -> hdmovie
+      var originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+        
+        if (url.includes('api.videasy.net') && url.includes('/mb-flix/')) {
+          var newUrl = url.replace('/mb-flix/', '/hdmovie/');
+          console.log('[VideasyHook] REDIRECT fetch: mb-flix -> hdmovie');
+          console.log('[VideasyHook]   TO: ' + newUrl);
+          
+          if (typeof input === 'string') {
+            return originalFetch.call(this, newUrl, init);
+          } else {
+            return originalFetch.call(this, new Request(newUrl, input), init);
+          }
+        }
+        
+        return originalFetch.apply(this, arguments);
+      };
+      
+      // 3. Intercept XMLHttpRequest for safety
+      var origOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url) {
+        if (typeof url === 'string' && url.includes('api.videasy.net') && url.includes('/mb-flix/')) {
+          var newUrl = url.replace('/mb-flix/', '/hdmovie/');
+          console.log('[VideasyHook] REDIRECT XHR: mb-flix -> hdmovie');
+          arguments[1] = newUrl;
+        }
+        return origOpen.apply(this, arguments);
+      };
+      
+      console.log('[VideasyHook] All hooks installed at DOCUMENT_START');
+    })();
+  """;
+
+  /// Extracts the Fade Hindi stream from Videasy by:
+  /// 1. Loading the Videasy player page in a headless WebView
+  /// 2. Intercepting fetch/XHR at DOCUMENT_START to redirect mb-flix → hdmovie
+  /// 3. Capturing the decrypted m3u8 URL via a JSON.parse hook
+  Future<Map<String, ExtractedVideasyStream>?> extractFadeHindi({
+    required int tmdbId,
+    required String title,
+    required String mediaType,
+    String? imdbId,
+    int? year,
+    int season = 1,
+    int episode = 1,
+  }) async {
+    developer.log('[VideasyExtractor] Starting Fade Hindi extraction', name: 'Videasy');
+    developer.log('[VideasyExtractor]   tmdbId=$tmdbId, title=$title, type=$mediaType', name: 'Videasy');
+
     final completer = Completer<Map<String, ExtractedVideasyStream>?>();
     HeadlessInAppWebView? headlessWebView;
     Timer? absoluteTimer;
@@ -40,169 +131,28 @@ class VideasyExtractorService {
 
     final Map<String, ExtractedVideasyStream> finalStreams = {};
 
-    // ── JavaScript: Hook JSON.parse to intercept decrypted stream payloads ──
-    // The Videasy player decrypts an encrypted blob into a JSON object containing
-    // { sources: [{url: "https://...master.m3u8", type: "hls"}], tracks: [...] }
-    // We intercept this at the JSON.parse level to capture it instantly.
-    final String hookJS = """
-      (function() {
-        if (window.__videasyHookInjected) return;
-        window.__videasyHookInjected = true;
-        
-        console.log('[VideasyHook] Injecting JSON.parse interceptor for Fade Hindi');
-        
-        var originalParse = JSON.parse;
-        window.__capturedStreams = [];
-        window.__currentServerName = 'Default';
-        
-        JSON.parse = function(text, reviver) {
-          var result = originalParse(text, reviver);
-          try {
-            // The decrypted payload has a 'sources' array with m3u8/mp4 URLs
-            if (result && result.sources && Array.isArray(result.sources) && result.sources.length > 0) {
-              var source = result.sources[0];
-              var streamUrl = source.url || source.file;
-              
-              if (streamUrl && (streamUrl.includes('.m3u8') || streamUrl.includes('.mp4'))) {
-                console.log('[VideasyHook] ✅ Intercepted stream: ' + streamUrl);
-                console.log('[VideasyHook] Server context: ' + window.__currentServerName);
-                
-                window.__capturedStreams.push({
-                  server: window.__currentServerName,
-                  url: streamUrl,
-                  sources: result.sources,
-                  tracks: result.tracks || []
-                });
-                
-                window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
-                  server: window.__currentServerName,
-                  url: streamUrl,
-                  sources: result.sources,
-                  tracks: result.tracks || []
-                }));
-              }
-            }
-          } catch(e) {
-            console.error('[VideasyHook] Parse hook error:', e);
-          }
-          return result;
-        };
-        
-        // Backup: Intercept fetch calls to .m3u8 URLs
-        var originalFetch = window.fetch;
-        window.fetch = async function() {
-          var url = arguments[0];
-          if (typeof url === 'string' && url.includes('.m3u8')) {
-            console.log('[VideasyHook] 🔗 Fetch intercepted m3u8: ' + url);
-            window.flutter_inappwebview.callHandler('StreamIntercepted', JSON.stringify({
-              server: window.__currentServerName || 'Direct',
-              url: url,
-              sources: [{url: url, type: 'hls'}],
-              tracks: []
-            }));
-          }
-          return originalFetch.apply(this, arguments);
-        };
-      })();
-    """;
+    // Build the videasy player URL
+    String videasyUrl;
+    if (mediaType == 'movie') {
+      videasyUrl = 'https://player.videasy.net/movie/$tmdbId';
+    } else {
+      videasyUrl = 'https://player.videasy.net/tv/$tmdbId/$season/$episode';
+    }
 
-    // ── JavaScript: Auto-click sequence to navigate to Fade Hindi server ──
-    // The Videasy player UI structure (from HAR/click analysis):
-    //   1. Settings gear button: button.tabbable.p-2.rounded-full
-    //   2. Server list items: span.font-medium.truncate (contains server name text)
-    //   3. Resolution buttons: button.w-full.flex.items-center.justify-between.p-3
-    final String fadeClickerJS = """
-      (function() {
-        if (window.__fadeClickerStarted) return;
-        window.__fadeClickerStarted = true;
-        
-        console.log('[FadeClicker] Starting Fade Hindi auto-click sequence...');
-        
-        var clickAttempt = 0;
-        var maxAttempts = 20;
-        var state = 0;
-        
-        var doClick = function() {
-          clickAttempt++;
-          if (clickAttempt > maxAttempts || state >= 4) return;
-          
-          try {
-            if (state === 0) {
-              // 1. Click the big initial play overlay button
-              var playOverlay = document.querySelector('button.w-10.h-10.sm\\\\:w-12, button.rounded-full.bg-white\\\\/95');
-              if (playOverlay) {
-                  playOverlay.click();
-                  console.log('[FadeClicker] Clicked Play Overlay');
-              }
-              // Move to settings step regardless (sometimes it auto-plays)
-              state = 1;
-            }
-            
-            if (state === 1) {
-              // 2. Click the settings gear icon (the one containing SVG paths)
-              var settingsBtn = document.querySelector('button.tabbable.p-2.rounded-full');
-              if (settingsBtn) {
-                  settingsBtn.click();
-                  console.log('[FadeClicker] Clicked Settings Gear');
-                  state = 2;
-              } else {
-                  // Fallback to clicking center if video hasn't appeared
-                  var v = document.querySelector('video');
-                  if (!v) {
-                      var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-                      if (el) el.click();
-                  }
-              }
-            } else if (state === 2) {
-              // 3. Click the Server/Language item
-              var serverItems = document.querySelectorAll('span.font-medium.truncate, p.text-xs.text-gray-500.truncate, li, [role="menuitem"], button.w-full');
-              
-              var foundFade = false;
-              for (var i = 0; i < serverItems.length; i++) {
-                var text = serverItems[i].innerText ? serverItems[i].innerText.toLowerCase().trim() : '';
-                
-                if (text.includes('fade') || text.includes('hindi') || text.includes('hdmovie')) {
-                  window.__currentServerName = serverItems[i].innerText.trim();
-                  
-                  try {
-                    serverItems[i].click();
-                    foundFade = true;
-                    state = 4; // We just need the server change, the fetch interceptor will catch the m3u8!
-                    console.log('[FadeClicker] ✅ Clicked Fade Hindi server: ' + text);
-                  } catch(e) {}
-                  break;
-                }
-              }
-              
-              if (!foundFade) {
-                // We might be in the main settings menu and need to click "Servers" to open the sub-menu
-                for (var i = 0; i < serverItems.length; i++) {
-                  var text = serverItems[i].innerText ? serverItems[i].innerText.toLowerCase().trim() : '';
-                  if (text === 'servers' || text === 'languages' || text === 'server') {
-                    try { serverItems[i].click(); } catch(e) {}
-                    console.log('[FadeClicker] Clicked "' + text + '" category');
-                    break; // Wait for next tick to click the actual server
-                  }
-                }
-              }
-            }
-          } catch(e) {
-            console.error('[FadeClicker] Error:', e);
-          }
-          
-          if (state < 4) {
-            setTimeout(doClick, 800);
-          }
-        };
-        
-        // Start after a short delay
-        setTimeout(doClick, 1000);
-      })();
-    """;
+    developer.log('[VideasyExtractor] Loading: $videasyUrl', name: 'Videasy');
+
+    void _completeWithStreams() {
+      if (!completed) {
+        completed = true;
+        if (!completer.isCompleted) {
+          completer.complete(finalStreams.isEmpty ? null : finalStreams);
+        }
+      }
+    }
 
     headlessWebView = HeadlessInAppWebView(
       initialUrlRequest: URLRequest(
-        url: WebUri(embedUrl),
+        url: WebUri(videasyUrl),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         },
@@ -213,8 +163,18 @@ class VideasyExtractorService {
         mediaPlaybackRequiresUserGesture: false,
         useShouldOverrideUrlLoading: true,
         domStorageEnabled: true,
+        allowContentAccess: true,
+        allowFileAccess: true,
       ),
+      // CRITICAL: Inject hooks at DOCUMENT_START so they run BEFORE the page's JS
+      initialUserScripts: UnmodifiableListView([
+        UserScript(
+          source: _hookScript,
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        ),
+      ]),
       onWebViewCreated: (controller) async {
+        // Register the stream capture handler
         controller.addJavaScriptHandler(
           handlerName: 'StreamIntercepted',
           callback: (args) {
@@ -225,26 +185,20 @@ class VideasyExtractorService {
               final url = payload['url'] as String;
               final sources = payload['sources'] as List<dynamic>? ?? [];
               final tracks = payload['tracks'] as List<dynamic>? ?? [];
-              
+
               finalStreams[server] = ExtractedVideasyStream(
                 server: server,
                 url: url,
                 sources: sources,
                 tracks: tracks,
               );
-              
+
               developer.log('[VideasyExtractor] ✅ Captured $server: $url', name: 'Videasy');
-              developer.log('[VideasyExtractor]    Sources: ${sources.length}, Tracks: ${tracks.length}', name: 'Videasy');
-              
-              // Wait 500ms for any additional data, then complete
+
+              // Wait 500ms for settle, then complete
               settleTimer?.cancel();
               settleTimer = Timer(const Duration(milliseconds: 500), () {
-                if (!completed) {
-                  completed = true;
-                  if (!completer.isCompleted) {
-                    completer.complete(finalStreams);
-                  }
-                }
+                _completeWithStreams();
               });
             } catch (e) {
               developer.log('[VideasyExtractor] Error parsing payload: $e', name: 'Videasy');
@@ -252,48 +206,61 @@ class VideasyExtractorService {
           },
         );
       },
-      onLoadStart: (controller, url) async {
-        // Inject hooks as early as possible
-        await controller.evaluateJavascript(source: hookJS);
-      },
       onLoadStop: (controller, url) async {
-        // Re-inject hooks and start the Fade Hindi auto-clicker
-        await controller.evaluateJavascript(source: hookJS);
-        await controller.evaluateJavascript(source: fadeClickerJS);
+        // Check if a stream was captured before the handler was ready
+        final pending = await controller.evaluateJavascript(source: """
+          (function() {
+            if (window.__pendingStream) {
+              var s = JSON.stringify(window.__pendingStream);
+              window.__pendingStream = null;
+              return s;
+            }
+            return null;
+          })();
+        """);
+
+        if (pending != null && pending != 'null' && pending is String) {
+          try {
+            final payload = jsonDecode(pending);
+            if (payload != null && payload['url'] != null) {
+              finalStreams[payload['server'] ?? 'Fade Hindi'] = ExtractedVideasyStream(
+                server: payload['server'] ?? 'Fade Hindi',
+                url: payload['url'],
+                sources: (payload['sources'] as List<dynamic>?) ?? [],
+                tracks: (payload['tracks'] as List<dynamic>?) ?? [],
+              );
+              developer.log('[VideasyExtractor] ✅ Recovered pending stream: ${payload['url']}', name: 'Videasy');
+              settleTimer?.cancel();
+              settleTimer = Timer(const Duration(milliseconds: 300), () {
+                _completeWithStreams();
+              });
+            }
+          } catch (e) {
+            developer.log('[VideasyExtractor] Error recovering pending: $e', name: 'Videasy');
+          }
+        }
       },
       shouldOverrideUrlLoading: (controller, navigationAction) async {
         final url = navigationAction.request.url.toString();
-        // Block navigation away from videasy
         if (navigationAction.isForMainFrame && !url.contains('videasy.net')) {
           return NavigationActionPolicy.CANCEL;
         }
         return NavigationActionPolicy.ALLOW;
       },
       onCreateWindow: (controller, createWindowAction) async {
-        // Block popups
         return false;
       },
       onConsoleMessage: (controller, consoleMessage) {
-        if (kDebugMode) {
-          developer.log('[VideasyExtractor] Console: ${consoleMessage.message}', name: 'Videasy');
-        }
+        developer.log('[VideasyWV] ${consoleMessage.message}', name: 'Videasy');
       },
     );
 
     await headlessWebView.run();
 
-    // Absolute timeout: 12 seconds
-    absoluteTimer = Timer(const Duration(seconds: 12), () {
-      if (!completed) {
-        completed = true;
-        developer.log(
-          '[VideasyExtractor] Timeout reached. Streams found: ${finalStreams.length}',
-          name: 'Videasy',
-        );
-        if (!completer.isCompleted) {
-          completer.complete(finalStreams.isEmpty ? null : finalStreams);
-        }
-      }
+    // Absolute timeout: 15 seconds
+    absoluteTimer = Timer(const Duration(seconds: 15), () {
+      developer.log('[VideasyExtractor] Timeout. Streams found: ${finalStreams.length}', name: 'Videasy');
+      _completeWithStreams();
     });
 
     try {
