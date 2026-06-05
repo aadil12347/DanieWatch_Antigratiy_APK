@@ -19,6 +19,7 @@ import '../../providers/watch_history_provider.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
 import '../../widgets/liquid_tap_effect.dart';
 import '../../../pip/pip_controller.dart';
+import '../../../services/videasy_extractor.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -205,7 +206,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _isLoading = false;
 
     // Try direct Bysebuho API extraction first (much faster ~1-2s)
-    _tryDirectExtraction(widget.url);
+    _tryDirectExtraction();
 
     // Start periodic progress save timer (every 15 seconds)
     _progressSaveTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -216,162 +217,42 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   /// Start extraction using WebView tapping approach.
   /// Goes directly to the in-widget WebView extraction that reliably
   /// discovers m3u8 links by rendering the embed page and auto-clicking.
-  Future<void> _tryDirectExtraction(String url) async {
-    debugPrint('[Extraction] Starting WebView tapping extraction for: $url');
-    _startExtractionProcess(timeout: const Duration(seconds: 20));
-  }
-
-  void _startExtractionProcess({required Duration timeout}) {
-    // Progressive timeout logic
-    _bgDiscoveryTimer?.cancel();
-    _bgDiscoveryTimer = Timer(timeout, () {
-      if (mounted && !_discoveryComplete) {
-        debugPrint(
-          '[Discovery] 30s absolute limit reached. Finalizing discovery.',
-        );
-        _completeDiscovery();
-      }
-    });
-
-    // Start background auto-clicker running every 1.5 seconds
-    _autoClickTimer = Timer.periodic(const Duration(milliseconds: 1000), (
-      timer,
-    ) {
-      if (_discoveryComplete) {
-        timer.cancel();
-        return;
-      }
-      debugPrint('[Extraction] Auto-clicking in background wrapper...');
-      final controller = _webViewController;
-      if (controller != null && mounted && !_discoveryComplete) {
-        try {
-          controller.evaluateJavascript(
-            source: """
-            (function() {
-              var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
-              for(var i=0; i<buttons.length; i++) {
-                buttons[i].click();
-              }
-              var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-              if (el) {
-                el.click();
-                console.log('Antigravity: Auto-clicked element at center.');
-              }
-              var v = document.querySelector('video');
-              if (v) { v.play().catch(function(e){}); }
-            })();
-          """,
-          ).catchError((e) {
-            if (!e.toString().contains('disposed')) {
-              debugPrint('[Extraction] Auto-click failed: $e');
-            }
-          });
-        } catch (e) {
-          if (!e.toString().contains('disposed')) {
-            debugPrint('[Extraction] Auto-click Error: $e');
-          }
-        }
-      }
-    });
-  }
-
-  void _handleExtractedLink(String link) {
-    if (_discoveryComplete) return;
-
-    final lowerLink = link.toLowerCase();
-
-    // Only process .m3u8 or video files
-    if (!lowerLink.contains('.m3u8') && !lowerLink.contains('.mp4')) return;
-    if (lowerLink.contains('ads')) return;
-
-    if (!_discoveredLinks.contains(link)) {
-      debugPrint('[Discovery] New link added to pool: $link');
-      _discoveredLinks.add(link);
+  Future<void> _tryDirectExtraction() async {
+    debugPrint('[Extraction] Starting Videasy extraction for TMDB ID: ${widget.tmdbId}');
+    String videasyUrl;
+    if (widget.mediaType == 'movie') {
+      videasyUrl = 'https://player.videasy.net/movie/${widget.tmdbId}';
+    } else {
+      final s = _currentSeason ?? widget.season ?? 1;
+      final e = _currentEpisode ?? widget.episode ?? 1;
+      videasyUrl = 'https://player.videasy.net/tv/${widget.tmdbId}/$s/$e';
     }
 
-    if (lowerLink.contains('master.m3u8') || lowerLink.contains('.urlset')) {
-      debugPrint(
-        '[Discovery] Master found via Auto-Extraction! Stopping early.',
-      );
-      _masterWaitTimer?.cancel();
-      // Add a tiny delay to grab any other nearby variants just in case
-      _masterWaitTimer = Timer(const Duration(milliseconds: 200), () {
-        _completeDiscovery();
-      });
-    } else if (_masterWaitTimer == null) {
-      // Found a fallback link. Wait 3 seconds to give master time to appear
-      debugPrint(
-        '[Discovery] Fallback found. Waiting to see if master appears...',
-      );
-      _masterWaitTimer = Timer(const Duration(milliseconds: 1500), () {
-        _completeDiscovery();
-      });
-    }
-  }
+    final extractor = VideasyExtractorService();
+    final streams = await extractor.extractAllStreams(videasyUrl);
 
-  void _completeDiscovery() {
-    if (_isInitialized || _discoveryComplete) return;
-
-    debugPrint('[Discovery] Analyzing ${_discoveredLinks.length} links...');
-
-    String? bestLink;
-
-    // 1. Search for Master Playlists (contains 'master.m3u8' or '.urlset')
-    final masterLinks = _discoveredLinks
-        .where((l) => l.contains('master.m3u8') || l.contains('.urlset'))
-        .toList();
-    if (masterLinks.isNotEmpty) {
-      // Prioritize master links with longest length or most query parameters (often more complete)
-      masterLinks.sort((a, b) => b.length.compareTo(a.length));
-      bestLink = masterLinks.first;
-      debugPrint('[Discovery] Selected BEST MASTER Link: $bestLink');
-    }
-    // 2. Fallback to high quality variant
-    else {
-      final highQuality = _discoveredLinks
-          .where(
-            (l) => l.contains('_h') || l.contains('1080') || l.contains('720'),
-          )
-          .toList();
-      if (highQuality.isNotEmpty) {
-        highQuality.sort((a, b) => b.length.compareTo(a.length));
-        bestLink = highQuality.first;
-        debugPrint('[Discovery] Selected HIGH QUALITY Link: $bestLink');
-      } else if (_discoveredLinks.isNotEmpty) {
-        bestLink = _discoveredLinks.first;
-        debugPrint('[Discovery] Selected FALLBACK Link: $bestLink');
-      }
-    }
-
-    if (mounted) {
-      if (bestLink != null) {
+    if (streams != null && streams.isNotEmpty) {
+      // For now, default to the first server's stream if "Default" is available, or anything else
+      final bestStream = streams.values.first;
+      if (mounted) {
         setState(() {
           _isExtracting = false;
           _discoveryComplete = true;
           _webViewController = null;
         });
-        _autoClickTimer?.cancel();
-        _bgDiscoveryTimer?.cancel();
-        _masterWaitTimer?.cancel();
-        _extractionTimer?.cancel();
+        _startPlayback(bestStream);
+      }
+    } else {
+      if (_retryCount == 0) {
+        _retry();
+        return;
+      }
 
-        _startPlayback(bestLink);
-      } else {
-        // Double-Pass Auto-Recovery: First failure is silent
-        if (_retryCount == 0) {
-          debugPrint(
-            '[Discovery] Initial failure (10s). Triggering SILENT Nuclear Reset...',
-          );
-          _retry();
-          return;
-        }
-
-        debugPrint('[Discovery] No valid links found. Closing with error.');
-        _autoClickTimer?.cancel();
-        _bgDiscoveryTimer?.cancel();
-        _masterWaitTimer?.cancel();
-        _extractionTimer?.cancel();
-        _discoveryComplete = true;
+      if (mounted) {
+        setState(() {
+          _isExtracting = false;
+          _discoveryComplete = true;
+        });
         _goBack(error: 'error');
       }
     }
@@ -781,10 +662,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _retryCount++;
     debugPrint('[Retry] Attempt #$_retryCount - Triggering Nuclear Reset...');
 
-    _bgDiscoveryTimer?.cancel();
-    _masterWaitTimer?.cancel();
-    _autoClickTimer?.cancel();
-
     _betterPlayerController?.dispose();
     _betterPlayerController = null;
 
@@ -797,23 +674,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _isInitialized = false;
     _useWebViewEngine = false;
 
-    // Nuclear Reset: Clear Cookies and Caches
-    CookieManager.instance().deleteAllCookies();
-
-    // Nuclear Reset: Change Key to force WebView to be destroyed and recreated
-    _webViewKey = ValueKey(
-      'discovery_webview_${DateTime.now().millisecondsSinceEpoch}',
-    );
-
-    // Determine next timeout:
-    // Attempt 1 (Auto-Retry after 10s fail): 20s
-    // Attempt 2+ (Manual Retries): 30s
-    Duration nextTimeout = (_retryCount == 1)
-        ? const Duration(seconds: 12)
-        : const Duration(seconds: 15);
-
-    debugPrint('[Retry] Next timeout set to: ${nextTimeout.inSeconds}s');
-    _startExtractionProcess(timeout: nextTimeout);
+    debugPrint('[Retry] Invoking VideasyExtractorService...');
+    _tryDirectExtraction();
     setState(() {});
   }
 
@@ -915,7 +777,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _webViewKey = ValueKey(
       'discovery_${DateTime.now().millisecondsSinceEpoch}',
     );
-    _tryDirectExtraction(nextEp.playLink!);
+    _tryDirectExtraction();
   }
 
   @override
@@ -1423,9 +1285,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                     _webViewKey = ValueKey(
                                                       'discovery_${DateTime.now().millisecondsSinceEpoch}',
                                                     );
-                                                    _tryDirectExtraction(
-                                                      ep.playLink!,
-                                                    );
+                                                    _tryDirectExtraction();
                                                   }
                                                 },
                                                 child: Container(
@@ -1647,36 +1507,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         // 0. Base Layer
         const SizedBox.expand(child: ColoredBox(color: Colors.black)),
 
-        // 1. Discovery/Extraction WebView (Hidden in background)
-        if (!_discoveryComplete)
-          SizedBox(
-            height: 1,
-            width: 1,
-            child: InAppWebView(
-              key: _webViewKey,
-              initialUrlRequest: URLRequest(
-                url: WebUri(_currentExtractionUrl ?? widget.url),
-              ),
-              initialSettings: InAppWebViewSettings(
-                javaScriptEnabled: true,
-                allowsInlineMediaPlayback: true,
-                mediaPlaybackRequiresUserGesture: false,
-                useShouldOverrideUrlLoading: true,
-                useOnLoadResource: true,
-                javaScriptCanOpenWindowsAutomatically: false,
-                supportMultipleWindows: true,
-              ),
-              onWebViewCreated: (controller) => _webViewController = controller,
-              onCreateWindow: (controller, createWindowAction) async {
-                return true;
-              },
-              onLoadResource: (controller, resource) {
-                if (resource.url != null) {
-                  _handleExtractedLink(resource.url.toString());
-                }
-              },
-            ),
-          ),
+        // 1. Discovery handled by headless service
 
         // 2. Background Extraction for switching
         if (_isBgExtracting && _bgExtractionUrl != null)
