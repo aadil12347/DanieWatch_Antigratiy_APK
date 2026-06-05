@@ -1,0 +1,121 @@
+[
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://nyc.cloud.appwrite.io/v1/account",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-TNVSTQRC12&gtm=45je6631v9218440054za200zd9218440054&_p=1780687445176&gcd=13l3l3l3l1l1&npa=0&dma=0&are=1&cid=385510645.1780687445&frm=0&pscdl=noapi&rcb=1&sr=1600x900&uaa=&uab=&uafvl=&uam=&uamb=0&uap=&uapv=&uaw=0&ul=en-gb&_s=1&tag_exp=0~115616985~115938465~115938468~118228214~119027222&sid=1780687445&sct=1&seg=0&dl=https%3A%2F%2Fcinemaos.tech%2Fmovie%2Fwatch%2F454639&dt=Watch%20Masters%20of%20the%20Universe%20(2026)%20%7C%20Free%20Streaming%20-%20Cinemaos&en=page_view&_fv=1&_nsi=1&_ss=1&_ee=1&tfd=8889",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://tuwiascare.cfd/cuid/?f=https%3A%2F%2Fcinemaos.tech",
+    "resourceType": "fetch",
+    "postData": "{\"key\":\"\"}"
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://psychos.balletscorpnsyria.qpon/gd/126965?md=eyJzIjoiMTYwMHg5MDAiLCJiIjoiMTYwMHg3MTMiLCJyIjoiIiwicSI6Imh0dHBzOi8vY2luZW1hb3MudGVjaC9tb3ZpZS93YXRjaC80NTQ2MzkiLCJoIjoxNTU1LCJ0IjotMzAwLCJ6Ijo2OTA2LCJrIjowLCJ1IjoiIiwiZiI6ZmFsc2UsIndoIjoibm90IGluIGlmcmFtZSIsImloIjoiMTYwMHg4NTIiLCJlIjoibWN5b3VrdzdlNWkwbHNwIiwibyI6dHJ1ZSwibSI6MTc4MDY4NzQ0NTQ4OSwidyI6IiU3QiUyMnRpdGxlJTIyJTNBJTIyV2F0Y2glMjBNYXN0ZXJzJTIwb2YlMjB0aGUlMjBVbml2ZXJzZSUyMCgyMDI2KSUyMCU3QyUyMEZyZWUlMjBTdHJlYW0lMjIlMkMlMjJrZXl3b3JkcyUyMiUzQSU1QiU1RCUyQyUyMnRvcHdvcmRzJTIyJTNBJTVCJTVEJTdEIiwidHMiOjAsInByIjoxLCJkbSI6MTYsImhjIjo0LCJibCI6MSwiYmMiOjIsInZ2IjoiR29vZ2xlIEluYy4gKEludGVsKSIsInZyIjoiQU5HTEUgKEludGVsLCBJbnRlbChSKSBIRCBHcmFwaGljcyAoMHgwMDAwMDE1MikgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSkiLCJhYyI6MSwiY3QiOiJ1bmtub3duIiwiY2V0IjoiM2ciLCJjZGxtIjotMSwiY2RsIjoxLjU1LCJjcnR0Ijo0MDAsInRtcyI6MSwiY2UiOnRydWUsImNkIjozMiwib3IiOiJsYW5kc2NhcGUtcHJpbWFyeSIsImR0IjpmYWxzZX0&fc=t9wMwocZTHuXqxiYm-dIgA&pr=R3nHriyal2GUy9BtmUAT1w",
+    "resourceType": "fetch",
+    "postData": "{\"tvc\":0,\"tvcd\":0,\"round\":0,\"exclude\":{},\"include\":{},\"oExclude\":{},\"oInclude\":{}}"
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.vdrk.site/v1/movie/454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.wyzie.io/search?id=454639&language=en&key=wyzie-529cac3ee50f57bdd621c90482fab924",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/subtitles/opensubtitles?imdbId=tt0427340",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/providerv4?type=movie&tmdbId=454639&imdbId=tt0427340&t=Masters+of+the+Universe&ry=2026&secret=c58e5000c75e0d09d7f9f247390b0659664b749b76fbfd249c4615dba7a964e4&_gt=2549b22d9bf0d91847a2811baac98d0079e02dba592aea94",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://api.theintrodb.org/v2/media?tmdb_id=454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://nyc.cloud.appwrite.io/v1/account",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.vdrk.site/v1/movie/454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.wyzie.io/search?id=454639&language=en&key=wyzie-529cac3ee50f57bdd621c90482fab924",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/subtitles/opensubtitles?imdbId=tt0427340",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/providerv4?type=movie&tmdbId=454639&imdbId=tt0427340&t=Masters+of+the+Universe&ry=2026&secret=c58e5000c75e0d09d7f9f247390b0659664b749b76fbfd249c4615dba7a964e4&_gt=2549b22d9bf0d91847a2811baac98d0079e02dba592aea94",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://api.theintrodb.org/v2/media?tmdb_id=454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://tuwiascare.cfd/cuid/?f=https%3A%2F%2Fcinemaos.tech",
+    "resourceType": "fetch",
+    "postData": "{\"key\":\"\"}"
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://psychos.balletscorpnsyria.qpon/gd/126965?md=eyJzIjoiMTYwMHg5MDAiLCJiIjoiMTYwMHg3MTMiLCJyIjoiIiwicSI6Imh0dHBzOi8vY2luZW1hb3MudGVjaC9tb3ZpZS93YXRjaC80NTQ2MzkiLCJoIjo3MzgzLCJ0IjotMzAwLCJ6IjoxNjI3LCJrIjowLCJ1IjoiIiwiZiI6ZmFsc2UsIndoIjoibm90IGluIGlmcmFtZSIsImloIjoiMTYwMHg4NTIiLCJlIjoiOWRwMW94MG44ZmVpNTNtIiwibyI6dHJ1ZSwibSI6MTc4MDY4NzQ3NDMxNSwidyI6IiU3QiUyMnRpdGxlJTIyJTNBJTIyV2F0Y2glMjBNYXN0ZXJzJTIwb2YlMjB0aGUlMjBVbml2ZXJzZSUyMCgyMDI2KSUyMCU3QyUyMEZyZWUlMjBTdHJlYW0lMjIlMkMlMjJrZXl3b3JkcyUyMiUzQSU1QiU1RCUyQyUyMnRvcHdvcmRzJTIyJTNBJTVCJTIyc3VwcG9ydCUzQTElMjIlMkMlMjJkZXRhaWxzJTNBMSUyMiUyQyUyMmNsYXNzaWMlM0ExJTIyJTVEJTdEIiwidHMiOjAsInByIjoxLCJkbSI6MTYsImhjIjo0LCJibCI6MSwiYmMiOjIsInZ2IjoiR29vZ2xlIEluYy4gKEludGVsKSIsInZyIjoiQU5HTEUgKEludGVsLCBJbnRlbChSKSBIRCBHcmFwaGljcyAoMHgwMDAwMDE1MikgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSkiLCJhYyI6MSwiY3QiOiJ1bmtub3duIiwiY2V0IjoiM2ciLCJjZGxtIjotMSwiY2RsIjoxLjU1LCJjcnR0Ijo0MDAsInRtcyI6MSwiY2UiOnRydWUsImNkIjozMiwib3IiOiJsYW5kc2NhcGUtcHJpbWFyeSIsImR0IjpmYWxzZX0&fc=t9wMwocZTHuXqxiYm-dIgA&pr=R3nHriyal2GUy9BtmUAT1w",
+    "resourceType": "fetch",
+    "postData": "{\"tvc\":0,\"tvcd\":0,\"round\":0,\"exclude\":{},\"include\":{},\"oExclude\":{},\"oInclude\":{}}"
+  }
+]

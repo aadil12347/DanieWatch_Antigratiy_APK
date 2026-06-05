@@ -1,0 +1,856 @@
+[
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/movie/watch/454639",
+    "resourceType": "document",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/media/36966cca54120369-s.p.woff2",
+    "resourceType": "font",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/13748814dceb7d96.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/ba6e4603b74eab5e.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/13cc91f70305630a.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/8d52313b157dcc1a.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/4f1bd39ee80fd563.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/webpack-d254c180101b096f.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/4bd1b696-efe419b8e27d97d2.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1517-870764dfd0a0c8b2.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/main-app-d0d0f32c1f849445.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1181-f6ec003211356e7e.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/2484-4d2a7c32acc3cd9f.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/661-092fd0c2b500fcbb.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/app/layout-f1fab750c44b63d3.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/0e5ce63c-d2258bb0933435f4.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/07b5dd1e-68d6f396ea29114b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/aaea2bcf-4b7d5c47edf9795e.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/a4634e51-eaf6c3d6b6e58119.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7970-ea8d5853d5c024d8.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/8173-3d369d82e5f265ff.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7205-f0e7dfe62eacbea1.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/9219-8cd18f743a2c26ff.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5875-0aa4aeada72a149b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/9334-5eaf3ea36902a8ef.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7085-5dcd8fd3a42c648a.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5463-386931798cd2c3eb.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1177-25f2f44bdcfff309.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5336-a87876bfb32f665c.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5767-fb471dc7d8025380.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/254-8764e0808d7eef01.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1247-298edf79d232b63b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/2610-d4cd8e8868d1ba37.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/8829-935c8a37851635bd.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/6786-41ff6988d4125f12.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/798-5156e6fd3e0750fe.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5716-a998669b927913a1.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5289-e5a731ad7987804b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/8388-a47a9e0700277ea3.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/3102-5274028e46c67657.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7989-804ba896791cc5e7.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/134-c6b8028a4dbddb78.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1575-d9052d5362299322.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/app/(watch)/movie/watch/%5Bid%5D/page-1ab498cb00728c18.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://www.googletagmanager.com/gtag/js?id=G-TNVSTQRC12",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/manifest.json",
+    "resourceType": "manifest",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://wz.afgodscarpe.com/ryRZVErvkj1gAr/126965",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://nyc.cloud.appwrite.io/v1/account",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "OPTIONS",
+    "url": "https://nyc.cloud.appwrite.io/v1/account",
+    "resourceType": "other",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-TNVSTQRC12&gtm=45je6631v9218440054za200zd9218440054&_p=1780687445176&gcd=13l3l3l3l1l1&npa=0&dma=0&are=1&cid=385510645.1780687445&frm=0&pscdl=noapi&rcb=1&sr=1600x900&uaa=&uab=&uafvl=&uam=&uamb=0&uap=&uapv=&uaw=0&ul=en-gb&_s=1&tag_exp=0~115616985~115938465~115938468~118228214~119027222&sid=1780687445&sct=1&seg=0&dl=https%3A%2F%2Fcinemaos.tech%2Fmovie%2Fwatch%2F454639&dt=Watch%20Masters%20of%20the%20Universe%20(2026)%20%7C%20Free%20Streaming%20-%20Cinemaos&en=page_view&_fv=1&_nsi=1&_ss=1&_ee=1&tfd=8889",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "OPTIONS",
+    "url": "https://tuwiascare.cfd/cuid/?f=https%3A%2F%2Fcinemaos.tech",
+    "resourceType": "other",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://tuwiascare.cfd/cuid/?f=https%3A%2F%2Fcinemaos.tech",
+    "resourceType": "fetch",
+    "postData": "{\"key\":\"\"}"
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://psychos.balletscorpnsyria.qpon/gd/126965?md=eyJzIjoiMTYwMHg5MDAiLCJiIjoiMTYwMHg3MTMiLCJyIjoiIiwicSI6Imh0dHBzOi8vY2luZW1hb3MudGVjaC9tb3ZpZS93YXRjaC80NTQ2MzkiLCJoIjoxNTU1LCJ0IjotMzAwLCJ6Ijo2OTA2LCJrIjowLCJ1IjoiIiwiZiI6ZmFsc2UsIndoIjoibm90IGluIGlmcmFtZSIsImloIjoiMTYwMHg4NTIiLCJlIjoibWN5b3VrdzdlNWkwbHNwIiwibyI6dHJ1ZSwibSI6MTc4MDY4NzQ0NTQ4OSwidyI6IiU3QiUyMnRpdGxlJTIyJTNBJTIyV2F0Y2glMjBNYXN0ZXJzJTIwb2YlMjB0aGUlMjBVbml2ZXJzZSUyMCgyMDI2KSUyMCU3QyUyMEZyZWUlMjBTdHJlYW0lMjIlMkMlMjJrZXl3b3JkcyUyMiUzQSU1QiU1RCUyQyUyMnRvcHdvcmRzJTIyJTNBJTVCJTVEJTdEIiwidHMiOjAsInByIjoxLCJkbSI6MTYsImhjIjo0LCJibCI6MSwiYmMiOjIsInZ2IjoiR29vZ2xlIEluYy4gKEludGVsKSIsInZyIjoiQU5HTEUgKEludGVsLCBJbnRlbChSKSBIRCBHcmFwaGljcyAoMHgwMDAwMDE1MikgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSkiLCJhYyI6MSwiY3QiOiJ1bmtub3duIiwiY2V0IjoiM2ciLCJjZGxtIjotMSwiY2RsIjoxLjU1LCJjcnR0Ijo0MDAsInRtcyI6MSwiY2UiOnRydWUsImNkIjozMiwib3IiOiJsYW5kc2NhcGUtcHJpbWFyeSIsImR0IjpmYWxzZX0&fc=t9wMwocZTHuXqxiYm-dIgA&pr=R3nHriyal2GUy9BtmUAT1w",
+    "resourceType": "fetch",
+    "postData": "{\"tvc\":0,\"tvcd\":0,\"round\":0,\"exclude\":{},\"include\":{},\"oExclude\":{},\"oInclude\":{}}"
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/favicon-32x32.png",
+    "resourceType": "other",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "OPTIONS",
+    "url": "https://psychos.balletscorpnsyria.qpon/gd/126965?md=eyJzIjoiMTYwMHg5MDAiLCJiIjoiMTYwMHg3MTMiLCJyIjoiIiwicSI6Imh0dHBzOi8vY2luZW1hb3MudGVjaC9tb3ZpZS93YXRjaC80NTQ2MzkiLCJoIjoxNTU1LCJ0IjotMzAwLCJ6Ijo2OTA2LCJrIjowLCJ1IjoiIiwiZiI6ZmFsc2UsIndoIjoibm90IGluIGlmcmFtZSIsImloIjoiMTYwMHg4NTIiLCJlIjoibWN5b3VrdzdlNWkwbHNwIiwibyI6dHJ1ZSwibSI6MTc4MDY4NzQ0NTQ4OSwidyI6IiU3QiUyMnRpdGxlJTIyJTNBJTIyV2F0Y2glMjBNYXN0ZXJzJTIwb2YlMjB0aGUlMjBVbml2ZXJzZSUyMCgyMDI2KSUyMCU3QyUyMEZyZWUlMjBTdHJlYW0lMjIlMkMlMjJrZXl3b3JkcyUyMiUzQSU1QiU1RCUyQyUyMnRvcHdvcmRzJTIyJTNBJTVCJTVEJTdEIiwidHMiOjAsInByIjoxLCJkbSI6MTYsImhjIjo0LCJibCI6MSwiYmMiOjIsInZ2IjoiR29vZ2xlIEluYy4gKEludGVsKSIsInZyIjoiQU5HTEUgKEludGVsLCBJbnRlbChSKSBIRCBHcmFwaGljcyAoMHgwMDAwMDE1MikgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSkiLCJhYyI6MSwiY3QiOiJ1bmtub3duIiwiY2V0IjoiM2ciLCJjZGxtIjotMSwiY2RsIjoxLjU1LCJjcnR0Ijo0MDAsInRtcyI6MSwiY2UiOnRydWUsImNkIjozMiwib3IiOiJsYW5kc2NhcGUtcHJpbWFyeSIsImR0IjpmYWxzZX0&fc=t9wMwocZTHuXqxiYm-dIgA&pr=R3nHriyal2GUy9BtmUAT1w",
+    "resourceType": "other",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/ios/144.png",
+    "resourceType": "other",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://image.tmdb.org/t/p/w342/3YMd9Ogae4rDKLWuAZFuse9xhc5.jpg",
+    "resourceType": "image",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.vdrk.site/v1/movie/454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.wyzie.io/search?id=454639&language=en&key=wyzie-529cac3ee50f57bdd621c90482fab924",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/subtitles/opensubtitles?imdbId=tt0427340",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/providerv4?type=movie&tmdbId=454639&imdbId=tt0427340&t=Masters+of+the+Universe&ry=2026&secret=c58e5000c75e0d09d7f9f247390b0659664b749b76fbfd249c4615dba7a964e4&_gt=2549b22d9bf0d91847a2811baac98d0079e02dba592aea94",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://api.theintrodb.org/v2/media?tmdb_id=454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://image.tmdb.org/t/p/original//eQySd26OW7UmCuaeBOL7qy6foMn.jpg",
+    "resourceType": "image",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/movie/watch/454639",
+    "resourceType": "document",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/media/36966cca54120369-s.p.woff2",
+    "resourceType": "font",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/13748814dceb7d96.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/ba6e4603b74eab5e.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/13cc91f70305630a.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/8d52313b157dcc1a.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/css/4f1bd39ee80fd563.css",
+    "resourceType": "stylesheet",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/webpack-d254c180101b096f.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/4bd1b696-efe419b8e27d97d2.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1517-870764dfd0a0c8b2.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/main-app-d0d0f32c1f849445.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1181-f6ec003211356e7e.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/2484-4d2a7c32acc3cd9f.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/661-092fd0c2b500fcbb.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/app/layout-f1fab750c44b63d3.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/0e5ce63c-d2258bb0933435f4.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/07b5dd1e-68d6f396ea29114b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/aaea2bcf-4b7d5c47edf9795e.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/a4634e51-eaf6c3d6b6e58119.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7970-ea8d5853d5c024d8.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/8173-3d369d82e5f265ff.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7205-f0e7dfe62eacbea1.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/9219-8cd18f743a2c26ff.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5875-0aa4aeada72a149b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/9334-5eaf3ea36902a8ef.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7085-5dcd8fd3a42c648a.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5463-386931798cd2c3eb.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1177-25f2f44bdcfff309.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5336-a87876bfb32f665c.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5767-fb471dc7d8025380.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/254-8764e0808d7eef01.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1247-298edf79d232b63b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/2610-d4cd8e8868d1ba37.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/8829-935c8a37851635bd.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/6786-41ff6988d4125f12.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/798-5156e6fd3e0750fe.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5716-a998669b927913a1.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/5289-e5a731ad7987804b.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/8388-a47a9e0700277ea3.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/3102-5274028e46c67657.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/7989-804ba896791cc5e7.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/134-c6b8028a4dbddb78.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/1575-d9052d5362299322.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/_next/static/chunks/app/(watch)/movie/watch/%5Bid%5D/page-1ab498cb00728c18.js",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://www.googletagmanager.com/gtag/js?id=G-TNVSTQRC12",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/manifest.json",
+    "resourceType": "manifest",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://wz.afgodscarpe.com/ryRZVErvkj1gAr/126965",
+    "resourceType": "script",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://nyc.cloud.appwrite.io/v1/account",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://image.tmdb.org/t/p/w342/3YMd9Ogae4rDKLWuAZFuse9xhc5.jpg",
+    "resourceType": "image",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://image.tmdb.org/t/p/original//eQySd26OW7UmCuaeBOL7qy6foMn.jpg",
+    "resourceType": "image",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.vdrk.site/v1/movie/454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://sub.wyzie.io/search?id=454639&language=en&key=wyzie-529cac3ee50f57bdd621c90482fab924",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/subtitles/opensubtitles?imdbId=tt0427340",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/api/providerv4?type=movie&tmdbId=454639&imdbId=tt0427340&t=Masters+of+the+Universe&ry=2026&secret=c58e5000c75e0d09d7f9f247390b0659664b749b76fbfd249c4615dba7a964e4&_gt=2549b22d9bf0d91847a2811baac98d0079e02dba592aea94",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://api.theintrodb.org/v2/media?tmdb_id=454639",
+    "resourceType": "fetch",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "GET",
+    "url": "https://cinemaos.tech/ios/144.png",
+    "resourceType": "other",
+    "postData": null
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://tuwiascare.cfd/cuid/?f=https%3A%2F%2Fcinemaos.tech",
+    "resourceType": "fetch",
+    "postData": "{\"key\":\"\"}"
+  },
+  {
+    "type": "Request",
+    "method": "POST",
+    "url": "https://psychos.balletscorpnsyria.qpon/gd/126965?md=eyJzIjoiMTYwMHg5MDAiLCJiIjoiMTYwMHg3MTMiLCJyIjoiIiwicSI6Imh0dHBzOi8vY2luZW1hb3MudGVjaC9tb3ZpZS93YXRjaC80NTQ2MzkiLCJoIjo3MzgzLCJ0IjotMzAwLCJ6IjoxNjI3LCJrIjowLCJ1IjoiIiwiZiI6ZmFsc2UsIndoIjoibm90IGluIGlmcmFtZSIsImloIjoiMTYwMHg4NTIiLCJlIjoiOWRwMW94MG44ZmVpNTNtIiwibyI6dHJ1ZSwibSI6MTc4MDY4NzQ3NDMxNSwidyI6IiU3QiUyMnRpdGxlJTIyJTNBJTIyV2F0Y2glMjBNYXN0ZXJzJTIwb2YlMjB0aGUlMjBVbml2ZXJzZSUyMCgyMDI2KSUyMCU3QyUyMEZyZWUlMjBTdHJlYW0lMjIlMkMlMjJrZXl3b3JkcyUyMiUzQSU1QiU1RCUyQyUyMnRvcHdvcmRzJTIyJTNBJTVCJTIyc3VwcG9ydCUzQTElMjIlMkMlMjJkZXRhaWxzJTNBMSUyMiUyQyUyMmNsYXNzaWMlM0ExJTIyJTVEJTdEIiwidHMiOjAsInByIjoxLCJkbSI6MTYsImhjIjo0LCJibCI6MSwiYmMiOjIsInZ2IjoiR29vZ2xlIEluYy4gKEludGVsKSIsInZyIjoiQU5HTEUgKEludGVsLCBJbnRlbChSKSBIRCBHcmFwaGljcyAoMHgwMDAwMDE1MikgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSkiLCJhYyI6MSwiY3QiOiJ1bmtub3duIiwiY2V0IjoiM2ciLCJjZGxtIjotMSwiY2RsIjoxLjU1LCJjcnR0Ijo0MDAsInRtcyI6MSwiY2UiOnRydWUsImNkIjozMiwib3IiOiJsYW5kc2NhcGUtcHJpbWFyeSIsImR0IjpmYWxzZX0&fc=t9wMwocZTHuXqxiYm-dIgA&pr=R3nHriyal2GUy9BtmUAT1w",
+    "resourceType": "fetch",
+    "postData": "{\"tvc\":0,\"tvcd\":0,\"round\":0,\"exclude\":{},\"include\":{},\"oExclude\":{},\"oInclude\":{}}"
+  },
+  {
+    "type": "Request",
+    "method": "OPTIONS",
+    "url": "https://psychos.balletscorpnsyria.qpon/gd/126965?md=eyJzIjoiMTYwMHg5MDAiLCJiIjoiMTYwMHg3MTMiLCJyIjoiIiwicSI6Imh0dHBzOi8vY2luZW1hb3MudGVjaC9tb3ZpZS93YXRjaC80NTQ2MzkiLCJoIjo3MzgzLCJ0IjotMzAwLCJ6IjoxNjI3LCJrIjowLCJ1IjoiIiwiZiI6ZmFsc2UsIndoIjoibm90IGluIGlmcmFtZSIsImloIjoiMTYwMHg4NTIiLCJlIjoiOWRwMW94MG44ZmVpNTNtIiwibyI6dHJ1ZSwibSI6MTc4MDY4NzQ3NDMxNSwidyI6IiU3QiUyMnRpdGxlJTIyJTNBJTIyV2F0Y2glMjBNYXN0ZXJzJTIwb2YlMjB0aGUlMjBVbml2ZXJzZSUyMCgyMDI2KSUyMCU3QyUyMEZyZWUlMjBTdHJlYW0lMjIlMkMlMjJrZXl3b3JkcyUyMiUzQSU1QiU1RCUyQyUyMnRvcHdvcmRzJTIyJTNBJTVCJTIyc3VwcG9ydCUzQTElMjIlMkMlMjJkZXRhaWxzJTNBMSUyMiUyQyUyMmNsYXNzaWMlM0ExJTIyJTVEJTdEIiwidHMiOjAsInByIjoxLCJkbSI6MTYsImhjIjo0LCJibCI6MSwiYmMiOjIsInZ2IjoiR29vZ2xlIEluYy4gKEludGVsKSIsInZyIjoiQU5HTEUgKEludGVsLCBJbnRlbChSKSBIRCBHcmFwaGljcyAoMHgwMDAwMDE1MikgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSkiLCJhYyI6MSwiY3QiOiJ1bmtub3duIiwiY2V0IjoiM2ciLCJjZGxtIjotMSwiY2RsIjoxLjU1LCJjcnR0Ijo0MDAsInRtcyI6MSwiY2UiOnRydWUsImNkIjozMiwib3IiOiJsYW5kc2NhcGUtcHJpbWFyeSIsImR0IjpmYWxzZX0&fc=t9wMwocZTHuXqxiYm-dIgA&pr=R3nHriyal2GUy9BtmUAT1w",
+    "resourceType": "other",
+    "postData": null
+  }
+]

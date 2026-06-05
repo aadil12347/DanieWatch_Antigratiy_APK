@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Network Logger",
+  "version": "1.0",
+  "description": "Silently logs network requests to bypass anti-debugging.",
+  "permissions": [
+    "webRequest",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Click to Save Network Logs"
+  }
+}
