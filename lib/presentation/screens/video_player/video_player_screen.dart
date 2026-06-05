@@ -267,10 +267,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _extraction1pxClickCount = 0;
     });
 
-    // Absolute timeout: 15 seconds
+    // Absolute timeout: 60 seconds
     _extraction1pxTimeoutTimer?.cancel();
-    _extraction1pxTimeoutTimer = Timer(const Duration(seconds: 15), () {
-      debugPrint('[Engine] ⚠️ Extraction timeout (15s)');
+    _extraction1pxTimeoutTimer = Timer(const Duration(seconds: 60), () {
+      debugPrint('[Engine] ⚠️ Extraction timeout (60s)');
       _onExtractionFailed();
     });
   }
@@ -307,6 +307,24 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         } catch (err) {
           debugPrint('[Engine] Error parsing stream payload: $err');
         }
+      },
+    );
+
+    // Register API URL capture handler (for direct Dart HTTP fetch)
+    controller.addJavaScriptHandler(
+      handlerName: 'FetchApi',
+      callback: (args) async {
+        if (_isClosing) return null;
+        try {
+          final apiUrl = args[0] as String;
+          debugPrint('[Engine] 🌐 FetchApi called for: $apiUrl');
+          
+          final rawEncryptedString = await VideasyExtractorService.fetchApiUrl(apiUrl);
+          return rawEncryptedString; // Return the raw string back to the WebView's JS
+        } catch (e) {
+          debugPrint('[Engine] Error handling FetchApi: $e');
+        }
+        return null;
       },
     );
   }
@@ -1068,24 +1086,33 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         ? ValueKey('web_player_${_extractedLink!.hashCode}')
         : const ValueKey('web_player_default');
 
-    // For extracted m3u8 URLs, load our custom player.html from assets
-    // For fallback (videasy page URLs), load them directly
-    final initialUrl = isExtractedM3u8
-        ? 'file:///android_asset/flutter_assets/assets/html/player.html'
-        : (_extractedLink ?? 'about:blank');
 
     return Container(
       key: key,
       child: InAppWebView(
         key: webKey,
-        initialUrlRequest: URLRequest(
-          url: WebUri(initialUrl),
-          headers: {
-            'Referer': 'https://player.videasy.net/',
-            'Origin': 'https://player.videasy.net',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-        ),
+        // Load from file:// for now; we'll override with loadData in onWebViewCreated
+        // when we have an extracted m3u8 (to set the correct origin for Referer)
+        initialUrlRequest: isExtractedM3u8
+            ? null  // We'll use loadData instead
+            : URLRequest(
+                url: WebUri(_extractedLink ?? 'about:blank'),
+                headers: {
+                  'Referer': 'https://player.videasy.net/',
+                  'Origin': 'https://player.videasy.net',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                },
+              ),
+        // For extracted m3u8: load player.html from asset with videasy.net base URL
+        // This makes ALL hls.js XHR requests carry Referer: https://player.videasy.net/
+        initialData: isExtractedM3u8
+            ? InAppWebViewInitialData(
+                data: '', // Placeholder — real content loaded in onWebViewCreated
+                baseUrl: WebUri('https://player.videasy.net'),
+                mimeType: 'text/html',
+                encoding: 'utf-8',
+              )
+            : null,
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
           Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
         },
@@ -1100,10 +1127,37 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           javaScriptCanOpenWindowsAutomatically: false,
           allowFileAccessFromFileURLs: true,
           allowUniversalAccessFromFileURLs: true,
+          mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
         ),
-        onWebViewCreated: (controller) {
+        onWebViewCreated: (controller) async {
           if (_isClosing) return;
           _webViewController = controller;
+
+          // For extracted m3u8: read player.html from assets and load it with
+          // videasy.net as the base URL. This sets document.origin so all
+          // hls.js XHR requests carry the correct Referer header.
+          if (isExtractedM3u8) {
+            try {
+              final htmlContent = await rootBundle.loadString('assets/html/player.html');
+              // Also need to inline hls.min.js since we can't use relative paths with loadData
+              final hlsJs = await rootBundle.loadString('assets/html/hls.min.js');
+
+              // Replace the external hls.min.js script tag with inline script
+              final modifiedHtml = htmlContent.replaceFirst(
+                '<script src="hls.min.js"></script>',
+                '<script>$hlsJs</script>',
+              );
+
+              await controller.loadData(
+                data: modifiedHtml,
+                baseUrl: WebUri('https://player.videasy.net/'),
+                mimeType: 'text/html',
+                encoding: 'utf-8',
+              );
+            } catch (e) {
+              debugPrint('[Engine] Failed to load player.html from assets: $e');
+            }
+          }
           controller.addJavaScriptHandler(
             handlerName: 'goBack',
             callback: (args) {
@@ -1228,11 +1282,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           }
           return NavigationActionPolicy.ALLOW;
         },
+        // Accept SSL certs for m3u8 segment CDNs
+        onReceivedServerTrustAuthRequest: (controller, challenge) async {
+          return ServerTrustAuthResponse(
+            action: ServerTrustAuthResponseAction.PROCEED,
+          );
+        },
         onLoadStop: (controller, url) async {
           debugPrint('[Engine] Web Player Loaded: $url');
 
-          // If we loaded player.html, inject the m3u8 URL and start playback
-          if (isExtractedM3u8 && url.toString().contains('player.html')) {
+          // If we loaded our custom player via loadData, inject the m3u8 URL
+          if (isExtractedM3u8) {
             final m3u8Url = _extractedLink!;
             final escapedUrl = m3u8Url.replaceAll("'", "\\'")
                 .replaceAll('"', '\\"');
@@ -1864,6 +1924,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   return NavigationActionPolicy.ALLOW;
                 },
                 onCreateWindow: (controller, createWindowAction) async => false,
+                // Accept SSL certificates from api.videasy.net
+                // (their cert is untrusted by Android's default CA store)
+                onReceivedServerTrustAuthRequest: (controller, challenge) async {
+                  debugPrint('[1px WV] SSL bypass for: ${challenge.protectionSpace.host}');
+                  return ServerTrustAuthResponse(
+                    action: ServerTrustAuthResponseAction.PROCEED,
+                  );
+                },
                 onConsoleMessage: (controller, consoleMessage) {
                   debugPrint('[1px WV] ${consoleMessage.message}');
                 },
