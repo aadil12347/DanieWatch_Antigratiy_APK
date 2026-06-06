@@ -1,0 +1,86 @@
+[
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F0-24%3Fe%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F143.0.0.0%20Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:38.725Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F0-24%3Fe%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F143.0.0.0%20Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "media",
+    "time": "2026-06-06T15:28:38.726Z"
+  },
+  {
+    "url": "https://music.youtube.com/api/stats/qoe?fmt=0&afmt=251&cpn=5OLflDjveI3bNk6e&el=detailpage&ns=yt&fexp=v1%2C24004644%2C494890%2C26564109%2C34656%2C124674%2C117689%2C9252%2C3479%2C13030%2C23206%2C100702%2C2878%2C12227%2C25059%2C4174%2C12720%2C17727%2C18705%2C21437%2C4571%2C5239%2C7777%2C13109%2C2978%2C6621%2C2783%2C8746%2C15080%2C9500%2C1840%2C24118%2C10127%2C3658%2C14%2C7798%2C13160%2C451%2C14076%2C16413%2C5022%2C20589%2C4199%2C460%2C952%2C2754%2C9843%2C12285%2C2194%2C1626%2C17715%2C6963%2C29961%2C4065%2C1428%2C5652%2C2412%2C1168%2C4%2C368%2C490%2C2325%2C2629%2C2315%2C8386%2C5244%2C2834%2C160%2C972%2C4615%2C3281%2C3502%2C5327%2C1040%2C853%2C1727%2C7341%2C1427%2C2249%2C272%2C1400%2C886%2C4132%2C1700%2C13318%2C1963&cl=925473132&seq=73&docid=RWlP_7o7w7A&ei=HCkkavLUO9_YxN8P-8WfsQI&event=streamingstats&feature=external&plid=AAZTlkRXsnXvt8FY&cbr=Chrome&cbrver=148.0.0.0&c=WEB_REMIX&cver=1.20260531.05.00&cplayer=UNIPLAYER&cos=Windows&cosver=10.0&cplatform=DESKTOP&vps=5019.166:B&bwe=5019.166:793476&bat=5019.166:1:1&cmt=5019.166:0.000&bh=5019.166:0.000&qclc=ChA1T0xmbERqdmVJM2JOazZlEEk",
+    "method": "POST",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:43.168Z"
+  },
+  {
+    "url": "https://music.youtube.com/verify_session",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:43.171Z"
+  },
+  {
+    "url": "https://0692f8bdd7b5.edge.sdk.awswaf.com/0692f8bdd7b5/994f483f0d69/inputs?client=browser",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:55.150Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F0-24%3Fe%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F143.0.0.0%20Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:55.593Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F1080%3Fs%3D0%26d%3D2%26e%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F143.0.0.0+Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:55.856Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F0-24%3Fe%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F143.0.0.0%20Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:55.870Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F0-24%3Fe%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F143.0.0.0%20Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "media",
+    "time": "2026-06-06T15:28:55.871Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F1080%3Fs%3D0%26d%3D2%26e%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F143.0.0.0+Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "media",
+    "time": "2026-06-06T15:28:57.131Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F0-24%3Fe%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F143.0.0.0%20Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:57.141Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F1080%3Fs%3D0%26d%3D2%26e%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F143.0.0.0+Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:57.313Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/m3u8-proxy?url=https%3A%2F%2Fgoodstream.cc%2Fpl%2FD1134V_XHDjCKLy%2F1080%3Fs%3D0%26d%3D2%26e%3DOXVTekdLcHRCb0VBV1ZYQ3VyL2tJa0ZVRXAxYnpqNDd3VWhvOURueUo2TT0O&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F143.0.0.0+Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "xmlhttprequest",
+    "time": "2026-06-06T15:28:57.728Z"
+  },
+  {
+    "url": "https://up-1.eat-peach.sbs/ts-segment?url=https%3A%2F%2Fgs-25.letsgocdn61.shop%2Fpublic%2FD1134V_XHDjCKLy%2F1080%2Fs0e1303591.svg&headers=%7B%22referer%22%3A%22https%3A%2F%2Fgoodstream.cc%2F%22%2C%22user-agent%22%3A%22Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F143.0.0.0+Safari%2F537.36%22%7D",
+    "method": "GET",
+    "type": "media",
+    "time": "2026-06-06T15:29:00.853Z"
+  }
+]
