@@ -22,6 +22,8 @@ import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
 import '../../../services/video_extractor_service.dart';
+import '../../../services/peachify_extractor.dart';
+import '../../../services/videasy_extractor.dart';
 import '../../../services/file_size_service.dart';
 import '../../../core/services/deep_link_service.dart';
 import '../../providers/detail_provider.dart';
@@ -1437,25 +1439,102 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     HapticFeedback.lightImpact();
 
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
+    if (content == null) return;
 
-    // Navigate directly to VideoPlayerScreen — extraction happens silently
-    // inside it via a 1px invisible WebView
-    await Navigator.of(context, rootNavigator: true).push(
-      PageRouteBuilder(
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, __, ___) => VideoPlayerScreen(
-          url: '',
-          title: content?.title ?? '',
-          tmdbId: widget.tmdbId,
-          mediaType: widget.mediaType,
-          seasons: content?.seasonNumbers,
-          season: season,
-          episode: episode,
-          posterUrl: content?.posterUrl,
-        ),
-      ),
+    final s = season ?? 1;
+    final e = episode ?? 1;
+
+    showPlayLoader<Map<String, ExtractedVideasyStream>>(
+      context: context,
+      fetchLinkFuture: () async {
+        try {
+          final streams = await PeachifyExtractorService().extractStreams(
+            tmdbId: widget.tmdbId,
+            mediaType: widget.mediaType,
+            season: s,
+            episode: e,
+          );
+          if (streams.isEmpty) return null;
+          
+          final Map<String, ExtractedVideasyStream> map = {};
+          for (var stream in streams) {
+            final key = '${stream.providerName} - ${stream.dub}';
+            final mappedStream = ExtractedVideasyStream(
+              server: key,
+              url: stream.url,
+              sources: [{
+                'url': stream.url,
+                'quality': stream.quality,
+                'type': stream.type,
+              }],
+              tracks: stream.tracks,
+              headers: stream.headers,
+            );
+            if (!map.containsKey(key) || (stream.quality ?? 0) > (map[key]!.sources.first['quality'] ?? 0)) {
+              map[key] = mappedStream;
+            }
+          }
+          return _sortStreamsMap(map);
+        } catch (e) {
+          debugPrint('[Details] Peachify Extraction Error: $e');
+          return null;
+        }
+      },
+      onSuccess: (extractedStreams) async {
+        await Navigator.of(context, rootNavigator: true).push(
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, __, ___) => VideoPlayerScreen(
+              url: '',
+              title: content.title,
+              tmdbId: widget.tmdbId,
+              mediaType: widget.mediaType,
+              seasons: content.seasonNumbers,
+              season: season,
+              episode: episode,
+              posterUrl: content.posterUrl,
+              extractedStreams: extractedStreams,
+              isDirectLink: true,
+            ),
+          ),
+        );
+      },
+      onError: () {
+        _showToastError('Extraction failed. Please try again.');
+      },
     );
+  }
+
+  Map<String, ExtractedVideasyStream> _sortStreamsMap(Map<String, ExtractedVideasyStream> map) {
+    if (map.isEmpty) return map;
+    final originalKeys = map.keys.toList();
+    final sortedKeys = List<String>.from(originalKeys);
+    sortedKeys.sort((a, b) {
+      final aLower = a.toLowerCase();
+      final bLower = b.toLowerCase();
+
+      // 1. 'Iron - Hindi' is absolute top priority
+      final aIsIronHindi = aLower == 'iron - hindi';
+      final bIsIronHindi = bLower == 'iron - hindi';
+      if (aIsIronHindi && !bIsIronHindi) return -1;
+      if (!aIsIronHindi && bIsIronHindi) return 1;
+
+      // 2. Any other server containing Hindi
+      final aIsHindi = aLower.contains('hindi');
+      final bIsHindi = bLower.contains('hindi');
+      if (aIsHindi && !bIsHindi) return -1;
+      if (!aIsHindi && bIsHindi) return 1;
+
+      // 3. Otherwise preserve original order
+      return originalKeys.indexOf(a).compareTo(originalKeys.indexOf(b));
+    });
+
+    final Map<String, ExtractedVideasyStream> sortedMap = {};
+    for (var key in sortedKeys) {
+      sortedMap[key] = map[key]!;
+    }
+    return sortedMap;
   }
 
   Future<void> _handleDownload(String url) async {

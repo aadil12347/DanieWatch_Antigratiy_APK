@@ -1668,6 +1668,21 @@
                     </svg>
                     <span>Settings</span>
                 </div>
+                <div class="menu-item hidden" id="serverMenuItem" onclick="showSubMenu('server')">
+                    <div class="menu-item-left">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.53c-.26-.81-1-1.4-1.9-1.4h-1v-3c0-.55-.45-1-1-1h-6v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.4z" />
+                        </svg>
+                        <span class="menu-item-label">Server</span>
+                    </div>
+                    <div class="menu-item-value">
+                        <span id="serverValueText">Default</span>
+                        <svg viewBox="0 0 24 24">
+                            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                        </svg>
+                    </div>
+                </div>
                 <div class="menu-item hidden" id="qualityMenuItem" onclick="showSubMenu('quality')">
                     <div class="menu-item-left">
                         <svg viewBox="0 0 24 24">
@@ -1728,6 +1743,16 @@
                         </svg>
                     </div>
                 </div>
+            </div>
+            <!-- Server Sub-Menu -->
+            <div class="menu-sub" id="menuServer">
+                <div class="menu-back" onclick="showMainMenu()">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                    </svg>
+                    <span class="menu-back-label">Server</span>
+                </div>
+                <div id="serverOptionsList"></div>
             </div>
             <!-- Quality Sub-Menu -->
             <div class="menu-sub" id="menuQuality">
@@ -1981,8 +2006,8 @@
                     // Inject same headers as main player
                     if (globalHeaders && (globalHeaders.Referer || globalHeaders.Origin)) {
                         previewConfig.xhrSetup = function(xhr, xhrUrl) {
-                            if (globalHeaders.Referer) xhr.setRequestHeader('Referer', globalHeaders.Referer);
-                            if (globalHeaders.Origin) xhr.setRequestHeader('Origin', globalHeaders.Origin);
+                            if (globalHeaders.Referer) { try { xhr.setRequestHeader('Referer', globalHeaders.Referer); } catch(e) {} }
+                            if (globalHeaders.Origin) { try { xhr.setRequestHeader('Origin', globalHeaders.Origin); } catch(e) {} }
                         };
                     }
                     previewHls = new Hls(previewConfig);
@@ -2708,13 +2733,27 @@
 
             if (hls) hls.destroy();
 
-            if (Hls.isSupported()) {
+            if (url.indexOf('.mp4') !== -1 || url.indexOf('-proxy') !== -1 && url.indexOf('m3u8') === -1) {
+                video.src = url;
+                video.play();
+                hideLoader();
+                setTimeout(restorePlaybackPosition, 300);
+            } else if (Hls.isSupported()) {
                 var hlsConfig = { enableWorker: true, lowLatencyMode: true };
+                // Find Referer and Origin case-insensitively
+                var refererVal = null;
+                var originVal = null;
+                if (headers) {
+                    for (var key in headers) {
+                        if (key.toLowerCase() === 'referer') refererVal = headers[key];
+                        if (key.toLowerCase() === 'origin') originVal = headers[key];
+                    }
+                }
                 // Inject Referer/Origin headers into every HLS segment request
-                if (headers && (headers.Referer || headers.Origin)) {
+                if (refererVal || originVal) {
                     hlsConfig.xhrSetup = function(xhr, xhrUrl) {
-                        if (headers.Referer) xhr.setRequestHeader('Referer', headers.Referer);
-                        if (headers.Origin) xhr.setRequestHeader('Origin', headers.Origin);
+                        if (refererVal) { try { xhr.setRequestHeader('Referer', refererVal); } catch(e) {} }
+                        if (originVal) { try { xhr.setRequestHeader('Origin', originVal); } catch(e) {} }
                     };
                 }
                 hls = new Hls(hlsConfig);
@@ -3153,6 +3192,8 @@
             document.getElementById('menuAudio').classList.remove('active-view');
             document.getElementById('menuSpeed').classList.remove('active-view');
             document.getElementById('menuAspect').classList.remove('active-view');
+            var menuServer = document.getElementById('menuServer');
+            if (menuServer) menuServer.classList.remove('active-view');
         }
 
         function showSubMenu(type) {
@@ -3161,6 +3202,11 @@
             else if (type === 'audio') document.getElementById('menuAudio').classList.add('active-view');
             else if (type === 'speed') { document.getElementById('menuSpeed').classList.add('active-view'); renderSpeedOptions(); }
             else if (type === 'aspect') { document.getElementById('menuAspect').classList.add('active-view'); renderAspectOptions(); }
+            else if (type === 'server') {
+                var menuServer = document.getElementById('menuServer');
+                if (menuServer) menuServer.classList.add('active-view');
+                renderServerOptions();
+            }
         }
 
         function selectQuality(index) {
@@ -3338,6 +3384,47 @@
             document.getElementById('qualityMenuItem').classList.remove('hidden');
             document.getElementById('qualityValueText').textContent = 'Auto';
             renderQualityOptions();
+        }
+
+        let serverList = [];
+        let selectedServerName = '';
+
+        window.setupServerPicker = function(servers, selectedServer) {
+            if (!servers || servers.length < 1) return;
+            serverList = servers;
+            selectedServerName = selectedServer;
+            var serverMenuItem = document.getElementById('serverMenuItem');
+            if (serverMenuItem) {
+                serverMenuItem.classList.remove('hidden');
+                document.getElementById('serverValueText').textContent = selectedServer;
+            }
+            renderServerOptions();
+        };
+
+        function renderServerOptions() {
+            const list = document.getElementById('serverOptionsList');
+            if (!list) return;
+            list.innerHTML = '';
+            serverList.forEach((s) => {
+                const el = document.createElement('div');
+                el.className = 'menu-option' + (selectedServerName === s ? ' selected' : '');
+                el.innerHTML = '<span class="menu-option-text">' + s + '</span><svg class="menu-option-check" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+                el.onclick = () => selectServer(s);
+                list.appendChild(el);
+            });
+        }
+
+        function selectServer(serverName) {
+            selectedServerName = serverName;
+            var valText = document.getElementById('serverValueText');
+            if (valText) valText.textContent = serverName;
+            renderServerOptions();
+            setTimeout(showMainMenu, 200);
+            
+            // Notify Flutter to change server
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('changeServer', serverName);
+            }
         }
 
         // ===== VIDEO ENDED — FULL-SCREEN AUTO-PLAY =====

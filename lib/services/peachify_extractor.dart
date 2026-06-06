@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PeachifyStream {
   final String providerName;
@@ -10,6 +11,7 @@ class PeachifyStream {
   final String url;
   final int? quality;
   final Map<String, String> headers;
+  final List<dynamic> tracks;
 
   PeachifyStream({
     required this.providerName,
@@ -18,6 +20,7 @@ class PeachifyStream {
     required this.url,
     this.quality,
     this.headers = const {},
+    this.tracks = const [],
   });
 }
 
@@ -26,15 +29,34 @@ class PeachifyExtractorService {
   factory PeachifyExtractorService() => _instance;
   PeachifyExtractorService._internal();
 
-  static const String _keyHex = 'a8f2a1b5e9c470814f6b2c3a5d8e7f9c1a2b3c4d5e3f7a8b8cad1e2d0a4d5c5b';
+  static String _keyHex = 'a8f2a1b5e9c470814f6b2c3a5d8e7f9c1a2b3c4d5e3f7a8b8cad1e2d0a4d5c5b';
 
-  static final List<Map<String, String>> _endpoints = [
+  static List<Map<String, String>> _endpoints = [
     {'name': 'Spider', 'base': 'https://usa.eat-peach.sbs/holly'},
     {'name': 'Multi', 'base': 'https://usa.eat-peach.sbs/multi'},
     {'name': 'Wolf', 'base': 'https://usa.eat-peach.sbs/air'},
     {'name': 'Iron', 'base': 'https://uwu.eat-peach.sbs/moviebox'},
     {'name': 'Dark', 'base': 'https://uwu.eat-peach.sbs/net'},
   ];
+
+  Future<void> _loadConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final savedKey = prefs.getString('peachify_key');
+      if (savedKey != null && savedKey.isNotEmpty) {
+        _keyHex = savedKey;
+      }
+      
+      final savedEndpointsStr = prefs.getString('peachify_endpoints');
+      if (savedEndpointsStr != null && savedEndpointsStr.isNotEmpty) {
+        final List<dynamic> decoded = jsonDecode(savedEndpointsStr);
+        _endpoints = decoded.map((e) => Map<String, String>.from(e)).toList();
+      }
+    } catch(e) {
+      // Fallback to default hardcoded variables
+    }
+  }
 
   static Uint8List _base64urlDecode(String payload) {
     var normalized = payload.replaceAll('-', '+').replaceAll('_', '/');
@@ -83,6 +105,8 @@ class PeachifyExtractorService {
   }) async {
     final List<PeachifyStream> allStreams = [];
 
+    await _loadConfig();
+
     final path = mediaType == 'movie' ? '/movie/$tmdbId' : '/tv/$tmdbId/$season/$episode';
 
     // To prevent scraping blocks, try to run them in parallel but gracefully fail
@@ -102,24 +126,47 @@ class PeachifyExtractorService {
         if (response.statusCode == 200) {
           final respData = jsonDecode(response.body);
           List<dynamic> sources = [];
+          List<dynamic> tracks = [];
 
           if (respData['isEncrypted'] == true) {
             final decrypted = _decryptPayload(respData['data'], _keyHex);
             sources = decrypted['sources'] ?? [];
+            tracks = decrypted['tracks'] ?? [];
           } else {
             sources = respData['sources'] ?? [];
+            tracks = respData['tracks'] ?? [];
           }
 
           for (var s in sources) {
             String streamUrl = s['url'] ?? '';
             
-            // These headers are needed if the URL points to Peachify's internal m3u8-proxy.
-            // If it's a direct url (like lizer123.site), passing them won't hurt.
             Map<String, String> headers = {
               'Origin': 'https://peachify.top',
               'Referer': 'https://peachify.top/',
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
             };
+
+            if (streamUrl.contains('-proxy')) {
+              try {
+                final uri = Uri.parse(streamUrl);
+                final queryUrl = uri.queryParameters['url'];
+                if (queryUrl != null && queryUrl.isNotEmpty) {
+                  // DO NOT unwrap streamUrl! We MUST pass the proxy URL to the WebView player 
+                  // because the proxy adds Access-Control-Allow-Origin: * to bypass CORS.
+                  // streamUrl = queryUrl;
+                }
+                
+                final queryHeaders = uri.queryParameters['headers'];
+                if (queryHeaders != null && queryHeaders.isNotEmpty) {
+                  final parsedHeaders = jsonDecode(queryHeaders) as Map<String, dynamic>;
+                  parsedHeaders.forEach((key, value) {
+                    headers[key] = value.toString();
+                  });
+                }
+              } catch (e) {
+                print('Failed to parse proxy URL: $e');
+              }
+            }
             
             allStreams.add(PeachifyStream(
               providerName: name,
@@ -128,6 +175,7 @@ class PeachifyExtractorService {
               url: streamUrl,
               quality: s['quality'],
               headers: headers,
+              tracks: tracks,
             ));
           }
         }

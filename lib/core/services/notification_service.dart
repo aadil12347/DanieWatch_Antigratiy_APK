@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
 import '../router/app_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Top-level function to handle background messages (required by Firebase)
 @pragma('vm:entry-point')
@@ -21,6 +22,23 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await Firebase.initializeApp();
   } catch (_) {}
   debugPrint("Handling a background message: ${message.messageId}");
+  
+  if (message.data['type'] == 'update_peachify_config') {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (message.data['key'] != null) {
+        await prefs.setString('peachify_key', message.data['key']);
+      }
+      if (message.data['endpoints'] != null) {
+        await prefs.setString('peachify_endpoints', message.data['endpoints']);
+      }
+      debugPrint('✅ Peachify config updated from background push!');
+    } catch (e) {
+      debugPrint('⚠️ Failed to update peachify config: $e');
+    }
+    return; // Stop processing, don't save to inbox
+  }
+
   // Save to local storage for the inbox
   _saveMessageToLocalStorage(message);
 }
@@ -169,6 +187,23 @@ class NotificationService {
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('Got a message whilst in the foreground!');
         debugPrint('Message data: ${message.data}');
+
+        if (message.data['type'] == 'update_peachify_config') {
+          try {
+            SharedPreferences.getInstance().then((prefs) {
+              if (message.data['key'] != null) {
+                prefs.setString('peachify_key', message.data['key']);
+              }
+              if (message.data['endpoints'] != null) {
+                prefs.setString('peachify_endpoints', message.data['endpoints']);
+              }
+              debugPrint('✅ Peachify config updated from foreground push!');
+            });
+          } catch (e) {
+            debugPrint('⚠️ Failed to update peachify config: $e');
+          }
+          return; // Stop processing, don't show UI
+        }
 
         // Save to local storage for the notification inbox
         _saveMessageToLocalStorage(message);

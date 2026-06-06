@@ -20,6 +20,7 @@ import '../../widgets/sticky_dropdown_modal.dart';
 import '../../widgets/liquid_tap_effect.dart';
 import '../../../pip/pip_controller.dart';
 import '../../../services/videasy_extractor.dart';
+import '../../../services/peachify_extractor.dart';
 import '../../../services/hls_resolution_parser.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -117,6 +118,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _selectedServer;
   String? _selectedResolution;
   Map<String, String>? _explicitResolutions;
+  Map<String, ExtractedVideasyStream>? _currentStreamsMap;
 
   @override
   void initState() {
@@ -199,15 +201,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _webViewKey = const ValueKey('discovery_webview');
     _currentExtractionUrl = widget.url;
 
+    _currentStreamsMap = widget.extractedStreams != null
+        ? _sortStreamsMap(widget.extractedStreams!)
+        : null;
+
     if (widget.isOffline || widget.isDirectLink) {
       _isExtracting = false;
       _isLoading = false;
-      if (widget.extractedStreams != null && widget.extractedStreams!.isNotEmpty) {
-        _selectedServer = widget.extractedStreams!.keys.first;
+      if (_currentStreamsMap != null && _currentStreamsMap!.isNotEmpty) {
+        _selectedServer = _currentStreamsMap!.keys.first;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_selectedServer != null && widget.extractedStreams != null) {
-          final stream = widget.extractedStreams![_selectedServer!];
+        if (_selectedServer != null && _currentStreamsMap != null) {
+          final stream = _currentStreamsMap![_selectedServer!];
           if (stream != null) {
             _startPlayback(stream.url, extractedStream: stream);
           } else {
@@ -243,36 +249,98 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   int _extraction1pxClickCount = 0;
   ExtractedVideasyStream? _extractedStream;
 
-  /// Start the extraction by enabling the 1px WebView in the widget tree.
-  /// The WebView loads player.videasy.net with hooks injected at DOCUMENT_START.
-  /// An auto-clicker triggers playback. JSON.parse hook captures the m3u8.
-  void _tryDirectExtraction() {
+  /// Start the extraction using PeachifyExtractorService directly.
+  Future<void> _tryDirectExtraction() async {
     final s = _currentSeason ?? widget.season ?? 1;
     final e = _currentEpisode ?? widget.episode ?? 1;
 
-    final videasyUrl = VideasyExtractorService.buildPlayerUrl(
-      tmdbId: widget.tmdbId,
-      mediaType: widget.mediaType,
-      season: s,
-      episode: e,
-    );
+    debugPrint('[Engine] Starting Peachify direct extraction in player screen');
+    try {
+      final streams = await PeachifyExtractorService().extractStreams(
+        tmdbId: widget.tmdbId,
+        mediaType: widget.mediaType,
+        season: s,
+        episode: e,
+      );
 
-    debugPrint('[Engine] Starting 1px WebView extraction');
-    debugPrint('[Engine]   URL: $videasyUrl');
+      if (!mounted || _isClosing) return;
 
-    setState(() {
-      _extraction1pxActive = true;
-      _extraction1pxUrl = videasyUrl;
-      _extraction1pxKey = ValueKey('extraction_1px_wv_${DateTime.now().millisecondsSinceEpoch}');
-      _extraction1pxClickCount = 0;
+      if (streams.isEmpty) {
+        debugPrint('[Engine] Peachify extraction returned empty list');
+        _onExtractionFailed();
+        return;
+      }
+
+      final Map<String, ExtractedVideasyStream> map = {};
+      for (var stream in streams) {
+        final key = '${stream.providerName} - ${stream.dub}';
+        final mappedStream = ExtractedVideasyStream(
+          server: key,
+          url: stream.url,
+          sources: [{
+            'url': stream.url,
+            'quality': stream.quality,
+            'type': stream.type,
+          }],
+          tracks: stream.tracks,
+          headers: stream.headers,
+        );
+        if (!map.containsKey(key) || (stream.quality ?? 0) > (map[key]!.sources.first['quality'] ?? 0)) {
+          map[key] = mappedStream;
+        }
+      }
+
+      if (map.isEmpty) {
+        _onExtractionFailed();
+        return;
+      }
+
+      final sortedMap = _sortStreamsMap(map);
+
+      setState(() {
+        _currentStreamsMap = sortedMap;
+        _selectedServer = sortedMap.keys.first;
+      });
+
+      final stream = sortedMap[_selectedServer!]!;
+      _onExtractionSuccess(stream);
+    } catch (e) {
+      debugPrint('[Engine] Peachify extraction failed: $e');
+      if (mounted && !_isClosing) {
+        _onExtractionFailed();
+      }
+    }
+  }
+
+  Map<String, ExtractedVideasyStream> _sortStreamsMap(Map<String, ExtractedVideasyStream> map) {
+    if (map.isEmpty) return map;
+    final originalKeys = map.keys.toList();
+    final sortedKeys = List<String>.from(originalKeys);
+    sortedKeys.sort((a, b) {
+      final aLower = a.toLowerCase();
+      final bLower = b.toLowerCase();
+
+      // 1. 'Iron - Hindi' is absolute top priority
+      final aIsIronHindi = aLower == 'iron - hindi';
+      final bIsIronHindi = bLower == 'iron - hindi';
+      if (aIsIronHindi && !bIsIronHindi) return -1;
+      if (!aIsIronHindi && bIsIronHindi) return 1;
+
+      // 2. Any other server containing Hindi
+      final aIsHindi = aLower.contains('hindi');
+      final bIsHindi = bLower.contains('hindi');
+      if (aIsHindi && !bIsHindi) return -1;
+      if (!aIsHindi && bIsHindi) return 1;
+
+      // 3. Otherwise preserve original order
+      return originalKeys.indexOf(a).compareTo(originalKeys.indexOf(b));
     });
 
-    // Absolute timeout: 60 seconds
-    _extraction1pxTimeoutTimer?.cancel();
-    _extraction1pxTimeoutTimer = Timer(const Duration(seconds: 60), () {
-      debugPrint('[Engine] ⚠️ Extraction timeout (60s)');
-      _onExtractionFailed();
-    });
+    final Map<String, ExtractedVideasyStream> sortedMap = {};
+    for (var key in sortedKeys) {
+      sortedMap[key] = map[key]!;
+    }
+    return sortedMap;
   }
 
   /// Called when the extraction 1px WebView is created
@@ -434,6 +502,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _isExtracting = false;
       _isInitialized = false;
       _useWebViewEngine = false; // Reset initially, will switch below
+      _extractedStream = extractedStream;
     });
 
     _masterWaitTimer?.cancel();
@@ -451,8 +520,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (isOffline) {
       _initializeBetterPlayer(link, isOffline: true);
     } else {
-      // We now prefer BetterPlayer (Native) for online streams as per analysis recommendations
-      _initializeBetterPlayer(link, isOffline: false, extractedStream: extractedStream);
+      // Direct link online: Use custom glassmorphism webview player
+      _switchToWebEngine();
     }
   }
 
@@ -1098,17 +1167,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             : URLRequest(
                 url: WebUri(_extractedLink ?? 'about:blank'),
                 headers: {
-                  'Referer': 'https://player.videasy.net/',
-                  'Origin': 'https://player.videasy.net',
+                  'Referer': 'https://peachify.top/',
+                  'Origin': 'https://peachify.top',
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 },
               ),
-        // For extracted m3u8: load player.html from asset with videasy.net base URL
-        // This makes ALL hls.js XHR requests carry Referer: https://player.videasy.net/
+        // For extracted m3u8: load player.html from asset with peachify.top base URL
+        // This makes ALL hls.js XHR requests carry Referer: https://peachify.top/
         initialData: isExtractedM3u8
             ? InAppWebViewInitialData(
                 data: '', // Placeholder — real content loaded in onWebViewCreated
-                baseUrl: WebUri('https://player.videasy.net'),
+                baseUrl: WebUri('https://peachify.top'),
                 mimeType: 'text/html',
                 encoding: 'utf-8',
               )
@@ -1150,7 +1219,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
               await controller.loadData(
                 data: modifiedHtml,
-                baseUrl: WebUri('https://player.videasy.net/'),
+                baseUrl: WebUri('https://peachify.top/'),
                 mimeType: 'text/html',
                 encoding: 'utf-8',
               );
@@ -1251,6 +1320,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               }
             },
           );
+          controller.addJavaScriptHandler(
+            handlerName: 'changeServer',
+            callback: (args) {
+              if (_isClosing) return;
+              if (args.isNotEmpty) {
+                final serverName = args[0] as String;
+                debugPrint('[Engine] WebView changed server to: $serverName');
+                if (_currentStreamsMap != null && _currentStreamsMap!.containsKey(serverName)) {
+                  setState(() {
+                    _selectedServer = serverName;
+                  });
+                  final stream = _currentStreamsMap![serverName]!;
+                  _startPlayback(stream.url, extractedStream: stream);
+                }
+              }
+            },
+          );
         },
         onLoadStart: (controller, url) async {
           await controller.evaluateJavascript(source: """
@@ -1273,8 +1359,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         },
         shouldOverrideUrlLoading: (controller, navigationAction) async {
           final url = navigationAction.request.url.toString();
-          // Allow file:// URLs (our player.html) and videasy.net
-          if (url.startsWith('file://') || url.contains('videasy.net')) {
+          // Allow file:// URLs (our player.html), videasy.net, and peachify.top
+          if (url.startsWith('file://') || url.contains('videasy.net') || url.contains('peachify.top')) {
             return NavigationActionPolicy.ALLOW;
           }
           if (navigationAction.isForMainFrame) {
@@ -1322,6 +1408,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               tracksJs = '[${tracksList.join(',')}]';
             }
 
+            final headersMap = _extractedStream?.headers ?? {
+              'Referer': 'https://player.videasy.net/',
+              'Origin': 'https://player.videasy.net'
+            };
+            final headersJson = jsonEncode(headersMap);
+
+            String serversJs = '[]';
+            if (_currentStreamsMap != null && _currentStreamsMap!.isNotEmpty) {
+              serversJs = jsonEncode(_currentStreamsMap!.keys.toList());
+            }
+
             await controller.evaluateJavascript(source: """
               (function() {
                 // Set title
@@ -1330,11 +1427,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 // Set media type (show/hide episodes button)
                 window.setMediaType('${widget.mediaType}');
 
+                // Setup server picker
+                var servers = $serversJs;
+                if (servers.length > 0) {
+                  window.setupServerPicker(servers, '${_selectedServer ?? ""}');
+                }
+
                 // Play video with headers
-                window.playVideo('$escapedUrl', {
-                  Referer: 'https://player.videasy.net/',
-                  Origin: 'https://player.videasy.net'
-                });
+                window.playVideo('$escapedUrl', $headersJson);
 
                 // Add subtitle tracks if available
                 var tracks = $tracksJs;
