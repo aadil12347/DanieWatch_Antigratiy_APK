@@ -3,6 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -99,9 +100,25 @@ class DatabaseSyncService {
   Future<List<ManifestItem>> loadLocalIndex() async {
     try {
       final file = await _indexFile;
-      if (!await file.exists()) {
-        dev.log('[DatabaseSync] Local index file not found. Returning empty list.');
-        return [];
+      
+      bool fileIsValid = false;
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        if (content.isNotEmpty && content.trim() != '[]') {
+          fileIsValid = true;
+        }
+      }
+
+      if (!fileIsValid) {
+        dev.log('[DatabaseSync] Local index file not found or empty. Loading placeholder from assets/base_index.json...');
+        try {
+          final placeholderData = await rootBundle.loadString('assets/base_index.json');
+          await file.writeAsString(placeholderData, flush: true);
+          dev.log('[DatabaseSync] Bundled placeholder cached successfully.');
+        } catch (assetErr) {
+          dev.log('[DatabaseSync] Error loading bundled placeholder: $assetErr');
+          return [];
+        }
       }
 
       final rawData = await file.readAsString();
