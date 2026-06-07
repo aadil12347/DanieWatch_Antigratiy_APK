@@ -209,4 +209,136 @@ class VidNestExtractorService {
 
     return allStreams;
   }
+
+  /// Fetches from both VidNest and Peachify, merges the results,
+  /// sorts them according to custom priority, and renames them to
+  /// "Language - N" (e.g. Hindi - 1, Hindi - 2, English - 1, etc.).
+  static Future<List<PeachifyStream>> fetchMergedAndSortedStreams({
+    required int tmdbId,
+    required String mediaType,
+    int season = 1,
+    int episode = 1,
+  }) async {
+    // 1. Fetch both in parallel
+    final vidnestFuture = VidNestExtractorService().extractStreams(
+      tmdbId: tmdbId,
+      mediaType: mediaType,
+      season: season,
+      episode: episode,
+    ).catchError((_) => <PeachifyStream>[]);
+
+    final peachifyFuture = PeachifyExtractorService().extractStreams(
+      tmdbId: tmdbId,
+      mediaType: mediaType,
+      season: season,
+      episode: episode,
+    ).catchError((_) => <PeachifyStream>[]);
+
+    final results = await Future.wait([vidnestFuture, peachifyFuture]);
+    final List<PeachifyStream> vidnestStreams = results[0];
+    final List<PeachifyStream> peachifyStreams = results[1];
+
+    final List<PeachifyStream> allStreams = [];
+    allStreams.addAll(vidnestStreams);
+    allStreams.addAll(peachifyStreams);
+
+    if (allStreams.isEmpty) {
+      return [];
+    }
+
+    // 2. Sort them based on the rules:
+    // - Hindi streams on top.
+    // - Within Hindi streams:
+    //   a) Peachify Iron Hindi first
+    //   b) Peachify Dark Hindi second
+    //   c) VidNest Hindi servers next (Delta first, then others)
+    //   d) All other Hindi servers next
+    // - Then English streams (from both)
+    // - Then all others (from both)
+    allStreams.sort((a, b) {
+      final aProv = a.providerName.toLowerCase();
+      final bProv = b.providerName.toLowerCase();
+      final aDub = a.dub.toLowerCase();
+      final bDub = b.dub.toLowerCase();
+
+      final aIsHindi = aDub.contains('hindi');
+      final bIsHindi = bDub.contains('hindi');
+
+      // 1. Prioritize Hindi at the very top
+      if (aIsHindi && !bIsHindi) return -1;
+      if (!aIsHindi && bIsHindi) return 1;
+
+      if (aIsHindi && bIsHindi) {
+        // Rules within Hindi:
+        // a) Iron Hindi (Peachify)
+        final aIsIron = aProv == 'iron';
+        final bIsIron = bProv == 'iron';
+        if (aIsIron && !bIsIron) return -1;
+        if (!aIsIron && bIsIron) return 1;
+
+        // b) Dark Hindi (Peachify)
+        final aIsDark = aProv == 'dark';
+        final bIsDark = bProv == 'dark';
+        if (aIsDark && !bIsDark) return -1;
+        if (!aIsDark && bIsDark) return 1;
+
+        // c) VidNest Hindi servers: Delta first, then other VidNest servers
+        final vidnestPriority = ['delta', 'lamda', 'catflix', 'ophim', 'prime', 'gama', 'hexa', 'beta', 'sigma'];
+        
+        final aVidPriority = vidnestPriority.indexOf(aProv);
+        final bVidPriority = vidnestPriority.indexOf(bProv);
+
+        final aIsVid = aVidPriority != -1;
+        final bIsVid = bVidPriority != -1;
+
+        if (aIsVid && !bIsVid) return -1;
+        if (!aIsVid && bIsVid) return 1;
+        if (aIsVid && bIsVid) {
+          return aVidPriority.compareTo(bVidPriority);
+        }
+
+        // d) Remaining Hindi servers (e.g. Peachify Multi/Spider/Wolf) - preserve order
+        return 0;
+      }
+
+      // 2. English streams
+      final aIsEnglish = aDub.contains('english') || aDub.contains('eng');
+      final bIsEnglish = bDub.contains('english') || bDub.contains('eng');
+      if (aIsEnglish && !bIsEnglish) return -1;
+      if (!aIsEnglish && bIsEnglish) return 1;
+
+      // 3. Otherwise preserve order
+      return 0;
+    });
+
+    // 3. Rename them to "Language - N" (e.g. Hindi - 1, Hindi - 2)
+    final langCounts = <String, int>{};
+    final List<PeachifyStream> renamedStreams = [];
+
+    for (var stream in allStreams) {
+      // Clean language name: strip any numbers/server names, capitalize first letter
+      var lang = stream.dub.trim();
+      if (lang.isEmpty) lang = 'Unknown';
+      
+      // Capitalize first letter (e.g. "hindi" -> "Hindi", "english" -> "English")
+      lang = lang[0].toUpperCase() + lang.substring(1);
+
+      final count = (langCounts[lang] ?? 0) + 1;
+      langCounts[lang] = count;
+
+      final newProviderName = '$lang - $count';
+
+      renamedStreams.add(PeachifyStream(
+        providerName: newProviderName,
+        dub: stream.dub,
+        type: stream.type,
+        url: stream.url,
+        quality: stream.quality,
+        headers: stream.headers,
+        tracks: stream.tracks,
+      ));
+    }
+
+    return renamedStreams;
+  }
 }

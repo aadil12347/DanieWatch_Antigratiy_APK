@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:encrypt/encrypt.dart' as encrypt;
 
-final String _baseUrl = 'https://new.vidnest.fun';
-final String _customAlphabet = 'RB0fpH8ZEyVLkv7c2i6MAJ5u3IKFDxlS1NTsnGaqmXYdUrtzjwObCgQP94hoeW+/=';
-final String _standardAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+// ─── VidNest configuration ───
+final String _vidnestBaseUrl = 'https://new.vidnest.fun';
+final String _vidnestCustomAlphabet = 'RB0fpH8ZEyVLkv7c2i6MAJ5u3IKFDxlS1NTsnGaqmXYdUrtzjwObCgQP94hoeW+/=';
+final String _vidnestStandardAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
-final List<Map<String, String>> _servers = [
+final List<Map<String, String>> _vidnestServers = [
   {'name': 'Delta', 'path': 'allmovies'},
   {'name': 'Lamda', 'path': 'allmovies'},
   {'name': 'Catflix', 'path': 'movies4f'},
@@ -17,59 +20,123 @@ final List<Map<String, String>> _servers = [
   {'name': 'Sigma', 'path': 'hollymoviehd'},
 ];
 
-String _decryptCustomBase64(String encryptedData) {
+// ─── Peachify configuration ───
+final String _peachifyKeyHex = 'a8f2a1b5e9c470814f6b2c3a5d8e7f9c1a2b3c4d5e3f7a8b8cad1e2d0a4d5c5b';
+final List<Map<String, String>> _peachifyEndpoints = [
+  {'name': 'Spider', 'base': 'https://usa.eat-peach.sbs/holly'},
+  {'name': 'Multi', 'base': 'https://usa.eat-peach.sbs/multi'},
+  {'name': 'Wolf', 'base': 'https://usa.eat-peach.sbs/air'},
+  {'name': 'Iron', 'base': 'https://uwu.eat-peach.sbs/moviebox'},
+  {'name': 'Dark', 'base': 'https://uwu.eat-peach.sbs/net'},
+];
+
+Uint8List _base64urlDecode(String payload) {
+  var normalized = payload.replaceAll('-', '+').replaceAll('_', '/');
+  int padding = normalized.length % 4;
+  if (padding != 0) {
+    normalized += '=' * (4 - padding);
+  }
+  return base64Decode(normalized);
+}
+
+Map<String, dynamic> _decryptPeachifyPayload(String data, String keyHex) {
+  final parts = data.split('.');
+  if (parts.length != 3) {
+    throw Exception('Invalid encrypted data format');
+  }
+
+  final ivBytes = _base64urlDecode(parts[0]);
+  final ciphertextBytes = _base64urlDecode(parts[1]);
+  final tagBytes = _base64urlDecode(parts[2]);
+
+  final keyBytes = Uint8List.fromList(List<int>.generate(
+    keyHex.length ~/ 2,
+    (i) => int.parse(keyHex.substring(i * 2, i * 2 + 2), radix: 16),
+  ));
+
+  final key = encrypt.Key(keyBytes);
+  final iv = encrypt.IV(ivBytes);
+
+  final encryptedBytes = Uint8List(ciphertextBytes.length + tagBytes.length);
+  encryptedBytes.setAll(0, ciphertextBytes);
+  encryptedBytes.setAll(ciphertextBytes.length, tagBytes);
+
+  final encrypter = encrypt.Encrypter(encrypt.AES(key, mode: encrypt.AESMode.gcm));
+  final encrypted = encrypt.Encrypted(encryptedBytes);
+
+  final decrypted = encrypter.decrypt(encrypted, iv: iv);
+  return jsonDecode(decrypted);
+}
+
+String _decryptVidNestCustomBase64(String encryptedData) {
   StringBuffer standardBase64 = StringBuffer();
 
   for (int i = 0; i < encryptedData.length; i++) {
     String char = encryptedData[i];
-    int index = _customAlphabet.indexOf(char);
+    int index = _vidnestCustomAlphabet.indexOf(char);
 
     if (index != -1) {
-      standardBase64.write(_standardAlphabet[index]);
+      standardBase64.write(_vidnestStandardAlphabet[index]);
     } else {
       standardBase64.write(char);
     }
   }
 
-  // Decode standard base64 to bytes, then utf8 decode to string
   List<int> decodedBytes = base64.decode(standardBase64.toString());
   return utf8.decode(decodedBytes);
+}
+
+class TestStream {
+  final String origin; // 'VidNest' or 'Peachify'
+  final String serverName; // original server name (e.g. Iron, Delta)
+  final String dub; // language
+  final String type;
+  final String url;
+  final Map<String, String> headers;
+  String displayName; // Hindi - 1, Hindi - 2, etc.
+
+  TestStream({
+    required this.origin,
+    required this.serverName,
+    required this.dub,
+    required this.type,
+    required this.url,
+    required this.headers,
+    this.displayName = '',
+  });
 }
 
 void main() async {
   final int tmdbId = 1327819;
   final String mediaType = 'movie';
 
-  print('Testing VidNest Extractor for TMDB ID $tmdbId ($mediaType)...');
+  print('--- Unified Test Fetch for TMDB ID $tmdbId ($mediaType) ---');
 
-  // Query each unique server path in parallel
-  final uniquePaths = <String, List<String>>{};
-  for (var server in _servers) {
+  final List<TestStream> allStreams = [];
+
+  // 1. Fetch from VidNest in parallel
+  final vidnestUniquePaths = <String, List<String>>{};
+  for (var server in _vidnestServers) {
     final name = server['name']!;
     final path = server['path']!;
-    uniquePaths.putIfAbsent(path, () => []).add(name);
+    vidnestUniquePaths.putIfAbsent(path, () => []).add(name);
   }
 
-  final List<Map<String, dynamic>> allStreams = [];
-
-  final futures = uniquePaths.entries.map((entry) async {
+  final vidnestFutures = vidnestUniquePaths.entries.map((entry) async {
     final path = entry.key;
     final serverNames = entry.value;
 
     final urlPath = '/$path/movie/$tmdbId';
-    final requestUrl = '$_baseUrl$urlPath';
+    final requestUrl = '$_vidnestBaseUrl$urlPath';
 
-    print('Fetching from server path "$path" -> $requestUrl');
     try {
       final response = await http.get(Uri.parse(requestUrl)).timeout(const Duration(seconds: 10));
-      print('  Server path "$path" response status: ${response.statusCode}');
-
       if (response.statusCode == 200) {
         final parsedResponse = json.decode(response.body);
         Map<String, dynamic>? dataJson;
 
         if (parsedResponse['encrypted'] == true && parsedResponse['data'] != null) {
-          final decryptedString = _decryptCustomBase64(parsedResponse['data']);
+          final decryptedString = _decryptVidNestCustomBase64(parsedResponse['data']);
           dataJson = json.decode(decryptedString);
         } else {
           dataJson = parsedResponse;
@@ -77,7 +144,6 @@ void main() async {
 
         if (dataJson != null && dataJson['streams'] != null) {
           final streamsList = dataJson['streams'] as List<dynamic>;
-          print('  Successfully decrypted "$path". Stream count: ${streamsList.length}');
           for (var streamData in streamsList) {
             final streamUrl = streamData['url'] as String? ?? '';
             if (streamUrl.isEmpty) continue;
@@ -93,84 +159,163 @@ void main() async {
             }
 
             for (var serverName in serverNames) {
-              allStreams.add({
-                'server': serverName,
-                'language': language,
-                'type': type,
-                'url': streamUrl,
-                'headers': headers,
-              });
+              allStreams.add(TestStream(
+                origin: 'VidNest',
+                serverName: serverName,
+                dub: language,
+                type: type,
+                url: streamUrl,
+                headers: headers,
+              ));
             }
           }
-        } else {
-          print('  No streams found for server path "$path"');
         }
-      } else {
-        print('  Failed status code: ${response.statusCode} for "$path"');
       }
     } catch (e) {
-      print('  Error fetching from server path "$path": $e');
+      print('VidNest error for path $path: $e');
     }
   });
 
-  await Future.wait(futures);
+  // 2. Fetch from Peachify in parallel
+  final peachifyFutures = _peachifyEndpoints.map((endpoint) async {
+    final name = endpoint['name']!;
+    final base = endpoint['base']!;
+    final url = '$base/movie/$tmdbId';
 
-  print('\nSorting streams (Delta Hindi first, then other Delta, then Lamda, then Catflix, then others)...');
-  allStreams.sort((a, b) {
-    final aProv = (a['server'] as String).toLowerCase();
-    final bProv = (b['server'] as String).toLowerCase();
-    final aDub = (a['language'] as String).toLowerCase();
-    final bDub = (b['language'] as String).toLowerCase();
+    try {
+      final response = await http.get(Uri.parse(url), headers: {
+        'Origin': 'https://peachify.top',
+        'Referer': 'https://peachify.top/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+      }).timeout(const Duration(seconds: 10));
 
-    // Absolute top priority: Delta - Hindi
-    final aIsDeltaHindi = aProv == 'delta' && aDub.contains('hindi');
-    final bIsDeltaHindi = bProv == 'delta' && bDub.contains('hindi');
-    if (aIsDeltaHindi && !bIsDeltaHindi) return -1;
-    if (!aIsDeltaHindi && bIsDeltaHindi) return 1;
+      if (response.statusCode == 200) {
+        final respData = jsonDecode(response.body);
+        List<dynamic> sources = [];
 
-    final serverPriority = [
-      'delta',
-      'lamda',
-      'catflix',
-      'ophim',
-      'prime',
-      'gama',
-      'hexa',
-      'beta',
-      'sigma'
-    ];
+        if (respData['isEncrypted'] == true) {
+          final decrypted = _decryptPeachifyPayload(respData['data'], _peachifyKeyHex);
+          sources = decrypted['sources'] ?? [];
+        } else {
+          sources = respData['sources'] ?? [];
+        }
 
-    int aPriority = serverPriority.indexOf(aProv);
-    int bPriority = serverPriority.indexOf(bProv);
+        for (var s in sources) {
+          String streamUrl = s['url'] ?? '';
+          if (streamUrl.isEmpty) continue;
 
-    if (aPriority == -1) aPriority = 999;
-    if (bPriority == -1) bPriority = 999;
+          Map<String, String> headers = {
+            'Origin': 'https://peachify.top',
+            'Referer': 'https://peachify.top/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+          };
 
-    if (aPriority != bPriority) {
-      return aPriority.compareTo(bPriority);
+          allStreams.add(TestStream(
+            origin: 'Peachify',
+            serverName: name,
+            dub: s['dub'] ?? 'Unknown',
+            type: s['type'] ?? 'Unknown',
+            url: streamUrl,
+            headers: headers,
+          ));
+        }
+      }
+    } catch (e) {
+      print('Peachify error for endpoint $name: $e');
     }
+  });
 
-    // If same provider, prioritize Hindi
+  await Future.wait([...vidnestFutures, ...peachifyFutures]);
+
+  print('\nCollation completed. Found ${allStreams.length} streams in total.');
+
+  // 3. Sort streams:
+  // - Hindi on top.
+  // - Within Hindi:
+  //   a) Peachify Iron Hindi first
+  //   b) Peachify Dark Hindi second
+  //   c) VidNest Hindi servers (Delta first, then others)
+  //   d) All other Hindi servers
+  // - Then English streams (from both)
+  // - Then all others (from both)
+  allStreams.sort((a, b) {
+    final aProv = a.serverName.toLowerCase();
+    final bProv = b.serverName.toLowerCase();
+    final aDub = a.dub.toLowerCase();
+    final bDub = b.dub.toLowerCase();
+
     final aIsHindi = aDub.contains('hindi');
     final bIsHindi = bDub.contains('hindi');
+
+    // 1. Prioritize Hindi at the very top
     if (aIsHindi && !bIsHindi) return -1;
     if (!aIsHindi && bIsHindi) return 1;
 
+    if (aIsHindi && bIsHindi) {
+      // Rules within Hindi:
+      // a) Iron Hindi (Peachify)
+      final aIsIron = aProv == 'iron' && a.origin == 'Peachify';
+      final bIsIron = bProv == 'iron' && b.origin == 'Peachify';
+      if (aIsIron && !bIsIron) return -1;
+      if (!aIsIron && bIsIron) return 1;
+
+      // b) Dark Hindi (Peachify)
+      final aIsDark = aProv == 'dark' && a.origin == 'Peachify';
+      final bIsDark = bProv == 'dark' && b.origin == 'Peachify';
+      if (aIsDark && !bIsDark) return -1;
+      if (!aIsDark && bIsDark) return 1;
+
+      // c) VidNest Hindi servers: Delta first, then other VidNest servers
+      final vidnestPriority = ['delta', 'lamda', 'catflix', 'ophim', 'prime', 'gama', 'hexa', 'beta', 'sigma'];
+      
+      final aVidPriority = a.origin == 'VidNest' ? vidnestPriority.indexOf(aProv) : -1;
+      final bVidPriority = b.origin == 'VidNest' ? vidnestPriority.indexOf(bProv) : -1;
+
+      final aIsVid = aVidPriority != -1;
+      final bIsVid = bVidPriority != -1;
+
+      if (aIsVid && !bIsVid) return -1;
+      if (!aIsVid && bIsVid) return 1;
+      if (aIsVid && bIsVid) {
+        return aVidPriority.compareTo(bVidPriority);
+      }
+
+      // d) Remaining Hindi servers (e.g. Peachify Multi/Spider/Wolf) - preserve order
+      return 0;
+    }
+
+    // English streams
+    final aIsEnglish = aDub.contains('english') || aDub.contains('eng');
+    final bIsEnglish = bDub.contains('english') || bDub.contains('eng');
+    if (aIsEnglish && !bIsEnglish) return -1;
+    if (!aIsEnglish && bIsEnglish) return 1;
+
+    // Otherwise preserve order
     return 0;
   });
 
-  print('\n--- Extracted Streams Results ---');
-  if (allStreams.isEmpty) {
-    print('No streams were extracted successfully.');
-  } else {
-    for (int i = 0; i < allStreams.length; i++) {
-      final stream = allStreams[i];
-      print('${i + 1}. Server: ${stream['server']}');
-      print('   Language: ${stream['language']}');
-      print('   Type: ${stream['type']}');
-      print('   URL: ${stream['url']}');
-      print('   Headers: ${stream['headers']}');
-      print('-------------------------------------------');
-    }
+  // 4. Rename to Language - N
+  final langCounts = <String, int>{};
+  for (var stream in allStreams) {
+    var lang = stream.dub.trim();
+    if (lang.isEmpty) lang = 'Unknown';
+    lang = lang[0].toUpperCase() + lang.substring(1).toLowerCase();
+
+    final count = (langCounts[lang] ?? 0) + 1;
+    langCounts[lang] = count;
+
+    stream.displayName = '$lang - $count';
+  }
+
+  print('\n--- Extracted & Unified Streams Results ---');
+  for (int i = 0; i < allStreams.length; i++) {
+    final stream = allStreams[i];
+    print('${i + 1}. Unified Name: ${stream.displayName}');
+    print('   Origin Provider: ${stream.origin} (${stream.serverName})');
+    print('   Original Dub: ${stream.dub}');
+    print('   Type: ${stream.type}');
+    print('   URL: ${stream.url}');
+    print('   Headers: ${stream.headers}');
+    print('--------------------------------------------------');
   }
 }

@@ -1449,30 +1449,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       context: context,
       fetchLinkFuture: () async {
         try {
-          var streams = await VidNestExtractorService().extractStreams(
+          final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
             tmdbId: widget.tmdbId,
             mediaType: widget.mediaType,
             season: s,
             episode: e,
           );
 
-          bool usingVidNest = true;
-          if (streams.isEmpty) {
-            debugPrint('[Details] VidNest extraction returned empty list. Falling back to Peachify...');
-            usingVidNest = false;
-            streams = await PeachifyExtractorService().extractStreams(
-              tmdbId: widget.tmdbId,
-              mediaType: widget.mediaType,
-              season: s,
-              episode: e,
-            );
-          }
-
           if (streams.isEmpty) return null;
           
           final Map<String, ExtractedVideasyStream> map = {};
           for (var stream in streams) {
-            final key = '${stream.providerName} - ${stream.dub}';
+            final key = stream.providerName;
             final mappedStream = ExtractedVideasyStream(
               server: key,
               url: stream.url,
@@ -1484,11 +1472,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               tracks: stream.tracks,
               headers: stream.headers,
             );
-            if (!map.containsKey(key) || (stream.quality ?? 0) > (map[key]!.sources.first['quality'] ?? 0)) {
-              map[key] = mappedStream;
-            }
+            map[key] = mappedStream;
           }
-          return usingVidNest ? map : _sortStreamsMap(map);
+          return map;
         } catch (e) {
           debugPrint('[Details] Direct Extraction Error: $e');
           return null;

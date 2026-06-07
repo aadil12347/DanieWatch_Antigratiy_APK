@@ -203,7 +203,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _currentExtractionUrl = widget.url;
 
     _currentStreamsMap = widget.extractedStreams != null
-        ? _sortStreamsMap(widget.extractedStreams!)
+        ? widget.extractedStreams!
         : null;
 
     if (widget.isOffline || widget.isDirectLink) {
@@ -250,45 +250,32 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   int _extraction1pxClickCount = 0;
   ExtractedVideasyStream? _extractedStream;
 
-  /// Start the extraction using VidNestExtractorService directly, falling back to Peachify if needed.
+  /// Start the extraction using VidNest/Peachify unified service.
   Future<void> _tryDirectExtraction() async {
     final s = _currentSeason ?? widget.season ?? 1;
     final e = _currentEpisode ?? widget.episode ?? 1;
 
     debugPrint('[Engine] Starting direct extraction in player screen');
     try {
-      debugPrint('[Engine] Attempting VidNest direct extraction...');
-      var streams = await VidNestExtractorService().extractStreams(
+      debugPrint('[Engine] Attempting unified direct extraction...');
+      final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
         season: s,
         episode: e,
       );
 
-      bool usingVidNest = true;
-
-      if (streams.isEmpty) {
-        debugPrint('[Engine] VidNest extraction returned empty list. Falling back to Peachify...');
-        usingVidNest = false;
-        streams = await PeachifyExtractorService().extractStreams(
-          tmdbId: widget.tmdbId,
-          mediaType: widget.mediaType,
-          season: s,
-          episode: e,
-        );
-      }
-
       if (!mounted || _isClosing) return;
 
       if (streams.isEmpty) {
-        debugPrint('[Engine] Both VidNest and Peachify extractions returned empty lists');
+        debugPrint('[Engine] Direct extraction returned empty lists');
         _onExtractionFailed();
         return;
       }
 
       final Map<String, ExtractedVideasyStream> map = {};
       for (var stream in streams) {
-        final key = '${stream.providerName} - ${stream.dub}';
+        final key = stream.providerName;
         final mappedStream = ExtractedVideasyStream(
           server: key,
           url: stream.url,
@@ -300,9 +287,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           tracks: stream.tracks,
           headers: stream.headers,
         );
-        if (!map.containsKey(key) || (stream.quality ?? 0) > (map[key]!.sources.first['quality'] ?? 0)) {
-          map[key] = mappedStream;
-        }
+        map[key] = mappedStream;
       }
 
       if (map.isEmpty) {
@@ -310,8 +295,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         return;
       }
 
-      // Preserve VidNest's internal priority sorting if using VidNest, otherwise apply Peachify's sorting
-      final sortedMap = usingVidNest ? map : _sortStreamsMap(map);
+      final sortedMap = map;
 
       setState(() {
         _currentStreamsMap = sortedMap;
