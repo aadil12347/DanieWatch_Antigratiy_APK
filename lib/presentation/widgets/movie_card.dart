@@ -13,6 +13,7 @@ import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/active_card_provider.dart';
 import '../providers/poster_color_provider.dart';
+import '../providers/manifest_provider.dart';
 
 import '../../core/utils/toast_utils.dart';
 import 'poster_touch_handler.dart';
@@ -81,7 +82,8 @@ class _MovieCardState extends ConsumerState<MovieCard>
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    final posterUrl = item.effectivePosterUrl ?? '';
+    final posterUrlAsync = ref.watch(posterUrlProvider('${item.id}_${item.mediaType}'));
+    final posterUrl = posterUrlAsync.valueOrNull ?? '';
     final logoUrl = item.logoUrl;
 
     // Selective watch: only rebuild THIS card when its active state changes
@@ -200,21 +202,17 @@ class _MovieCardState extends ConsumerState<MovieCard>
                     fit: StackFit.expand,
                     children: [
                       // Base Poster
-                      if (posterUrl.isNotEmpty)
-                        _PosterImage(
-                          posterUrl: posterUrl,
-                          tmdbId: item.id,
-                          mediaType: item.mediaType,
-                        )
-                      else
-                        _placeholder(),
+                      _PosterImage(
+                        itemId: item.id.toString(),
+                        mediaType: item.mediaType,
+                      ),
 
                       // Language Badge (top-left)
-                      if (item.language.isNotEmpty)
+                      if (item.displayLanguage.isNotEmpty)
                         Positioned(
                           top: 6,
                           left: 6,
-                          child: _LanguageBadge(text: item.language.first),
+                          child: _LanguageBadge(text: item.displayLanguage),
                         ),
 
                     ],
@@ -447,94 +445,70 @@ class _LanguageBadge extends StatelessWidget {
 }
 
 /// Poster image with automatic TMDB fallback for unsupported formats (.avif etc).
-class _PosterImage extends StatefulWidget {
-  final String posterUrl;
-  final int tmdbId;
+/// Poster image with automatic TMDB/OMDb fallback and caching.
+class _PosterImage extends ConsumerWidget {
+  final String itemId;
   final String mediaType;
 
   const _PosterImage({
-    required this.posterUrl,
-    required this.tmdbId,
+    required this.itemId,
     required this.mediaType,
   });
 
   @override
-  State<_PosterImage> createState() => _PosterImageState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final posterAsync = ref.watch(posterUrlProvider('${itemId}_$mediaType'));
 
-class _PosterImageState extends State<_PosterImage> {
-  String? _fallbackUrl;
-  bool _primaryFailed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Proactively skip .avif URLs since Flutter can't render them well
-    if (widget.posterUrl.toLowerCase().endsWith('.avif')) {
-      _primaryFailed = true;
-      _fetchTmdbPoster();
-    }
-  }
-
-  void _onPrimaryError() {
-    if (_primaryFailed) return;
-    _primaryFailed = true;
-    _fetchTmdbPoster();
-  }
-
-  Future<void> _fetchTmdbPoster() async {
-    try {
-      final isTv = widget.mediaType == 'tv' || widget.mediaType == 'series';
-      final details = isTv
-          ? await TmdbClient.instance.getTvDetails(widget.tmdbId)
-          : await TmdbClient.instance.getMovieDetails(widget.tmdbId);
-      final posterPath = details?['poster_path']?.toString();
-      if (posterPath != null && posterPath.isNotEmpty && mounted) {
-        setState(() {
-          _fallbackUrl = TmdbClient.posterUrl(posterPath);
-        });
-        return;
-      }
-    } catch (_) {}
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final url = _primaryFailed ? _fallbackUrl : widget.posterUrl;
-
-    if (url == null || url.isEmpty) {
-      return Container(
-        color: AppColors.surfaceElevated,
-        child: const Center(
-          child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
-        ),
-      );
-    }
-
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: BoxFit.cover,
-      memCacheWidth: 300,
-      placeholder: (_, __) => Container(
-        color: AppColors.surfaceElevated,
-        child: const Center(
-          child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
-        ),
-      ),
-      errorWidget: (_, __, ___) {
-        if (!_primaryFailed) {
-          // Primary URL failed → trigger TMDB fallback
-          WidgetsBinding.instance.addPostFrameCallback((_) => _onPrimaryError());
+    return posterAsync.when(
+      data: (url) {
+        if (url == null || url.isEmpty) {
+          return Container(
+            color: AppColors.surfaceElevated,
+            child: const Center(
+              child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+            ),
+          );
         }
-        return Container(
-          color: AppColors.surfaceElevated,
-          child: const Center(
-            child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+
+        return CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          memCacheWidth: 300,
+          placeholder: (_, __) => Container(
+            color: AppColors.surfaceElevated,
+            child: const Center(
+              child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+            ),
           ),
+          errorWidget: (_, __, ___) => Container(
+            color: AppColors.surfaceElevated,
+            child: const Center(
+              child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+            ),
+          ),
+          fadeOutDuration: const Duration(milliseconds: 200),
+          fadeInDuration: const Duration(milliseconds: 200),
         );
       },
-      fadeOutDuration: const Duration(milliseconds: 200),
-      fadeInDuration: const Duration(milliseconds: 200),
+      loading: () => Container(
+        color: AppColors.surfaceElevated,
+        child: const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
+            ),
+          ),
+        ),
+      ),
+      error: (_, __) => Container(
+        color: AppColors.surfaceElevated,
+        child: const Center(
+          child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted, size: 24),
+        ),
+      ),
     );
   }
 }

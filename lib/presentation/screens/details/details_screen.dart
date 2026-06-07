@@ -1590,23 +1590,157 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Error Screen ──────────────────────────────────────────────────────────
   Widget _buildErrorScreen(String message) {
+    final cleanMessage = message == 'Content not found'
+        ? 'No Data Available'
+        : 'Something went wrong';
+    final description = message == 'Content not found'
+        ? 'We couldn\'t find any details for this title on TMDB. It might not be indexed or details are temporarily unavailable.'
+        : 'An error occurred while fetching details. Please check your network and try again.';
+
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Stack(
           children: [
-            const Icon(Icons.error_outline,
-                color: AppColors.textMuted, size: 64),
-            const SizedBox(height: 16),
-            Text(message,
-                style: const TextStyle(color: Colors.white, fontSize: 16)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => ref.invalidate(detailProvider(_detailParams)),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-              child: const Text('Retry'),
+            // Back Button
+            Positioned(
+              top: 16,
+              left: 16,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  padding: const EdgeInsets.all(12),
+                ),
+                icon: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+            
+            // Central Content
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Glowing Icon Container
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.2),
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.05),
+                            blurRadius: 24,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.movie_creation_outlined,
+                        color: AppColors.primary,
+                        size: 48,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    
+                    // Title
+                    Text(
+                      cleanMessage,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Description
+                    Text(
+                      description,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+                    
+                    // Action Buttons Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Retry button
+                        Flexible(
+                          child: Container(
+                            height: 50,
+                            constraints: const BoxConstraints(maxWidth: 160),
+                            child: ElevatedButton(
+                              onPressed: () => ref.invalidate(detailProvider(_detailParams)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
+                              child: Text(
+                                'Retry',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        
+                        // Back home button
+                        Flexible(
+                          child: Container(
+                            height: 50,
+                            constraints: const BoxConstraints(maxWidth: 160),
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).maybePop(),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.zero,
+                              ),
+                              child: Text(
+                                'Go Back',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),

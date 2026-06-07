@@ -10,6 +10,7 @@ import '../../core/services/poster_color_service.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/detail_provider.dart';
 import '../providers/poster_color_provider.dart';
+import '../providers/manifest_provider.dart';
 
 class StackedCarousel extends ConsumerStatefulWidget {
   final List<ManifestItem> items;
@@ -90,24 +91,31 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
   }
 
   /// Pre-warm color extraction for all carousel items.
-  void _preWarmColors() {
-    final urls = _displayItems
-        .map((item) => item.effectivePosterUrl ?? '')
-        .where((url) => url.isNotEmpty)
-        .toList();
-    PosterColorService.instance.preWarm(urls);
+  void _preWarmColors() async {
+    final futures = _displayItems.map<Future<String?>>((item) =>
+      ref.read(posterUrlProvider('${item.id}_${item.mediaType}').future)
+    ).toList();
+    try {
+      final urls = await Future.wait(futures);
+      final validUrls = urls.whereType<String>().where((url) => url.isNotEmpty).toList();
+      if (mounted && validUrls.isNotEmpty) {
+        PosterColorService.instance.preWarm(validUrls);
+      }
+    } catch (_) {}
   }
 
   /// Update the app-wide gradient to match the current active carousel item.
   void _updateGradientForActiveItem() {
     if (_activeIndex < 0 || _activeIndex >= _displayItems.length) return;
-    final posterUrl = _displayItems[_activeIndex].effectivePosterUrl ?? '';
-    if (posterUrl.isEmpty) return;
-    PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
-      if (mounted) {
-        ref.read(activeGradientProvider.notifier).state = palette;
-      }
-    });
+    final item = _displayItems[_activeIndex];
+    ref.read(posterUrlProvider('${item.id}_${item.mediaType}').future).then((posterUrl) {
+      if (posterUrl == null || posterUrl.isEmpty) return;
+      PosterColorService.instance.extractFromUrl(posterUrl).then((palette) {
+        if (mounted) {
+          ref.read(activeGradientProvider.notifier).state = palette;
+        }
+      });
+    }).catchError((_) {});
   }
 
   /// Implements JS: getPos = (current, active) => { diff = current - active; if (abs(diff) > maxDist) return -current; return diff; }
@@ -313,12 +321,40 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
                     ],
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: CachedNetworkImage(
-                    imageUrl: item.effectivePosterUrl ?? '',
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
-                    errorWidget: (_, __, ___) => Container(color: AppColors.surfaceElevated),
-                ),
+                  child: Consumer(
+                    builder: (context, ref, _) {
+                      final posterAsync = ref.watch(posterUrlProvider('${item.id}_${item.mediaType}'));
+                      final posterUrl = posterAsync.valueOrNull ?? '';
+                      
+                      if (posterUrl.isNotEmpty) {
+                        return CachedNetworkImage(
+                          imageUrl: posterUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
+                          errorWidget: (_, __, ___) => Container(
+                            color: AppColors.surfaceElevated,
+                            child: const Center(
+                              child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted),
+                            ),
+                          ),
+                        );
+                      }
+                      
+                      return Container(
+                        color: AppColors.surfaceElevated,
+                        child: const Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
               ),
             ),
           ),

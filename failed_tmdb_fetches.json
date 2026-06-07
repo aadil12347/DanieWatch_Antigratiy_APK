@@ -1,0 +1,362 @@
+[
+  {
+    "id": "1436664",
+    "title": "Baapu - A Father's Story",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1468971",
+    "title": "Yuddhakaanda Chapter 2",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1527981",
+    "title": "Dr. Hedgewar",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1539798",
+    "title": "Yeh Hai Mera Watan",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1569202",
+    "title": "Dirty Entertainers: The Business of Indian Erotica",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1573913",
+    "title": "Hejjaru",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1602304",
+    "title": "Bihu Attack",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "225741",
+    "title": "Oppa, Saranghae",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "292540",
+    "title": "Qubool Hai?",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "296547",
+    "title": "Rose Garden",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "294765",
+    "title": "Badass Begum",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "308057",
+    "title": "Rajdhani - The Capital of Crime",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "319102",
+    "title": "Zung: The Rust",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "319059",
+    "title": "Adalat: Insaaf Ki Jung",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1161550",
+    "title": "Paune 9",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1259399",
+    "title": "Mix Up",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1268119",
+    "title": "Bengal 1947",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1270473",
+    "title": "Marigold",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1304043",
+    "title": "Phooli",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1309913",
+    "title": "Jog 101",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1372611",
+    "title": "Sir",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1375538",
+    "title": "Evil Dead is Back",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1383695",
+    "title": "Dhoom Dhaam",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1395930",
+    "title": "Bapu Ni Manda Mera",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1405301",
+    "title": "Pyaar Taan Hai Na",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1427943",
+    "title": "Hasrat (An Uncommon Love Story)",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1436603",
+    "title": "Don't Talk to Strangers",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1445070",
+    "title": "Legally Veer",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1451523",
+    "title": "Challe Yaar Coachella",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1493423",
+    "title": "The Lost Girl",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1514898",
+    "title": "Kuladalli Keelyavudo",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1523505",
+    "title": "Wife peke Husband Theke",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1526240",
+    "title": "Main Tenu Phir Milangi",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1552819",
+    "title": "Assassin",
+    "type": "movie",
+    "reason": "Not found on TMDB (404)"
+  },
+  {
+    "id": "1556396",
+    "title": "What a Kismat",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1563575",
+    "title": "Rajdhani Punjab",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1584542",
+    "title": "Main Tere Qurbaan",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1584340",
+    "title": "Ekam Singh: A Warrior",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: true)"
+  },
+  {
+    "id": "1596151",
+    "title": "Mamta Child Factory",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1599346",
+    "title": "Tenu Suit Suit Karda",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1603224",
+    "title": "Real Kashmir Football Club",
+    "type": "movie",
+    "reason": "Not found on TMDB (404)"
+  },
+  {
+    "id": "1602023",
+    "title": "Rehna Nahi Bin Tere",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1614475",
+    "title": "Seeds",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1659972",
+    "title": "Tabaahi Reloaded",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "1676328",
+    "title": "Ve Koi Lai Chaleya Muklave",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "613047",
+    "title": "Laiye Je Yaarian",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "784978",
+    "title": "Srimati Bhayankari",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: true)"
+  },
+  {
+    "id": "869062",
+    "title": "Panchhi",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "895206",
+    "title": "Ek Anjaan Rishtey Ka Guilt",
+    "type": "movie",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "118132",
+    "title": "Mister Flower",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "138031",
+    "title": "Love as You Taste",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "146405",
+    "title": "Part-time Mello",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "216266",
+    "title": "Love At First Bite",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "260423",
+    "title": "I Can See You Shine",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "297678",
+    "title": "Raakh",
+    "type": "tv",
+    "reason": "Not found on TMDB (404)"
+  },
+  {
+    "id": "301120",
+    "title": "Personal Trainer",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "300101",
+    "title": "Rishton Ka Chakravyuh",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "305735",
+    "title": "Dirty Scams",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "308923",
+    "title": "Line Cross",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  },
+  {
+    "id": "309081",
+    "title": "Let's Play Blind Har Chaal Ek Dhokha",
+    "type": "tv",
+    "reason": "Missing data after TMDB fetch (genres: true, date: false)"
+  }
+]

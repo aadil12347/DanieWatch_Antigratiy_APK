@@ -157,11 +157,61 @@ def load_index_json(repo_root: str) -> list[dict]:
         return []
     with open(index_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
+    
+    raw_items = []
     if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        return data.get('posts', data.get('items', data.get('results', [])))
-    return []
+        raw_items = data
+    elif isinstance(data, dict):
+        raw_items = data.get('posts', data.get('items', data.get('results', [])))
+    else:
+        return []
+        
+    items = []
+    genre_map = {
+        28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
+        80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
+        14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
+        9648: 'Mystery', 10749: 'Romance', 878: 'Science Fiction',
+        53: 'Thriller', 10752: 'War', 37: 'Western',
+        10759: 'Action & Adventure', 10762: 'Kids', 10763: 'News',
+        10764: 'Reality', 10765: 'Sci-Fi & Fantasy', 10766: 'Soap',
+        10767: 'Talk', 10768: 'War & Politics',
+    }
+    
+    for item in raw_items:
+        if isinstance(item, list):
+            item_dict = {
+                'id': item[0] if len(item) > 0 else '',
+                'title': item[1] if len(item) > 1 else '',
+                'type': item[2] if len(item) > 2 else 'movie',
+                'original_language': item[3] if len(item) > 3 else '',
+                'country': item[4] if len(item) > 4 else [],
+                'language': item[5] if len(item) > 5 else [],
+                'genres': item[6] if len(item) > 6 else [],
+                'imdb_id': item[7] if len(item) > 7 else '',
+                'release_date': item[8] if len(item) > 8 else '',
+            }
+            
+            # Add year for compatibility
+            date_str = item_dict['release_date'] or ''
+            if date_str and len(date_str) >= 4:
+                item_dict['year'] = date_str[:4]
+                item_dict['release_year'] = int(date_str[:4])
+            else:
+                item_dict['year'] = ''
+                
+            # Map genre IDs back to names for script filters
+            genre_names = []
+            for g_id in item_dict['genres']:
+                if isinstance(g_id, int) and g_id in genre_map:
+                    genre_names.append(genre_map[g_id])
+            item_dict['genres'] = genre_names
+            
+            items.append(item_dict)
+        elif isinstance(item, dict):
+            items.append(item)
+            
+    return items
 
 
 def merge_items(streaming_items: list[dict], index_items: list[dict]) -> list[dict]:

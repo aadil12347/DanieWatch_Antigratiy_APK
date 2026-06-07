@@ -79,10 +79,105 @@ class ManifestItem {
     return double.tryParse(value.toString()) ?? fallback;
   }
 
-  /// Filter out empty image URLs — keep all formats, let widget handle fallbacks
+  // Filter out empty image URLs — keep all formats, let widget handle fallbacks
   static String? _sanitizePosterUrl(String? url) {
     if (url == null || url.isEmpty) return null;
     return url;
+  }
+
+  static const Map<int, String> _genreMap = {
+    28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
+    80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
+    14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
+    9648: 'Mystery', 10749: 'Romance', 878: 'Science Fiction',
+    53: 'Thriller', 10752: 'War', 37: 'Western',
+    // TV genres
+    10759: 'Action & Adventure', 10762: 'Kids', 10763: 'News',
+    10764: 'Reality', 10765: 'Sci-Fi & Fantasy', 10766: 'Soap',
+    10767: 'Talk', 10768: 'War & Politics',
+  };
+
+  /// Prioritized display language for card badges
+  String get displayLanguage {
+    if (language.isEmpty) return '';
+    
+    // 1. Hindi priority (case-insensitive)
+    final String hindi = language.firstWhere(
+      (l) => l.toLowerCase() == 'hindi',
+      orElse: () => '',
+    );
+    if (hindi.isNotEmpty) return 'Hindi';
+
+    // 2. English priority
+    final String english = language.firstWhere(
+      (l) => l.toLowerCase() == 'english',
+      orElse: () => '',
+    );
+    if (english.isNotEmpty) return 'English';
+
+    // 3. Capitalized version of the first language
+    final String first = language.first;
+    if (first.isEmpty) return '';
+    return first[0].toUpperCase() + first.substring(1).toLowerCase();
+  }
+
+  factory ManifestItem.fromArray(List<dynamic> arr) {
+    final rawId = arr.isNotEmpty ? arr[0] : null;
+    int id;
+    if (rawId is int) {
+      id = rawId;
+    } else if (rawId != null) {
+      final parsed = int.tryParse(rawId.toString());
+      id = parsed ?? (rawId.toString().hashCode & 0x7FFFFFFF);
+    } else {
+      id = 0;
+    }
+
+    final String title = arr.length > 1 ? (arr[1] ?? '').toString() : '';
+    final String mediaType = arr.length > 2 ? (arr[2] ?? 'movie').toString() : 'movie';
+    final String originalLanguage = arr.length > 3 ? (arr[3] ?? '').toString() : '';
+    
+    final List<String> originCountry = arr.length > 4 && arr[4] is List<dynamic>
+        ? (arr[4] as List<dynamic>).map((e) => e.toString().trim().toUpperCase()).toList()
+        : const [];
+        
+    final List<String> language = arr.length > 5 && arr[5] is List<dynamic>
+        ? (arr[5] as List<dynamic>).map((e) => e.toString()).toList()
+        : const [];
+        
+    final List<int> genreIds = arr.length > 6 && arr[6] is List<dynamic>
+        ? (arr[6] as List<dynamic>).map((e) => e is int ? e : (int.tryParse(e.toString()) ?? 0)).toList()
+        : const [];
+        
+    final List<String> genres = genreIds
+        .map((gId) => _genreMap[gId])
+        .whereType<String>()
+        .toList();
+
+    final String imdbId = arr.length > 7 ? (arr[7] ?? '').toString() : '';
+    final String releaseDate = arr.length > 8 ? (arr[8] ?? '').toString() : '';
+    int? releaseYear;
+    if (releaseDate.length >= 4) {
+      releaseYear = int.tryParse(releaseDate.substring(0, 4));
+    }
+
+    return ManifestItem(
+      id: id,
+      mediaType: mediaType,
+      title: title,
+      voteAverage: 0.0,
+      voteCount: 0,
+      releaseYear: releaseYear,
+      originalLanguage: originalLanguage.isNotEmpty ? originalLanguage : null,
+      originCountry: originCountry,
+      genreIds: genreIds,
+      genres: genres,
+      imdbId: imdbId.isNotEmpty ? imdbId : null,
+      language: language,
+      releaseDate: releaseDate.isNotEmpty ? releaseDate : null,
+      posterUrl: null,
+      backdropUrl: null,
+    );
   }
 
   factory ManifestItem.fromJson(Map<String, dynamic> json) {

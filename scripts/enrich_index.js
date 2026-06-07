@@ -1,16 +1,20 @@
 /**
- * Enrich index.json with release_date from TMDB API.
+ * Enrich and convert index.json to positional array format.
  * 
  * Usage: node scripts/enrich_index.js
  * 
- * What it does:
- *   1. Reads index.json
- *   2. For each item with a numeric TMDB ID that lacks release_date:
- *      - Fetches movie/tv details from TMDB
- *      - Extracts release_date (movies) or first_air_date (TV)
- *   3. Preserves any existing release_date (from streaming_links files)
- *   4. Writes enriched index.json + copies to assets/base_index.json
- *   5. Also enriches original_language, origin_country, genres if missing
+ * Positional array structure:
+ *   [
+ *     id,                 // 0: String/Int ID
+ *     title,              // 1: Movie/Show title
+ *     type,               // 2: "movie" or "tv"
+ *     original_language,  // 3: ISO 639-1 code
+ *     country,            // 4: List of origin countries (e.g. ["IN"])
+ *     language,           // 5: Dubbed/audio languages (e.g. ["Hindi", "English"])
+ *     genres,             // 6: List of TMDB Genre IDs (e.g. [18, 28])
+ *     imdb_id,            // 7: IMDb ID (e.g. "tt1234567")
+ *     release_date        // 8: "YYYY-MM-DD"
+ *   ]
  */
 
 const fs = require('fs');
@@ -20,9 +24,9 @@ const https = require('https');
 const TMDB_API_KEY = 'fc6d85b3839330e3458701b975195487';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const CONCURRENCY = 8; // Parallel requests
-const RATE_LIMIT_DELAY = 300; // ms between batches (TMDB: ~40 req/10s)
+const RATE_LIMIT_DELAY = 150; // ms between batches
 
-// Genre ID → name mapping from TMDB
+// Genre ID ↔ name mapping from TMDB
 const GENRE_MAP = {
   28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
   80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
@@ -34,6 +38,17 @@ const GENRE_MAP = {
   10764: 'Reality', 10765: 'Sci-Fi & Fantasy', 10766: 'Soap',
   10767: 'Talk', 10768: 'War & Politics',
 };
+
+const REVERSE_GENRE_MAP = {};
+for (const [id, name] of Object.entries(GENRE_MAP)) {
+  REVERSE_GENRE_MAP[name.toLowerCase()] = parseInt(id, 10);
+}
+// Add some alias mappings
+REVERSE_GENRE_MAP['science fiction'] = 878;
+REVERSE_GENRE_MAP['sci-fi'] = 878;
+REVERSE_GENRE_MAP['action & adventure'] = 10759;
+REVERSE_GENRE_MAP['sci-fi & fantasy'] = 10765;
+REVERSE_GENRE_MAP['war & politics'] = 10768;
 
 function tmdbFetch(urlPath) {
   return new Promise((resolve, reject) => {
@@ -69,23 +84,29 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Global list to collect failed fetches
+const failedFetches = [];
+
 async function enrichItem(item) {
-  const id = item.id;
-  const type = item.type || 'movie';
+  // item is in positional array format:
+  // [id, title, type, original_language, country, language, genres, imdb_id, release_date]
+  const id = item[0];
+  const title = item[1];
+  const type = item[2] || 'movie';
   
-  // Skip non-numeric IDs (ULIDs — not in TMDB)
+  // Skip non-numeric IDs (ULIDs / IMDb IDs in TMDB ID spot)
   if (!/^\d+$/.test(String(id))) {
     return item;
   }
   
-  // Check what's missing
-  const needsReleaseDate = !item.release_date || item.release_date === '';
-  const needsGenres = !item.genres || item.genres.length === 0;
-  const needsOrigLang = !item.original_language || item.original_language === '' || item.original_language === 'en';
-  const needsCountry = !item.country || item.country.length === 0;
+  const needsReleaseDate = !item[8] || item[8] === '';
+  const needsGenres = !item[6] || item[6].length === 0;
+  const needsOrigLang = !item[3] || item[3] === '' || item[3] === 'en';
+  const needsCountry = !item[4] || item[4].length === 0;
+  const needsImdbId = !item[7] || item[7] === '';
   
   // Skip if everything is already populated
-  if (!needsReleaseDate && !needsGenres) {
+  if (!needsReleaseDate && !needsGenres && !needsOrigLang && !needsCountry && !needsImdbId) {
     return item;
   }
   
@@ -93,72 +114,129 @@ async function enrichItem(item) {
     const endpoint = type === 'tv' ? `/tv/${id}` : `/movie/${id}`;
     const data = await tmdbFetch(endpoint);
     
-    if (!data) return item;
+    if (!data) {
+      failedFetches.push({ id, title, type, reason: 'Not found on TMDB (404)' });
+      return item;
+    }
     
-    const enriched = { ...item };
+    const enriched = [...item];
     
-    // release_date: use streaming_links value if present, else TMDB
+    // 3: original_language
+    if (needsOrigLang && data.original_language) {
+      enriched[3] = data.original_language;
+    }
+    
+    // 4: country (origin_country)
+    if (needsCountry) {
+      const countries = data.origin_country || 
+        (data.production_countries || []).map(c => c.iso_3166_1);
+      if (countries && countries.length > 0) {
+        enriched[4] = countries;
+      }
+    }
+    
+    // 6: genres (mapped to TMDB genre IDs)
+    if (needsGenres && data.genres) {
+      enriched[6] = data.genres.map(g => g.id).filter(Boolean);
+    }
+    
+    // 7: imdb_id
+    if (needsImdbId) {
+      if (data.imdb_id) {
+        enriched[7] = data.imdb_id;
+      } else if (type === 'tv') {
+        // Fetch external IDs for TV shows to get IMDb ID
+        const extData = await tmdbFetch(`/tv/${id}/external_ids`);
+        if (extData && extData.imdb_id) {
+          enriched[7] = extData.imdb_id;
+        }
+      }
+    }
+
+    // 8: release_date
     if (needsReleaseDate) {
       const tmdbDate = type === 'tv' 
         ? (data.first_air_date || '') 
         : (data.release_date || '');
       if (tmdbDate) {
-        enriched.release_date = tmdbDate;
+        enriched[8] = tmdbDate;
       }
     }
     
-    // genres: convert genre IDs to names
-    if (needsGenres && data.genres) {
-      enriched.genres = data.genres.map(g => g.name).filter(Boolean);
+    // If genres or release date are still missing after TMDB call, record as failed
+    if (!enriched[6] || enriched[6].length === 0 || !enriched[8] || enriched[8] === '') {
+      failedFetches.push({
+        id,
+        title,
+        type,
+        reason: `Missing data after TMDB fetch (genres: ${!enriched[6] || enriched[6].length === 0}, date: ${!enriched[8] || enriched[8] === ''})`
+      });
     }
-    
-    // original_language
-    if (needsOrigLang && data.original_language) {
-      enriched.original_language = data.original_language;
-    }
-    
-    // origin_country
-    if (needsCountry) {
-      const countries = data.origin_country || 
-        (data.production_countries || []).map(c => c.iso_3166_1);
-      if (countries && countries.length > 0) {
-        enriched.country = countries;
-      }
-    }
-    
-    // imdb_id
-    if ((!enriched.imdb_id || enriched.imdb_id === '') && data.imdb_id) {
-      enriched.imdb_id = data.imdb_id;
-    }
-    
+
     return enriched;
   } catch (e) {
+    failedFetches.push({ id, title, type, reason: `Error: ${e.message}` });
     return item;
   }
 }
 
-async function processBatch(items, startIdx) {
-  const batch = items.slice(startIdx, startIdx + CONCURRENCY);
-  const results = await Promise.all(batch.map(enrichItem));
-  return results;
-}
-
 async function main() {
   const indexPath = path.resolve(__dirname, '..', 'index.json');
-  const baseIndexPath = path.resolve(__dirname, '..', 'assets', 'base_index.json');
   
   console.log('📖 Reading index.json...');
   const rawData = fs.readFileSync(indexPath, 'utf8');
-  const indexData = JSON.parse(rawData);
-  const posts = indexData.posts || [];
+  let posts = [];
+  
+  try {
+    const parsed = JSON.parse(rawData);
+    if (Array.isArray(parsed)) {
+      // Already positional array format
+      posts = parsed;
+      console.log(`Detected positional array format.`);
+    } else if (parsed && parsed.posts) {
+      // Old object format: convert to positional arrays
+      console.log(`Detected old object format. Mapping to positional arrays...`);
+      posts = parsed.posts.map(p => {
+        // Map string genres to TMDB IDs
+        const genreIds = (p.genres || []).map(g => {
+          if (typeof g === 'number') return g;
+          return REVERSE_GENRE_MAP[g.toLowerCase()] || null;
+        }).filter(Boolean);
+
+        // Standardize release_date: if missing but has year, use YYYY-01-01
+        let releaseDate = p.release_date || '';
+        if (!releaseDate && p.year) {
+          releaseDate = `${p.year}-01-01`;
+        }
+
+        return [
+          p.id,                                // 0: id
+          p.title || '',                       // 1: title
+          p.type || 'movie',                   // 2: type
+          p.original_language || '',           // 3: original_language
+          p.country || [],                     // 4: country
+          p.language || [],                    // 5: language
+          genreIds,                            // 6: genres (ids)
+          p.imdb_id || '',                     // 7: imdb_id
+          releaseDate                          // 8: release_date
+        ];
+      });
+    } else {
+      throw new Error('Invalid index.json schema');
+    }
+  } catch (e) {
+    console.error('❌ Failed to parse index.json:', e);
+    process.exit(1);
+  }
   
   console.log(`📊 Total items: ${posts.length}`);
   
   // Count items needing enrichment
   const needsEnrichment = posts.filter(p => {
-    const isNumeric = /^\d+$/.test(String(p.id));
-    const needsDate = !p.release_date || p.release_date === '';
-    const needsGenres = !p.genres || p.genres.length === 0;
+    const id = p[0];
+    const isNumeric = /^\d+$/.test(String(id));
+    const needsDate = !p[8] || p[8] === '';
+    const needsGenres = !p[6] || p[6].length === 0;
     return isNumeric && (needsDate || needsGenres);
   });
   
@@ -169,7 +247,6 @@ async function main() {
   const enrichedPosts = [];
   let processed = 0;
   let enriched = 0;
-  let failed = 0;
   
   for (let i = 0; i < posts.length; i += CONCURRENCY) {
     const batch = posts.slice(i, i + CONCURRENCY);
@@ -178,7 +255,8 @@ async function main() {
     for (let j = 0; j < results.length; j++) {
       enrichedPosts.push(results[j]);
       const original = batch[j];
-      if (results[j].release_date && !original.release_date) {
+      // Compare genres count or release date to detect enrichment
+      if ((results[j][8] && !original[8]) || (results[j][6].length > original[6].length)) {
         enriched++;
       }
     }
@@ -186,7 +264,7 @@ async function main() {
     processed += batch.length;
     
     if (processed % 100 === 0 || processed === posts.length) {
-      console.log(`  ✅ ${processed}/${posts.length} processed (${enriched} enriched)`);
+      console.log(`  Refreshed: ${processed}/${posts.length} processed (${enriched} enriched)`);
     }
     
     // Rate limit: wait between batches
@@ -196,26 +274,26 @@ async function main() {
   }
   
   console.log(`\n📝 Enrichment complete:`);
-  console.log(`   - ${enriched} items enriched with release_date`);
+  console.log(`   - ${enriched} items enriched`);
   console.log(`   - ${posts.length - enriched} items unchanged`);
+  console.log(`   - ${failedFetches.length} items logged in failed fetches`);
   
-  // Write enriched index.json
-  const output = {
-    last_updated: new Date().toISOString(),
-    total: enrichedPosts.length,
-    posts: enrichedPosts,
-  };
+  // Write failed fetches
+  const failedPath = path.resolve(__dirname, '..', 'failed_tmdb_fetches.json');
+  fs.writeFileSync(failedPath, JSON.stringify(failedFetches, null, 2), 'utf8');
+  console.log(`💾 Saved failed fetches log to ${failedPath}`);
   
-  const outputJson = JSON.stringify(output, null, 2);
-  
+  // Write enriched minified index.json (no spaces/indentation to save space)
+  const outputJson = JSON.stringify(enrichedPosts);
   fs.writeFileSync(indexPath, outputJson, 'utf8');
-  console.log(`\n💾 Written enriched index.json (${(Buffer.byteLength(outputJson) / 1024 / 1024).toFixed(2)} MB)`);
+  console.log(`💾 Written enriched index.json (${(Buffer.byteLength(outputJson) / 1024 / 1024).toFixed(2)} MB)`);
   
-  // Copy to assets/base_index.json
+  // Copy to assets/base_index.json (since the app will use this if no sync file is downloaded yet)
+  const baseIndexPath = path.resolve(__dirname, '..', 'assets', 'base_index.json');
   fs.writeFileSync(baseIndexPath, outputJson, 'utf8');
   console.log(`📋 Copied to assets/base_index.json`);
   
-  console.log('\n🎉 Done! Rebuild the app to use the enriched data.');
+  console.log('\n🎉 Done!');
 }
 
 main().catch(e => {

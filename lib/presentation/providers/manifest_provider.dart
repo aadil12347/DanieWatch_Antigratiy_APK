@@ -3,44 +3,114 @@ import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/clients/tmdb_client.dart';
+import '../../data/clients/omdb_client.dart';
+import '../../data/services/database_sync_service.dart';
+import '../../data/repositories/posting_record_repository.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Core TMDB Conversion Helper
+// Local Database Synchronizer & Loader Providers
 // ═══════════════════════════════════════════════════════════════════════════════
 
-ManifestItem _tmdbToManifestItem(Map<String, dynamic> item, {bool isTrending = false, bool isPopular = false, int? rank}) {
-  final id = (item['id'] as num?)?.toInt() ?? 0;
-  final mediaType = item['media_type']?.toString() ?? (item['name'] != null ? 'tv' : 'movie');
-  final posterPath = item['poster_path']?.toString();
-  final backdropPath = item['backdrop_path']?.toString();
+/// Triggers remote index.json synchronization from GitHub on startup.
+final databaseSyncProvider = FutureProvider<void>((ref) async {
+  dev.log('[DatabaseSyncProvider] Starting database sync check...');
+  final success = await DatabaseSyncService.instance.syncIndex();
+  dev.log('[DatabaseSyncProvider] Sync finished. Success = $success');
+});
+
+/// Exposes all ManifestItems loaded from the locally cached database file.
+/// Safely waits for databaseSyncProvider to complete (so it reads the fresh index).
+final localManifestItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  // Wait for sync to complete (success or failure)
+  await ref.watch(databaseSyncProvider.future);
   
-  int? releaseYear;
-  final releaseDate = (item['release_date'] ?? item['first_air_date'])?.toString();
-  if (releaseDate != null && releaseDate.length >= 4) {
-    releaseYear = int.tryParse(releaseDate.substring(0, 4));
+  // Load local database
+  final items = await DatabaseSyncService.instance.loadLocalIndex();
+  return items;
+});
+
+/// Exposes an O(1) lookup map of all items: ID -> ManifestItem
+final localManifestMapProvider = Provider<Map<String, ManifestItem>>((ref) {
+  final itemsAsync = ref.watch(localManifestItemsProvider);
+  final items = itemsAsync.valueOrNull ?? [];
+  return {for (var item in items) item.id.toString(): item};
+});
+
+/// Exposes the list of ManifestItems sorted by release date, priority, and ID.
+final sortedManifestItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final items = await ref.watch(localManifestItemsProvider.future);
+  
+  // Load posting record priorities
+  final priorityMap = await PostingRecordRepository.instance.buildPriorityMap();
+  
+  final sorted = List<ManifestItem>.from(items);
+  sorted.sort((a, b) {
+    // 1. Compare release dates DESC (newest first)
+    final dateA = a.releaseDate ?? '';
+    final dateB = b.releaseDate ?? '';
+    final dateCompare = dateB.compareTo(dateA);
+    if (dateCompare != 0) return dateCompare;
+
+    // 2. Compare posting priority ASC (lower values = higher priority)
+    final keyA = '${a.id}-${a.mediaType}';
+    final keyB = '${b.id}-${b.mediaType}';
+    final prioA = priorityMap[keyA] ?? 999999;
+    final prioB = priorityMap[keyB] ?? 999999;
+    final prioCompare = prioA.compareTo(prioB);
+    if (prioCompare != 0) return prioCompare;
+
+    // 3. Fallback: ID DESC
+    return b.id.compareTo(a.id);
+  });
+  
+  return sorted;
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Dynamic Poster Loading Provider (TMDB -> OMDb Fallback)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Dynamically resolves a poster image URL for an item.
+/// ID can be a TMDB ID, a ULID, or an IMDb ID starting with "tt".
+final posterUrlProvider = FutureProvider.family<String?, String>((ref, idAndType) async {
+  final parts = idAndType.split('_');
+  final id = parts[0];
+  final type = parts.length > 1 ? parts[1] : 'movie';
+
+  // 1. If ID starts with 'tt' (IMDb ID in place of TMDB ID)
+  if (id.startsWith('tt')) {
+    return await OmdbClient.instance.getPoster(id);
   }
 
-  return ManifestItem(
-    id: id,
-    mediaType: mediaType,
-    title: (item['title'] ?? item['name'] ?? 'Unknown').toString(),
-    posterUrl: posterPath != null ? TmdbClient.posterUrl(posterPath) : null,
-    backdropUrl: backdropPath != null ? TmdbClient.backdropUrl(backdropPath) : null,
-    voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
-    voteCount: (item['vote_count'] as num?)?.toInt() ?? 0,
-    releaseYear: releaseYear,
-    overview: item['overview']?.toString(),
-    originalLanguage: item['original_language']?.toString(),
-    tmdbPosterPath: posterPath,
-    tmdbBackdropPath: backdropPath,
-    isTrending: isTrending,
-    isPopular: isPopular,
-    trendingRank: rank,
-  );
-}
+  // 2. If ID is numeric, query TMDB details for the poster_path
+  final tmdbId = int.tryParse(id);
+  if (tmdbId != null && tmdbId > 0) {
+    try {
+      final isTv = type == 'tv' || type == 'series';
+      final details = isTv
+          ? await TmdbClient.instance.getTvDetails(tmdbId)
+          : await TmdbClient.instance.getMovieDetails(tmdbId);
+      final posterPath = details?['poster_path']?.toString();
+      if (posterPath != null && posterPath.isNotEmpty) {
+        return TmdbClient.posterUrl(posterPath);
+      }
+    } catch (_) {
+      // Failed to query TMDB
+    }
+  }
+
+  // 3. Fallback: If TMDB lookup fails/returns empty, check if we have a valid IMDb ID in local index
+  final map = ref.read(localManifestMapProvider);
+  final item = map[id];
+  if (item != null && item.imdbId != null && item.imdbId!.startsWith('tt')) {
+    return await OmdbClient.instance.getPoster(item.imdbId!);
+  }
+
+  return null;
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Home Screen Providers (TMDB Powered)
+// Home Screen Providers (Local-Cache Powered)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ContentSection {
@@ -54,42 +124,21 @@ class ContentSection {
   });
 }
 
-/// Trending content for the Carousel
+/// Trending content for the Carousel (first 5 sorted items)
 final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final movies = await TmdbClient.instance.getTrending('movie', timeWindow: 'day');
-  final tv = await TmdbClient.instance.getTrending('tv', timeWindow: 'day');
-  
-  final combined = <Map<String, dynamic>>[];
-  int mi = 0, ti = 0;
-  while (combined.length < 10 && (mi < movies.length || ti < tv.length)) {
-    if (mi < movies.length) combined.add({...movies[mi++], 'media_type': 'movie'});
-    if (ti < tv.length) combined.add({...tv[ti++], 'media_type': 'tv'});
-  }
-  
-  return combined.take(5).toList().asMap().entries.map((entry) {
-    return _tmdbToManifestItem(entry.value, isTrending: true, rank: entry.key + 1);
-  }).toList();
+  final sorted = await ref.watch(sortedManifestItemsProvider.future);
+  return sorted.take(5).toList();
 });
 
-/// Trending content for Top 10 Today
+/// Top 10 Today list
 final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
-  final movies = await TmdbClient.instance.getTrending('movie', timeWindow: 'day');
-  final tv = await TmdbClient.instance.getTrending('tv', timeWindow: 'day');
-  
-  final combined = <Map<String, dynamic>>[];
-  int mi = 0, ti = 0;
-  while (combined.length < 20 && (mi < movies.length || ti < tv.length)) {
-    if (mi < movies.length) combined.add({...movies[mi++], 'media_type': 'movie'});
-    if (ti < tv.length) combined.add({...tv[ti++], 'media_type': 'tv'});
-  }
-  
-  return combined.take(10).toList().asMap().entries.map((entry) {
-    return _tmdbToManifestItem(entry.value, isTrending: true, rank: entry.key + 1);
-  }).toList();
+  final sorted = await ref.watch(sortedManifestItemsProvider.future);
+  return sorted.take(10).toList();
 });
 
-/// Home screen sections (DynamicTMDB)
+/// Home screen sections compiled locally from the cached database
 final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
+  final sorted = await ref.watch(sortedManifestItemsProvider.future);
   final sections = <ContentSection>[];
   
   // 1. Top 10 Today
@@ -98,63 +147,53 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
     sections.add(ContentSection(title: 'Top 10 Today', items: top10, isRanked: true));
   }
   
-  // 2. Popular
-  final popularMovies = await TmdbClient.instance.getPopular('movie');
-  final popularTv = await TmdbClient.instance.getPopular('tv');
-  final popularCombined = <Map<String, dynamic>>[];
-  int mi = 0, ti = 0;
-  while (popularCombined.length < 15 && (mi < popularMovies.length || ti < popularTv.length)) {
-    if (mi < popularMovies.length) popularCombined.add({...popularMovies[mi++], 'media_type': 'movie'});
-    if (ti < popularTv.length) popularCombined.add({...popularTv[ti++], 'media_type': 'tv'});
-  }
-  if (popularCombined.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Popular',
-      items: popularCombined.map((e) => _tmdbToManifestItem(e, isPopular: true)).toList()
-    ));
-  }
-
-  // 3. Indian
-  final indianMovies = await TmdbClient.instance.discoverMovie(withOriginCountry: 'IN');
-  if (indianMovies.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Indian',
-      items: indianMovies.map((e) => _tmdbToManifestItem({...e, 'media_type': 'movie'})).toList()
-    ));
-  }
-
-  // 4. Anime
-  final animeTv = await TmdbClient.instance.discoverTv(withGenres: '16', withOriginCountry: 'JP');
-  if (animeTv.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Anime',
-      items: animeTv.map((e) => _tmdbToManifestItem({...e, 'media_type': 'tv'})).toList()
-    ));
+  // 2. Bollywood / Indian
+  final bollywood = _filterCategory(sorted, 'bollywood').take(15).toList();
+  if (bollywood.isNotEmpty) {
+    sections.add(ContentSection(title: 'Bollywood', items: bollywood));
   }
   
-  // 5. Korean
-  final koreanTv = await TmdbClient.instance.discoverTv(withOriginCountry: 'KR');
-  if (koreanTv.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Korean',
-      items: koreanTv.map((e) => _tmdbToManifestItem({...e, 'media_type': 'tv'})).toList()
-    ));
+  // 3. Korean
+  final korean = _filterCategory(sorted, 'korean').take(15).toList();
+  if (korean.isNotEmpty) {
+    sections.add(ContentSection(title: 'Korean', items: korean));
+  }
+  
+  // 4. Anime
+  final anime = _filterCategory(sorted, 'anime').take(15).toList();
+  if (anime.isNotEmpty) {
+    sections.add(ContentSection(title: 'Anime', items: anime));
+  }
+  
+  // 5. Hollywood
+  final hollywood = _filterCategory(sorted, 'hollywood').take(15).toList();
+  if (hollywood.isNotEmpty) {
+    sections.add(ContentSection(title: 'Hollywood', items: hollywood));
   }
 
-  // 6. Top Rated
-  final topRatedMovies = await TmdbClient.instance.getTopRated('movie');
-  if (topRatedMovies.isNotEmpty) {
-    sections.add(ContentSection(
-      title: 'Top Rated',
-      items: topRatedMovies.take(15).map((e) => _tmdbToManifestItem({...e, 'media_type': 'movie'})).toList()
-    ));
+  // 6. Chinese
+  final chinese = _filterCategory(sorted, 'chinese').take(15).toList();
+  if (chinese.isNotEmpty) {
+    sections.add(ContentSection(title: 'Chinese', items: chinese));
+  }
+
+  // 7. Punjabi
+  final punjabi = _filterCategory(sorted, 'punjabi').take(15).toList();
+  if (punjabi.isNotEmpty) {
+    sections.add(ContentSection(title: 'Punjabi', items: punjabi));
+  }
+
+  // 8. Pakistani
+  final pakistani = _filterCategory(sorted, 'pakistani').take(15).toList();
+  if (pakistani.isNotEmpty) {
+    sections.add(ContentSection(title: 'Pakistani', items: pakistani));
   }
 
   return sections;
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Category Pagination via TMDB
+// Category Pagination via Local Database Cache
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class PaginatedCategoryState {
@@ -191,18 +230,19 @@ class PaginatedCategoryState {
 
 class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCategoryState>> {
   final String category;
+  final Ref ref;
 
-  PaginatedCategoryNotifier(this.category) : super(const AsyncValue.loading()) {
+  PaginatedCategoryNotifier(this.category, this.ref) : super(const AsyncValue.loading()) {
     _loadFirstPage();
   }
 
   Future<void> _loadFirstPage() async {
     try {
-      final results = await _fetchPage(1);
+      final results = await _fetchLocalPage(1);
       state = AsyncValue.data(PaginatedCategoryState(
         items: results,
         currentPage: 1,
-        hasMore: results.isNotEmpty,
+        hasMore: results.length >= 30, // Page size is 30
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page 1 error: $e', stackTrace: stack);
@@ -219,7 +259,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     state = AsyncValue.data(current.copyWith(isLoadingMore: true, errorOverride: () => null));
 
     try {
-      final results = await _fetchPage(nextPage);
+      final results = await _fetchLocalPage(nextPage);
 
       if (!mounted) return;
 
@@ -227,7 +267,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
         items: [...current.items, ...results],
         currentPage: nextPage,
         isLoadingMore: false,
-        hasMore: results.isNotEmpty,
+        hasMore: results.length >= 30,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page $nextPage error: $e', stackTrace: stack);
@@ -240,45 +280,18 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     }
   }
 
-  Future<List<ManifestItem>> _fetchPage(int page) async {
-    final slug = category.toLowerCase();
-    List<Map<String, dynamic>> rawResults = [];
-    String type = 'movie';
-
-    if (slug == 'all') {
-      rawResults = await TmdbClient.instance.getTrending('all', timeWindow: 'week', page: page);
-      type = 'mixed';
-    } else if (slug == 'indian' || slug == 'bollywood') {
-      rawResults = await TmdbClient.instance.discoverMovie(page: page, withOriginCountry: 'IN');
-      type = 'movie';
-    } else if (slug == 'hollywood') {
-      rawResults = await TmdbClient.instance.discoverMovie(page: page, withOriginCountry: 'US');
-      type = 'movie';
-    } else if (slug == 'anime') {
-      rawResults = await TmdbClient.instance.discoverTv(page: page, withGenres: '16', withOriginCountry: 'JP');
-      type = 'tv';
-    } else if (slug == 'korean') {
-      rawResults = await TmdbClient.instance.discoverTv(page: page, withOriginCountry: 'KR');
-      type = 'tv';
-    } else if (slug == 'chinese') {
-      rawResults = await TmdbClient.instance.discoverTv(page: page, withOriginCountry: 'CN');
-      type = 'tv';
-    } else if (slug == 'punjabi') {
-      rawResults = await TmdbClient.instance.discoverMovie(page: page, withOriginalLanguage: 'pa');
-      type = 'movie';
-    } else if (slug == 'pakistani') {
-      rawResults = await TmdbClient.instance.discoverTv(page: page, withOriginCountry: 'PK');
-      type = 'tv';
-    } else {
-      // Default to trending
-      rawResults = await TmdbClient.instance.getTrending('all', timeWindow: 'week', page: page);
-      type = 'mixed';
+  Future<List<ManifestItem>> _fetchLocalPage(int page) async {
+    final sorted = await ref.read(sortedManifestItemsProvider.future);
+    final filtered = _filterCategory(sorted, category);
+    
+    final int limit = 30;
+    final int offset = (page - 1) * limit;
+    
+    if (offset >= filtered.length) {
+      return [];
     }
-
-    return rawResults.map((e) {
-      final mediaType = type == 'mixed' ? (e['media_type'] ?? 'movie') : type;
-      return _tmdbToManifestItem({...e, 'media_type': mediaType});
-    }).toList();
+    
+    return filtered.skip(offset).take(limit).toList();
   }
 
   Future<void> refresh() async {
@@ -290,7 +303,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
 final paginatedCategoryProvider = StateNotifierProvider.family<
     PaginatedCategoryNotifier, AsyncValue<PaginatedCategoryState>, String>(
   (ref, category) {
-    return PaginatedCategoryNotifier(category);
+    return PaginatedCategoryNotifier(category, ref);
   },
 );
 
@@ -298,6 +311,7 @@ String categoryLabelToSlug(String label) {
   const map = {
     'Explore': 'all',
     'Indian': 'indian',
+    'Bollywood': 'bollywood',
     'Hollywood': 'hollywood',
     'Anime': 'anime',
     'Korean': 'korean',
@@ -307,6 +321,89 @@ String categoryLabelToSlug(String label) {
   };
   return map[label] ?? 'all';
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Offline Filtering Logic (Equivalent to python generate_catalog.py categories)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+List<ManifestItem> _filterCategory(List<ManifestItem> all, String categorySlug) {
+  final s = categorySlug.toLowerCase();
+  
+  if (s == 'all') {
+    return all;
+  }
+  
+  if (s == 'indian' || s == 'bollywood') {
+    return all.where((item) {
+      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+      if (countries.contains('IN')) return true;
+      if (item.originalLanguage == 'hi') return true;
+      
+      const indLangs = {
+        'hi', 'hindi', 'ur', 'urdu', 'pa', 'punjabi', 'ta', 'tamil',
+        'te', 'telugu', 'ml', 'malayalam', 'kn', 'kannada',
+        'bn', 'bengali', 'mr', 'marathi', 'gu', 'gujarati'
+      };
+      if (indLangs.contains(item.originalLanguage)) return true;
+      return false;
+    }).toList();
+  }
+  
+  if (s == 'korean') {
+    return all.where((item) {
+      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+      return countries.contains('KR') || item.originalLanguage == 'ko' || item.originalLanguage == 'korean';
+    }).toList();
+  }
+  
+  if (s == 'anime') {
+    return all.where((item) {
+      final isAnimation = item.genres.map((g) => g.toLowerCase()).contains('animation');
+      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+      return isAnimation && (countries.contains('JP') || item.originalLanguage == 'ja' || item.originalLanguage == 'japanese');
+    }).toList();
+  }
+  
+  if (s == 'hollywood') {
+    return all.where((item) {
+      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+      const hwCountries = {'US', 'GB', 'UK', 'AU', 'CA'};
+      if (countries.intersection(hwCountries).isNotEmpty) return true;
+      return item.originalLanguage == 'en' || item.originalLanguage == 'english';
+    }).toList();
+  }
+  
+  if (s == 'chinese') {
+    return all.where((item) {
+      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+      const cnCountries = {'CN', 'HK', 'TW'};
+      if (countries.intersection(cnCountries).isNotEmpty) return true;
+      
+      const cnLangs = {'zh', 'cn', 'chinese', 'mandarin', 'cantonese'};
+      return cnLangs.contains(item.originalLanguage);
+    }).toList();
+  }
+  
+  if (s == 'punjabi') {
+    return all.where((item) {
+      if (item.originalLanguage == 'pa' || item.originalLanguage == 'punjabi') return true;
+      return item.language.any((l) => l.toLowerCase() == 'punjabi');
+    }).toList();
+  }
+  
+  if (s == 'pakistani') {
+    return all.where((item) {
+      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+      return countries.contains('PK') || item.originalLanguage == 'ur' || item.originalLanguage == 'urdu';
+    }).toList();
+  }
+  
+  return all;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI Grid Category Aliases
+// ═══════════════════════════════════════════════════════════════════════════════
 
 final globalItemsProvider = Provider<AsyncValue<List<ManifestItem>>>((ref) {
   return ref.watch(paginatedCategoryProvider('all')).whenData((s) => s.items);
