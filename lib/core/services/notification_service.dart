@@ -39,6 +39,28 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     return; // Stop processing, don't save to inbox
   }
 
+  if (message.data['type'] == 'update_vidnest_config') {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (message.data['base_url'] != null) {
+        await prefs.setString('vidnest_base_url', message.data['base_url']);
+      }
+      if (message.data['custom_alphabet'] != null) {
+        await prefs.setString('vidnest_custom_alphabet', message.data['custom_alphabet']);
+      }
+      if (message.data['standard_alphabet'] != null) {
+        await prefs.setString('vidnest_standard_alphabet', message.data['standard_alphabet']);
+      }
+      if (message.data['servers'] != null) {
+        await prefs.setString('vidnest_servers', message.data['servers']);
+      }
+      debugPrint('✅ VidNest config updated from background push!');
+    } catch (e) {
+      debugPrint('⚠️ Failed to update vidnest config: $e');
+    }
+    return; // Stop processing, don't save to inbox
+  }
+
   // Save to local storage for the inbox
   _saveMessageToLocalStorage(message);
 }
@@ -201,6 +223,29 @@ class NotificationService {
             });
           } catch (e) {
             debugPrint('⚠️ Failed to update peachify config: $e');
+          }
+          return; // Stop processing, don't show UI
+        }
+
+        if (message.data['type'] == 'update_vidnest_config') {
+          try {
+            SharedPreferences.getInstance().then((prefs) {
+              if (message.data['base_url'] != null) {
+                prefs.setString('vidnest_base_url', message.data['base_url']);
+              }
+              if (message.data['custom_alphabet'] != null) {
+                prefs.setString('vidnest_custom_alphabet', message.data['custom_alphabet']);
+              }
+              if (message.data['standard_alphabet'] != null) {
+                prefs.setString('vidnest_standard_alphabet', message.data['standard_alphabet']);
+              }
+              if (message.data['servers'] != null) {
+                prefs.setString('vidnest_servers', message.data['servers']);
+              }
+              debugPrint('✅ VidNest config updated from foreground push!');
+            });
+          } catch (e) {
+            debugPrint('⚠️ Failed to update vidnest config: $e');
           }
           return; // Stop processing, don't show UI
         }

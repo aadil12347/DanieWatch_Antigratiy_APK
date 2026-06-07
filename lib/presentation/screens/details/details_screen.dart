@@ -23,6 +23,7 @@ import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
 import '../../../services/video_extractor_service.dart';
 import '../../../services/peachify_extractor.dart';
+import '../../../services/vidnest_extractor.dart';
 import '../../../services/videasy_extractor.dart';
 import '../../../services/file_size_service.dart';
 import '../../../core/services/deep_link_service.dart';
@@ -1448,12 +1449,25 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       context: context,
       fetchLinkFuture: () async {
         try {
-          final streams = await PeachifyExtractorService().extractStreams(
+          var streams = await VidNestExtractorService().extractStreams(
             tmdbId: widget.tmdbId,
             mediaType: widget.mediaType,
             season: s,
             episode: e,
           );
+
+          bool usingVidNest = true;
+          if (streams.isEmpty) {
+            debugPrint('[Details] VidNest extraction returned empty list. Falling back to Peachify...');
+            usingVidNest = false;
+            streams = await PeachifyExtractorService().extractStreams(
+              tmdbId: widget.tmdbId,
+              mediaType: widget.mediaType,
+              season: s,
+              episode: e,
+            );
+          }
+
           if (streams.isEmpty) return null;
           
           final Map<String, ExtractedVideasyStream> map = {};
@@ -1474,9 +1488,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               map[key] = mappedStream;
             }
           }
-          return _sortStreamsMap(map);
+          return usingVidNest ? map : _sortStreamsMap(map);
         } catch (e) {
-          debugPrint('[Details] Peachify Extraction Error: $e');
+          debugPrint('[Details] Direct Extraction Error: $e');
           return null;
         }
       },

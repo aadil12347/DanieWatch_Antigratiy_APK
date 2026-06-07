@@ -21,6 +21,7 @@ import '../../widgets/liquid_tap_effect.dart';
 import '../../../pip/pip_controller.dart';
 import '../../../services/videasy_extractor.dart';
 import '../../../services/peachify_extractor.dart';
+import '../../../services/vidnest_extractor.dart';
 import '../../../services/hls_resolution_parser.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -249,24 +250,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   int _extraction1pxClickCount = 0;
   ExtractedVideasyStream? _extractedStream;
 
-  /// Start the extraction using PeachifyExtractorService directly.
+  /// Start the extraction using VidNestExtractorService directly, falling back to Peachify if needed.
   Future<void> _tryDirectExtraction() async {
     final s = _currentSeason ?? widget.season ?? 1;
     final e = _currentEpisode ?? widget.episode ?? 1;
 
-    debugPrint('[Engine] Starting Peachify direct extraction in player screen');
+    debugPrint('[Engine] Starting direct extraction in player screen');
     try {
-      final streams = await PeachifyExtractorService().extractStreams(
+      debugPrint('[Engine] Attempting VidNest direct extraction...');
+      var streams = await VidNestExtractorService().extractStreams(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
         season: s,
         episode: e,
       );
 
+      bool usingVidNest = true;
+
+      if (streams.isEmpty) {
+        debugPrint('[Engine] VidNest extraction returned empty list. Falling back to Peachify...');
+        usingVidNest = false;
+        streams = await PeachifyExtractorService().extractStreams(
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          season: s,
+          episode: e,
+        );
+      }
+
       if (!mounted || _isClosing) return;
 
       if (streams.isEmpty) {
-        debugPrint('[Engine] Peachify extraction returned empty list');
+        debugPrint('[Engine] Both VidNest and Peachify extractions returned empty lists');
         _onExtractionFailed();
         return;
       }
@@ -295,7 +310,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         return;
       }
 
-      final sortedMap = _sortStreamsMap(map);
+      // Preserve VidNest's internal priority sorting if using VidNest, otherwise apply Peachify's sorting
+      final sortedMap = usingVidNest ? map : _sortStreamsMap(map);
 
       setState(() {
         _currentStreamsMap = sortedMap;
@@ -305,7 +321,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       final stream = sortedMap[_selectedServer!]!;
       _onExtractionSuccess(stream);
     } catch (e) {
-      debugPrint('[Engine] Peachify extraction failed: $e');
+      debugPrint('[Engine] Direct extraction failed: $e');
       if (mounted && !_isClosing) {
         _onExtractionFailed();
       }
