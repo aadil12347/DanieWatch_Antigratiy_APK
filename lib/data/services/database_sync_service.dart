@@ -101,24 +101,9 @@ class DatabaseSyncService {
     try {
       final file = await _indexFile;
       
-      bool fileIsValid = false;
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        if (content.isNotEmpty && content.trim() != '[]') {
-          fileIsValid = true;
-        }
-      }
-
-      if (!fileIsValid) {
-        dev.log('[DatabaseSync] Local index file not found or empty. Loading placeholder from assets/base_index.json...');
-        try {
-          final placeholderData = await rootBundle.loadString('assets/base_index.json');
-          await file.writeAsString(placeholderData, flush: true);
-          dev.log('[DatabaseSync] Bundled placeholder cached successfully.');
-        } catch (assetErr) {
-          dev.log('[DatabaseSync] Error loading bundled placeholder: $assetErr');
-          return [];
-        }
+      if (!await file.exists()) {
+        dev.log('[DatabaseSync] Local index file not found. Returning empty list.');
+        return [];
       }
 
       final rawData = await file.readAsString();
