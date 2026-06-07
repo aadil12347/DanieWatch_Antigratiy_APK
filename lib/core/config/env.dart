@@ -44,6 +44,12 @@ class Env {
     defaultValue: 'https://image.tmdb.org/t/p',
   );
 
+  // ── OMDb ──────────────────────────────────────────────────
+  static const omdbApiKey = String.fromEnvironment(
+    'OMDB_API_KEY',
+    defaultValue: '',
+  );
+
   // ── Manifest storage ─────────────────────────────────────
   static const manifestBucket = String.fromEnvironment(
     'MANIFEST_BUCKET',
@@ -78,6 +84,7 @@ class Env {
     if (supabaseUrl.isEmpty) missing.add('SUPABASE_URL');
     if (supabaseAnonKey.isEmpty) missing.add('SUPABASE_ANON_KEY');
     if (tmdbApiKey.isEmpty) missing.add('TMDB_API_KEY');
+    if (omdbApiKey.isEmpty) missing.add('OMDB_API_KEY');
     if (githubRawBaseUrl.isEmpty) missing.add('GITHUB_RAW_BASE_URL');
     if (missing.isNotEmpty) {
       throw StateError(
