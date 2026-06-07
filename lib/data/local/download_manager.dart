@@ -21,6 +21,8 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 
 import '../../services/background_download_service.dart';
 import '../../services/video_extractor_service.dart';
+import '../../services/vidnest_extractor.dart';
+import '../../services/peachify_extractor.dart';
 
 
 /// Port name for isolate communication
@@ -77,6 +79,12 @@ class DownloadItem {
   DateTime? completedAt;
   String? error;
 
+  // ── Unified extraction tracking ──
+  final int? tmdbId;
+  final String? mediaType;
+  final String? providerName;
+  Map<String, String>? headers;
+
   // ── Quality/audio/subtitle fields ──
   final String? videoStreamUrl;
   final String? audioStreamUrl;
@@ -127,6 +135,10 @@ class DownloadItem {
     this.qualityLabel,
     this.audioLabel,
     this.subtitleLabel,
+    this.tmdbId,
+    this.mediaType,
+    this.providerName,
+    this.headers,
     this.totalSegments = 0,
     this.completedSegments = 0,
     this.segmentDirectory,
@@ -309,6 +321,10 @@ class DownloadItem {
         'downloadSpeed': downloadSpeed,
         'originalEmbedUrl': originalEmbedUrl,
         'urlObtainedAt': urlObtainedAt?.toIso8601String(),
+        'tmdbId': tmdbId,
+        'mediaType': mediaType,
+        'providerName': providerName,
+        'headers': headers,
       };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -345,6 +361,10 @@ class DownloadItem {
         urlObtainedAt: json['urlObtainedAt'] != null
             ? DateTime.tryParse(json['urlObtainedAt'])
             : null,
+        tmdbId: json['tmdbId'],
+        mediaType: json['mediaType'],
+        providerName: json['providerName'],
+        headers: json['headers'] != null ? Map<String, String>.from(json['headers']) : null,
       );
 }
 
@@ -927,6 +947,10 @@ class DownloadManager {
     BuildContext? context,
     String? originalEmbedUrl,
     int? fileSizeBytes,
+    int? tmdbId,
+    String? mediaType,
+    String? providerName,
+    Map<String, String>? headers,
   }) async {
     final hasPermission = await requestPermissions(context);
     if (!hasPermission) return null;
@@ -972,6 +996,10 @@ class DownloadManager {
       totalBytes: fileSizeBytes ?? (variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0),
       originalEmbedUrl: originalEmbedUrl,
       urlObtainedAt: DateTime.now(),
+      tmdbId: tmdbId,
+      mediaType: mediaType,
+      providerName: providerName,
+      headers: headers,
     );
 
     // Store the internal path temporarily to handle the move later
@@ -993,6 +1021,7 @@ class DownloadManager {
       saveDir: segmentDir,
       outputMp4Path: tempMp4Path,
       fileName: item.fileName,
+      headers: headers,
     );
     
     return item;
@@ -1095,6 +1124,7 @@ class DownloadManager {
           saveDir: item.segmentDirectory!,
           outputMp4Path: tempMp4Path,
           fileName: item.fileName,
+          headers: item.headers,
         );
       }
     }
@@ -1503,39 +1533,62 @@ class DownloadManager {
   /// Re-extracts a fresh stream URL from the saved embed URL,
   /// cleans corrupted partial segments, and restarts the download.
   Future<void> _reExtractAndResume(DownloadItem item) async {
-    if (item.originalEmbedUrl == null || item.originalEmbedUrl!.isEmpty) {
-      debugPrint('⚠ No originalEmbedUrl saved — cannot re-extract for ${item.title}');
-      item.status = DownloadStatus.failed;
-      item.error = 'Link expired. No embed URL saved for recovery.';
-      _updateController.add(item);
-      onDownloadUpdate?.call(item);
-      _saveDownloads();
-      return;
-    }
-
-    debugPrint('🔄 Re-extracting from: ${item.originalEmbedUrl}');
+    debugPrint('🔄 Re-extracting for: ${item.title}');
 
     try {
-      // Phase 0: Clear ALL cached URLs for this embed to force truly fresh extraction
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('extract_${item.originalEmbedUrl}');
-      debugPrint('🧹 Cleared extraction cache for: ${item.originalEmbedUrl}');
+      // Phase 0: Clear ALL cached URLs for this embed/ID if exists to force truly fresh extraction
+      if (item.originalEmbedUrl != null && item.originalEmbedUrl!.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('extract_${item.originalEmbedUrl}');
+        debugPrint('🧹 Cleared extraction cache for: ${item.originalEmbedUrl}');
+      }
 
-      // Phase 1: Extract fresh master M3U8 URL
-      final extractor = VideoExtractorService();
+      String? freshM3u8;
+      Map<String, String>? freshHeaders;
 
-      String? freshM3u8 = await extractor.extractVideoUrl(
-        item.originalEmbedUrl!,
-        bypassCache: true,
-      ).timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => null,
-      );
+      // Phase 1: Extract fresh stream URLs (merged parallel)
+      if (item.tmdbId != null && item.mediaType != null) {
+        debugPrint('🔄 Fetching merged parallel streams for TMDB ID: ${item.tmdbId}');
+        final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
+          tmdbId: item.tmdbId!,
+          mediaType: item.mediaType!,
+          season: item.season > 0 ? item.season : 1,
+          episode: item.episode > 0 ? item.episode : 1,
+        ).timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => <PeachifyStream>[],
+        );
 
-      // Retry once if first attempt fails
+        PeachifyStream? matchedStream;
+        if (item.providerName != null) {
+          matchedStream = streams.cast<PeachifyStream?>().firstWhere(
+            (s) => s!.providerName == item.providerName,
+            orElse: () => null,
+          );
+        }
+        matchedStream ??= streams.isNotEmpty ? streams.first : null;
+        if (matchedStream != null) {
+          freshM3u8 = matchedStream.url;
+          freshHeaders = matchedStream.headers;
+          item.headers = freshHeaders;
+          debugPrint('✅ Found matching fresh stream: ${matchedStream.providerName}');
+        }
+      }
+
+      // Fallback: Webview extraction if tmdbId/mediaType not present or failed to resolve
       if (freshM3u8 == null || freshM3u8.isEmpty) {
-        debugPrint('🔄 First re-extraction failed, retrying...');
-        await Future.delayed(const Duration(seconds: 2));
+        if (item.originalEmbedUrl == null || item.originalEmbedUrl!.isEmpty) {
+          debugPrint('⚠ No originalEmbedUrl saved — cannot fallback for ${item.title}');
+          item.status = DownloadStatus.failed;
+          item.error = 'Link expired. No embed URL saved for recovery.';
+          _updateController.add(item);
+          onDownloadUpdate?.call(item);
+          _saveDownloads();
+          return;
+        }
+
+        debugPrint('🔄 Falling back to webview re-extraction from: ${item.originalEmbedUrl}');
+        final extractor = VideoExtractorService();
         freshM3u8 = await extractor.extractVideoUrl(
           item.originalEmbedUrl!,
           bypassCache: true,
@@ -1543,6 +1596,19 @@ class DownloadManager {
           const Duration(seconds: 20),
           onTimeout: () => null,
         );
+
+        // Retry once if first attempt fails
+        if (freshM3u8 == null || freshM3u8.isEmpty) {
+          debugPrint('🔄 First fallback re-extraction failed, retrying...');
+          await Future.delayed(const Duration(seconds: 2));
+          freshM3u8 = await extractor.extractVideoUrl(
+            item.originalEmbedUrl!,
+            bypassCache: true,
+          ).timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => null,
+          );
+        }
       }
 
       if (freshM3u8 == null || freshM3u8.isEmpty) {
@@ -1564,7 +1630,7 @@ class DownloadManager {
 
       try {
         final parser = M3u8Parser();
-        final masterData = await parser.parse(freshM3u8);
+        final masterData = await parser.parse(freshM3u8, headers: freshHeaders);
 
         // Match by qualityLabel
         if (item.qualityLabel != null && masterData.variants.isNotEmpty) {
@@ -1642,6 +1708,7 @@ class DownloadManager {
           saveDir: item.segmentDirectory!,
           outputMp4Path: tempMp4Path,
           fileName: item.fileName,
+          headers: item.headers,
         );
       }
 

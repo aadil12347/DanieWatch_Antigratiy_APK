@@ -12,21 +12,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../services/m3u8_parser.dart';
+import '../../services/peachify_extractor.dart';
 import '../../core/utils/error_sanitizer.dart';
 import '../providers/download_modal_provider.dart';
 
+// ── What the user selected ────────────────────────────────
 // ── What the user selected ────────────────────────────────
 class DownloadSelection {
   final StreamVariant quality;
   final AudioTrack? audioTrack;
   final SubtitleTrack? subtitleTrack;
   final String title;
+  final String masterUrl;
+  final Map<String, String>? headers;
+  final String? providerName;
 
   DownloadSelection({
     required this.quality,
     this.audioTrack,
     this.subtitleTrack,
     required this.title,
+    required this.masterUrl,
+    this.headers,
+    this.providerName,
   });
 }
 
@@ -43,6 +51,7 @@ Future<DownloadSelection?> showQualitySelectorSheet({
   String? fallbackQuality,
   String? fallbackLanguage,
   int? runtime,
+  List<PeachifyStream>? streams,
 }) async {
   final currentState = ref.read(downloadModalProvider);
   if (currentState.isOpen) {
@@ -64,6 +73,7 @@ Future<DownloadSelection?> showQualitySelectorSheet({
     fallbackQuality: fallbackQuality,
     fallbackLanguage: fallbackLanguage,
     runtime: runtime,
+    streams: streams,
     onSelected: (sel) {
       ref.read(downloadModalProvider.notifier).state =
           const DownloadModalState();
@@ -100,6 +110,7 @@ class QualitySelectorContent extends ConsumerStatefulWidget {
 
 class _QualitySelectorContentState
     extends ConsumerState<QualitySelectorContent> {
+  PeachifyStream? _selectedStream;
   PlaylistInfo? _playlist;
   bool _internalLoading = true;
   String? _error;
@@ -113,7 +124,10 @@ class _QualitySelectorContentState
   void initState() {
     super.initState();
     if (widget.m3u8Url.isNotEmpty) {
-      _loadPlaylist();
+      _internalLoading = true;
+      _loadPlaylistFromUrl(widget.m3u8Url);
+    } else {
+      _internalLoading = false;
     }
   }
 
@@ -124,24 +138,30 @@ class _QualitySelectorContentState
       if (mounted) {
         setState(() {
           _internalLoading = true;
+          _selectedStream = null;
+          _playlist = null;
           _error = null;
         });
       }
-      _loadPlaylist();
+      _loadPlaylistFromUrl(widget.m3u8Url);
     }
   }
 
-  Future<void> _loadPlaylist() async {
+  Future<void> _loadPlaylistFromUrl(String url) async {
     try {
       final parser = M3u8Parser();
-      final info = await parser.parse(widget.m3u8Url);
+      final info = await parser.parse(url);
       if (mounted) {
         setState(() {
           _playlist = info;
-          // Apply defaulting logic from PlaylistInfo
-          _selectedVariant = info.defaultVariant;
           _selectedAudio = info.defaultAudio;
-          _selectedSubtitle = null; // Subtitles off by default
+          final groupVariants = _getFilteredVariants(info, _selectedAudio);
+          if (groupVariants.isNotEmpty) {
+            _selectedVariant = _getDefaultVariantInGroup(groupVariants);
+          } else {
+            _selectedVariant = info.defaultVariant;
+          }
+          _selectedSubtitle = null;
           _internalLoading = false;
         });
       }
@@ -155,10 +175,71 @@ class _QualitySelectorContentState
     }
   }
 
+  Future<void> _loadPlaylist(PeachifyStream stream) async {
+    try {
+      final parser = M3u8Parser();
+      final info = await parser.parse(stream.url, headers: stream.headers);
+      if (mounted) {
+        setState(() {
+          _playlist = info;
+          _selectedAudio = info.defaultAudio;
+          final groupVariants = _getFilteredVariants(info, _selectedAudio);
+          if (groupVariants.isNotEmpty) {
+            _selectedVariant = _getDefaultVariantInGroup(groupVariants);
+          } else {
+            _selectedVariant = info.defaultVariant;
+          }
+          _selectedSubtitle = null;
+          _internalLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = ErrorSanitizer.sanitize(e);
+          _internalLoading = false;
+        });
+      }
+    }
+  }
+
+  List<StreamVariant> _getFilteredVariants(PlaylistInfo playlist, AudioTrack? audio) {
+    if (audio == null) return playlist.variants;
+    final filtered = playlist.variants.where((v) => v.audioGroupId == audio.groupId).toList();
+    if (filtered.isEmpty) {
+      return playlist.variants;
+    }
+    return filtered;
+  }
+
+  StreamVariant? _getDefaultVariantInGroup(List<StreamVariant> groupVariants) {
+    if (groupVariants.isEmpty) return null;
+    if (groupVariants.length == 1) return groupVariants.first;
+    try {
+      return groupVariants.firstWhere((v) {
+        final res = v.resolution ?? '';
+        return res.contains('720') || res.contains('1280');
+      });
+    } catch (_) {
+      return groupVariants.first;
+    }
+  }
+
+  void _onAudioTrackSelected(AudioTrack track) {
+    setState(() {
+      _selectedAudio = track;
+      if (_playlist != null) {
+        final groupVariants = _getFilteredVariants(_playlist!, track);
+        if (groupVariants.isNotEmpty) {
+          _selectedVariant = _getDefaultVariantInGroup(groupVariants);
+        }
+      }
+    });
+  }
+
   String _mapNativeToEnglish(String? input) {
     if (input == null) return '';
     final mapping = {
-      // ISO Codes
       'hi': 'Hindi',
       'hin': 'Hindi',
       'en': 'English',
@@ -191,7 +272,6 @@ class _QualitySelectorContentState
       'mal': 'Malayalam',
       'kn': 'Kannada',
       'kan': 'Kannada',
-      // Native Names
       'हिन्दी': 'Hindi',
       'हिंदी': 'Hindi',
       '한국어': 'Korean',
@@ -215,25 +295,15 @@ class _QualitySelectorContentState
   }
 
   String _getAudioDisplayName(AudioTrack track) {
-    // Parser's displayName is like "🇮🇳 हिन्दी"
-    // We want "🇮🇳 Hindi"
-    
-    // 1. Try to map the ISO code (e.g. 'hi')
     String englishName = _mapNativeToEnglish(track.language);
-    
-    // 2. If mapping didn't change anything (or it was already English), 
-    // and name is a native name, try mapping the name
     if (englishName == track.language || englishName == 'English') {
        final nameMapped = _mapNativeToEnglish(track.name);
        if (nameMapped != track.name) {
          englishName = nameMapped;
        } else {
-         englishName = track.name; // Fallback to raw name
+         englishName = track.name;
        }
     }
-    
-    // 3. Re-attach the flag using the track's logic if possible, 
-    // or just use the parser's logic for flags
     final flag = track.displayName.split(' ').first;
     return '$flag $englishName';
   }
@@ -242,6 +312,7 @@ class _QualitySelectorContentState
   Widget build(BuildContext context) {
     final modalState = ref.watch(downloadModalProvider);
     final isLoading = modalState.isLoading || _internalLoading;
+    final streams = modalState.streams ?? [];
 
     return Container(
       padding: const EdgeInsets.only(bottom: 20),
@@ -253,6 +324,22 @@ class _QualitySelectorContentState
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             child: Row(
               children: [
+                if (_selectedStream != null) ...[
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        _selectedStream = null;
+                        _playlist = null;
+                        _selectedVariant = null;
+                        _selectedAudio = null;
+                        _selectedSubtitle = null;
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -320,6 +407,8 @@ class _QualitySelectorContentState
             _buildSkeleton()
           else if (_error != null)
             _buildError()
+          else if (_selectedStream == null)
+            _buildStreamsList(streams)
           else ...[
             _buildSelectors(),
             const SizedBox(height: 16),
@@ -355,14 +444,14 @@ class _QualitySelectorContentState
             ...List.generate(
                 2,
                 (i) => Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      width: double.infinity,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    )),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  width: double.infinity,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                )),
           ],
         ),
       ),
@@ -392,6 +481,7 @@ class _QualitySelectorContentState
                 audioTrack: null,
                 title: widget.title,
                 subtitleTrack: null,
+                masterUrl: widget.m3u8Url,
               )),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white10,
@@ -411,7 +501,8 @@ class _QualitySelectorContentState
     final playlist = _playlist;
     if (playlist == null) return v.badgeLabel;
 
-    final sortedVariants = List<StreamVariant>.from(playlist.variants)
+    final filtered = _getFilteredVariants(playlist, _selectedAudio);
+    final sortedVariants = List<StreamVariant>.from(filtered)
       ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
 
     final uniqueResolutions = sortedVariants.map((sv) => sv.qualityLabel).toSet();
@@ -444,17 +535,139 @@ class _QualitySelectorContentState
     }
   }
 
+  Widget _buildStreamsList(List<PeachifyStream> streams) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Text('SELECT LANGUAGE / SERVER',
+              style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1)),
+        ),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.4,
+          ),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: streams.length,
+            itemBuilder: (context, index) {
+              final stream = streams[index];
+              final displayName = stream.providerName;
+              
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  setState(() {
+                    _selectedStream = stream;
+                    _internalLoading = true;
+                    _playlist = null;
+                    _error = null;
+                  });
+                  _loadPlaylist(stream);
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.language_rounded, color: AppColors.primary, size: 20),
+                      const SizedBox(width: 12),
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSelectors() {
     final playlist = _playlist!;
-
-    // Sort variants for consistent display
-    final sortedVariants = List<StreamVariant>.from(playlist.variants)
+    final filteredVariants = _getFilteredVariants(playlist, _selectedAudio);
+    final sortedVariants = List<StreamVariant>.from(filteredVariants)
       ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Quality
+        // Audio Track Above Quality
+        if (playlist.audioTracks.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Text('AUDIO TRACK',
+                style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1)),
+          ),
+          ...playlist.audioTracks.map((track) {
+            final isSelected = _selectedAudio == track;
+            
+            String displayLabel = _getAudioDisplayName(track);
+            if (playlist.audioTracks.length == 1 && ref.read(downloadModalProvider).fallbackLanguage != null) {
+              displayLabel = _mapNativeToEnglish(ref.read(downloadModalProvider).fallbackLanguage!);
+            }
+
+            final resCount = playlist.variants.where((v) => v.audioGroupId == track.groupId).length;
+            final resText = resCount > 0 ? ' ($resCount Resolutions)' : '';
+            final fullLabel = '$displayLabel$resText';
+
+            return GestureDetector(
+              onTap: () => _onAudioTrackSelected(track),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
+                ),
+                child: Row(
+                  children: [
+                    Text(fullLabel,
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (isSelected)
+                      const Icon(Icons.check_circle,
+                          color: Colors.white, size: 20),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+
+        const SizedBox(height: 16),
+
+        // Quality/Resolution
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: Text('SELECT QUALITY',
@@ -504,56 +717,7 @@ class _QualitySelectorContentState
           ),
         ),
 
-        if (playlist.audioTracks.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Text('AUDIO TRACK',
-                style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1)),
-          ),
-          ...playlist.audioTracks.map((track) {
-            final isSelected = _selectedAudio == track;
-            
-            // Fallback logic for language
-            String displayLabel = _getAudioDisplayName(track);
-            if (playlist.audioTracks.length == 1 && ref.read(downloadModalProvider).fallbackLanguage != null) {
-              displayLabel = _mapNativeToEnglish(ref.read(downloadModalProvider).fallbackLanguage!);
-            }
-
-            return GestureDetector(
-              onTap: () => setState(() => _selectedAudio = track),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
-                ),
-                child: Row(
-                  children: [
-                    Text(displayLabel,
-                        style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    if (isSelected)
-                      const Icon(Icons.check_circle,
-                          color: Colors.white, size: 20),
-                  ],
-                ),
-              ),
-            );
-          }),
-        ],
-
+        // Subtitles
         if (playlist.subtitles.isNotEmpty) ...[
           const SizedBox(height: 24),
           Padding(
@@ -626,6 +790,9 @@ class _QualitySelectorContentState
                     audioTrack: _selectedAudio,
                     subtitleTrack: _selectedSubtitle,
                     title: widget.title,
+                    masterUrl: _selectedStream?.url ?? widget.m3u8Url,
+                    headers: _selectedStream?.headers,
+                    providerName: _selectedStream?.providerName,
                   ));
                 }
               : null,

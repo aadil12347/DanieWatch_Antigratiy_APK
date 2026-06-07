@@ -360,10 +360,84 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
         // Download Button (movies only)
         if (content.isMovie) ...[
-          _AnimatedActionButton(
-            icon: Icons.download_rounded,
-            onTap: hasWatch ? () => _handleDownload('') : null,
-            isActive: false,
+          StreamBuilder<DownloadItem>(
+            stream: DownloadManager.instance.updateStream,
+            builder: (context, _) {
+              final match = DownloadManager.instance.downloads.cast<DownloadItem?>().firstWhere(
+                (d) => d!.title == content.title && d.season == 0 && d.episode == 0,
+                orElse: () => null,
+              );
+              final isPaused = match != null && match.status == DownloadStatus.paused;
+              final isActiveDownload = match != null &&
+                  (match.status == DownloadStatus.downloading ||
+                   match.status == DownloadStatus.pending ||
+                   match.status == DownloadStatus.converting ||
+                   match.status == DownloadStatus.paused);
+              final isCompleted = match != null && match.status == DownloadStatus.completed;
+              final progress = match?.progress ?? 0.0;
+
+              if (isCompleted) {
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    CustomToast.show(context, 'Already Downloaded', type: ToastType.success);
+                  },
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4), width: 1.5),
+                    ),
+                    child: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 22),
+                  ),
+                );
+              }
+
+              if (isActiveDownload) {
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    if (isPaused) {
+                      DownloadManager.instance.resumeDownload(match!.id);
+                    } else if (match!.status == DownloadStatus.downloading) {
+                      DownloadManager.instance.pauseDownload(match.id);
+                    }
+                  },
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 38,
+                          height: 38,
+                          child: CircularProgressIndicator(
+                            value: progress > 0 ? progress : null,
+                            strokeWidth: 2.5,
+                            color: isPaused ? Colors.orangeAccent : AppColors.primary,
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        Icon(
+                          isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return _AnimatedActionButton(
+                icon: Icons.download_rounded,
+                onTap: hasWatch ? () => _startDownload(0, content) : null,
+                isActive: false,
+              );
+            },
           ),
           const SizedBox(width: 12),
         ],
@@ -1276,7 +1350,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 // ── Default download button ──
                 return GestureDetector(
                   onTap: hasPlayLink
-                      ? () => _startDownload(episode.playLink!, epNum, content)
+                      ? () => _startDownload(epNum, content)
                       : () => _showToastError('No play/download link available'),
                   child: Container(
                     width: 44,
@@ -1331,8 +1405,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   // ─── Download Logic ────────────────────────────────────────────────────────
-  void _startDownload(
-      String url, int episodeNumber, ContentDetail content) async {
+  void _startDownload(int episodeNumber, ContentDetail content) async {
     HapticFeedback.mediumImpact();
 
     if (!mounted) return;
@@ -1341,7 +1414,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final selectionFuture = showQualitySelectorSheet(
       context: context,
       ref: ref,
-      m3u8Url: '', // To be updated
+      m3u8Url: '',
       title: content.title,
       isLoading: true,
       season: content.isMovie ? null : _selectedSeason,
@@ -1352,34 +1425,28 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: content.runtime,
     );
 
-    // Fetch file size info in parallel (for display in quality selector)
-    final sizeFuture = FileSizeService.instance.fetchFileSizeInfo(url);
-
-    String? m3u8Url;
+    List<PeachifyStream> streams = [];
     try {
-      // 2. Extract m3u8 URL via WebView tapping in the background
-      final extractor = VideoExtractorService();
-      m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
-
-      // Auto-Recovery: if first attempt fails, retry once
-      if ((m3u8Url == null || m3u8Url.isEmpty) && mounted) {
-        debugPrint('[Download] First extraction failed, retrying...');
-        m3u8Url = await extractor.extractVideoUrl(url, bypassCache: true);
-      }
+      // 2. Fetch merged parallel streams
+      streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
+        tmdbId: widget.tmdbId,
+        mediaType: widget.mediaType,
+        season: content.isMovie ? 1 : _selectedSeason,
+        episode: content.isMovie ? 1 : episodeNumber,
+      );
 
       if (!mounted) return;
 
-      if (m3u8Url == null || m3u8Url.isEmpty) {
-        // Close modal and show error
+      if (streams.isEmpty) {
         ref.read(downloadModalProvider.notifier).state =
             const DownloadModalState();
         _showToastError('Could not find stream source.');
         return;
       }
 
-      // 3. Update modal with the real URL and stop loading skeleton
+      // 3. Update modal with the real streams list and stop loading skeleton
       ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
-            m3u8Url: m3u8Url,
+            streams: streams,
             isLoading: false,
           ));
     } catch (e) {
@@ -1391,28 +1458,27 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       return;
     }
 
-    // 4. Wait for user to pick quality/audio
+    // 4. Wait for user to pick language, quality, audio
     final selection = await selectionFuture;
     if (selection == null || !mounted) return;
 
-    // 5. Start ffmpeg download
+    // 5. Start HLS download
     try {
-      // Await the file size that was fetching in parallel
-      final fileSizeInfo = await sizeFuture;
-      final realFileSize = fileSizeInfo?.originalSizeBytes;
-
       final item = await DownloadManager.instance.startSegmentDownload(
-        m3u8Url: m3u8Url,
+        m3u8Url: selection.masterUrl,
         title: content.title,
-        season: _selectedSeason,
-        episode: episodeNumber,
+        season: content.isMovie ? 0 : _selectedSeason,
+        episode: content.isMovie ? 0 : episodeNumber,
         posterUrl: content.posterUrl,
         variant: selection.quality,
         audioTrack: selection.audioTrack,
         subtitleTrack: selection.subtitleTrack,
         context: context,
-        originalEmbedUrl: url,
-        fileSizeBytes: realFileSize,
+        originalEmbedUrl: selection.masterUrl,
+        tmdbId: widget.tmdbId,
+        mediaType: widget.mediaType,
+        providerName: selection.providerName,
+        headers: selection.headers,
       );
       if (item != null && mounted) {
         _showDownloadStartedToast(item);
@@ -1539,14 +1605,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   Future<void> _handleDownload(String url) async {
     HapticFeedback.mediumImpact();
-    if (url.isEmpty) {
-      _showToastError('Invalid download link');
-      return;
-    }
-
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
     if (content != null) {
-      _startDownload(url, 0, content);
+      _startDownload(0, content);
     }
   }
 

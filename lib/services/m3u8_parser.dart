@@ -225,16 +225,21 @@ class M3u8Parser {
   }
 
   /// Fetch and parse a master or media playlist
-  Future<PlaylistInfo> parse(String m3u8Url) async {
-    final content = await _fetch(m3u8Url);
+  Future<PlaylistInfo> parse(String m3u8Url, {Map<String, String>? headers}) async {
+    final content = await _fetch(m3u8Url, headers: headers);
     return _parseContent(content, m3u8Url);
   }
 
   // ── Fetch raw playlist text ────────────────────────────
-  Future<String> _fetch(String url) async {
+  Future<String> _fetch(String url, {Map<String, String>? headers}) async {
     try {
-      final response = await _dio.get<String>(url,
-          options: Options(responseType: ResponseType.plain));
+      final response = await _dio.get<String>(
+        url,
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: headers,
+        ),
+      );
       return response.data ?? '';
     } catch (e) {
       throw Exception('Failed to fetch playlist: $e');

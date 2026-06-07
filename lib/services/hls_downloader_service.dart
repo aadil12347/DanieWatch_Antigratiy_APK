@@ -148,6 +148,7 @@ class HlsDownloaderService {
     String? subtitleM3u8Url,
     required String saveDirectory,
     required String outputMp4Path,
+    Map<String, String>? headers,
   }) async {
     _isCancelled = false;
     _isPaused = false;
@@ -158,6 +159,10 @@ class HlsDownloaderService {
     _downloadedBytes = 0;
     _playlistRefreshCount = 0;
     _videoPlaylistUrl = videoM3u8Url;
+
+    if (headers != null) {
+      _dio.options.headers.addAll(headers);
+    }
     _audioPlaylistUrl = audioM3u8Url;
     _subtitlePlaylistUrl = subtitleM3u8Url;
     _saveDirectory = saveDirectory;

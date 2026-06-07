@@ -440,6 +440,9 @@ void _onStart(ServiceInstance service) async {
     final String outputMp4Path = data['outputMp4Path'];
     final String title = data['title'];
     final String? fileName = data['fileName'];
+    final Map<String, String>? headers = data['headers'] != null
+        ? Map<String, String>.from(data['headers'])
+        : null;
 
     debugPrint('🟢 Received download command for "$title" (id=$id)');
 
@@ -700,6 +703,7 @@ void _onStart(ServiceInstance service) async {
         subtitleM3u8Url: subtitleUrl,
         saveDirectory: saveDir,
         outputMp4Path: outputMp4Path,
+        headers: headers,
       );
     } catch (e) {
       debugPrint('❌ Download threw exception for $id: $e');
@@ -860,6 +864,7 @@ class BackgroundDownloadService {
     required String saveDir,
     required String outputMp4Path,
     String? fileName,
+    Map<String, String>? headers,
   }) async {
     final service = FlutterBackgroundService();
     final wasRunning = await service.isRunning();
@@ -900,6 +905,7 @@ class BackgroundDownloadService {
       'saveDir': saveDir,
       'outputMp4Path': outputMp4Path,
       'fileName': fileName,
+      'headers': headers,
     });
   }
 

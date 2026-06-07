@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../services/peachify_extractor.dart';
 import '../widgets/quality_selector_sheet.dart';
 
 class DownloadModalState {
@@ -12,6 +13,7 @@ class DownloadModalState {
   final String? fallbackQuality;
   final String? fallbackLanguage;
   final int? runtime; // Episode/movie duration in minutes
+  final List<PeachifyStream>? streams;
   final void Function(DownloadSelection)? onSelected;
   final void Function()? onCancel;
 
@@ -26,6 +28,7 @@ class DownloadModalState {
     this.fallbackQuality,
     this.fallbackLanguage,
     this.runtime,
+    this.streams,
     this.onSelected,
     this.onCancel,
   });
@@ -41,6 +44,7 @@ class DownloadModalState {
     String? fallbackQuality,
     String? fallbackLanguage,
     int? runtime,
+    List<PeachifyStream>? streams,
     void Function(DownloadSelection)? onSelected,
     void Function()? onCancel,
   }) {
@@ -55,6 +59,7 @@ class DownloadModalState {
       fallbackQuality: fallbackQuality ?? this.fallbackQuality,
       fallbackLanguage: fallbackLanguage ?? this.fallbackLanguage,
       runtime: runtime ?? this.runtime,
+      streams: streams ?? this.streams,
       onSelected: onSelected ?? this.onSelected,
       onCancel: onCancel ?? this.onCancel,
     );
