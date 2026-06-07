@@ -32,98 +32,44 @@ class _ContinueWatchingRowState extends ConsumerState<ContinueWatchingRow> {
       seasons = detailAsync.valueOrNull?.seasonNumbers;
     } catch (_) {}
 
-    showPlayLoader<Map<String, String>>(
-      context: context,
-      fetchLinkFuture: () async {
-        if (item.mediaType == 'offline') {
-          return {'extracted': item.playUrl ?? '', 'original': item.playUrl ?? ''};
-        }
-
-        String originalLink = '';
-
-        // Prioritize original iframe link if valid
-        if (item.playUrl != null &&
-            item.playUrl!.isNotEmpty &&
-            !item.playUrl!.contains('.m3u8') &&
-            !item.playUrl!.contains('.mp4')) {
-          originalLink = item.playUrl!;
-        } else {
-          // Fallback if we only have the extracted link in db
-          try {
-            if (item.mediaType == 'movie') {
-              final detailAsync = await ref.read(
-                detailProvider(
-                  DetailParams(tmdbId: item.tmdbId, mediaType: item.mediaType),
-                ).future,
-              );
-              originalLink = detailAsync?.watchLink ?? '';
-            } else {
-              final episodesAsync = await ref.read(
-                episodesProvider(
-                  EpisodeParams(tmdbId: item.tmdbId, seasonNumber: item.season ?? 1),
-                ).future,
-              );
-              final ep = episodesAsync.firstWhere(
-                (e) => e.episodeNumber == item.episode,
-                orElse: () => episodesAsync.first,
-              );
-              originalLink = ep.playLink ?? '';
-            }
-          } catch (_) {
-            return null;
-          }
-        }
-
-        if (originalLink.isEmpty) return null;
-
-        try {
-          final extractor = VideoExtractorService();
-          String? m3u8Url =
-              await extractor.extractVideoUrl(originalLink, bypassCache: true);
-
-          if (m3u8Url == null || m3u8Url.isEmpty) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove('extract_$originalLink');
-            m3u8Url = await extractor.extractVideoUrl(originalLink, bypassCache: true);
-          }
-          if (m3u8Url != null && m3u8Url.isNotEmpty) {
-            return {'extracted': m3u8Url, 'original': originalLink};
-          }
-          return null;
-        } catch (e) {
-          return null;
-        }
-      },
-      onSuccess: (data) {
-        if (!context.mounted) return;
-        Navigator.of(context, rootNavigator: true).push(
-          MaterialPageRoute(
-            builder: (_) => VideoPlayerScreen(
-              title: item.title,
-              url: data['extracted'] ?? '',
-              originalUrl: data['original'],
-              tmdbId: item.tmdbId,
-              mediaType: item.mediaType,
-              season: item.season,
-              episode: item.episode,
-              seasons: seasons,
-              startPosition: item.currentTime,
-              posterUrl: item.posterUrl,
-              isOffline: item.mediaType == 'offline',
-              isDirectLink: item.mediaType != 'offline',
-            ),
+    if (item.mediaType == 'offline') {
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => VideoPlayerScreen(
+            title: item.title,
+            url: item.playUrl ?? '',
+            originalUrl: item.playUrl,
+            tmdbId: item.tmdbId,
+            mediaType: item.mediaType,
+            season: item.season,
+            episode: item.episode,
+            seasons: seasons,
+            startPosition: item.currentTime,
+            posterUrl: item.posterUrl,
+            isOffline: true,
+            isDirectLink: true,
           ),
-        );
-      },
-      onError: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to load video'),
-            backgroundColor: Colors.red,
+        ),
+      );
+    } else {
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => VideoPlayerScreen(
+            title: item.title,
+            url: '',
+            tmdbId: item.tmdbId,
+            mediaType: item.mediaType,
+            season: item.season,
+            episode: item.episode,
+            seasons: seasons,
+            startPosition: item.currentTime,
+            posterUrl: item.posterUrl,
+            isOffline: false,
+            isDirectLink: false,
           ),
-        );
-      },
-    );
+        ),
+      );
+    }
   }
 
   @override

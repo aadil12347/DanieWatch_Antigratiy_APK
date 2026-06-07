@@ -1520,67 +1520,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
     if (content == null) return;
 
-    final s = season ?? 1;
-    final e = episode ?? 1;
-
-    showPlayLoader<Map<String, ExtractedVideasyStream>>(
-      context: context,
-      fetchLinkFuture: () async {
-        try {
-          final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
-            tmdbId: widget.tmdbId,
-            mediaType: widget.mediaType,
-            season: s,
-            episode: e,
-          );
-
-          if (streams.isEmpty) return null;
-          
-          final Map<String, ExtractedVideasyStream> map = {};
-          for (var stream in streams) {
-            final key = stream.providerName;
-            final mappedStream = ExtractedVideasyStream(
-              server: key,
-              url: stream.url,
-              sources: [{
-                'url': stream.url,
-                'quality': stream.quality,
-                'type': stream.type,
-              }],
-              tracks: stream.tracks,
-              headers: stream.headers,
-            );
-            map[key] = mappedStream;
-          }
-          return map;
-        } catch (e) {
-          debugPrint('[Details] Direct Extraction Error: $e');
-          return null;
-        }
-      },
-      onSuccess: (extractedStreams) async {
-        await Navigator.of(context, rootNavigator: true).push(
-          PageRouteBuilder(
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, __, ___) => VideoPlayerScreen(
-              url: '',
-              title: content.title,
-              tmdbId: widget.tmdbId,
-              mediaType: widget.mediaType,
-              seasons: content.seasonNumbers,
-              season: season,
-              episode: episode,
-              posterUrl: content.posterUrl,
-              extractedStreams: extractedStreams,
-              isDirectLink: true,
-            ),
-          ),
-        );
-      },
-      onError: () {
-        _showToastError('Extraction failed. Please try again.');
-      },
+    await Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => VideoPlayerScreen(
+          url: '',
+          title: content.title,
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          seasons: content.seasonNumbers,
+          season: season,
+          episode: episode,
+          posterUrl: content.posterUrl,
+          isDirectLink: false,
+        ),
+      ),
     );
   }
 

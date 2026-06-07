@@ -966,7 +966,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       seasonEpisode = null;
     }
 
-    return _DiscoveryLoadingView(
+    return DiscoveryLoadingView(
       key: key,
       backdropUrl: content?.backdropUrl,
       posterUrl: content?.posterUrl,
@@ -975,6 +975,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       seasonEpisode: seasonEpisode,
       genres: content?.genres,
       overview: content?.overview ?? content?.description,
+      onCancel: _goBack,
     );
   }
 
@@ -2078,35 +2079,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                         : _buildPlayerInterface(),
           ),
         ),
-
-        // 4. Back button during extraction
-        if (_isExtracting && !_useWebViewEngine)
-          Positioned(
-            top: 0,
-            left: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: LiquidTapEffect(
-                  onTap: _goBack,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white70,
-                      size: 16,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -2532,8 +2504,7 @@ class _CinematicLoaderState extends State<_CinematicLoader>
   }
 }
 
-// ─── Discovery Loading View (animated, self-contained) ───────────────────────
-class _DiscoveryLoadingView extends StatefulWidget {
+class DiscoveryLoadingView extends StatefulWidget {
   final String? backdropUrl;
   final String? posterUrl;
   final String title;
@@ -2541,8 +2512,9 @@ class _DiscoveryLoadingView extends StatefulWidget {
   final String? seasonEpisode;
   final List<String>? genres;
   final String? overview;
+  final VoidCallback? onCancel;
 
-  const _DiscoveryLoadingView({
+  const DiscoveryLoadingView({
     super.key,
     this.backdropUrl,
     this.posterUrl,
@@ -2551,13 +2523,14 @@ class _DiscoveryLoadingView extends StatefulWidget {
     this.seasonEpisode,
     this.genres,
     this.overview,
+    this.onCancel,
   });
 
   @override
-  State<_DiscoveryLoadingView> createState() => _DiscoveryLoadingViewState();
+  State<DiscoveryLoadingView> createState() => DiscoveryLoadingViewState();
 }
 
-class _DiscoveryLoadingViewState extends State<_DiscoveryLoadingView>
+class DiscoveryLoadingViewState extends State<DiscoveryLoadingView>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
@@ -2800,6 +2773,18 @@ class _DiscoveryLoadingViewState extends State<_DiscoveryLoadingView>
                   ],
                 ),
               ),
+              if (widget.onCancel != null)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 16,
+                  left: 16,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 24),
+                      onPressed: widget.onCancel,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
