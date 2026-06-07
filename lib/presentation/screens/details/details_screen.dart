@@ -1444,6 +1444,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         return;
       }
 
+      // Pre-validate streams in parallel, filtering out non-responding ones before updating the UI state
+      streams = await VidNestExtractorService.validateStreams(streams);
+
+      if (!mounted) return;
+
+      if (streams.isEmpty) {
+        ref.read(downloadModalProvider.notifier).state =
+            const DownloadModalState();
+        _showToastError('All servers are unresponsive. Please try again.');
+        return;
+      }
+
       // 3. Update modal with the real streams list and stop loading skeleton
       ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
             streams: streams,

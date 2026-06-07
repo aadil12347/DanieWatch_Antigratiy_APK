@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'peachify_extractor.dart'; // To reuse PeachifyStream
@@ -340,5 +341,83 @@ class VidNestExtractorService {
     }
 
     return renamedStreams;
+  }
+
+  /// Validates whether a stream is responsive and working (not 403 Forbidden or offline)
+  static Future<bool> validateStream(PeachifyStream stream) async {
+    try {
+      final client = HttpClient();
+      client.badCertificateCallback = (cert, host, port) => true;
+      client.connectionTimeout = const Duration(seconds: 3);
+
+      var currentUrl = stream.url;
+      var redirectCount = 0;
+      HttpClientResponse? response;
+
+      while (redirectCount < 5) {
+        final uri = Uri.parse(currentUrl);
+        final request = await client.getUrl(uri);
+        request.followRedirects = false;
+        
+        // Add custom headers if any
+        if (stream.headers != null) {
+          stream.headers!.forEach((key, val) {
+            request.headers.set(key, val);
+          });
+        }
+        
+        // Add standard User-Agent to be realistic
+        if (stream.headers == null || !stream.headers!.containsKey('user-agent')) {
+          request.headers.set('User-Agent', 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
+        }
+
+        response = await request.close().timeout(const Duration(seconds: 3));
+        
+        if (response.statusCode >= 300 && response.statusCode < 400) {
+          final location = response.headers.value('location');
+          if (location != null && location.isNotEmpty) {
+            if (location.startsWith('http')) {
+              currentUrl = location;
+            } else {
+              currentUrl = uri.resolve(location).toString();
+            }
+            redirectCount++;
+            continue;
+          }
+        }
+        break;
+      }
+
+      if (response == null) return false;
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Validates a list of streams in parallel, filtering out non-responding ones
+  static Future<List<PeachifyStream>> validateStreams(List<PeachifyStream> streams) async {
+    final List<PeachifyStream> workingStreams = [];
+    final List<Future<void>> tasks = [];
+
+    for (final stream in streams) {
+      tasks.add(() async {
+        final isValid = await validateStream(stream);
+        if (isValid) {
+          workingStreams.add(stream);
+        } else {
+          print('Auto-check: Removed dead/unresponsive stream: ${stream.providerName} (${stream.url})');
+        }
+      }());
+    }
+
+    await Future.wait(tasks);
+    
+    // Sort workingStreams to preserve the original sorted priority order
+    workingStreams.sort((a, b) {
+      return streams.indexOf(a).compareTo(streams.indexOf(b));
+    });
+
+    return workingStreams;
   }
 }

@@ -14,6 +14,7 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../services/m3u8_parser.dart';
 import '../../services/peachify_extractor.dart';
 import '../../core/utils/error_sanitizer.dart';
+import '../../core/utils/toast_utils.dart';
 import '../providers/download_modal_provider.dart';
 
 // ── What the user selected ────────────────────────────────
@@ -195,9 +196,27 @@ class _QualitySelectorContentState
       }
     } catch (e) {
       if (mounted) {
+        CustomToast.show(
+          context,
+          'Link expired or access denied: ${stream.providerName}',
+          type: ToastType.error,
+          duration: const Duration(milliseconds: 2500),
+        );
+
+        ref.read(downloadModalProvider.notifier).update((state) {
+          final currentStreams = state.streams ?? [];
+          final filtered = currentStreams.where((s) => s.url != stream.url).toList();
+          return state.copyWith(streams: filtered);
+        });
+
         setState(() {
-          _error = ErrorSanitizer.sanitize(e);
+          _selectedStream = null;
+          _playlist = null;
+          _selectedVariant = null;
+          _selectedAudio = null;
+          _selectedSubtitle = null;
           _internalLoading = false;
+          _error = null;
         });
       }
     }
@@ -536,6 +555,27 @@ class _QualitySelectorContentState
   }
 
   Widget _buildStreamsList(List<PeachifyStream> streams) {
+    if (streams.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+        child: Column(
+          children: [
+            const Icon(Icons.info_outline_rounded, color: Colors.white30, size: 48),
+            const SizedBox(height: 16),
+            const Text(
+              'No active servers available',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'All server links have expired or failed. Please close this modal and try extracting again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white38, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

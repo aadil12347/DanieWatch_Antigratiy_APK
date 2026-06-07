@@ -233,13 +233,46 @@ class M3u8Parser {
   // ── Fetch raw playlist text ────────────────────────────
   Future<String> _fetch(String url, {Map<String, String>? headers}) async {
     try {
-      final response = await _dio.get<String>(
-        url,
-        options: Options(
-          responseType: ResponseType.plain,
-          headers: headers,
-        ),
-      );
+      var currentUrl = url;
+      var redirectCount = 0;
+      Response<String>? response;
+
+      while (redirectCount < 5) {
+        response = await _dio.get<String>(
+          currentUrl,
+          options: Options(
+            responseType: ResponseType.plain,
+            headers: headers,
+            followRedirects: false,
+            validateStatus: (status) => status != null && (status >= 200 && status < 400),
+          ),
+        );
+
+        if (response.statusCode != null && response.statusCode! >= 300 && response.statusCode! < 400) {
+          final location = response.headers.value('location');
+          if (location != null && location.isNotEmpty) {
+            // Resolve relative redirect URL if necessary
+            if (location.startsWith('http')) {
+              currentUrl = location;
+            } else {
+              final baseUri = Uri.parse(currentUrl);
+              currentUrl = baseUri.resolve(location).toString();
+            }
+            redirectCount++;
+            continue;
+          }
+        }
+        break;
+      }
+
+      if (response == null) {
+        throw Exception('No response received');
+      }
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
       return response.data ?? '';
     } catch (e) {
       throw Exception('Failed to fetch playlist: $e');
