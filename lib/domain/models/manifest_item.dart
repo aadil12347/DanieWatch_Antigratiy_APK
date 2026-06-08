@@ -97,6 +97,36 @@ class ManifestItem {
     10767: 'Talk', 10768: 'War & Politics',
   };
 
+  static final Map<String, int> _reverseGenreMap = {
+    'action': 28,
+    'adventure': 12,
+    'animation': 16,
+    'comedy': 35,
+    'crime': 80,
+    'documentary': 99,
+    'drama': 18,
+    'family': 10751,
+    'fantasy': 14,
+    'history': 36,
+    'horror': 27,
+    'music': 10402,
+    'mystery': 9648,
+    'romance': 10749,
+    'science fiction': 878,
+    'sci-fi': 878,
+    'thriller': 53,
+    'war': 10752,
+    'western': 37,
+    'action & adventure': 10759,
+    'kids': 10762,
+    'news': 10763,
+    'reality': 10764,
+    'sci-fi & fantasy': 10765,
+    'soap': 10766,
+    'talk': 10767,
+    'war & politics': 10768,
+  };
+
   /// Prioritized display language for card badges
   String get displayLanguage {
     if (language.isEmpty) return '';
@@ -145,13 +175,13 @@ class ManifestItem {
         ? (arr[5] as List<dynamic>).map((e) => e.toString()).toList()
         : const [];
         
-    final List<int> genreIds = arr.length > 6 && arr[6] is List<dynamic>
-        ? (arr[6] as List<dynamic>).map((e) => e is int ? e : (int.tryParse(e.toString()) ?? 0)).toList()
+    final List<String> genres = arr.length > 6 && arr[6] is List<dynamic>
+        ? (arr[6] as List<dynamic>).map((e) => e.toString()).toList()
         : const [];
         
-    final List<String> genres = genreIds
-        .map((gId) => _genreMap[gId])
-        .whereType<String>()
+    final List<int> genreIds = genres
+        .map((g) => _reverseGenreMap[g.toLowerCase()])
+        .whereType<int>()
         .toList();
 
     final String imdbId = arr.length > 7 ? (arr[7] ?? '').toString() : '';
