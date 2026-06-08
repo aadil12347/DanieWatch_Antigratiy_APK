@@ -1,0 +1,31 @@
+name: better_player_example
+version: 1.0.0+1
+publish_to: "none"
+description: "Better Player example usage app."
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.35.0"
+
+dependencies:
+  better_player_plus:
+    path: ../
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  collection: ^1.19.1
+  path_provider: ^2.1.5
+  visibility_detector: ^0.4.0+2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+
+  uses-material-design: true
+
+  assets:
+    - assets/

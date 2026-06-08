@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:developer' as dev;
 
 import 'package:dio/dio.dart';
 
 import '../../core/config/env.dart';
+import '../local/database.dart';
 
 /// TMDB API client — used ONLY for enriching existing DB-backed items.
 /// NEVER use this to discover new content or populate any UI feed.
@@ -22,6 +24,27 @@ class TmdbClient {
       logPrint: (msg) => dev.log(msg.toString(), name: 'TMDB'),
     ));
 
+  Future<dynamic> _getCachedOrFetch(String cacheKey, Future<dynamic> Function() fetcher, {Duration maxAge = const Duration(days: 1)}) async {
+    try {
+      final cached = await AppDatabase.instance.getCachedTmdbResponse(cacheKey, maxAge: maxAge);
+      if (cached != null) {
+        return jsonDecode(cached);
+      }
+    } catch (e) {
+      dev.log('[TMDB Cache] Error reading cache for $cacheKey: $e');
+    }
+
+    final data = await fetcher();
+    if (data != null) {
+      try {
+        await AppDatabase.instance.cacheTmdbResponse(cacheKey, jsonEncode(data));
+      } catch (e) {
+        dev.log('[TMDB Cache] Error saving cache for $cacheKey: $e');
+      }
+    }
+    return data;
+  }
+
   static String imageUrl(String? path, {String size = 'w500'}) {
     if (path == null || path.isEmpty) return '';
     return '${Env.tmdbImageBase}/$size$path';
@@ -39,69 +62,89 @@ class TmdbClient {
 
   /// Get movie details for enrichment only (fill missing fields on DB item)
   Future<Map<String, dynamic>?> getMovieDetails(int tmdbId) async {
-    try {
-      final res = await _dio.get('/movie/$tmdbId', queryParameters: {
-        'append_to_response': 'credits,images,videos',
-      });
-      return res.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      dev.log('[TMDB] Movie $tmdbId error: ${e.message}');
-      return null;
-    }
+    final cacheKey = 'movie_details_$tmdbId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/movie/$tmdbId', queryParameters: {
+          'append_to_response': 'credits,images,videos',
+        });
+        return res.data as Map<String, dynamic>;
+      } on DioException catch (e) {
+        dev.log('[TMDB] Movie $tmdbId error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
   }
 
   /// Get TV details for enrichment only
   Future<Map<String, dynamic>?> getTvDetails(int tmdbId) async {
-    try {
-      final res = await _dio.get('/tv/$tmdbId', queryParameters: {
-        'append_to_response': 'credits,images,videos',
-      });
-      return res.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      dev.log('[TMDB] TV $tmdbId error: ${e.message}');
-      return null;
-    }
+    final cacheKey = 'tv_details_$tmdbId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/tv/$tmdbId', queryParameters: {
+          'append_to_response': 'credits,images,videos',
+        });
+        return res.data as Map<String, dynamic>;
+      } on DioException catch (e) {
+        dev.log('[TMDB] TV $tmdbId error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
   }
 
   /// Get season details (episodes list for TV)
   Future<Map<String, dynamic>?> getSeasonDetails(
       int tvId, int seasonNumber) async {
-    try {
-      final res =
-          await _dio.get('/tv/$tvId/season/$seasonNumber', queryParameters: {
-        'append_to_response': 'credits,images',
-      });
-      return res.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      dev.log('[TMDB] Season $tvId/$seasonNumber error: ${e.message}');
-      return null;
-    }
+    final cacheKey = 'season_details_${tvId}_$seasonNumber';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res =
+            await _dio.get('/tv/$tvId/season/$seasonNumber', queryParameters: {
+          'append_to_response': 'credits,images',
+        });
+        return res.data as Map<String, dynamic>;
+      } on DioException catch (e) {
+        dev.log('[TMDB] Season $tvId/$seasonNumber error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
   }
 
   /// Get similar movies
   Future<List<Map<String, dynamic>>> getSimilarMovies(int tmdbId) async {
-    try {
-      final res = await _dio.get('/movie/$tmdbId/similar');
-      final results = res.data['results'] as List?;
-      return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ??
-          [];
-    } on DioException catch (e) {
-      dev.log('[TMDB] Similar movies $tmdbId error: ${e.message}');
-      return [];
-    }
+    final cacheKey = 'similar_movies_$tmdbId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/movie/$tmdbId/similar');
+        final results = res.data['results'] as List?;
+        return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ??
+            [];
+      } on DioException catch (e) {
+        dev.log('[TMDB] Similar movies $tmdbId error: ${e.message}');
+        return [];
+      }
+    });
+    return (result as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
   /// Get similar TV shows
   Future<List<Map<String, dynamic>>> getSimilarTv(int tmdbId) async {
-    try {
-      final res = await _dio.get('/tv/$tmdbId/similar');
-      final results = res.data['results'] as List?;
-      return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ??
-          [];
-    } on DioException catch (e) {
-      dev.log('[TMDB] Similar TV $tmdbId error: ${e.message}');
-      return [];
-    }
+    final cacheKey = 'similar_tv_$tmdbId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/tv/$tmdbId/similar');
+        final results = res.data['results'] as List?;
+        return results?.map((e) => e as Map<String, dynamic>).take(20).toList() ??
+            [];
+      } on DioException catch (e) {
+        dev.log('[TMDB] Similar TV $tmdbId error: ${e.message}');
+        return [];
+      }
+    });
+    return (result as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
   /// Get trending content for today or this week
@@ -172,64 +215,84 @@ class TmdbClient {
 
   /// Lightweight: fetch only images (logos) for a given media item
   Future<Map<String, dynamic>?> getImages(int id, String mediaType) async {
-    try {
-      final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
-      final res = await _dio.get('/$type/$id/images', queryParameters: {
-        'include_image_language': 'en,null',
-      });
-      return res.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      dev.log('[TMDB] Images $id error: ${e.message}');
-      return null;
-    }
+    final cacheKey = 'images_${mediaType}_$id';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
+        final res = await _dio.get('/$type/$id/images', queryParameters: {
+          'include_image_language': 'en,null',
+        });
+        return res.data as Map<String, dynamic>;
+      } on DioException catch (e) {
+        dev.log('[TMDB] Images $id error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
   }
 
   /// Lightweight: fetch only videos (trailers) for a given media item
   Future<List<Map<String, dynamic>>> getVideos(int id, String mediaType) async {
-    try {
-      final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
-      final res = await _dio.get('/$type/$id/videos');
-      final results = res.data['results'] as List?;
-      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
-    } on DioException catch (e) {
-      dev.log('[TMDB] Videos $id error: ${e.message}');
-      return [];
-    }
+    final cacheKey = 'videos_${mediaType}_$id';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
+        final res = await _dio.get('/$type/$id/videos');
+        final results = res.data['results'] as List?;
+        return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+      } on DioException catch (e) {
+        dev.log('[TMDB] Videos $id error: ${e.message}');
+        return [];
+      }
+    });
+    return (result as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
   /// Fetch reviews for a given media item
   Future<List<Map<String, dynamic>>> getReviews(int id, String mediaType) async {
-    try {
-      final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
-      final res = await _dio.get('/$type/$id/reviews');
-      final results = res.data['results'] as List?;
-      return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
-    } on DioException catch (e) {
-      dev.log('[TMDB] Reviews $id error: ${e.message}');
-      return [];
-    }
+    final cacheKey = 'reviews_${mediaType}_$id';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final type = (mediaType == 'tv' || mediaType == 'series') ? 'tv' : 'movie';
+        final res = await _dio.get('/$type/$id/reviews');
+        final results = res.data['results'] as List?;
+        return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+      } on DioException catch (e) {
+        dev.log('[TMDB] Reviews $id error: ${e.message}');
+        return [];
+      }
+    });
+    return (result as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
   /// Fetch person/actor details (biography, birthday, gender, place_of_birth, etc.)
   Future<Map<String, dynamic>?> getPersonDetails(int personId) async {
-    try {
-      final res = await _dio.get('/person/$personId');
-      return res.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      dev.log('[TMDB] Person $personId error: ${e.message}');
-      return null;
-    }
+    final cacheKey = 'person_details_$personId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/person/$personId');
+        return res.data as Map<String, dynamic>;
+      } on DioException catch (e) {
+        dev.log('[TMDB] Person $personId error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
   }
 
   /// Fetch combined credits (movies + TV) for a person
   Future<List<Map<String, dynamic>>> getPersonCombinedCredits(int personId) async {
-    try {
-      final res = await _dio.get('/person/$personId/combined_credits');
-      final cast = res.data['cast'] as List?;
-      return cast?.map((e) => e as Map<String, dynamic>).toList() ?? [];
-    } on DioException catch (e) {
-      dev.log('[TMDB] Person credits $personId error: ${e.message}');
-      return [];
-    }
+    final cacheKey = 'person_credits_$personId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/person/$personId/combined_credits');
+        final cast = res.data['cast'] as List?;
+        return cast?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+      } on DioException catch (e) {
+        dev.log('[TMDB] Person credits $personId error: ${e.message}');
+        return [];
+      }
+    });
+    return (result as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
   /// Global search across movies and TV shows

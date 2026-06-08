@@ -158,6 +158,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   double? _resumeTimeOverride;
   double? _seekingToTime;
   Timer? _seekTimeoutTimer;
+  bool _isSwipeSeeking = false;
+  double _swipeSeekTarget = 0.0;
+  String? _activeVerticalDrag;
 
   @override
   void initState() {
@@ -317,9 +320,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         });
       });
 
-      // Find first available server in order of priority (Server 1 -> Server 2 -> Server 3)
+      // Find first available server in order of priority (Server 1 -> Server 3 -> Server 2)
       String? defaultServer;
-      final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
+      final priorityServers = ['Server 1', 'Server 3', 'Server 2'];
       for (final srv in priorityServers) {
         if (serverToResUrl.containsKey(srv) && serverToResUrl[srv]!.isNotEmpty) {
           defaultServer = srv;
@@ -420,17 +423,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     debugPrint('[VcloudPlayer] Failover triggered. Current active server: $_activeServer');
 
-    // Priority: Server 1 -> Server 2 -> Server 3
+    // Priority: Server 1 -> Server 3 -> Server 2
     String? nextServer;
     if (_activeServer == 'Server 1') {
-      if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
-        nextServer = 'Server 2';
-      } else if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
-        nextServer = 'Server 3';
-      }
-    } else if (_activeServer == 'Server 2') {
       if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
         nextServer = 'Server 3';
+      } else if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
+        nextServer = 'Server 2';
+      }
+    } else if (_activeServer == 'Server 3') {
+      if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
+        nextServer = 'Server 2';
       }
     }
 
@@ -1310,16 +1313,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
 
     final nextEp = episodes[nextIdx];
-    if (nextEp.playLink == null || nextEp.playLink!.isEmpty) {
-      debugPrint('[NextEp] Next episode has no play link.');
-      return;
-    }
+    final targetLink = (nextEp.playLink != null && nextEp.playLink!.isNotEmpty)
+        ? nextEp.playLink!
+        : VideasyExtractorService.buildPlayerUrl(
+            tmdbId: widget.tmdbId,
+            mediaType: widget.mediaType,
+            season: _currentSeason ?? 1,
+            episode: nextEp.episodeNumber ?? 1,
+          );
 
     debugPrint('[NextEp] Playing Episode ${nextEp.episodeNumber}');
 
     setState(() {
       _currentEpisode = nextEp.episodeNumber;
-      _currentExtractionUrl = nextEp.playLink;
+      _currentExtractionUrl = targetLink;
       _isExtracting = true;
       _discoveryComplete = false;
       _isInitialized = false;
@@ -2164,33 +2171,34 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
                                               return InkWell(
                                                 onTap: () {
-                                                  if (ep.playLink != null &&
-                                                      ep.playLink!.isNotEmpty) {
-                                                    Navigator.pop(context);
-                                                    setState(() {
-                                                       _currentEpisode =
-                                                           ep.episodeNumber;
-                                                       _currentExtractionUrl =
-                                                           ep.playLink;
-                                                       _isExtracting = true;
-                                                       _discoveryComplete =
-                                                           false;
-                                                       _isInitialized = false;
-                                                       _extractedLink = null;
-                                                       _discoveredLinks.clear();
-                                                       _lastCurrentTime = 0.0; // Reset progress for new episode
-                                                     });
-                                                    _webViewController
-                                                        ?.evaluateJavascript(
-                                                      source:
-                                                          "updateEpisodeButton('Episodes')",
-                                                    );
-                                                    _webViewKey = ValueKey(
-                                                      'discovery_${DateTime.now().millisecondsSinceEpoch}',
-                                                    );
-                                                    _tryDirectExtraction();
-                                                  }
-                                                },
+                                                   final targetLink = (ep.playLink != null && ep.playLink!.isNotEmpty)
+                                                       ? ep.playLink!
+                                                       : VideasyExtractorService.buildPlayerUrl(
+                                                           tmdbId: widget.tmdbId,
+                                                           mediaType: widget.mediaType,
+                                                           season: tempSeason,
+                                                           episode: ep.episodeNumber ?? 1,
+                                                         );
+                                                   Navigator.pop(context);
+                                                   setState(() {
+                                                     _currentSeason = tempSeason;
+                                                     _currentEpisode = ep.episodeNumber;
+                                                     _currentExtractionUrl = targetLink;
+                                                     _isExtracting = true;
+                                                     _discoveryComplete = false;
+                                                     _isInitialized = false;
+                                                     _extractedLink = null;
+                                                     _discoveredLinks.clear();
+                                                     _lastCurrentTime = 0.0; // Reset progress for new episode
+                                                   });
+                                                   _webViewController?.evaluateJavascript(
+                                                     source: "updateEpisodeButton('Episodes')",
+                                                   );
+                                                   _webViewKey = ValueKey(
+                                                     'discovery_${DateTime.now().millisecondsSinceEpoch}',
+                                                   );
+                                                   _tryDirectExtraction();
+                                                 },
                                                 child: Container(
                                                   margin: const EdgeInsets.only(
                                                     bottom: 12,
@@ -2583,44 +2591,86 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Widget _buildUnlockedControls() {
     final isPlaying = _betterPlayerController?.videoPlayerController?.value.isPlaying ?? false;
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    bool isAtEdge(double x, double y) {
+      return x < 24 || x > screenWidth - 24 || y < 24 || y > screenHeight - 24;
+    }
+
     return Stack(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onVerticalDragStart: _handleBrightnessDragStart,
-                onVerticalDragUpdate: _handleBrightnessDragUpdate,
-                onVerticalDragEnd: (_) => _fadeBrightnessIndicator(),
-                onDoubleTapDown: _handleDoubleTapLeft,
-                onDoubleTap: () {},
-                onTap: _toggleControlsVisibility,
-                onLongPressStart: (_) => _startFastForward(),
-                onLongPressEnd: (_) => _stopFastForward(),
-                child: Container(color: Colors.transparent),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onVerticalDragStart: _handleVolumeDragStart,
-                onVerticalDragUpdate: _handleVolumeDragUpdate,
-                onVerticalDragEnd: (_) => _fadeVolumeIndicator(),
-                onDoubleTapDown: _handleDoubleTapRight,
-                onDoubleTap: () {},
-                onTap: _toggleControlsVisibility,
-                onLongPressStart: (_) => _startFastForward(),
-                onLongPressEnd: (_) => _stopFastForward(),
-                child: Container(color: Colors.transparent),
-              ),
-            ),
-          ],
+        GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (details) {
+            final x = details.localPosition.dx;
+            final y = details.localPosition.dy;
+            if (isAtEdge(x, y)) return;
+            _toggleControlsVisibility();
+          },
+          onDoubleTapDown: (details) {
+            if (_isLocked) return;
+            final x = details.localPosition.dx;
+            final y = details.localPosition.dy;
+            if (isAtEdge(x, y)) return;
+            if (x < screenWidth * 0.35) {
+              _handleDoubleTapLeft(details);
+            } else if (x > screenWidth * 0.65) {
+              _handleDoubleTapRight(details);
+            }
+          },
+          onLongPressStart: (details) {
+            final x = details.localPosition.dx;
+            final y = details.localPosition.dy;
+            if (isAtEdge(x, y)) return;
+            if (x < screenWidth * 0.35 || x > screenWidth * 0.65) {
+              _startFastForward();
+            }
+          },
+          onLongPressEnd: (_) => _stopFastForward(),
+          onVerticalDragStart: (details) {
+            final x = details.localPosition.dx;
+            final y = details.localPosition.dy;
+            if (isAtEdge(x, y)) {
+              _activeVerticalDrag = null;
+              return;
+            }
+            if (x < screenWidth * 0.35) {
+              _activeVerticalDrag = 'brightness';
+              _handleBrightnessDragStart(details);
+            } else if (x > screenWidth * 0.65) {
+              _activeVerticalDrag = 'volume';
+              _handleVolumeDragStart(details);
+            } else {
+              _activeVerticalDrag = null;
+            }
+          },
+          onVerticalDragUpdate: (details) {
+            if (_activeVerticalDrag == 'brightness') {
+              _handleBrightnessDragUpdate(details);
+            } else if (_activeVerticalDrag == 'volume') {
+              _handleVolumeDragUpdate(details);
+            }
+          },
+          onVerticalDragEnd: (_) {
+            if (_activeVerticalDrag == 'brightness') {
+              _fadeBrightnessIndicator();
+            } else if (_activeVerticalDrag == 'volume') {
+              _fadeVolumeIndicator();
+            }
+            _activeVerticalDrag = null;
+          },
+          onHorizontalDragStart: _handleSwipeSeekStart,
+          onHorizontalDragUpdate: _handleSwipeSeekUpdate,
+          onHorizontalDragEnd: _handleSwipeSeekEnd,
+          child: Container(color: Colors.transparent),
         ),
 
         if (_showBrightnessIndicator)
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.centerRight,
             child: Padding(
-              padding: const EdgeInsets.only(left: 48.0),
+              padding: const EdgeInsets.only(right: 48.0),
               child: _buildVerticalGestureIndicator(
                 icon: Icons.brightness_6_rounded,
                 value: _brightness,
@@ -2631,9 +2681,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
         if (_showVolumeIndicator)
           Align(
-            alignment: Alignment.centerRight,
+            alignment: Alignment.centerLeft,
             child: Padding(
-              padding: const EdgeInsets.only(right: 48.0),
+              padding: const EdgeInsets.only(left: 48.0),
               child: _buildVerticalGestureIndicator(
                 icon: _volume == 0 ? Icons.volume_mute_rounded : Icons.volume_up_rounded,
                 value: _volume,
@@ -2663,27 +2713,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           Align(
             alignment: Alignment.topCenter,
             child: Padding(
-              padding: const EdgeInsets.only(top: 60.0),
+              padding: const EdgeInsets.only(top: 24.0),
               child: _buildSpeedPill(),
             ),
           ),
 
         if (_notifyPillText != null)
           Align(
-            alignment: Alignment.center,
+            alignment: const Alignment(0.0, -0.4),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.black87,
+                color: Colors.black54,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white10),
               ),
               child: Text(
                 _notifyPillText!,
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
                 ),
               ),
             ),
@@ -2798,25 +2847,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildSpeedPill() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black87,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFB81D24).withOpacity(0.5)),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.fast_forward_rounded, color: Color(0xFFB81D24), size: 16),
-          SizedBox(width: 8),
-          Text(
-            '2x Speed',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
+    return const Text(
+      '2x Speed',
+      style: TextStyle(
+        color: Colors.white38,
+        fontWeight: FontWeight.w400,
+        fontSize: 12,
+        shadows: [
+          Shadow(
+            color: Colors.black54,
+            offset: Offset(0, 1),
+            blurRadius: 2,
           ),
         ],
       ),
@@ -3056,6 +3097,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               position: _lastCurrentTime,
               duration: _lastDuration,
               buffered: bufferedSeconds,
+              isSwipeSeeking: _isSwipeSeeking,
+              swipeSeekValue: _swipeSeekTarget,
               onChanged: (val) {
                 setState(() {
                   _lastCurrentTime = val;
@@ -3284,6 +3327,49 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
+  void _handleSwipeSeekStart(DragStartDetails details) {
+    if (_isLocked || _betterPlayerController == null) return;
+    
+    final x = details.localPosition.dx;
+    final y = details.localPosition.dy;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    // Ignore gestures starting close to the edges to avoid system conflict
+    if (x < 24 || x > screenWidth - 24 || y < 24 || y > screenHeight - 24) {
+      _isSwipeSeeking = false;
+      return;
+    }
+    
+    setState(() {
+      _isSwipeSeeking = true;
+      _swipeSeekTarget = _lastCurrentTime;
+    });
+    _controlsTimer?.cancel();
+  }
+
+  void _handleSwipeSeekUpdate(DragUpdateDetails details) {
+    if (!_isSwipeSeeking) return;
+    
+    double range = _lastDuration > 0 ? _lastDuration * 0.25 : 180.0;
+    if (range < 120.0) range = 120.0;
+    
+    double delta = details.delta.dx / MediaQuery.of(context).size.width * range;
+    setState(() {
+      _swipeSeekTarget = (_swipeSeekTarget + delta).clamp(0.0, _lastDuration);
+    });
+  }
+
+  void _handleSwipeSeekEnd(DragEndDetails details) {
+    if (!_isSwipeSeeking) return;
+    _betterPlayerController!.seekTo(Duration(seconds: _swipeSeekTarget.toInt()));
+    setState(() {
+      _isSwipeSeeking = false;
+      _lastCurrentTime = _swipeSeekTarget;
+    });
+    _resetControlsTimer();
+  }
+
   void _handleDoubleTapLeft(TapDownDetails details) {
     if (_isLocked) return;
     _triggerHaptic();
@@ -3395,9 +3481,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (fit == BoxFit.contain) {
       nextFit = BoxFit.cover;
       label = 'Fill';
-    } else if (fit == BoxFit.cover) {
-      nextFit = BoxFit.fill;
-      label = 'Stretch';
     } else {
       nextFit = BoxFit.contain;
       label = 'Fit';
@@ -4128,6 +4211,8 @@ class GlassmorphicVideoSeekBar extends StatefulWidget {
   final double buffered;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
+  final bool isSwipeSeeking;
+  final double? swipeSeekValue;
 
   const GlassmorphicVideoSeekBar({
     super.key,
@@ -4136,6 +4221,8 @@ class GlassmorphicVideoSeekBar extends StatefulWidget {
     required this.buffered,
     required this.onChanged,
     required this.onChangeEnd,
+    this.isSwipeSeeking = false,
+    this.swipeSeekValue,
   });
 
   @override
@@ -4146,11 +4233,27 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
   bool _isDragging = false;
   double? _dragValue;
 
+  String _formatDuration(double seconds) {
+    if (seconds.isNaN || seconds.isInfinite) return '00:00';
+    final duration = Duration(seconds: seconds.toInt());
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final secs = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (hours > 0) {
+      return '$hours:$minutes:$secs';
+    } else {
+      return '$minutes:$secs';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    double activeValue = _isDragging ? (_dragValue ?? widget.position) : widget.position;
+    double activeValue = _isDragging 
+        ? (_dragValue ?? widget.position) 
+        : (widget.isSwipeSeeking ? (widget.swipeSeekValue ?? widget.position) : widget.position);
     double progressPercent = widget.duration > 0 ? (activeValue / widget.duration).clamp(0.0, 1.0) : 0.0;
     double bufferPercent = widget.duration > 0 ? (widget.buffered / widget.duration).clamp(0.0, 1.0) : 0.0;
+    final isSeeking = _isDragging || widget.isSwipeSeeking;
 
     return GestureDetector(
       onHorizontalDragStart: (details) {
@@ -4189,12 +4292,13 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
           builder: (context, constraints) {
             final thumbOffset = constraints.maxWidth * progressPercent;
             return Stack(
+              clipBehavior: Clip.none,
               alignment: Alignment.centerLeft,
               children: [
                 // Background Track
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  height: _isDragging ? 6 : 4,
+                  height: isSeeking ? 6 : 4,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: Colors.white24,
@@ -4206,7 +4310,7 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                   widthFactor: bufferPercent,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    height: _isDragging ? 6 : 4,
+                    height: isSeeking ? 6 : 4,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.35),
                       borderRadius: BorderRadius.circular(3),
@@ -4218,11 +4322,11 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                   widthFactor: progressPercent,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    height: _isDragging ? 6 : 4,
+                    height: isSeeking ? 6 : 4,
                     decoration: BoxDecoration(
                       color: const Color(0xFFB81D24),
                       borderRadius: BorderRadius.circular(3),
-                      boxShadow: _isDragging
+                      boxShadow: isSeeking
                           ? [
                               const BoxShadow(
                                 color: Color(0x7FB81D24),
@@ -4233,11 +4337,40 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                     ),
                   ),
                 ),
+                // Floating Tooltip above the Sliding Dot
+                if (isSeeking)
+                  Positioned(
+                    left: (thumbOffset - 30).clamp(0.0, constraints.maxWidth - 60),
+                    bottom: 24,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFB81D24), width: 1),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black54,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          )
+                        ],
+                      ),
+                      child: Text(
+                        _formatDuration(activeValue),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
                 // Thumb
                 Positioned(
                   left: (thumbOffset - 8).clamp(0.0, constraints.maxWidth - 16),
                   child: AnimatedScale(
-                    scale: _isDragging ? 1.25 : 1.0,
+                    scale: isSeeking ? 1.25 : 1.0,
                     duration: const Duration(milliseconds: 150),
                     child: Container(
                       width: 16,
@@ -4392,20 +4525,20 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
                     value: widget.selectedResolution ?? 'Auto',
                     onTap: () => setState(() => _currentView = 'quality'),
                   ),
-                if (hasAudioTracks)
-                  _buildMenuRow(
-                    icon: Icons.audiotrack_rounded,
-                    label: 'Audio',
-                    value: widget.activeAudioTrack?.label ?? widget.activeAudioTrack?.language ?? 'Default',
-                    onTap: () => setState(() => _currentView = 'audio'),
-                  ),
-                if (hasSubtitles)
-                  _buildMenuRow(
-                    icon: Icons.subtitles_rounded,
-                    label: 'Subtitles',
-                    value: widget.controller?.betterPlayerSubtitlesSource?.name ?? 'Off',
-                    onTap: () => setState(() => _currentView = 'subtitles'),
-                  ),
+                // if (hasAudioTracks)
+                //   _buildMenuRow(
+                //     icon: Icons.audiotrack_rounded,
+                //     label: 'Audio',
+                //     value: widget.activeAudioTrack?.label ?? widget.activeAudioTrack?.language ?? 'Default',
+                //     onTap: () => setState(() => _currentView = 'audio'),
+                //   ),
+                // if (hasSubtitles)
+                //   _buildMenuRow(
+                //     icon: Icons.subtitles_rounded,
+                //     label: 'Subtitles',
+                //     value: widget.controller?.betterPlayerSubtitlesSource?.name ?? 'Off',
+                //     onTap: () => setState(() => _currentView = 'subtitles'),
+                //   ),
                 _buildMenuRow(
                   icon: Icons.speed_rounded,
                   label: 'Speed',
@@ -4455,6 +4588,17 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
   }
 
   Widget _buildServerView() {
+    final sortedServers = widget.vcloudServerMap.keys.toList();
+    final priority = ['Server 1', 'Server 3', 'Server 2'];
+    sortedServers.sort((a, b) {
+      final aIndex = priority.indexOf(a);
+      final bIndex = priority.indexOf(b);
+      if (aIndex == -1 && bIndex == -1) return a.compareTo(b);
+      if (aIndex == -1) return 1;
+      if (bIndex == -1) return -1;
+      return aIndex.compareTo(bIndex);
+    });
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4464,7 +4608,7 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
-              children: widget.vcloudServerMap.keys.map((server) {
+              children: sortedServers.map((server) {
                 final isSelected = server == widget.activeServer;
                 String label = server;
                 if (server == 'Server 1') label = 'Server 1 (Hub)';
@@ -4660,7 +4804,7 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
   }
 
   Widget _buildAspectView() {
-    final fits = [BoxFit.contain, BoxFit.cover, BoxFit.fill];
+    final fits = [BoxFit.contain, BoxFit.cover];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4700,8 +4844,6 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
     switch (fit) {
       case BoxFit.cover:
         return 'Fill';
-      case BoxFit.fill:
-        return 'Stretch';
       case BoxFit.contain:
       default:
         return 'Fit';

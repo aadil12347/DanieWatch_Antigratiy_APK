@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/models/manifest_item.dart';
 
@@ -44,9 +45,30 @@ class DatabaseSyncService {
   Future<bool> syncIndex() async {
     try {
       dev.log('[DatabaseSync] Starting sync from $_remoteIndexUrl');
-      final response = await http.get(Uri.parse(_remoteIndexUrl))
+      
+      final fileExists = await hasLocalIndex();
+      final prefs = await SharedPreferences.getInstance();
+      
+      final headers = <String, String>{};
+      if (fileExists) {
+        final savedEtag = prefs.getString('index_etag');
+        final savedLastModified = prefs.getString('index_last_modified');
+        if (savedEtag != null) {
+          headers['If-None-Match'] = savedEtag;
+        }
+        if (savedLastModified != null) {
+          headers['If-Modified-Since'] = savedLastModified;
+        }
+      }
+
+      final response = await http.get(Uri.parse(_remoteIndexUrl), headers: headers)
           .timeout(const Duration(seconds: 5));
       
+      if (response.statusCode == 304) {
+        dev.log('[DatabaseSync] 304 Not Modified. Using cached local index.');
+        return true;
+      }
+
       if (response.statusCode != 200) {
         dev.log('[DatabaseSync] HTTP Error: ${response.statusCode}');
         return false;
@@ -82,6 +104,20 @@ class DatabaseSyncService {
         await tempFile.delete();
       }
       
+      // 4. Save ETag / Last-Modified headers for conditional requests
+      final etag = response.headers['etag'];
+      final lastModified = response.headers['last-modified'];
+      if (etag != null) {
+        await prefs.setString('index_etag', etag);
+      } else {
+        await prefs.remove('index_etag');
+      }
+      if (lastModified != null) {
+        await prefs.setString('index_last_modified', lastModified);
+      } else {
+        await prefs.remove('index_last_modified');
+      }
+
       dev.log('[DatabaseSync] Database successfully synchronized & cached.');
       return true;
     } catch (e, stack) {

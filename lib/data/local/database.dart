@@ -8,7 +8,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _dbName = 'daniewatch.db';
-  static const _schemaVersion = 2;
+  static const _schemaVersion = 3;
 
   Database? _db;
 
@@ -67,10 +67,62 @@ class AppDatabase {
         PRIMARY KEY (tmdb_id, media_type)
       )
     ''');
+
+    // TMDB raw response cache
+    await db.execute('''
+      CREATE TABLE tmdb_cache (
+        cache_key TEXT PRIMARY KEY,
+        response_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Left empty since we dropped old cache tables.
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tmdb_cache (
+          cache_key TEXT PRIMARY KEY,
+          response_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      ''');
+    }
+  }
+
+  Future<String?> getCachedTmdbResponse(String key, {Duration maxAge = const Duration(days: 1)}) async {
+    try {
+      final List<Map<String, dynamic>> maps = await db.query(
+        'tmdb_cache',
+        where: 'cache_key = ?',
+        whereArgs: [key],
+      );
+      if (maps.isEmpty) return null;
+      
+      final updatedAt = maps.first['updated_at'] as int;
+      final age = DateTime.now().millisecondsSinceEpoch - updatedAt;
+      if (age > maxAge.inMilliseconds) {
+        return null; // Cache expired
+      }
+      
+      return maps.first['response_json'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> cacheTmdbResponse(String key, String jsonStr) async {
+    try {
+      await db.insert(
+        'tmdb_cache',
+        {
+          'cache_key': key,
+          'response_json': jsonStr,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
   }
 
   Future<void> close() async {
@@ -84,6 +136,7 @@ class AppDatabase {
     await _db!.transaction((txn) async {
       await txn.delete('watchlist');
       await txn.delete('continue_watching');
+      await txn.delete('tmdb_cache');
     });
   }
 }
