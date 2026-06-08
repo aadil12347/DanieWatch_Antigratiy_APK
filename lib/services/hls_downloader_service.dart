@@ -556,7 +556,8 @@ class HlsDownloaderService {
     if (_totalSegments > 0) {
       final now = DateTime.now().millisecondsSinceEpoch;
       // Debounce: max 2 progress updates per second to reduce IPC overhead
-      if (now - _lastProgressTime < 500) return;
+      // Do not debounce the final 100% completion update
+      if (_completedSegments < _totalSegments && now - _lastProgressTime < 500) return;
       _lastProgressTime = now;
 
       final progress = _completedSegments / _totalSegments;

@@ -417,7 +417,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                           width: 38,
                           height: 38,
                           child: CircularProgressIndicator(
-                            value: progress > 0 ? progress : null,
+                            value: (match?.status == DownloadStatus.pending) ? null : progress,
                             strokeWidth: 2.5,
                             color: isPaused ? Colors.orangeAccent : AppColors.primary,
                             backgroundColor: Colors.white.withValues(alpha: 0.08),
@@ -1321,7 +1321,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                                 width: 36,
                                 height: 36,
                                 child: CircularProgressIndicator(
-                                  value: progress > 0 ? progress : null,
+                                  value: (match?.status == DownloadStatus.pending) ? null : progress,
                                   strokeWidth: 2.5,
                                   color: isPaused ? Colors.orangeAccent : AppColors.primary,
                                   backgroundColor: Colors.white.withValues(alpha: 0.08),
@@ -1352,7 +1352,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 // ── Default download button ──
                 return GestureDetector(
                   onTap: hasPlayLink
-                      ? () => _startDownload(epNum, content)
+                      ? () => _startDownload(epNum, content, episodeRuntime: episode.runtime)
                       : () => _showToastError('No play/download link available'),
                   child: Container(
                     width: 44,
@@ -1407,10 +1407,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   // ─── Download Logic ────────────────────────────────────────────────────────
-  void _startDownload(int episodeNumber, ContentDetail content) async {
+  void _startDownload(int episodeNumber, ContentDetail content, {int? episodeRuntime}) async {
     HapticFeedback.mediumImpact();
 
     if (!mounted) return;
+
+    final actualRuntime = episodeRuntime ?? content.runtime;
 
     // 1. Immediately morph navbar to loading modal
     final selectionFuture = showQualitySelectorSheet(
@@ -1424,7 +1426,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       isMovie: content.isMovie,
       fallbackQuality: content.result,
       fallbackLanguage: content.language,
-      runtime: content.runtime,
+      runtime: actualRuntime,
     );
 
     try {
@@ -1558,6 +1560,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           mediaType: widget.mediaType,
           providerName: selection.providerName,
           headers: selection.headers,
+          runtime: actualRuntime,
         );
         if (item != null && mounted) {
           _showDownloadStartedToast(item);
@@ -1572,6 +1575,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           posterUrl: content.posterUrl,
           context: context,
           fileExtension: selection.fileExtension,
+          runtime: actualRuntime,
+          qualityLabel: selection.quality.qualityLabel,
+          audioLabel: selection.audioTrack?.displayName,
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          providerName: selection.providerName,
+          fileSizeBytes: selection.fileSizeBytes,
         );
         if (mounted) {
           _showDownloadStartedToast(item);

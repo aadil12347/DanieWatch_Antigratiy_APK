@@ -30,6 +30,7 @@ class DownloadSelection {
   final Map<String, String>? headers;
   final String? providerName;
   final String? fileExtension;
+  final int? fileSizeBytes;
 
   DownloadSelection({
     required this.quality,
@@ -40,6 +41,7 @@ class DownloadSelection {
     this.headers,
     this.providerName,
     this.fileExtension,
+    this.fileSizeBytes,
   });
 }
 
@@ -126,10 +128,11 @@ class _QualitySelectorContentState
   bool _downloadSubtitles = false;
 
   String? _fetchedSizeText;
+  int? _fileSizeBytes;
   String? _resolvedExtension;
   bool _fetchingSize = false;
 
-  Future<void> _fetchActualFileSize(String url) async {
+  Future<void> _fetchActualFileSize(String url, {Map<String, String>? headers}) async {
     if (url.isEmpty) return;
     if (url.startsWith('mock_vcloud://')) return;
     
@@ -137,6 +140,7 @@ class _QualitySelectorContentState
     setState(() {
       _fetchingSize = true;
       _fetchedSizeText = 'Fetching size...';
+      _fileSizeBytes = null;
     });
 
     try {
@@ -148,9 +152,14 @@ class _QualitySelectorContentState
       var redirectCount = 0;
       HttpClientResponse? response;
 
+      // Try HEAD request first
       while (redirectCount < 5) {
         final request = await client.headUrl(Uri.parse(currentUrl));
-        request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        if (headers != null) {
+          headers.forEach((k, v) => request.headers.set(k, v));
+        } else {
+          request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        }
         request.followRedirects = false;
         response = await request.close();
 
@@ -167,8 +176,52 @@ class _QualitySelectorContentState
         }
       }
 
-      if (response != null && response.statusCode == 200) {
-        final contentLength = response.headers.contentLength;
+      // If HEAD fails or returns non-200/non-206, try GET with Range bytes=0-0
+      if (response == null || (response.statusCode != 200 && response.statusCode != 206)) {
+        redirectCount = 0;
+        currentUrl = url;
+        while (redirectCount < 5) {
+          final request = await client.getUrl(Uri.parse(currentUrl));
+          request.headers.set('Range', 'bytes=0-0');
+          if (headers != null) {
+            headers.forEach((k, v) => request.headers.set(k, v));
+          } else {
+            request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          }
+          request.followRedirects = false;
+          response = await request.close();
+
+          final location = response.headers.value('location');
+          if (response.statusCode >= 300 && response.statusCode < 400 && location != null) {
+            if (location.startsWith('http')) {
+              currentUrl = location;
+            } else {
+              currentUrl = Uri.parse(currentUrl).resolve(location).toString();
+            }
+            redirectCount++;
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (response != null && (response.statusCode == 200 || response.statusCode == 206)) {
+        int contentLength = response.headers.contentLength;
+        
+        if (response.statusCode == 206) {
+          final contentRange = response.headers.value('content-range');
+          if (contentRange != null) {
+            final slashIdx = contentRange.lastIndexOf('/');
+            if (slashIdx != -1) {
+              final totalStr = contentRange.substring(slashIdx + 1).trim();
+              final parsedTotal = int.tryParse(totalStr);
+              if (parsedTotal != null && parsedTotal > 0) {
+                contentLength = parsedTotal;
+              }
+            }
+          }
+        }
+
         final contentType = response.headers.value('content-type');
         final contentDisposition = response.headers.value('content-disposition');
         
@@ -203,6 +256,7 @@ class _QualitySelectorContentState
           }
           if (mounted) {
             setState(() {
+              _fileSizeBytes = contentLength;
               _fetchedSizeText = sizeStr;
               _resolvedExtension = ext;
               _fetchingSize = false;
@@ -219,6 +273,7 @@ class _QualitySelectorContentState
 
     if (mounted) {
       setState(() {
+        _fileSizeBytes = null;
         _fetchedSizeText = null;
         _fetchingSize = false;
       });
@@ -312,6 +367,7 @@ class _QualitySelectorContentState
       _selectedSubtitle = null;
       _internalLoading = false;
       _resolvedExtension = null;
+      _fileSizeBytes = null;
       if (_selectedVariant != null && !_selectedVariant!.url.contains('.m3u8')) {
         _fetchedSizeText = 'Fetching size...';
       } else {
@@ -320,7 +376,7 @@ class _QualitySelectorContentState
     });
 
     if (_selectedVariant != null && !_selectedVariant!.url.contains('.m3u8')) {
-      _fetchActualFileSize(_selectedVariant!.url);
+      _fetchActualFileSize(_selectedVariant!.url, headers: _selectedStream?.headers);
     }
   }
 
@@ -896,9 +952,10 @@ class _QualitySelectorContentState
                     setState(() {
                       _selectedVariant = v;
                       _fetchedSizeText = 'Fetching size...';
+                      _fileSizeBytes = null;
                     });
                     if (v != null && !v.url.contains('.m3u8')) {
-                      _fetchActualFileSize(v.url);
+                      _fetchActualFileSize(v.url, headers: _selectedStream?.headers);
                     }
                   }
                 },
@@ -1006,6 +1063,7 @@ class _QualitySelectorContentState
                     headers: _selectedStream?.headers,
                     providerName: _selectedStream?.providerName,
                     fileExtension: _resolvedExtension,
+                    fileSizeBytes: _fileSizeBytes,
                   ));
                 }
               : null,

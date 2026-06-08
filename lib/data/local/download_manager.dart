@@ -112,6 +112,8 @@ class DownloadItem {
   // ── URL freshness tracking: when CDN URLs were obtained ──
   DateTime? urlObtainedAt;
 
+  final int? runtime;
+
   DownloadItem({
     required this.id,
     required this.url,
@@ -149,6 +151,7 @@ class DownloadItem {
     this.muxProgress = 0.0,
     this.muxMethod = '',
     this.muxElapsedMs = 0,
+    this.runtime,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -217,7 +220,7 @@ class DownloadItem {
       else if (q.contains('360')) bandwidth = 800000;
       
       if (bandwidth != null) {
-        return (bandwidth / 8 * 45 * 60).toInt();
+        return (bandwidth / 8 * (runtime ?? 45) * 60).toInt();
       }
     }
     return 0;
@@ -325,6 +328,7 @@ class DownloadItem {
         'mediaType': mediaType,
         'providerName': providerName,
         'headers': headers,
+        'runtime': runtime,
       };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -365,6 +369,7 @@ class DownloadItem {
         mediaType: json['mediaType'],
         providerName: json['providerName'],
         headers: json['headers'] != null ? Map<String, String>.from(json['headers']) : null,
+        runtime: json['runtime'] as int?,
       );
 }
 
@@ -951,6 +956,7 @@ class DownloadManager {
     String? mediaType,
     String? providerName,
     Map<String, String>? headers,
+    int? runtime,
   }) async {
     final hasPermission = await requestPermissions(context);
     if (!hasPermission) return null;
@@ -993,13 +999,14 @@ class DownloadManager {
       subtitleLabel: subLbl,
       localPath: publicMp4Path, // The user-visible path
       segmentDirectory: segmentDir,
-      totalBytes: fileSizeBytes ?? (variant != null ? (variant.bandwidth / 8 * 45 * 60).toInt() : 0),
+      totalBytes: fileSizeBytes ?? (variant != null ? (variant.bandwidth / 8 * (runtime ?? 45) * 60).toInt() : 0),
       originalEmbedUrl: originalEmbedUrl,
       urlObtainedAt: DateTime.now(),
       tmdbId: tmdbId,
       mediaType: mediaType,
       providerName: providerName,
       headers: headers,
+      runtime: runtime,
     );
 
     // Store the internal path temporarily to handle the move later
@@ -1211,6 +1218,13 @@ class DownloadManager {
     String? posterUrl,
     BuildContext? context,
     String? fileExtension,
+    int? runtime,
+    String? qualityLabel,
+    String? audioLabel,
+    int? tmdbId,
+    String? mediaType,
+    String? providerName,
+    int? fileSizeBytes,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
     final hasPermission = await requestPermissions(context);
@@ -1229,6 +1243,13 @@ class DownloadManager {
       posterUrl: posterUrl,
       fileExtension: ext,
       status: DownloadStatus.downloading,
+      runtime: runtime,
+      qualityLabel: qualityLabel,
+      audioLabel: audioLabel,
+      tmdbId: tmdbId,
+      mediaType: mediaType,
+      providerName: providerName,
+      totalBytes: fileSizeBytes ?? 0,
     );
 
     _downloads.insert(0, item);

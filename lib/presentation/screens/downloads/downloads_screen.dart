@@ -380,7 +380,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: item.progress > 0 ? item.progress : null,
+                      value: (item.status == DownloadStatus.pending) ? null : item.progress,
                       backgroundColor: AppColors.surface,
                       valueColor: AlwaysStoppedAnimation<Color>(
                         item.status == DownloadStatus.converting
