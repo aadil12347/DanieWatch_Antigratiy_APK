@@ -284,7 +284,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   // ─── Downloading Item ───────────────────────────────────────────────────
   Widget _buildDownloadingItem(DownloadItem item) {
-    final pct = (item.progress * 100).toInt().clamp(0, 100);
+    final pct = (item.progress * 100).clamp(0.0, 100.0);
     final selectionState = ref.watch(downloadsSelectionProvider);
     final isSelected = selectionState.selectedIds.contains(item.id);
     final isSelectionMode = selectionState.isSelectionMode;
@@ -460,14 +460,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  String _getProgressText(DownloadItem item, int pct) {
+  String _getProgressText(DownloadItem item, double pct) {
     final mb = item.formattedDownloadedBytes;
+    final pctText = pct.toStringAsFixed(2);
     if (item.status == DownloadStatus.paused) {
       // Show error message during re-extraction (e.g. "Refreshing download link...")
       if (item.error != null && item.error!.isNotEmpty) {
         return item.error!;
       }
-      return 'Paused · $pct% · $mb';
+      return 'Paused · $pctText% · $mb';
     }
     if (item.status == DownloadStatus.failed) {
       return 'Failed · Tap ▶ to retry';
@@ -478,9 +479,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     // Downloading
     final speedStr = item.formattedSpeed;
     if (speedStr.isNotEmpty) {
-      return '$pct% · $mb · $speedStr';
+      return '$pctText% · $mb · $speedStr';
     }
-    return '$pct% · $mb';
+    return '$pctText% · $mb';
   }
 
   // ─── Completed Item ─────────────────────────────────────────────────────

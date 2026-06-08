@@ -60,10 +60,10 @@ class HlsDownloaderService {
   /// Mux progress: phase, progress(0-1), method, elapsedMs
   Function(String phase, double progress, String method, int elapsedMs)? onMuxProgress;
   /// Fired when CDN links are expired (403/404) and playlist refresh failed.
-  /// Distinct from onError â€” signals that re-extraction from embed URL is needed.
+  /// Distinct from onError — signals that re-extraction from embed URL is needed.
   Function(String error)? onLinkExpired;
 
-  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────
   bool _isCancelled = false;
   bool _isPaused = false;
   bool _isNetworkPaused = false;
@@ -71,8 +71,10 @@ class HlsDownloaderService {
   int _completedSegments = 0;
   int _totalSegments = 0;
   int _downloadedBytes = 0;
+  bool _isDirectDownload = false;
+  final List<_SpeedSample> _speedSamples = [];
 
-  // â”€â”€ CDN Refresh State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────
   int _playlistRefreshCount = 0;
   static const int _maxPlaylistRefreshes = 2;
   String? _videoPlaylistUrl;
@@ -165,9 +167,14 @@ class HlsDownloaderService {
     }
     _audioPlaylistUrl = audioM3u8Url;
     _subtitlePlaylistUrl = subtitleM3u8Url;
-    _saveDirectory = saveDirectory;
-
     _startConnectivityMonitor();
+
+    // Check if direct download or HLS playlist
+    final isHls = videoM3u8Url.toLowerCase().contains('.m3u8') || videoM3u8Url.toLowerCase().contains('m3u8');
+    if (!isHls) {
+      await _downloadDirectFile(videoM3u8Url, outputMp4Path);
+      return;
+    }
 
     try {
       final dir = Directory(saveDirectory);
@@ -553,37 +560,68 @@ class HlsDownloaderService {
   }
 
   void _reportProgress() {
-    if (_totalSegments > 0) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      // Debounce: max 2 progress updates per second to reduce IPC overhead
-      // Do not debounce the final 100% completion update
-      if (_completedSegments < _totalSegments && now - _lastProgressTime < 500) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_isDirectDownload) {
+      if (_downloadedBytes < _totalSegments && now - _lastProgressTime < 300) return;
       _lastProgressTime = now;
 
-      final progress = _completedSegments / _totalSegments;
+      final progress = _totalSegments > 0 ? (_downloadedBytes / _totalSegments) : 0.0;
       _updateSpeed();
-      onProgress?.call(progress, _completedSegments, _totalSegments,
+      onProgress?.call(progress, _downloadedBytes, _totalSegments,
           _downloadedBytes, _bytesPerSecond);
+    } else {
+      if (_totalSegments > 0) {
+        if (_completedSegments < _totalSegments && now - _lastProgressTime < 300) return;
+        _lastProgressTime = now;
+
+        final progress = _completedSegments / _totalSegments;
+        _updateSpeed();
+        onProgress?.call(progress, _completedSegments, _totalSegments,
+            _downloadedBytes, _bytesPerSecond);
+      }
     }
   }
 
   void _updateSpeed() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (_lastSpeedTime == 0) {
-      _lastSpeedTime = now;
-      _lastSpeedBytes = _downloadedBytes;
-      return;
-    }
-    final elapsed = now - _lastSpeedTime;
-    if (elapsed >= 1000) {
-      final bytesDelta = _downloadedBytes - _lastSpeedBytes;
-      final instantSpeed = (bytesDelta * 1000 ~/ elapsed);
-      // EMA smoothing: 30% new + 70% old â€” dampens spikes for stable display
-      _bytesPerSecond = _bytesPerSecond == 0
-          ? instantSpeed
-          : (0.3 * instantSpeed + 0.7 * _bytesPerSecond).toInt();
-      _lastSpeedTime = now;
-      _lastSpeedBytes = _downloadedBytes;
+    if (_isDirectDownload) {
+      // Chrome/IDM rolling window style for direct downloads
+      _speedSamples.add(_SpeedSample(now, _downloadedBytes));
+      _speedSamples.removeWhere((s) => now - s.timeMs > 2000); // 2-second window
+
+      if (_speedSamples.length >= 2) {
+        final oldest = _speedSamples.first;
+        final newest = _speedSamples.last;
+        final timeDiffMs = newest.timeMs - oldest.timeMs;
+        if (timeDiffMs > 100) {
+          final bytesDiff = newest.bytes - oldest.bytes;
+          _bytesPerSecond = (bytesDiff * 1000 ~/ timeDiffMs);
+        }
+      } else {
+        _bytesPerSecond = 0;
+      }
+
+      // Stall detection: if no updates for 3 seconds, drop speed to 0
+      if (now - _lastProgressTime > 3000) {
+        _bytesPerSecond = 0;
+      }
+    } else {
+      // Existing EMA for HLS segments
+      if (_lastSpeedTime == 0) {
+        _lastSpeedTime = now;
+        _lastSpeedBytes = _downloadedBytes;
+        return;
+      }
+      final elapsed = now - _lastSpeedTime;
+      if (elapsed >= 1000) {
+        final bytesDelta = _downloadedBytes - _lastSpeedBytes;
+        final instantSpeed = (bytesDelta * 1000 ~/ elapsed);
+        _bytesPerSecond = _bytesPerSecond == 0
+            ? instantSpeed
+            : (0.3 * instantSpeed + 0.7 * _bytesPerSecond).toInt();
+        _lastSpeedTime = now;
+        _lastSpeedBytes = _downloadedBytes;
+      }
     }
   }
 
@@ -695,6 +733,108 @@ class HlsDownloaderService {
 
 
   // -- Helpers ------------------------------------------------
+  Future<void> _downloadDirectFile(String url, String outputPath) async {
+    _isDirectDownload = true;
+    _speedSamples.clear();
+    _bytesPerSecond = 0;
+    _lastProgressTime = 0;
+
+    try {
+      final file = File(outputPath);
+      int existingBytes = 0;
+      if (await file.exists()) {
+        existingBytes = await file.length();
+      }
+
+      // Outer loop to handle pause/resume and automatic retry on disconnections
+      while (!_completedSuccessfully && !_isCancelled) {
+        // If paused, wait here
+        while (isPaused && !_isCancelled) {
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+        if (_isCancelled) break;
+
+        try {
+          if (await file.exists()) {
+            existingBytes = await file.length();
+          }
+
+          final response = await _dio.get<ResponseBody>(
+            url,
+            options: Options(
+              responseType: ResponseType.stream,
+              headers: existingBytes > 0 ? {'Range': 'bytes=$existingBytes-'} : null,
+            ),
+          );
+
+          final statusCode = response.statusCode ?? 200;
+          final bool isResumeSupported = statusCode == 206;
+          if (!isResumeSupported && existingBytes > 0) {
+            existingBytes = 0;
+            if (await file.exists()) {
+              await file.delete();
+            }
+          }
+
+          final contentLengthStr = response.headers.value('content-length');
+          final remainingBytes = contentLengthStr != null ? int.tryParse(contentLengthStr) ?? 0 : 0;
+          
+          _totalSegments = isResumeSupported ? (existingBytes + remainingBytes) : remainingBytes;
+          _downloadedBytes = existingBytes;
+
+          final sink = file.openWrite(mode: isResumeSupported ? FileMode.append : FileMode.write);
+          try {
+            await for (final chunk in response.data!.stream) {
+              if (_isCancelled) break;
+              
+              if (isPaused) {
+                break; // Break the read loop to close file sink & connection cleanly
+              }
+
+              sink.add(chunk);
+              _downloadedBytes += chunk.length;
+              _reportProgress();
+            }
+          } finally {
+            await sink.close();
+          }
+
+          // Check if finished successfully
+          if (!_isCancelled && !isPaused) {
+            if (_totalSegments > 0 && _downloadedBytes < _totalSegments) {
+              debugPrint('⚠️ Direct download disconnected prematurely: $_downloadedBytes / $_totalSegments bytes. Resuming...');
+              continue; // Re-enter loop to resume
+            }
+            
+            _completedSuccessfully = true;
+            onComplete?.call(outputPath);
+            return;
+          }
+
+        } catch (e) {
+          if (_isCancelled) break;
+          if (isPaused) {
+            continue; // Ignore connection reset/aborts caused by user pause
+          }
+          
+          debugPrint('⚠️ Direct download error: $e. Retrying in 3 seconds...');
+          await Future.delayed(const Duration(seconds: 3));
+        }
+      }
+
+      if (_isCancelled) {
+        throw Exception('Download cancelled');
+      }
+
+    } catch (e, stack) {
+      if (!_isCancelled) {
+        debugPrint('❌ Direct download error: $e');
+        debugPrint('StackTrace: $stack');
+        onError?.call(ErrorSanitizer.sanitize(e));
+      }
+    }
+  }
+
   Future<String> _fetchContent(String url) async {
     try {
       final response = await _dio.get(url);
@@ -720,4 +860,10 @@ class _SegmentTask {
     this.isTsSegment = false,
     this.isInitSegment = false,
   });
+}
+
+class _SpeedSample {
+  final int timeMs;
+  final int bytes;
+  _SpeedSample(this.timeMs, this.bytes);
 }

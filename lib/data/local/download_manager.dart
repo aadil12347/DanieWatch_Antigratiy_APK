@@ -173,6 +173,8 @@ class DownloadItem {
     return '$title$ext';
   }
 
+  bool get isHls => (videoStreamUrl?.contains('.m3u8') ?? false) || url.contains('.m3u8');
+
   /// Display tag for the download card (e.g. "720p · Hindi")
   String get qualityTag {
     final parts = <String>[];
@@ -497,10 +499,14 @@ class DownloadManager {
         return;
       }
 
-      item.progress = data['progress'] * 0.96;
+      final isHlsItem = item.isHls;
+      item.progress = isHlsItem ? (data['progress'] * 0.96) : data['progress'];
       item.completedSegments = data['completed'];
       item.totalSegments = data['total'];
       item.downloadedBytes = data['bytes'];
+      if (!isHlsItem && data['total'] != null && data['total'] > 0) {
+        item.totalBytes = data['total'];
+      }
       item.downloadSpeed = data['speed'];
       item.status = DownloadStatus.downloading;
 
@@ -1109,27 +1115,45 @@ class DownloadManager {
       // Fast path: service still alive, downloader instance exists
       BackgroundDownloadService().resumeDownload(id);
     } else {
-      // Service was killed — restart the download from scratch.
-      // Already-downloaded segments are skipped automatically.
+      // Service was killed — restart the download.
       debugPrint('⚠ Service not running on resume — restarting download for $id');
-      if (item.segmentDirectory != null) {
-        // Derive the temp mp4 path from the segment directory
-        // segmentDir = <tmpDir>/.segments_<safeTitle>_<ts>
-        // tempMp4    = <tmpDir>/<safeTitle>_<ts>.mp4
-        final segDirName = item.segmentDirectory!.split('/').last;
-        final baseName = segDirName.replaceFirst('.segments_', '');
-        final parentDir = item.segmentDirectory!.substring(
-            0, item.segmentDirectory!.length - segDirName.length - 1);
-        final tempMp4Path = '$parentDir/$baseName.mp4';
+      if (item.isHls) {
+        if (item.segmentDirectory != null) {
+          // Derive the temp mp4 path from the segment directory
+          // segmentDir = <tmpDir>/.segments_<safeTitle>_<ts>
+          // tempMp4    = <tmpDir>/<safeTitle>_<ts>.mp4
+          final segDirName = item.segmentDirectory!.split('/').last;
+          final baseName = segDirName.replaceFirst('.segments_', '');
+          final parentDir = item.segmentDirectory!.substring(
+              0, item.segmentDirectory!.length - segDirName.length - 1);
+          final tempMp4Path = '$parentDir/$baseName.mp4';
+
+          await BackgroundDownloadService().startDownload(
+            id: item.id,
+            title: item.displayName,
+            videoUrl: item.videoStreamUrl ?? item.url,
+            audioUrl: item.audioStreamUrl,
+            subtitleUrl: item.subtitleStreamUrl,
+            saveDir: item.segmentDirectory!,
+            outputMp4Path: tempMp4Path,
+            fileName: item.fileName,
+            headers: item.headers,
+          );
+        }
+      } else {
+        // Direct resume restart
+        final tempDir = await getTemporaryDirectory();
+        final safeTitle = _buildSafeTitle(item.title, item.season, item.episode, item.qualityLabel);
+        final ext = item.fileExtension.startsWith('.') ? item.fileExtension : '.${item.fileExtension}';
+        final tempFilePath = '${tempDir.path}/${safeTitle}_${item.id}$ext';
+        final segmentDir = item.segmentDirectory ?? '${tempDir.path}/.direct_${safeTitle}_${item.id}';
 
         await BackgroundDownloadService().startDownload(
           id: item.id,
           title: item.displayName,
-          videoUrl: item.videoStreamUrl ?? item.url,
-          audioUrl: item.audioStreamUrl,
-          subtitleUrl: item.subtitleStreamUrl,
-          saveDir: item.segmentDirectory!,
-          outputMp4Path: tempMp4Path,
+          videoUrl: item.url,
+          saveDir: segmentDir,
+          outputMp4Path: tempFilePath,
           fileName: item.fileName,
           headers: item.headers,
         );
@@ -1225,6 +1249,7 @@ class DownloadManager {
     String? mediaType,
     String? providerName,
     int? fileSizeBytes,
+    Map<String, String>? headers,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
     final hasPermission = await requestPermissions(context);
@@ -1233,9 +1258,19 @@ class DownloadManager {
     }
 
     final ext = fileExtension ?? extractExtension(url);
+    final safeTitle = _buildSafeTitle(title, season, episode, qualityLabel);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    final tempDir = await getTemporaryDirectory();
+    final publicDir = await getDownloadDirectory();
+    
+    // Stable temp and public paths using ts as stable ID
+    final tempFilePath = '${tempDir.path}/${safeTitle}_$ts$ext';
+    final publicFilePath = '${publicDir.path}/$safeTitle$ext';
+    final segmentDir = '${tempDir.path}/.direct_${safeTitle}_$ts';
 
     final item = DownloadItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: ts.toString(),
       url: url,
       title: title,
       season: season,
@@ -1250,26 +1285,25 @@ class DownloadManager {
       mediaType: mediaType,
       providerName: providerName,
       totalBytes: fileSizeBytes ?? 0,
+      localPath: publicFilePath,
+      segmentDirectory: segmentDir,
+      urlObtainedAt: DateTime.now(),
+      headers: headers,
     );
 
     _downloads.insert(0, item);
     _saveDownloads();
 
     try {
-      final dir = await getDownloadDirectory();
-      final fileName = item.fileName;
-
-      final taskId = await FlutterDownloader.enqueue(
-        url: url,
-        savedDir: dir.path,
-        fileName: fileName,
-        showNotification: true,
-        saveInPublicStorage: true,
+      await BackgroundDownloadService().startDownload(
+        id: item.id,
+        title: item.displayName,
+        videoUrl: item.url,
+        saveDir: segmentDir,
+        outputMp4Path: tempFilePath,
+        fileName: item.fileName,
+        headers: headers,
       );
-
-      item.taskId = taskId;
-      item.localPath = '${dir.path}/$fileName';
-      _saveDownloads();
 
       onDownloadUpdate?.call(item);
     } catch (e) {
