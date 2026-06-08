@@ -301,10 +301,6 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
       data: (pagState) {
         final rawItems = pagState.items;
 
-        // Trust the catalog's pre-categorized data — no strict metadata re-filtering.
-        // The catalog generator already handles categorization with fallbacks.
-        final items = rawItems;
-
         // Determine enforced category for FilterUtils
         String? enforceCategory;
         const categoryPages = {
@@ -316,14 +312,21 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           enforceCategory = filterCat.first;
         }
 
-        // Apply filters when any filter or search is active
-        final itemsToDisplay = showResults
-            ? FilterUtils.getFilteredItems(
-                allItems: items,
-                searchState: searchState,
-                enforceCategory: enforceCategory,
-              )
-            : items;
+        // Apply filters across the entire local category list if a search or filter is active
+        final List<ManifestItem> itemsToDisplay;
+        if (showResults) {
+          final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
+          final categoryItems = _slug == 'all'
+              ? allSortedItems
+              : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
+          itemsToDisplay = FilterUtils.getFilteredItems(
+            allItems: categoryItems,
+            searchState: searchState,
+            enforceCategory: enforceCategory,
+          );
+        } else {
+          itemsToDisplay = rawItems;
+        }
 
         return NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,
@@ -336,7 +339,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
               hasSearch,
               showResults,
               itemsToDisplay,
-              items,
+              rawItems,
               pagState,
             ),
           ),

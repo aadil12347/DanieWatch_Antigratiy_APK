@@ -7,13 +7,22 @@ class FilterUtils {
     required SearchState searchState,
     Map<String, ManifestItem>? index,
     String? enforceCategory,
+    bool localSearchOnly = false,
   }) {
     List<ManifestItem> baseList;
 
     // 1. Establish the base list
     if (searchState.query.trim().isNotEmpty) {
-      // Searching: we now get fully formed ManifestItems directly from TmdbClient (via search_provider)
-      baseList = List.from(searchState.results);
+      if (localSearchOnly) {
+        final q = searchState.query.trim().toLowerCase();
+        baseList = allItems.where((item) {
+          final titleMatch = item.title.toLowerCase().contains(q);
+          final overviewMatch = item.overview?.toLowerCase().contains(q) ?? false;
+          return titleMatch || overviewMatch;
+        }).toList();
+      } else {
+        baseList = List.from(searchState.results);
+      }
 
       // If a category is enforced apply category filter
       if (enforceCategory != null) {
@@ -204,10 +213,6 @@ class FilterUtils {
       case 'TV Shows' || 'Season' || 'Series':
         return item.mediaType == 'tv' || item.mediaType == 'series';
       case 'Anime':
-        final isJapanese = item.originalLanguage == 'ja' ||
-            item.originCountry.contains('JP') ||
-            fallbackLang('Japanese');
-        if (!isJapanese) return false;
         return item.genreIds.contains(16) ||
             item.genres.any((g) {
               final gl = g.toLowerCase();
@@ -215,13 +220,13 @@ class FilterUtils {
             });
       case 'K-Drama' || 'Korean':
         return item.originCountry.contains('KR') ||
-            item.originalLanguage == 'ko' ||
+            ['ko', 'kr', 'korean'].contains(item.originalLanguage?.toLowerCase()) ||
             fallbackLang('Korean');
       case 'Indian':
       case 'Bollywood':
         return item.originCountry.contains('IN') ||
-            ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh']
-                .contains(item.originalLanguage) ||
+            ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh', 'pa', 'punjabi', 'ur', 'urdu']
+                .contains(item.originalLanguage?.toLowerCase()) ||
             fallbackLang('Hindi') ||
             fallbackLang('Tamil') ||
             fallbackLang('Telugu') ||
@@ -230,31 +235,60 @@ class FilterUtils {
             fallbackLang('Bengali') ||
             fallbackLang('Marathi') ||
             fallbackLang('Gujarati') ||
-            fallbackLang('Bhojpuri');
+            fallbackLang('Bhojpuri') ||
+            fallbackLang('Punjabi') ||
+            fallbackLang('Urdu');
       case 'Hollywood':
-        final excludedLangs = {'hi', 'ja', 'ko', 'pa', 'ur', 'zh', 'cn', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh'};
+        final excludedLangs = {
+          'hi', 'hindi',
+          'ta', 'tamil',
+          'te', 'telugu',
+          'ml', 'malayalam',
+          'kn', 'kannada',
+          'bn', 'bengali',
+          'mr', 'marathi',
+          'gu', 'gujarati',
+          'bh', 'bhojpuri',
+          'pa', 'punjabi',
+          'ur', 'urdu',
+          'ja', 'japanese',
+          'ko', 'korean',
+          'zh', 'cn', 'chinese', 'mandarin', 'cantonese'
+        };
         final excludedCountries = {'IN', 'KR', 'JP', 'PK', 'CN', 'HK', 'TW'};
-        if (excludedLangs.contains(item.originalLanguage)) return false;
+        
         if (item.originCountry.any((c) => excludedCountries.contains(c))) return false;
-        if (!hasOrigLang) {
-          final excludedDisplayLangs = {'tamil', 'telugu', 'malayalam', 'kannada', 'bengali', 'marathi', 'japanese', 'korean', 'urdu', 'punjabi'};
-          if (item.language.any((l) => excludedDisplayLangs.contains(l.toLowerCase()))) return false;
-        }
-        return true;
+        
+        final origLangLower = item.originalLanguage?.toLowerCase();
+        if (origLangLower != null && excludedLangs.contains(origLangLower)) return false;
+        
+        final excludedDisplayLangs = {
+          'hindi', 'tamil', 'telugu', 'malayalam', 'kannada', 'bengali',
+          'marathi', 'gujarati', 'bhojpuri', 'punjabi', 'urdu',
+          'japanese', 'korean', 'chinese', 'mandarin', 'cantonese'
+        };
+        if (item.language.any((l) => excludedDisplayLangs.contains(l.toLowerCase()))) return false;
+        
+        final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
+        const hwCountries = {'US', 'GB', 'UK', 'AU', 'CA'};
+        final isHwCountry = countries.intersection(hwCountries).isNotEmpty;
+        final isEnglish = ['en', 'english'].contains(origLangLower) || hasLang('English');
+        
+        return isHwCountry || isEnglish;
       case 'Chinese':
         return item.originCountry.contains('CN') ||
             item.originCountry.contains('HK') ||
             item.originCountry.contains('TW') ||
-            item.originalLanguage == 'zh' ||
-            item.originalLanguage == 'cn' ||
+            ['zh', 'cn', 'chinese', 'mandarin', 'cantonese'].contains(item.originalLanguage?.toLowerCase()) ||
             fallbackLang('Chinese');
       case 'Punjabi':
-        return item.originalLanguage == 'pa' ||
-            fallbackLang('Punjabi');
+        return ['pa', 'punjabi'].contains(item.originalLanguage?.toLowerCase()) ||
+            hasLang('Punjabi');
       case 'Pakistani':
         return item.originCountry.contains('PK') ||
-            item.originalLanguage == 'ur' ||
-            fallbackLang('Urdu');
+            ['ur', 'urdu'].contains(item.originalLanguage?.toLowerCase()) ||
+            fallbackLang('Urdu') ||
+            fallbackLang('Pakistani');
       default:
         return false;
     }
@@ -263,6 +297,7 @@ class FilterUtils {
   static bool matchesCategorySlug(ManifestItem item, String slug) {
     const slugToCategory = {
       'indian': 'Indian',
+      'bollywood': 'Bollywood',
       'korean': 'Korean',
       'anime': 'Anime',
       'hollywood': 'Hollywood',

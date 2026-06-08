@@ -135,7 +135,7 @@ class ManifestItem {
 
     final String title = arr.length > 1 ? (arr[1] ?? '').toString() : '';
     final String mediaType = arr.length > 2 ? (arr[2] ?? 'movie').toString() : 'movie';
-    final String originalLanguage = arr.length > 3 ? (arr[3] ?? '').toString() : '';
+    final String originalLanguage = arr.length > 3 ? (arr[3] ?? '').toString().trim().toLowerCase() : '';
     
     final List<String> originCountry = arr.length > 4 && arr[4] is List<dynamic>
         ? (arr[4] as List<dynamic>).map((e) => e.toString().trim().toUpperCase()).toList()

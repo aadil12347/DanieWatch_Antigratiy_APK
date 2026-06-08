@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
+import '../../core/utils/search_utils.dart';
 import '../../data/clients/tmdb_client.dart';
 import '../../data/clients/omdb_client.dart';
 import '../../data/services/database_sync_service.dart';
@@ -333,72 +334,7 @@ List<ManifestItem> _filterCategory(List<ManifestItem> all, String categorySlug) 
     return all;
   }
   
-  if (s == 'indian' || s == 'bollywood') {
-    return all.where((item) {
-      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
-      if (countries.contains('IN')) return true;
-      if (item.originalLanguage == 'hi') return true;
-      
-      const indLangs = {
-        'hi', 'hindi', 'ur', 'urdu', 'pa', 'punjabi', 'ta', 'tamil',
-        'te', 'telugu', 'ml', 'malayalam', 'kn', 'kannada',
-        'bn', 'bengali', 'mr', 'marathi', 'gu', 'gujarati'
-      };
-      if (indLangs.contains(item.originalLanguage)) return true;
-      return false;
-    }).toList();
-  }
-  
-  if (s == 'korean') {
-    return all.where((item) {
-      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
-      return countries.contains('KR') || item.originalLanguage == 'ko' || item.originalLanguage == 'korean';
-    }).toList();
-  }
-  
-  if (s == 'anime') {
-    return all.where((item) {
-      final isAnimation = item.genres.map((g) => g.toLowerCase()).contains('animation');
-      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
-      return isAnimation && (countries.contains('JP') || item.originalLanguage == 'ja' || item.originalLanguage == 'japanese');
-    }).toList();
-  }
-  
-  if (s == 'hollywood') {
-    return all.where((item) {
-      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
-      const hwCountries = {'US', 'GB', 'UK', 'AU', 'CA'};
-      if (countries.intersection(hwCountries).isNotEmpty) return true;
-      return item.originalLanguage == 'en' || item.originalLanguage == 'english';
-    }).toList();
-  }
-  
-  if (s == 'chinese') {
-    return all.where((item) {
-      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
-      const cnCountries = {'CN', 'HK', 'TW'};
-      if (countries.intersection(cnCountries).isNotEmpty) return true;
-      
-      const cnLangs = {'zh', 'cn', 'chinese', 'mandarin', 'cantonese'};
-      return cnLangs.contains(item.originalLanguage);
-    }).toList();
-  }
-  
-  if (s == 'punjabi') {
-    return all.where((item) {
-      if (item.originalLanguage == 'pa' || item.originalLanguage == 'punjabi') return true;
-      return item.language.any((l) => l.toLowerCase() == 'punjabi');
-    }).toList();
-  }
-  
-  if (s == 'pakistani') {
-    return all.where((item) {
-      final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
-      return countries.contains('PK') || item.originalLanguage == 'ur' || item.originalLanguage == 'urdu';
-    }).toList();
-  }
-  
-  return all;
+  return all.where((item) => FilterUtils.matchesCategorySlug(item, s)).toList();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

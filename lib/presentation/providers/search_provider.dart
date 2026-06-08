@@ -86,10 +86,11 @@ class SearchState {
 }
 
 class SearchNotifier extends StateNotifier<SearchState> {
+  final Ref ref;
   Timer? _debounce;
   List<ManifestItem> _unfilteredResults = [];
 
-  SearchNotifier() : super(const SearchState());
+  SearchNotifier(this.ref) : super(const SearchState());
 
   @override
   void dispose() {
@@ -113,46 +114,27 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     state = state.copyWith(query: query);
 
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
 
       state = state.copyWith(isSearching: true);
 
       try {
-        final rawResults = await TmdbClient.instance.searchMulti(query);
-        final mappedResults = rawResults.map((item) {
-          final id = (item['id'] as num?)?.toInt() ?? 0;
-          final mediaType = item['media_type']?.toString() ?? (item['name'] != null ? 'tv' : 'movie');
-          final posterPath = item['poster_path']?.toString();
-          final backdropPath = item['backdrop_path']?.toString();
-          
-          int? releaseYear;
-          final releaseDate = (item['release_date'] ?? item['first_air_date'])?.toString();
-          if (releaseDate != null && releaseDate.length >= 4) {
-            releaseYear = int.tryParse(releaseDate.substring(0, 4));
-          }
-
-          return ManifestItem(
-            id: id,
-            mediaType: mediaType,
-            title: (item['title'] ?? item['name'] ?? 'Unknown').toString(),
-            posterUrl: posterPath != null ? TmdbClient.posterUrl(posterPath) : null,
-            backdropUrl: backdropPath != null ? TmdbClient.backdropUrl(backdropPath) : null,
-            voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
-            voteCount: (item['vote_count'] as num?)?.toInt() ?? 0,
-            releaseYear: releaseYear,
-            overview: item['overview']?.toString(),
-            originalLanguage: item['original_language']?.toString(),
-            tmdbPosterPath: posterPath,
-            tmdbBackdropPath: backdropPath,
-            releaseDate: releaseDate,
-          );
+        final sortedItems = await ref.read(sortedManifestItemsProvider.future);
+        final q = query.trim().toLowerCase();
+        
+        final matched = sortedItems.where((item) {
+          final titleMatch = item.title.toLowerCase().contains(q);
+          final overviewMatch = item.overview?.toLowerCase().contains(q) ?? false;
+          return titleMatch || overviewMatch;
         }).toList();
 
         if (mounted) {
-          _unfilteredResults = mappedResults;
+          _unfilteredResults = matched;
           state = state.copyWith(
-              results: _unfilteredResults, isSearching: false);
+            results: _unfilteredResults,
+            isSearching: false,
+          );
         }
       } catch (e) {
         if (mounted) {
@@ -244,7 +226,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
 final searchProvider =
     StateNotifierProvider.family<SearchNotifier, SearchState, String>((ref, contextId) {
-  return SearchNotifier();
+  return SearchNotifier(ref);
 });
 
 final searchExpandedProvider = StateProvider<bool>((ref) => false);

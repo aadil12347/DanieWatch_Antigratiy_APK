@@ -155,6 +155,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                         final filteredItems = FilterUtils.getFilteredItems(
                           allItems: manifestItems,
                           searchState: searchState,
+                          localSearchOnly: true,
                         );
 
                         if (filteredItems.isEmpty && (searchState.query.isNotEmpty || searchState.filters.hasActiveFilters)) {
