@@ -19,9 +19,7 @@ import 'dart:ui' show ImageFilter, FontFeature;
 import '../../providers/detail_provider.dart';
 import '../../providers/watch_history_provider.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
-import '../../widgets/liquid_tap_effect.dart';
 import '../../../pip/pip_controller.dart';
-import '../../../services/videasy_extractor.dart';
 import '../../../services/peachify_extractor.dart';
 import '../../../services/vidnest_extractor.dart';
 import '../../../services/vcloud_extractor.dart';
@@ -41,7 +39,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final bool isDirectLink;
   final String? posterUrl;
   final double? startPosition;
-  final Map<String, ExtractedVideasyStream>? extractedStreams;
+  final Map<String, PeachifyStream>? extractedStreams;
 
   const VideoPlayerScreen({
     super.key,
@@ -75,8 +73,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   InAppWebViewController? _webViewController;
   Timer? _extractionTimer;
 
-  // Background Discovery State
-  bool _discoveryComplete = false;
+
 
   // Extraction Window variables
   Timer? _masterWaitTimer;
@@ -84,16 +81,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Timer? _bgDiscoveryTimer;
   final Set<String> _discoveredLinks = {};
 
-  // Background Extraction for Episode Switching
-  bool _isBgExtracting = false;
-  int? _extractingEpisodeIndex;
-  String? _bgExtractionUrl;
-  InAppWebViewController? _bgWebViewController;
-  ValueKey _bgWebViewKey = const ValueKey('bg_discovery_webview');
-  final Set<String> _bgDiscoveredLinks = {};
-  Timer? _bgMasterWaitTimer;
-  Timer? _bgAutoClickTimer;
-  Timer? _bgTimeoutTimer;
+
 
   // Watch progress tracking
   double _lastCurrentTime = 0;
@@ -142,7 +130,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   BetterPlayerController? _betterPlayerController;
   final GlobalKey _betterPlayerKey = GlobalKey();
   bool _useWebViewEngine = false;
-  ValueKey? _webViewKey;
   int _retryCount = 0;
   String? _currentExtractionUrl;
   bool _canPop = false;
@@ -150,8 +137,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _selectedServer;
   String? _selectedResolution;
   Map<String, String>? _explicitResolutions;
-  Map<String, ExtractedVideasyStream>? _currentStreamsMap;
-  Map<String, Map<String, String>> _vcloudResMap = {};
+  Map<String, PeachifyStream>? _currentStreamsMap;
   Map<String, Map<String, String>> _vcloudServerMap = {};
   String _activeServer = 'Server 1';
   int _selectedAudioIndex = 0;
@@ -232,7 +218,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     );
 
     // Start extraction sequence in background
-    _webViewKey = const ValueKey('discovery_webview');
     _currentExtractionUrl = widget.url;
 
     _currentStreamsMap = widget.extractedStreams != null
@@ -271,17 +256,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _saveToWatchHistory();
     });
   }
-
-  // 1px extraction WebView state
-  bool _extraction1pxActive = false;
-  String? _extraction1pxUrl;
-  ValueKey _extraction1pxKey = const ValueKey('extraction_1px_wv');
-  InAppWebViewController? _extraction1pxController;
-  Timer? _extraction1pxAutoClickTimer;
-  Timer? _extraction1pxSettleTimer;
-  Timer? _extraction1pxTimeoutTimer;
-  int _extraction1pxClickCount = 0;
-  ExtractedVideasyStream? _extractedStream;
+  PeachifyStream? _extractedStream;
 
   /// Start the extraction using Vcloud database service.
   Future<void> _tryDirectExtraction() async {
@@ -344,7 +319,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
 
       setState(() {
-        _vcloudResMap = resolvedResMap;
         _vcloudServerMap = serverToResUrl;
         _activeServer = defaultServer!;
         _selectedServer = defaultServer;
@@ -468,153 +442,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
   }
 
-  Map<String, ExtractedVideasyStream> _sortStreamsMap(Map<String, ExtractedVideasyStream> map) {
-    if (map.isEmpty) return map;
-    final originalKeys = map.keys.toList();
-    final sortedKeys = List<String>.from(originalKeys);
-    sortedKeys.sort((a, b) {
-      final aLower = a.toLowerCase();
-      final bLower = b.toLowerCase();
 
-      // 1. 'Iron - Hindi' is absolute top priority
-      final aIsIronHindi = aLower == 'iron - hindi';
-      final bIsIronHindi = bLower == 'iron - hindi';
-      if (aIsIronHindi && !bIsIronHindi) return -1;
-      if (!aIsIronHindi && bIsIronHindi) return 1;
-
-      // 2. Any other server containing Hindi
-      final aIsHindi = aLower.contains('hindi');
-      final bIsHindi = bLower.contains('hindi');
-      if (aIsHindi && !bIsHindi) return -1;
-      if (!aIsHindi && bIsHindi) return 1;
-
-      // 3. Otherwise preserve original order
-      return originalKeys.indexOf(a).compareTo(originalKeys.indexOf(b));
-    });
-
-    final Map<String, ExtractedVideasyStream> sortedMap = {};
-    for (var key in sortedKeys) {
-      sortedMap[key] = map[key]!;
-    }
-    return sortedMap;
-  }
-
-  /// Called when the extraction 1px WebView is created
-  void _onExtraction1pxCreated(InAppWebViewController controller) {
-    if (_isClosing) return;
-    _extraction1pxController = controller;
-
-    // Register stream capture handler
-    controller.addJavaScriptHandler(
-      handlerName: 'StreamIntercepted',
-      callback: (args) {
-        if (_isClosing) return;
-        try {
-          final payload = jsonDecode(args[0] as String);
-          final server = payload['server'] as String? ?? 'Fade Hindi';
-          final url = payload['url'] as String;
-          final sources = payload['sources'] as List<dynamic>? ?? [];
-          final tracks = payload['tracks'] as List<dynamic>? ?? [];
-
-          debugPrint('[Engine] ✅ Stream captured: $url');
-
-          // Wait 200ms for settle (in case more data comes)
-          _extraction1pxSettleTimer?.cancel();
-          _extraction1pxSettleTimer = Timer(const Duration(milliseconds: 200), () {
-            _onExtractionSuccess(ExtractedVideasyStream(
-              server: server,
-              url: url,
-              sources: sources,
-              tracks: tracks,
-            ));
-          });
-        } catch (err) {
-          debugPrint('[Engine] Error parsing stream payload: $err');
-        }
-      },
-    );
-
-    // Register API URL capture handler (for direct Dart HTTP fetch)
-    controller.addJavaScriptHandler(
-      handlerName: 'FetchApi',
-      callback: (args) async {
-        if (_isClosing) return null;
-        try {
-          final apiUrl = args[0] as String;
-          debugPrint('[Engine] 🌐 FetchApi called for: $apiUrl');
-          
-          final rawEncryptedString = await VideasyExtractorService.fetchApiUrl(apiUrl);
-          return rawEncryptedString; // Return the raw string back to the WebView's JS
-        } catch (e) {
-          debugPrint('[Engine] Error handling FetchApi: $e');
-        }
-        return null;
-      },
-    );
-  }
-
-  /// Called when the extraction 1px WebView finishes loading
-  void _onExtraction1pxLoadStop(InAppWebViewController controller, WebUri? url) async {
-    debugPrint('[Engine] 1px WebView loaded: $url');
-
-    // Check for pending stream (captured before handler was ready)
-    final pending = await controller.evaluateJavascript(
-      source: VideasyExtractorService.pendingStreamScript,
-    );
-    if (pending != null && pending != 'null' && pending is String) {
-      try {
-        final payload = jsonDecode(pending);
-        if (payload != null && payload['url'] != null) {
-          debugPrint('[Engine] ✅ Recovered pending stream: ${payload['url']}');
-          _onExtractionSuccess(ExtractedVideasyStream(
-            server: payload['server'] ?? 'Fade Hindi',
-            url: payload['url'],
-            sources: (payload['sources'] as List<dynamic>?) ?? [],
-            tracks: (payload['tracks'] as List<dynamic>?) ?? [],
-          ));
-          return;
-        }
-      } catch (e) {
-        debugPrint('[Engine] Error recovering pending: $e');
-      }
-    }
-
-    // Start auto-clicker: click every 800ms for up to 8 attempts
-    _extraction1pxAutoClickTimer?.cancel();
-    _extraction1pxAutoClickTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
-      _extraction1pxClickCount++;
-      if (_extraction1pxClickCount > 8 || !_extraction1pxActive) {
-        timer.cancel();
-        return;
-      }
-      debugPrint('[Engine] Auto-click attempt #$_extraction1pxClickCount');
-      _extraction1pxController?.evaluateJavascript(
-        source: VideasyExtractorService.autoClickScript,
-      );
-    });
-  }
 
   /// Stream extracted successfully — switch to custom player
-  void _onExtractionSuccess(ExtractedVideasyStream stream) {
+  void _onExtractionSuccess(PeachifyStream stream) {
     if (!mounted || _isClosing) return;
-
-    // Cancel timers
-    _extraction1pxAutoClickTimer?.cancel();
-    _extraction1pxSettleTimer?.cancel();
-    _extraction1pxTimeoutTimer?.cancel();
 
     debugPrint('[Engine] 🎬 Playing in native BetterPlayer: ${stream.url}');
 
     setState(() {
       _extractedStream = stream;
       _extractedLink = stream.url;
-      _extraction1pxActive = false; // Remove 1px WebView
       _isExtracting = false;
-      _discoveryComplete = true;
       _useWebViewEngine = false;
       _isLoading = true;
       _isInitialized = false;
-      _selectedServer = stream.server;
+      _selectedServer = stream.providerName;
     });
 
     _initializeBetterPlayer(stream.url, isOffline: false, extractedStream: stream);
@@ -624,35 +467,57 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void _onExtractionFailed() {
     if (!mounted || _isClosing) return;
 
-    // Cancel timers
-    _extraction1pxAutoClickTimer?.cancel();
-    _extraction1pxSettleTimer?.cancel();
-    _extraction1pxTimeoutTimer?.cancel();
-
-    debugPrint('[Engine] ❌ Extraction failed');
-
-    // Fall back to loading videasy player page directly in the WebView
-    final s = _currentSeason ?? widget.season ?? 1;
-    final e = _currentEpisode ?? widget.episode ?? 1;
-    final videasyUrl = VideasyExtractorService.buildPlayerUrl(
-      tmdbId: widget.tmdbId,
-      mediaType: widget.mediaType,
-      season: s,
-      episode: e,
-    );
-
-    setState(() {
-      _extractedLink = videasyUrl;
-      _extraction1pxActive = false;
-      _isExtracting = false;
-      _discoveryComplete = true;
-      _useWebViewEngine = true;
-      _isLoading = false;
-      _isInitialized = true;
-    });
+    debugPrint('[Engine] ❌ Vcloud extraction failed, falling back to VidNest/Peachify extraction...');
+    _tryVidNestPeachifyExtraction();
   }
 
-  void _startPlayback(String link, {bool isOffline = false, ExtractedVideasyStream? extractedStream}) {
+  Future<void> _tryVidNestPeachifyExtraction() async {
+    final s = _currentSeason ?? widget.season ?? 1;
+    final e = _currentEpisode ?? widget.episode ?? 1;
+
+    setState(() {
+      _isExtracting = true;
+      _isLoading = false;
+      _hasError = false;
+    });
+
+    try {
+      final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
+        tmdbId: widget.tmdbId,
+        mediaType: widget.mediaType,
+        season: widget.mediaType == 'movie' ? 1 : s,
+        episode: widget.mediaType == 'movie' ? 1 : e,
+      );
+
+      if (!mounted || _isClosing) return;
+
+      if (streams.isEmpty) {
+        debugPrint('[Engine] No streams found on VidNest/Peachify.');
+        setState(() {
+          _isExtracting = false;
+          _hasError = true;
+        });
+        return;
+      }
+
+      // Automatically select the first stream
+      final stream = streams.first;
+      debugPrint('[Engine] Selected VidNest/Peachify stream: ${stream.providerName}');
+      
+      // Load and play the selected stream
+      _onExtractionSuccess(stream);
+    } catch (err) {
+      debugPrint('[Engine] VidNest/Peachify extraction failed: $err');
+      if (mounted && !_isClosing) {
+        setState(() {
+          _isExtracting = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  void _startPlayback(String link, {bool isOffline = false, PeachifyStream? extractedStream}) {
     debugPrint('[Playback] Starting for link: $link (isOffline: $isOffline)');
     setState(() {
       _extractedLink = link;
@@ -710,7 +575,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Future<void> _initializeBetterPlayer(
     String url, {
     bool isOffline = false,
-    ExtractedVideasyStream? extractedStream,
+    PeachifyStream? extractedStream,
   }) async {
     try {
       _startPositionApplied = false;
@@ -736,10 +601,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             subtitleUrl = 'https:$subtitleUrl';
           }
           final label = t['label']?.toString() ?? 'Subtitle';
-          final isGoogleSubtitle = subtitleUrl.contains('googleusercontent.com') || subtitleUrl.contains('google.com');
           final subHeaders = {
-            if (!isGoogleSubtitle) 'Referer': 'https://player.videasy.net/',
-            if (!isGoogleSubtitle) 'Origin': 'https://player.videasy.net',
+            ...extractedStream.headers,
             'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
           };
 
@@ -759,25 +622,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
 
       Map<String, String>? explicitResolutions;
-      if (extractedStream != null && extractedStream.sources.isNotEmpty) {
-        final Map<String, String> resMap = {};
-        for (var source in extractedStream.sources) {
-           final label = source['label']?.toString();
-           final sUrl = source['url']?.toString();
-           // Only add valid explicit MP4 resolutions
-           if (label != null && sUrl != null && sUrl.isNotEmpty && source['type'] == 'mp4') {
-               resMap[label] = sUrl;
-           }
-        }
-        if (resMap.isNotEmpty) {
-           explicitResolutions = resMap;
-           _explicitResolutions = resMap;
-           if (_selectedResolution == null || !resMap.containsKey(_selectedResolution)) {
-             _selectedResolution = resMap.keys.first;
-           }
-           debugPrint('[BetterPlayer] Added explicit resolutions: ${resMap.keys.join(", ")}');
-        }
-      } else if (_vcloudServerMap.isNotEmpty) {
+      if (_vcloudServerMap.isNotEmpty) {
         // Preserve _explicitResolutions for Vcloud database streams!
         explicitResolutions = _explicitResolutions;
         debugPrint('[BetterPlayer] Preserving Vcloud explicit resolutions: ${_explicitResolutions?.keys.join(", ")}');
@@ -806,8 +651,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         headers: !isOffline ? (() {
           final isGoogle = url.contains('googleusercontent.com') || url.contains('google.com');
           return {
-            if (!isGoogle) 'Referer': 'https://player.videasy.net/',
-            if (!isGoogle) 'Origin': 'https://player.videasy.net',
+            if (extractedStream != null) ...extractedStream.headers,
+            if (extractedStream == null && !isGoogle) ...{
+              'Referer': 'https://peachify.top/',
+              'Origin': 'https://peachify.top',
+            },
             'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
             'Accept': '*/*',
           };
@@ -920,153 +768,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
   }
 
-  // ─── Background Extraction for Episode Switching ───
 
-  void _startBackgroundExtraction(String url, int episodeIndex) {
-    if (_isBgExtracting) return;
-
-    setState(() {
-      _isBgExtracting = true;
-      _extractingEpisodeIndex = episodeIndex;
-      _bgExtractionUrl = url;
-      _bgDiscoveredLinks.clear();
-      // Nuclear Reset: New Key for fresh WebView
-      _bgWebViewKey = ValueKey(
-        'bg_discovery_${DateTime.now().millisecondsSinceEpoch}',
-      );
-    });
-
-    _bgTimeoutTimer?.cancel();
-    _bgTimeoutTimer = Timer(const Duration(seconds: 15), () {
-      if (mounted && _isBgExtracting) {
-        _completeBackgroundDiscovery();
-      }
-    });
-
-    _bgAutoClickTimer?.cancel();
-    _bgAutoClickTimer = Timer.periodic(const Duration(milliseconds: 1000), (
-      timer,
-    ) {
-      if (!_isBgExtracting) {
-        timer.cancel();
-        return;
-      }
-      final controller = _bgWebViewController;
-      if (controller != null && mounted) {
-        controller.evaluateJavascript(
-          source: """
-          (function() {
-            var buttons = document.querySelectorAll('.play-btn, .vjs-big-play-button, .jw-display-icon-display, .plyr__control--overlaid');
-            for(var i=0; i<buttons.length; i++) { buttons[i].click(); }
-            var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-            if (el) { el.click(); }
-            var v = document.querySelector('video');
-            if (v) { v.play().catch(function(e){}); }
-          })();
-        """,
-        );
-      }
-    });
-
-    debugPrint('[BG Extraction] Started for episode index: $episodeIndex');
-  }
-
-  void _handleBgExtractedLink(String link) {
-    if (!_isBgExtracting) return;
-
-    final lowerLink = link.toLowerCase();
-    if (!lowerLink.contains('.m3u8') && !lowerLink.contains('.mp4')) return;
-    if (lowerLink.contains('ads')) return;
-
-    if (!_bgDiscoveredLinks.contains(link)) {
-      _bgDiscoveredLinks.add(link);
-    }
-
-    if (lowerLink.contains('master.m3u8') || lowerLink.contains('.urlset')) {
-      _bgMasterWaitTimer?.cancel();
-      _bgMasterWaitTimer = Timer(const Duration(milliseconds: 200), () {
-        _completeBackgroundDiscovery();
-      });
-    } else {
-      _bgMasterWaitTimer ??= Timer(const Duration(milliseconds: 1500), () {
-        _completeBackgroundDiscovery();
-      });
-    }
-  }
-
-  void _completeBackgroundDiscovery() {
-    if (!_isBgExtracting) return;
-
-    debugPrint(
-      '[BG Discovery] Analyzing ${_bgDiscoveredLinks.length} links...',
-    );
-
-    String? bestLink;
-    final masterLinks = _bgDiscoveredLinks
-        .where((l) => l.contains('master.m3u8') || l.contains('.urlset'))
-        .toList();
-    if (masterLinks.isNotEmpty) {
-      masterLinks.sort((a, b) => b.length.compareTo(a.length));
-      bestLink = masterLinks.first;
-    } else {
-      final highQuality = _bgDiscoveredLinks
-          .where(
-            (l) => l.contains('_h') || l.contains('1080') || l.contains('720'),
-          )
-          .toList();
-      if (highQuality.isNotEmpty) {
-        highQuality.sort((a, b) => b.length.compareTo(a.length));
-        bestLink = highQuality.first;
-      } else if (_bgDiscoveredLinks.isNotEmpty) {
-        bestLink = _bgDiscoveredLinks.first;
-      }
-    }
-
-    if (mounted) {
-      if (bestLink != null) {
-        final contentAsync = ref.read(
-          detailProvider(
-            DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
-          ),
-        );
-        final content = contentAsync.valueOrNull;
-        final episodesAsync = ref.read(
-          episodesProvider(
-            EpisodeParams(
-              tmdbId: widget.tmdbId,
-              seasonNumber: _currentSeason ?? 1,
-            ),
-          ),
-        );
-        final epIndex = _extractingEpisodeIndex;
-        final epsList = episodesAsync.valueOrNull;
-        final episode = (epsList != null && epIndex != null && epIndex >= 0 && epIndex < epsList.length)
-            ? epsList[epIndex]
-            : null;
-
-        setState(() {
-          _isBgExtracting = false;
-          _extractingEpisodeIndex = null;
-          _currentEpisode = episode?.episodeNumber ?? _currentEpisode;
-        });
-
-        _bgAutoClickTimer?.cancel();
-        _bgTimeoutTimer?.cancel();
-        _bgMasterWaitTimer?.cancel();
-
-        _startPlayback(bestLink);
-      } else {
-        setState(() {
-          _isBgExtracting = false;
-          _extractingEpisodeIndex = null;
-        });
-        _bgAutoClickTimer?.cancel();
-        _bgTimeoutTimer?.cancel();
-        _bgMasterWaitTimer?.cancel();
-        debugPrint('[BG Discovery] No links found for background extraction.');
-      }
-    }
-  }
 
   /// Save current watch progress to the Continue Watching provider
   void _saveToWatchHistory() {
@@ -1219,14 +921,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     _extractedLink = null;
     _discoveredLinks.clear();
-    _discoveryComplete = false;
     _isExtracting = true;
     _isLoading = false;
     _hasError = false;
     _isInitialized = false;
     _useWebViewEngine = false;
 
-    debugPrint('[Retry] Invoking VideasyExtractorService...');
+    debugPrint('[Retry] Invoking VcloudExtractorService...');
     _tryDirectExtraction();
     setState(() {});
   }
@@ -1245,13 +946,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _extractionTimer?.cancel();
     _masterWaitTimer?.cancel();
     _autoClickTimer?.cancel();
-    _bgDiscoveryTimer?.cancel();
-    _bgAutoClickTimer?.cancel();
-    _bgTimeoutTimer?.cancel();
-    _bgMasterWaitTimer?.cancel();
-    _extraction1pxAutoClickTimer?.cancel();
-    _extraction1pxSettleTimer?.cancel();
-    _extraction1pxTimeoutTimer?.cancel();
     _seekTimeoutTimer?.cancel();
 
     // 1b. Restore system brightness
@@ -1266,7 +960,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     } catch (_) {}
     _betterPlayerController = null;
     _webViewController = null;
-    _bgWebViewController = null;
 
     // 3. Restore orientation & system UI (fire-and-forget, no await)
     SystemChrome.setPreferredOrientations([
@@ -1315,12 +1008,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final nextEp = episodes[nextIdx];
     final targetLink = (nextEp.playLink != null && nextEp.playLink!.isNotEmpty)
         ? nextEp.playLink!
-        : VideasyExtractorService.buildPlayerUrl(
-            tmdbId: widget.tmdbId,
-            mediaType: widget.mediaType,
-            season: _currentSeason ?? 1,
-            episode: nextEp.episodeNumber ?? 1,
-          );
+        : '';
 
     debugPrint('[NextEp] Playing Episode ${nextEp.episodeNumber}');
 
@@ -1328,16 +1016,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _currentEpisode = nextEp.episodeNumber;
       _currentExtractionUrl = targetLink;
       _isExtracting = true;
-      _discoveryComplete = false;
       _isInitialized = false;
       _extractedLink = null;
       _discoveredLinks.clear();
       _lastCurrentTime = 0.0; // Reset progress for new episode
     });
 
-    _webViewKey = ValueKey(
-      'discovery_${DateTime.now().millisecondsSinceEpoch}',
-    );
     _tryDirectExtraction();
   }
 
@@ -1399,10 +1083,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _extractionTimer?.cancel();
     _masterWaitTimer?.cancel();
     _autoClickTimer?.cancel();
-    _bgDiscoveryTimer?.cancel();
-    _bgAutoClickTimer?.cancel();
-    _bgTimeoutTimer?.cancel();
-    _bgMasterWaitTimer?.cancel();
     _controlsTimer?.cancel();
     _brightnessTimer?.cancel();
     _volumeTimer?.cancel();
@@ -1420,7 +1100,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     } catch (_) {}
     _betterPlayerController = null;
     _webViewController = null;
-    _bgWebViewController = null;
 
     // Restore orientation and system UI (fire-and-forget)
     SystemChrome.setPreferredOrientations([
@@ -1740,8 +1419,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         },
         shouldOverrideUrlLoading: (controller, navigationAction) async {
           final url = navigationAction.request.url.toString();
-          // Allow file:// URLs (our player.html), videasy domains, and peachify.top
-          if (url.startsWith('file://') || url.toLowerCase().contains('videasy') || url.contains('peachify.top')) {
+          // Allow file:// URLs (our player.html), peachify.top, and vidnest.fun
+          if (url.startsWith('file://') || url.contains('peachify.top') || url.contains('vidnest.fun')) {
             return NavigationActionPolicy.ALLOW;
           }
           if (navigationAction.isForMainFrame) {
@@ -1790,8 +1469,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             }
 
             final headersMap = _extractedStream?.headers ?? {
-              'Referer': 'https://player.videasy.net/',
-              'Origin': 'https://player.videasy.net'
+              'Referer': 'https://peachify.top/',
+              'Origin': 'https://peachify.top'
             };
             final headersJson = jsonEncode(headersMap);
 
@@ -2173,19 +1852,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                 onTap: () {
                                                    final targetLink = (ep.playLink != null && ep.playLink!.isNotEmpty)
                                                        ? ep.playLink!
-                                                       : VideasyExtractorService.buildPlayerUrl(
-                                                           tmdbId: widget.tmdbId,
-                                                           mediaType: widget.mediaType,
-                                                           season: tempSeason,
-                                                           episode: ep.episodeNumber ?? 1,
-                                                         );
+                                                       : '';
                                                    Navigator.pop(context);
                                                    setState(() {
                                                      _currentSeason = tempSeason;
                                                      _currentEpisode = ep.episodeNumber;
                                                      _currentExtractionUrl = targetLink;
                                                      _isExtracting = true;
-                                                     _discoveryComplete = false;
                                                      _isInitialized = false;
                                                      _extractedLink = null;
                                                      _discoveredLinks.clear();
@@ -2193,9 +1866,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                    });
                                                    _webViewController?.evaluateJavascript(
                                                      source: "updateEpisodeButton('Episodes')",
-                                                   );
-                                                   _webViewKey = ValueKey(
-                                                     'discovery_${DateTime.now().millisecondsSinceEpoch}',
                                                    );
                                                    _tryDirectExtraction();
                                                  },
@@ -2418,75 +2088,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         // 0. Base Layer
         const SizedBox.expand(child: ColoredBox(color: Colors.black)),
 
-        // 1. Silent 1px Extraction WebView (invisible to user)
-        if (_extraction1pxActive && _extraction1pxUrl != null)
-          Offstage(
-            child: SizedBox(
-              width: 1,
-              height: 1,
-              child: InAppWebView(
-                key: _extraction1pxKey,
-                initialUrlRequest: URLRequest(
-                  url: WebUri(_extraction1pxUrl!),
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                  },
-                ),
-                initialSettings: VideasyExtractorService.extractionSettings,
-                initialUserScripts: VideasyExtractorService.initialUserScripts,
-                onWebViewCreated: _onExtraction1pxCreated,
-                onLoadStop: _onExtraction1pxLoadStop,
-                shouldOverrideUrlLoading: (controller, navigationAction) async {
-                  final url = navigationAction.request.url.toString();
-                  if (navigationAction.isForMainFrame && !url.toLowerCase().contains('videasy')) {
-                    return NavigationActionPolicy.CANCEL;
-                  }
-                  return NavigationActionPolicy.ALLOW;
-                },
-                onCreateWindow: (controller, createWindowAction) async => false,
-                // Accept SSL certificates from api.videasy.net
-                // (their cert is untrusted by Android's default CA store)
-                onReceivedServerTrustAuthRequest: (controller, challenge) async {
-                  debugPrint('[1px WV] SSL bypass for: ${challenge.protectionSpace.host}');
-                  return ServerTrustAuthResponse(
-                    action: ServerTrustAuthResponseAction.PROCEED,
-                  );
-                },
-                onConsoleMessage: (controller, consoleMessage) {
-                  debugPrint('[1px WV] ${consoleMessage.message}');
-                },
-              ),
-            ),
-          ),
 
-        // 2. Background Extraction for episode switching
-        if (_isBgExtracting && _bgExtractionUrl != null)
-          Offstage(
-            child: SizedBox(
-              width: 1,
-              height: 1,
-              child: InAppWebView(
-                key: _bgWebViewKey,
-                initialUrlRequest: URLRequest(url: WebUri(_bgExtractionUrl!)),
-                initialSettings: InAppWebViewSettings(
-                  javaScriptEnabled: true,
-                  allowsInlineMediaPlayback: true,
-                  mediaPlaybackRequiresUserGesture: false,
-                  useOnLoadResource: true,
-                ),
-                onWebViewCreated: (controller) =>
-                    _bgWebViewController = controller,
-                onLoadResource: (controller, resource) {
-                  if (resource.url != null) {
-                    _handleBgExtractedLink(resource.url.toString());
-                  }
-                },
-              ),
-            ),
-          ),
+
+
 
         // 3. Main UI Layer
-        if (_useWebViewEngine)
+        if (_hasError)
+          Positioned.fill(
+            child: _buildErrorOverlay(),
+          )
+        else if (_useWebViewEngine)
           Positioned.fill(
             child: _buildWebPlayer(key: const ValueKey('web_player')),
           )

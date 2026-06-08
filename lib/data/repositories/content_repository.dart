@@ -339,7 +339,7 @@ class ContentRepository {
         numberOfEpisodes: numberOfEpisodes,
         status: status,
         imdbId: imdbId,
-        watchLink: '', // Extracted dynamically by VideasyExtractorService
+        watchLink: '', // Extracted dynamically by Vcloud / Peachify / VidNest
         downloadLink: '',
         tmdbSeasons: tmdbSeasons,
         tmdbLogoUrl: tmdbLogoUrl,
@@ -377,7 +377,7 @@ class ContentRepository {
               runtime: t.runtime,
               airDate: t.airDate,
               voteAverage: t.voteAverage,
-              playLink: '', // Dynamic via Videasy
+              playLink: '', // Dynamic via Vcloud / Peachify / VidNest
               downloadLink: '',
             );
           }).toList();
