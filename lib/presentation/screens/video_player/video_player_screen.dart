@@ -1660,6 +1660,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               customQualitiesJs = jsonEncode(resUrls);
             }
 
+            String languagesJs = '[]';
+            if (VcloudExtractorService().lastLanguages.isNotEmpty) {
+              final List<Map<String, dynamic>> langList = [];
+              for (var i = 0; i < VcloudExtractorService().lastLanguages.length; i++) {
+                final lang = VcloudExtractorService().lastLanguages[i];
+                langList.add({
+                  'id': i,
+                  'name': lang,
+                  'lang': lang,
+                });
+              }
+              languagesJs = jsonEncode(langList);
+            }
+
             await controller.evaluateJavascript(source: """
               (function() {
                 // Set title
@@ -1678,6 +1692,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 var customQualities = $customQualitiesJs;
                 if (Object.keys(customQualities).length > 0) {
                   window.setupCustomQualityPicker(customQualities, '${_selectedResolution ?? ""}');
+                }
+
+                // Setup languages list for audio track picker if available
+                var langTracks = $languagesJs;
+                if (langTracks.length > 0) {
+                  window.setupAudioPicker(langTracks, true);
                 }
 
                 // Play video with headers

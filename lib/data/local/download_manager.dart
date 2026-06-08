@@ -1210,6 +1210,7 @@ class DownloadManager {
     required int episode,
     String? posterUrl,
     BuildContext? context,
+    String? fileExtension,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
     final hasPermission = await requestPermissions(context);
@@ -1217,7 +1218,7 @@ class DownloadManager {
       throw Exception('Storage permission denied');
     }
 
-    final ext = extractExtension(url);
+    final ext = fileExtension ?? extractExtension(url);
 
     final item = DownloadItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),

@@ -22,6 +22,7 @@ class VcloudExtractorService {
   // In-memory mapping of tmdbId -> download_url
   final Map<int, String> _fileMap = {};
   bool _isInitialized = false;
+  List<String> lastLanguages = [];
 
   /// Initializes the service. Loads the file map cache from SharedPreferences,
   /// and triggers a background refresh if empty or expired.
@@ -186,6 +187,12 @@ class VcloudExtractorService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       debugPrint('[VcloudExtractor] JSON loaded. post_title: ${data['post_title']}, post_type: ${data['post_type']}, tmdb_id: ${data['tmdb_id']}');
+      if (data.containsKey('languages') && data['languages'] is List) {
+        lastLanguages = (data['languages'] as List).map((e) => e.toString()).toList();
+        debugPrint('[VcloudExtractor] Languages parsed: $lastLanguages');
+      } else {
+        lastLanguages = [];
+      }
       final Map<String, String> vcloudLinksMap = {};
 
       debugPrint('[VcloudExtractor] Parameters received: mediaType=$mediaType, season=$season, episode=$episode');

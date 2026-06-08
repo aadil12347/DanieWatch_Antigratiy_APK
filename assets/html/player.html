@@ -2273,6 +2273,7 @@
 
         // Data stores
         let audioTracks = [];
+        let hasCustomAudioTracks = false;
         let qualityLevels = [];
         let selectedAudioIndex = 0;
         let selectedQualityIndex = -1;
@@ -2762,8 +2763,6 @@
                     };
                 }
                 hls = new Hls(hlsConfig);
-                hls.loadSource(url);
-                hls.attachMedia(video);
 
                 hls.on(Hls.Events.MANIFEST_LOADED, (e, data) => {
                     setupAudioPicker(data.audioTracks);
@@ -2790,6 +2789,12 @@
                     }
                 });
 
+                hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (e, data) => {
+                    if (hls.audioTracks && hls.audioTracks.length > 0) {
+                        setupAudioPicker(hls.audioTracks);
+                    }
+                });
+
                 hls.on(Hls.Events.ERROR, (e, data) => {
                     if (data.fatal) {
                         if (window.flutter_inappwebview) {
@@ -2802,6 +2807,9 @@
                         }
                     }
                 });
+
+                hls.loadSource(url);
+                hls.attachMedia(video);
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = url;
             }
@@ -3399,14 +3407,20 @@
         });
 
         // ===== SETUP PICKERS =====
-        function setupAudioPicker(tracks) {
+        window.setupAudioPicker = function(tracks, isCustom) {
             if (!tracks || tracks.length < 1) return;
+            if (isCustom) {
+                hasCustomAudioTracks = true;
+            } else if (hasCustomAudioTracks) {
+                return;
+            }
             audioTracks = tracks;
             selectedAudioIndex = 0;
             document.getElementById('audioMenuItem').classList.remove('hidden');
             document.getElementById('audioValueText').textContent = tracks[0].name || tracks[0].lang || 'Default';
             renderAudioOptions();
-        }
+        };
+        function setupAudioPicker(tracks, isCustom) { window.setupAudioPicker(tracks, isCustom); }
 
         function setupQualityPicker(levels) {
             if (!levels || levels.length < 1) return;
@@ -3677,8 +3691,6 @@
                     };
                 }
                 hls = new Hls(hlsConfig);
-                hls.loadSource(url);
-                hls.attachMedia(video);
 
                 hls.on(Hls.Events.MANIFEST_LOADED, (e, data) => {
                     setupAudioPicker(data.audioTracks);
@@ -3699,6 +3711,12 @@
                     }
                 });
 
+                hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (e, data) => {
+                    if (hls.audioTracks && hls.audioTracks.length > 0) {
+                        setupAudioPicker(hls.audioTracks);
+                    }
+                });
+
                 hls.on(Hls.Events.ERROR, (e, data) => {
                     if (data.fatal) {
                         if (window.flutter_inappwebview) {
@@ -3711,6 +3729,9 @@
                         }
                     }
                 });
+
+                hls.loadSource(url);
+                hls.attachMedia(video);
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = url;
             }

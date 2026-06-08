@@ -1457,26 +1457,54 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       final List<PeachifyStream> fetchedStreams = [];
       final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
       
+      final lastLangs = VcloudExtractorService().lastLanguages;
+      final bool hasHindi = lastLangs.any((l) => l.toLowerCase().contains('hindi')) ||
+                            (content.language?.toLowerCase().contains('hindi') ?? false);
+      String langPrefix = 'Hindi';
+      if (!hasHindi) {
+        if (lastLangs.isNotEmpty) {
+          langPrefix = lastLangs.first;
+        } else if (content.language != null && content.language!.isNotEmpty) {
+          langPrefix = content.language!.split(',').first.trim();
+        } else {
+          langPrefix = 'Server';
+        }
+      }
+      
+      if (langPrefix.isNotEmpty) {
+        langPrefix = langPrefix[0].toUpperCase() + langPrefix.substring(1);
+      } else {
+        langPrefix = 'Server';
+      }
+
       for (final server in priorityServers) {
         if (serverToResUrl.containsKey(server) && serverToResUrl[server]!.isNotEmpty) {
+          final payloadMap = serverToResUrl[server]!;
+          final List<String> sortedResKeys = payloadMap.keys.toList();
+          sortedResKeys.sort((a, b) {
+            final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+            final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+            return bInt.compareTo(aInt);
+          });
+          final resSuffix = sortedResKeys.isNotEmpty ? ' (${sortedResKeys.join(", ")})' : '';
+
           String displayName = '';
           if (server == 'Server 1') {
-            displayName = 'Server 1 (High-Speed Hub Link)';
+            displayName = '$langPrefix 1$resSuffix';
           } else if (server == 'Server 2') {
-            displayName = 'Server 2 (Google Drive Direct)';
+            displayName = '$langPrefix 2$resSuffix';
           } else if (server == 'Server 3') {
-            displayName = 'Server 3 (Cloudflare R2 Direct)';
+            displayName = '$langPrefix 3$resSuffix';
           } else {
-            displayName = server;
+            displayName = '$server$resSuffix';
           }
 
-          final payloadMap = serverToResUrl[server]!;
           final base64Payload = base64Encode(utf8.encode(jsonEncode(payloadMap)));
           final mockUrl = 'mock_vcloud://$base64Payload';
 
           fetchedStreams.add(PeachifyStream(
             providerName: displayName,
-            dub: 'Hindi',
+            dub: langPrefix,
             type: 'video',
             url: mockUrl,
             headers: const {
@@ -1543,6 +1571,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           episode: content.isMovie ? 0 : episodeNumber,
           posterUrl: content.posterUrl,
           context: context,
+          fileExtension: selection.fileExtension,
         );
         if (mounted) {
           _showDownloadStartedToast(item);

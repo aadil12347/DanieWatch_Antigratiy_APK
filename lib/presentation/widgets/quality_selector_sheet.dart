@@ -6,6 +6,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +29,7 @@ class DownloadSelection {
   final String masterUrl;
   final Map<String, String>? headers;
   final String? providerName;
+  final String? fileExtension;
 
   DownloadSelection({
     required this.quality,
@@ -37,6 +39,7 @@ class DownloadSelection {
     required this.masterUrl,
     this.headers,
     this.providerName,
+    this.fileExtension,
   });
 }
 
@@ -122,6 +125,106 @@ class _QualitySelectorContentState
   SubtitleTrack? _selectedSubtitle;
   bool _downloadSubtitles = false;
 
+  String? _fetchedSizeText;
+  String? _resolvedExtension;
+  bool _fetchingSize = false;
+
+  Future<void> _fetchActualFileSize(String url) async {
+    if (url.isEmpty) return;
+    if (url.startsWith('mock_vcloud://')) return;
+    
+    if (!mounted) return;
+    setState(() {
+      _fetchingSize = true;
+      _fetchedSizeText = 'Fetching size...';
+    });
+
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 4)
+        ..badCertificateCallback = (cert, host, port) => true;
+
+      var currentUrl = url;
+      var redirectCount = 0;
+      HttpClientResponse? response;
+
+      while (redirectCount < 5) {
+        final request = await client.headUrl(Uri.parse(currentUrl));
+        request.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        request.followRedirects = false;
+        response = await request.close();
+
+        final location = response.headers.value('location');
+        if (response.statusCode >= 300 && response.statusCode < 400 && location != null) {
+          if (location.startsWith('http')) {
+            currentUrl = location;
+          } else {
+            currentUrl = Uri.parse(currentUrl).resolve(location).toString();
+          }
+          redirectCount++;
+        } else {
+          break;
+        }
+      }
+
+      if (response != null && response.statusCode == 200) {
+        final contentLength = response.headers.contentLength;
+        final contentType = response.headers.value('content-type');
+        final contentDisposition = response.headers.value('content-disposition');
+        
+        String? ext;
+        if (contentDisposition != null) {
+          final regExp = RegExp(r'filename="?([^"\s]+)"?');
+          final match = regExp.firstMatch(contentDisposition);
+          if (match != null) {
+            final filename = match.group(1)!;
+            final dotIdx = filename.lastIndexOf('.');
+            if (dotIdx != -1) {
+              ext = filename.substring(dotIdx).toLowerCase();
+            }
+          }
+        }
+        
+        if (ext == null && contentType != null) {
+          if (contentType.contains('matroska') || contentType.contains('mkv')) {
+            ext = '.mkv';
+          } else if (contentType.contains('mp4')) {
+            ext = '.mp4';
+          }
+        }
+
+        if (contentLength > 0) {
+          final double mb = contentLength / (1024 * 1024);
+          String sizeStr;
+          if (mb >= 1024) {
+            sizeStr = '${(mb / 1024).toStringAsFixed(2)} GB';
+          } else {
+            sizeStr = '${mb.toStringAsFixed(1)} MB';
+          }
+          if (mounted) {
+            setState(() {
+              _fetchedSizeText = sizeStr;
+              _resolvedExtension = ext;
+              _fetchingSize = false;
+            });
+          }
+          client.close();
+          return;
+        }
+      }
+      client.close();
+    } catch (e) {
+      debugPrint('[QualitySelector] Error fetching actual file size: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _fetchedSizeText = null;
+        _fetchingSize = false;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -195,38 +298,43 @@ class _QualitySelectorContentState
     }
   }
 
+  void _onPlaylistLoaded(PlaylistInfo info) {
+    if (!mounted) return;
+    setState(() {
+      _playlist = info;
+      _selectedAudio = info.defaultAudio;
+      final groupVariants = _getFilteredVariants(info, _selectedAudio);
+      if (groupVariants.isNotEmpty) {
+        _selectedVariant = _getDefaultVariantInGroup(groupVariants);
+      } else {
+        _selectedVariant = info.defaultVariant;
+      }
+      _selectedSubtitle = null;
+      _internalLoading = false;
+      _resolvedExtension = null;
+      if (_selectedVariant != null && !_selectedVariant!.url.contains('.m3u8')) {
+        _fetchedSizeText = 'Fetching size...';
+      } else {
+        _fetchedSizeText = null;
+      }
+    });
+
+    if (_selectedVariant != null && !_selectedVariant!.url.contains('.m3u8')) {
+      _fetchActualFileSize(_selectedVariant!.url);
+    }
+  }
+
   Future<void> _loadPlaylistFromUrl(String url) async {
     final mockPlaylist = _parseMockPlaylist(url);
     if (mockPlaylist != null) {
-      if (mounted) {
-        setState(() {
-          _playlist = mockPlaylist;
-          _selectedAudio = null;
-          _selectedVariant = mockPlaylist.defaultVariant;
-          _selectedSubtitle = null;
-          _internalLoading = false;
-        });
-      }
+      _onPlaylistLoaded(mockPlaylist);
       return;
     }
 
     try {
       final parser = M3u8Parser();
       final info = await parser.parse(url);
-      if (mounted) {
-        setState(() {
-          _playlist = info;
-          _selectedAudio = info.defaultAudio;
-          final groupVariants = _getFilteredVariants(info, _selectedAudio);
-          if (groupVariants.isNotEmpty) {
-            _selectedVariant = _getDefaultVariantInGroup(groupVariants);
-          } else {
-            _selectedVariant = info.defaultVariant;
-          }
-          _selectedSubtitle = null;
-          _internalLoading = false;
-        });
-      }
+      _onPlaylistLoaded(info);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -240,35 +348,14 @@ class _QualitySelectorContentState
   Future<void> _loadPlaylist(PeachifyStream stream) async {
     final mockPlaylist = _parseMockPlaylist(stream.url);
     if (mockPlaylist != null) {
-      if (mounted) {
-        setState(() {
-          _playlist = mockPlaylist;
-          _selectedAudio = null;
-          _selectedVariant = mockPlaylist.defaultVariant;
-          _selectedSubtitle = null;
-          _internalLoading = false;
-        });
-      }
+      _onPlaylistLoaded(mockPlaylist);
       return;
     }
 
     try {
       final parser = M3u8Parser();
       final info = await parser.parse(stream.url, headers: stream.headers);
-      if (mounted) {
-        setState(() {
-          _playlist = info;
-          _selectedAudio = info.defaultAudio;
-          final groupVariants = _getFilteredVariants(info, _selectedAudio);
-          if (groupVariants.isNotEmpty) {
-            _selectedVariant = _getDefaultVariantInGroup(groupVariants);
-          } else {
-            _selectedVariant = info.defaultVariant;
-          }
-          _selectedSubtitle = null;
-          _internalLoading = false;
-        });
-      }
+      _onPlaylistLoaded(info);
     } catch (e) {
       if (mounted) {
         CustomToast.show(
@@ -479,7 +566,7 @@ class _QualitySelectorContentState
                         Padding(
                           padding: const EdgeInsets.only(top: 3),
                           child: Text(
-                            'Size: ${_selectedVariant!.estimatedSizeForDuration(modalState.runtime)}',
+                            'Size: ${_fetchedSizeText ?? _selectedVariant!.estimatedSizeForDuration(modalState.runtime)}',
                             style: GoogleFonts.inter(
                               color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 13,
@@ -804,7 +891,17 @@ class _QualitySelectorContentState
               final displayLabel = _getVariantDisplayLabel(v);
 
               return GestureDetector(
-                onTap: () => setState(() => _selectedVariant = v),
+                onTap: () {
+                  if (_selectedVariant != v) {
+                    setState(() {
+                      _selectedVariant = v;
+                      _fetchedSizeText = 'Fetching size...';
+                    });
+                    if (v != null && !v.url.contains('.m3u8')) {
+                      _fetchActualFileSize(v.url);
+                    }
+                  }
+                },
                 child: Container(
                   margin: const EdgeInsets.only(right: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -908,6 +1005,7 @@ class _QualitySelectorContentState
                     masterUrl: _selectedStream?.url ?? widget.m3u8Url,
                     headers: _selectedStream?.headers,
                     providerName: _selectedStream?.providerName,
+                    fileExtension: _resolvedExtension,
                   ));
                 }
               : null,
