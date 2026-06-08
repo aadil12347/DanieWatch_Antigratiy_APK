@@ -1492,23 +1492,77 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           );
           controller.addJavaScriptHandler(
             handlerName: 'changeServer',
-            callback: (args) {
+            callback: (args) async {
               if (_isClosing) return;
               if (args.isNotEmpty) {
                 final serverName = args[0] as String;
                 debugPrint('[Engine] WebView changed server to: $serverName');
                 if (_vcloudServerMap.containsKey(serverName)) {
-                  setState(() {
-                    _activeServer = serverName;
-                    _selectedServer = serverName;
-                  });
-                  _startVcloudPlayback();
+                  final resolutions = _vcloudServerMap[serverName]!;
+                  if (resolutions.isNotEmpty) {
+                    String newRes = _selectedResolution ?? resolutions.keys.first;
+                    if (!resolutions.containsKey(newRes)) {
+                      newRes = resolutions.keys.first;
+                    }
+                    final newUrl = resolutions[newRes]!;
+                    
+                    final dynamic pos = await controller.evaluateJavascript(
+                      source: "document.querySelector('video') ? document.querySelector('video').currentTime : 0.0;"
+                    );
+                    final double resumeTime = (pos is num) ? pos.toDouble() : _lastCurrentTime;
+                    
+                    setState(() {
+                      _activeServer = serverName;
+                      _selectedServer = serverName;
+                      _selectedResolution = newRes;
+                      _extractedLink = newUrl;
+                    });
+                    
+                    final customQualitiesJs = jsonEncode(resolutions);
+                    final escapedUrl = newUrl.replaceAll("'", "\\'").replaceAll('"', '\\"');
+                    await controller.evaluateJavascript(source: """
+                      (function() {
+                        window.setupCustomQualityPicker($customQualitiesJs, '$newRes');
+                        window.changeVideoSource('$escapedUrl', $resumeTime);
+                      })();
+                    """);
+                  }
                 } else if (_currentStreamsMap != null && _currentStreamsMap!.containsKey(serverName)) {
                   setState(() {
                     _selectedServer = serverName;
                   });
                   final stream = _currentStreamsMap![serverName]!;
                   _startPlayback(stream.url, extractedStream: stream);
+                }
+              }
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'changeQuality',
+            callback: (args) async {
+              if (_isClosing) return;
+              if (args.isNotEmpty) {
+                final String qualityName = args[0] as String;
+                debugPrint('[Engine] WebView changed quality to: $qualityName');
+                
+                final serverUrls = _vcloudServerMap[_activeServer];
+                if (serverUrls != null && serverUrls.containsKey(qualityName)) {
+                  final String newUrl = serverUrls[qualityName]!;
+                  
+                  final dynamic pos = await controller.evaluateJavascript(
+                    source: "document.querySelector('video') ? document.querySelector('video').currentTime : 0.0;"
+                  );
+                  final double resumeTime = (pos is num) ? pos.toDouble() : _lastCurrentTime;
+                  
+                  setState(() {
+                    _selectedResolution = qualityName;
+                    _extractedLink = newUrl;
+                  });
+                  
+                  final escapedUrl = newUrl.replaceAll("'", "\\'").replaceAll('"', '\\"');
+                  await controller.evaluateJavascript(
+                    source: "window.changeVideoSource('$escapedUrl', $resumeTime);"
+                  );
                 }
               }
             },
@@ -1599,6 +1653,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
             final double resumeTime = _lastCurrentTime > 1 ? _lastCurrentTime : (widget.startPosition?.toDouble() ?? 0.0);
 
+            // Setup custom quality picker if we have vcloud server map resolutions
+            String customQualitiesJs = '{}';
+            if (_vcloudServerMap.containsKey(_activeServer)) {
+              final Map<String, String> resUrls = _vcloudServerMap[_activeServer]!;
+              customQualitiesJs = jsonEncode(resUrls);
+            }
+
             await controller.evaluateJavascript(source: """
               (function() {
                 // Set title
@@ -1611,6 +1672,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 var servers = $serversJs;
                 if (servers.length > 0) {
                   window.setupServerPicker(servers, '${_selectedServer ?? ""}');
+                }
+
+                // Setup custom quality picker
+                var customQualities = $customQualitiesJs;
+                if (Object.keys(customQualities).length > 0) {
+                  window.setupCustomQualityPicker(customQualities, '${_selectedResolution ?? ""}');
                 }
 
                 // Play video with headers

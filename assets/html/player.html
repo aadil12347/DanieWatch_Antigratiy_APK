@@ -3228,7 +3228,13 @@
 
         function selectAudio(index) {
             selectedAudioIndex = index;
-            hls.audioTrack = index;
+            if (hls) {
+                hls.audioTrack = index;
+            } else if (video.audioTracks && video.audioTracks.length > index) {
+                for (let i = 0; i < video.audioTracks.length; i++) {
+                    video.audioTracks[i].enabled = (i === index);
+                }
+            }
             const track = audioTracks[index];
             document.getElementById('audioValueText').textContent = track.name || track.lang || ('Audio ' + (index + 1));
             renderAudioOptions();
@@ -3564,8 +3570,153 @@
             } catch(e) {}
         }
 
+        // ===== NATIVE AUDIO TRACKS =====
+        function updateNativeAudioTracks() {
+            if (video.audioTracks && video.audioTracks.length > 0) {
+                const tracks = [];
+                for (let i = 0; i < video.audioTracks.length; i++) {
+                    const t = video.audioTracks[i];
+                    tracks.push({
+                        id: i,
+                        name: t.label || t.language || ('Audio Track ' + (i + 1)),
+                        lang: t.language,
+                        enabled: t.enabled,
+                        active: t.enabled
+                    });
+                }
+                setupAudioPicker(tracks);
+            }
+        }
+
+        if (video.audioTracks) {
+            video.audioTracks.addEventListener('change', updateNativeAudioTracks);
+        }
+        video.addEventListener('loadedmetadata', updateNativeAudioTracks);
+        video.addEventListener('canplay', updateNativeAudioTracks);
+
+        // ===== CUSTOM QUALITY PICKER =====
+        let customQualities = {};
+        let selectedQualityLabel = '';
+
+        window.setupCustomQualityPicker = function(qualities, selectedQuality) {
+            if (!qualities || Object.keys(qualities).length < 1) return;
+            customQualities = qualities;
+            selectedQualityLabel = selectedQuality;
+            
+            // Show quality menu item
+            var qualityMenuItem = document.getElementById('qualityMenuItem');
+            if (qualityMenuItem) {
+                qualityMenuItem.classList.remove('hidden');
+                document.getElementById('qualityValueText').textContent = selectedQuality;
+            }
+            renderCustomQualityOptions();
+        };
+
+        function renderCustomQualityOptions() {
+            const list = document.getElementById('qualityOptionsList');
+            if (!list) return;
+            list.innerHTML = '';
+            Object.keys(customQualities).forEach((q) => {
+                const el = document.createElement('div');
+                el.className = 'menu-option' + (selectedQualityLabel === q ? ' selected' : '');
+                el.innerHTML = '<span class="menu-option-text">' + q + '</span><svg class="menu-option-check" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+                el.onclick = () => selectCustomQuality(q);
+                list.appendChild(el);
+            });
+        }
+
+        function selectCustomQuality(q) {
+            if (selectedQualityLabel === q) return;
+            selectedQualityLabel = q;
+            document.getElementById('qualityValueText').textContent = q;
+            renderCustomQualityOptions();
+            setTimeout(showMainMenu, 200);
+            
+            // Notify Flutter to change quality
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('changeQuality', q);
+            }
+        }
+
         // ===== PUBLIC API =====
         window.playVideo = function (url, headers) { loadVideo(url, headers); };
+        window.changeVideoSource = function(url, resumeTime) {
+            savePlaybackPosition();
+            currentVideoUrl = url;
+            nextEpTriggered = false;
+            if (nextEpisodeTimer) { clearInterval(nextEpisodeTimer); nextEpisodeTimer = null; }
+            document.getElementById('nextEpisodeOverlay').classList.remove('visible');
+
+            showLoader();
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+
+            // Bind seeking on canplay to resume playback smoothly
+            if (resumeTime && resumeTime > 1) {
+                var seekHandler = function() {
+                    video.removeEventListener('canplay', seekHandler);
+                    video.currentTime = resumeTime;
+                };
+                video.addEventListener('canplay', seekHandler);
+            }
+
+            if (url.indexOf('.m3u8') === -1) {
+                video.src = url;
+                video.play();
+                hideLoader();
+            } else if (Hls.isSupported()) {
+                var hlsConfig = { enableWorker: true, lowLatencyMode: true };
+                var refererVal = globalHeaders.Referer;
+                var originVal = globalHeaders.Origin;
+                if (refererVal || originVal) {
+                    hlsConfig.xhrSetup = function(xhr, xhrUrl) {
+                        if (refererVal) { try { xhr.setRequestHeader('Referer', refererVal); } catch(e) {} }
+                        if (originVal) { try { xhr.setRequestHeader('Origin', originVal); } catch(e) {} }
+                    };
+                }
+                hls = new Hls(hlsConfig);
+                hls.loadSource(url);
+                hls.attachMedia(video);
+
+                hls.on(Hls.Events.MANIFEST_LOADED, (e, data) => {
+                    setupAudioPicker(data.audioTracks);
+                    if (data.subtitles && data.subtitles.length > 0) {
+                        document.getElementById('btnSubtitle').style.display = 'flex';
+                    }
+                });
+
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play();
+                    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                    hideLoader();
+                });
+
+                hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (e, data) => {
+                    if (data.subtitleTracks && data.subtitleTracks.length > 0) {
+                        document.getElementById('btnSubtitle').style.display = 'flex';
+                    }
+                });
+
+                hls.on(Hls.Events.ERROR, (e, data) => {
+                    if (data.fatal) {
+                        if (window.flutter_inappwebview) {
+                            window.flutter_inappwebview.callHandler('playerError', 'HLS fatal error: ' + data.details);
+                        }
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR: hls.startLoad(); break;
+                            case Hls.ErrorTypes.MEDIA_ERROR: hls.recoverMediaError(); break;
+                            default: hls.destroy(); break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+            }
+
+            loadPreviewVideo(url);
+        };
         window.seekToPosition = function (seconds) {
             if (!seconds || seconds < 5) return;
             // If video is already ready, seek immediately
