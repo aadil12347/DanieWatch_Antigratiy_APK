@@ -1740,8 +1740,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         },
         shouldOverrideUrlLoading: (controller, navigationAction) async {
           final url = navigationAction.request.url.toString();
-          // Allow file:// URLs (our player.html), videasy.net, and peachify.top
-          if (url.startsWith('file://') || url.contains('videasy.net') || url.contains('peachify.top')) {
+          // Allow file:// URLs (our player.html), videasy domains, and peachify.top
+          if (url.startsWith('file://') || url.toLowerCase().contains('videasy') || url.contains('peachify.top')) {
             return NavigationActionPolicy.ALLOW;
           }
           if (navigationAction.isForMainFrame) {
@@ -2438,7 +2438,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 onLoadStop: _onExtraction1pxLoadStop,
                 shouldOverrideUrlLoading: (controller, navigationAction) async {
                   final url = navigationAction.request.url.toString();
-                  if (navigationAction.isForMainFrame && !url.contains('videasy.net')) {
+                  if (navigationAction.isForMainFrame && !url.toLowerCase().contains('videasy')) {
                     return NavigationActionPolicy.CANCEL;
                   }
                   return NavigationActionPolicy.ALLOW;

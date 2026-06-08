@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import '../data/services/database_sync_service.dart';
+import '../domain/models/manifest_item.dart';
 
 class VcloudExtractorService {
   static final VcloudExtractorService _instance = VcloudExtractorService._internal();
@@ -19,8 +21,8 @@ class VcloudExtractorService {
   static const String _cacheTimeKey = 'vcloud_files_cache_time';
   static const Duration _cacheDuration = Duration(hours: 24);
 
-  // In-memory mapping of tmdbId -> download_url
-  final Map<int, String> _fileMap = {};
+  // In-memory mapping of tmdbId/imdbId -> download_url
+  final Map<String, String> _fileMap = {};
   bool _isInitialized = false;
   List<String> lastLanguages = [];
 
@@ -61,22 +63,30 @@ class VcloudExtractorService {
       final List<dynamic> list = jsonDecode(cacheStr);
       _fileMap.clear();
       final idRegExp = RegExp(r'_(?:movie|series|custom_series)_(\d+)');
+      final imdbRegExp = RegExp(r'(tt\d+)');
       for (var file in list) {
         if (file is Map) {
           final name = file['name']?.toString() ?? '';
           final downloadUrl = file['download_url']?.toString() ?? '';
           if (name.isNotEmpty && downloadUrl.isNotEmpty) {
-            final match = idRegExp.firstMatch(name);
-            if (match != null) {
-              final id = int.tryParse(match.group(1)!);
+            // Index by TMDB ID
+            final matchTmdb = idRegExp.firstMatch(name);
+            if (matchTmdb != null) {
+              final id = int.tryParse(matchTmdb.group(1)!);
               if (id != null) {
-                _fileMap[id] = downloadUrl;
+                _fileMap['tmdb_$id'] = downloadUrl;
               }
+            }
+            // Index by IMDB ID
+            final matchImdb = imdbRegExp.firstMatch(name);
+            if (matchImdb != null) {
+              final imdbId = matchImdb.group(1)!;
+              _fileMap['imdb_$imdbId'] = downloadUrl;
             }
           }
         }
       }
-      debugPrint('[VcloudExtractor] Loaded ${_fileMap.length} items from cache.');
+      debugPrint('[VcloudExtractor] Loaded ${_fileMap.length} cache mappings.');
     } catch (e) {
       debugPrint('[VcloudExtractor] Error parsing cache: $e');
     }
@@ -104,14 +114,74 @@ class VcloudExtractorService {
   }
 
   /// Gets the remote JSON URL for a movie/series from the stream links database.
+  /// Gets the remote JSON URL for a movie/series from the stream links database.
   Future<String?> getStreamJsonUrl({
     required int tmdbId,
     required String mediaType,
     required String title,
+    int? season,
   }) async {
     await init();
 
-    // 1. Try to guess the URL (works for 95% of cases)
+    // Look up the content in the local manifest index to find the releaseYear and imdbId
+    ManifestItem? dbItem;
+    try {
+      final items = await DatabaseSyncService.instance.loadLocalIndex();
+      for (final item in items) {
+        if (item.id == tmdbId) {
+          dbItem = item;
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Error loading local index: $e');
+    }
+
+    // 1. Direct Cache Lookup (Extremely robust & quick)
+    final tmdbKey = 'tmdb_$tmdbId';
+    if (_fileMap.containsKey(tmdbKey)) {
+      final cachedUrl = _fileMap[tmdbKey]!;
+      debugPrint('[VcloudExtractor] Resolved URL from cache map via TMDB ID: $cachedUrl');
+      return cachedUrl;
+    }
+
+    if (dbItem?.imdbId != null) {
+      final imdbKey = 'imdb_${dbItem!.imdbId}';
+      if (_fileMap.containsKey(imdbKey)) {
+        final cachedUrl = _fileMap[imdbKey]!;
+        debugPrint('[VcloudExtractor] Resolved URL from cache map via IMDB ID: $cachedUrl');
+        return cachedUrl;
+      }
+    }
+
+    // 2. Forced Cache Refresh if not found (helps with newly added movies)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastRefresh = prefs.getInt('vcloud_last_forced_refresh') ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastRefresh > 60000) { // Limit force refresh to once per minute
+        debugPrint('[VcloudExtractor] ID $tmdbId not found in cache. Forcing fresh list refresh...');
+        await prefs.setInt('vcloud_last_forced_refresh', now);
+        await _refreshCache(prefs);
+        if (_fileMap.containsKey(tmdbKey)) {
+          final cachedUrl = _fileMap[tmdbKey]!;
+          debugPrint('[VcloudExtractor] Resolved URL after forced refresh via TMDB ID: $cachedUrl');
+          return cachedUrl;
+        }
+        if (dbItem?.imdbId != null) {
+          final imdbKey = 'imdb_${dbItem!.imdbId}';
+          if (_fileMap.containsKey(imdbKey)) {
+            final cachedUrl = _fileMap[imdbKey]!;
+            debugPrint('[VcloudExtractor] Resolved URL after forced refresh via IMDB ID: $cachedUrl');
+            return cachedUrl;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Error during forced cache refresh: $e');
+    }
+
+    // 3. Fallback: Guess the URL patterns (useful as final fallback)
     final sanitizedTitle = title
         .replaceAll(':', '-')
         .replaceAll('/', '-')
@@ -124,30 +194,38 @@ class VcloudExtractorService {
         .replaceAll('|', '-')
         .trim();
     
-    final type = mediaType == 'movie' ? 'movie' : 'series';
-    final guessedName = Uri.encodeComponent('${sanitizedTitle}_${type}_$tmdbId.json');
-    final guessedUrl = '$_rawBaseUrl/$guessedName';
-
-    debugPrint('[VcloudExtractor] Guessed URL: $guessedUrl');
-
-    try {
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-      final req = await client.headUrl(Uri.parse(guessedUrl));
-      final resp = await req.close();
-      client.close();
-      if (resp.statusCode == 200) {
-        debugPrint('[VcloudExtractor] Guessed URL exists (HTTP 200)');
-        return guessedUrl;
+    final releaseYear = dbItem?.releaseYear;
+    final List<String> guessedNames = [];
+    if (mediaType == 'movie') {
+      if (releaseYear != null) {
+        guessedNames.add('${sanitizedTitle} (${releaseYear})_movie_$tmdbId.json');
       }
-    } catch (_) {
-      // Ignored, proceed to fallback lookup
+      guessedNames.add('${sanitizedTitle}_movie_$tmdbId.json');
+    } else {
+      final sNum = season ?? 1;
+      if (releaseYear != null) {
+        guessedNames.add('${sanitizedTitle} (Season $sNum) (${releaseYear})_series_$tmdbId.json');
+      }
+      guessedNames.add('${sanitizedTitle} (Season $sNum)_series_$tmdbId.json');
+      guessedNames.add('${sanitizedTitle}_series_$tmdbId.json');
     }
 
-    // 2. Fallback: Lookup in the cached file map
-    if (_fileMap.containsKey(tmdbId)) {
-      final cachedUrl = _fileMap[tmdbId]!;
-      debugPrint('[VcloudExtractor] Resolved URL from cache map: $cachedUrl');
-      return cachedUrl;
+    for (final name in guessedNames) {
+      final encodedName = Uri.encodeComponent(name);
+      final guessedUrl = '$_rawBaseUrl/$encodedName';
+      debugPrint('[VcloudExtractor] Checking guessed URL fallback: $guessedUrl');
+      try {
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+        final req = await client.headUrl(Uri.parse(guessedUrl));
+        final resp = await req.close();
+        client.close();
+        if (resp.statusCode == 200) {
+          debugPrint('[VcloudExtractor] Guessed URL fallback exists: $guessedUrl');
+          return guessedUrl;
+        }
+      } catch (_) {
+        // Ignored
+      }
     }
 
     debugPrint('[VcloudExtractor] Could not resolve stream JSON URL for ID: $tmdbId');
@@ -170,6 +248,7 @@ class VcloudExtractorService {
       tmdbId: tmdbId,
       mediaType: mediaType,
       title: title,
+      season: season,
     );
 
     if (jsonUrl == null) {
