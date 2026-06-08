@@ -22,6 +22,7 @@ import '../../../pip/pip_controller.dart';
 import '../../../services/videasy_extractor.dart';
 import '../../../services/peachify_extractor.dart';
 import '../../../services/vidnest_extractor.dart';
+import '../../../services/vcloud_extractor.dart';
 import '../../../services/hls_resolution_parser.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -120,6 +121,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _selectedResolution;
   Map<String, String>? _explicitResolutions;
   Map<String, ExtractedVideasyStream>? _currentStreamsMap;
+  Map<String, Map<String, String>> _vcloudResMap = {};
+  Map<String, Map<String, String>> _vcloudServerMap = {};
+  String _activeServer = 'Server 1';
 
   @override
   void initState() {
@@ -250,65 +254,185 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   int _extraction1pxClickCount = 0;
   ExtractedVideasyStream? _extractedStream;
 
-  /// Start the extraction using VidNest/Peachify unified service.
+  /// Start the extraction using Vcloud database service.
   Future<void> _tryDirectExtraction() async {
     final s = _currentSeason ?? widget.season ?? 1;
     final e = _currentEpisode ?? widget.episode ?? 1;
 
-    debugPrint('[Engine] Starting direct extraction in player screen');
+    debugPrint('[Engine] Starting Vcloud database extraction in player screen');
+    setState(() {
+      _isExtracting = true;
+      _isLoading = false;
+      _hasError = false;
+    });
+
     try {
-      debugPrint('[Engine] Attempting unified direct extraction...');
-      final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
+      final resolvedResMap = await VcloudExtractorService().fetchStreamLinks(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
-        season: s,
-        episode: e,
+        title: widget.title,
+        season: widget.mediaType == 'movie' ? null : s,
+        episode: widget.mediaType == 'movie' ? null : e,
       );
 
       if (!mounted || _isClosing) return;
 
-      if (streams.isEmpty) {
-        debugPrint('[Engine] Direct extraction returned empty lists');
+      if (resolvedResMap.isEmpty) {
+        debugPrint('[Engine] No streaming links found in Vcloud database. Falling back.');
         _onExtractionFailed();
         return;
       }
 
-      final Map<String, ExtractedVideasyStream> map = {};
-      for (var stream in streams) {
-        final key = stream.providerName;
-        final mappedStream = ExtractedVideasyStream(
-          server: key,
-          url: stream.url,
-          sources: [{
-            'url': stream.url,
-            'quality': stream.quality,
-            'type': stream.type,
-          }],
-          tracks: stream.tracks,
-          headers: stream.headers,
-        );
-        map[key] = mappedStream;
-      }
-
-      if (map.isEmpty) {
-        _onExtractionFailed();
-        return;
-      }
-
-      final sortedMap = map;
-
-      setState(() {
-        _currentStreamsMap = sortedMap;
-        _selectedServer = sortedMap.keys.first;
+      // Map resolvedResMap (resolution -> { server -> url }) to server -> { resolution -> url }
+      final Map<String, Map<String, String>> serverToResUrl = {};
+      resolvedResMap.forEach((res, serversMap) {
+        serversMap.forEach((serverName, directUrl) {
+          serverToResUrl.putIfAbsent(serverName, () => {})[res] = directUrl;
+        });
       });
 
-      final stream = sortedMap[_selectedServer!]!;
-      _onExtractionSuccess(stream);
-    } catch (e) {
-      debugPrint('[Engine] Direct extraction failed: $e');
+      // Find first available server in order of priority (Server 1 -> Server 2 -> Server 3)
+      String? defaultServer;
+      final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
+      for (final srv in priorityServers) {
+        if (serverToResUrl.containsKey(srv) && serverToResUrl[srv]!.isNotEmpty) {
+          defaultServer = srv;
+          break;
+        }
+      }
+
+      // Fallback
+      if (defaultServer == null && serverToResUrl.isNotEmpty) {
+        defaultServer = serverToResUrl.keys.first;
+      }
+
+      if (defaultServer == null) {
+        setState(() {
+          _isExtracting = false;
+          _hasError = true;
+        });
+        return;
+      }
+
+      setState(() {
+        _vcloudResMap = resolvedResMap;
+        _vcloudServerMap = serverToResUrl;
+        _activeServer = defaultServer!;
+        _selectedServer = defaultServer;
+      });
+
+      await _startVcloudPlayback();
+    } catch (err) {
+      debugPrint('[Engine] Vcloud extraction failed: $err. Falling back.');
       if (mounted && !_isClosing) {
         _onExtractionFailed();
       }
+    }
+  }
+
+  Future<void> _startVcloudPlayback() async {
+    if (_isClosing) return;
+
+    final resolutions = _vcloudServerMap[_activeServer];
+    if (resolutions == null || resolutions.isEmpty) {
+      debugPrint('[VcloudPlayer] No resolutions available for $_activeServer');
+      _handleFailover();
+      return;
+    }
+
+    // Sort resolutions: best to worst (1080p -> 720p -> 480p -> 360p)
+    final sortedResKeys = resolutions.keys.toList();
+    sortedResKeys.sort((a, b) {
+      final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+      final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+      return bInt.compareTo(aInt);
+    });
+
+    // Pick default resolution (closest to 720p or highest if not found)
+    String? defaultRes;
+    try {
+      defaultRes = sortedResKeys.firstWhere((k) => k.contains('720'));
+    } catch (_) {
+      defaultRes = sortedResKeys.first;
+    }
+
+    _selectedResolution = defaultRes;
+    final playUrl = resolutions[defaultRes]!;
+
+    // Populate explicit resolutions for dropdown UI
+    final Map<String, String> explicitResolutions = {};
+    for (var entry in resolutions.entries) {
+      explicitResolutions[entry.key] = entry.value;
+    }
+    _explicitResolutions = explicitResolutions;
+
+    try {
+      if (_betterPlayerController != null) {
+        _betterPlayerController!.dispose();
+        _betterPlayerController = null;
+      }
+    } catch (e) {
+      debugPrint('[VcloudPlayer] Error disposing BetterPlayer: $e');
+    }
+
+    debugPrint('[VcloudPlayer] Playing in glassmorphic WebView player: $playUrl');
+
+    setState(() {
+      _isExtracting = true;
+      _isLoading = false;
+      _isInitialized = false;
+      _useWebViewEngine = true; // WebView player
+      _extractedLink = playUrl;
+    });
+  }
+
+  void _handleFailover() {
+    if (!mounted || _isClosing) return;
+
+    debugPrint('[VcloudPlayer] Failover triggered. Current active server: $_activeServer');
+
+    // Priority: Server 1 -> Server 2 -> Server 3
+    String? nextServer;
+    if (_activeServer == 'Server 1') {
+      if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
+        nextServer = 'Server 2';
+      } else if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
+        nextServer = 'Server 3';
+      }
+    } else if (_activeServer == 'Server 2') {
+      if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
+        nextServer = 'Server 3';
+      }
+    }
+
+    if (nextServer != null) {
+      debugPrint('[VcloudPlayer] Failing over from $_activeServer to $nextServer');
+      setState(() {
+        _activeServer = nextServer!;
+        _selectedServer = nextServer;
+      });
+      // Start playback on next server
+      _startVcloudPlayback();
+      
+      // Notify user
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Server failed, falling back to $nextServer...'),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      });
+    } else {
+      // No more servers to failover to!
+      debugPrint('[VcloudPlayer] All servers failed!');
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
     }
   }
 
@@ -453,11 +577,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _extractedStream = stream;
       _extractedLink = stream.url;
       _extraction1pxActive = false; // Remove 1px WebView
-      _isExtracting = false;
+      _isExtracting = true;
       _discoveryComplete = true;
       _useWebViewEngine = true;
       _isLoading = false;
-      _isInitialized = true;
+      _isInitialized = false;
       _selectedServer = stream.server;
     });
   }
@@ -645,6 +769,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         setState(() {
           _isInitialized = true;
           _isLoading = false;
+          _isExtracting = false;
         });
       }
 
@@ -680,11 +805,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _switchToWebEngine() {
     debugPrint('[Engine] Switching to hls.js WebView Engine...');
+    final bool isExtractedM3u8 = _extractedLink != null &&
+        (_extractedLink!.contains('.m3u8') ||
+         _extractedLink!.contains('.mp4') ||
+         _extractedLink!.contains('.mkv') ||
+         _extractedLink!.contains('googleusercontent') ||
+         _extractedLink!.contains('hubcloud') ||
+         _extractedLink!.contains('r2') ||
+         _vcloudServerMap.isNotEmpty);
+
     if (mounted) {
       setState(() {
         _useWebViewEngine = true;
         _isLoading = false;
-        _isInitialized = true; // WebView is "ready" by itself
+        _isInitialized = !isExtractedM3u8;
+        if (!isExtractedM3u8) {
+          _isExtracting = false;
+        }
       });
     }
   }
@@ -1096,6 +1233,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _isInitialized = false;
       _extractedLink = null;
       _discoveredLinks.clear();
+      _lastCurrentTime = 0.0; // Reset progress for new episode
     });
 
     _webViewKey = ValueKey(
@@ -1149,7 +1287,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Widget _buildWebPlayer({Key? key}) {
     // Check if we have an extracted m3u8 URL (from our 1px extraction)
     final bool isExtractedM3u8 = _extractedLink != null &&
-        (_extractedLink!.contains('.m3u8') || _extractedLink!.contains('.mp4'));
+        (_extractedLink!.contains('.m3u8') ||
+         _extractedLink!.contains('.mp4') ||
+         _extractedLink!.contains('.mkv') ||
+         _extractedLink!.contains('googleusercontent') ||
+         _extractedLink!.contains('hubcloud') ||
+         _extractedLink!.contains('r2') ||
+         _vcloudServerMap.isNotEmpty);
 
     // Unique key based on extracted link ensures WebView reloads for new episodes
     final webKey = _extractedLink != null
@@ -1233,6 +1377,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             callback: (args) {
               if (_isClosing) return;
               _goBack();
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'playerReady',
+            callback: (args) {
+              if (_isClosing) return;
+              debugPrint('[Engine] WebView reported playerReady');
+              if (mounted) {
+                setState(() {
+                  _isExtracting = false;
+                  _isLoading = false;
+                  _isInitialized = true;
+                });
+              }
             },
           );
           controller.addJavaScriptHandler(
@@ -1322,13 +1480,30 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             },
           );
           controller.addJavaScriptHandler(
+            handlerName: 'playerError',
+            callback: (args) {
+              if (_isClosing) return;
+              final errorMsg = args.isNotEmpty ? args[0] as String : 'Unknown';
+              debugPrint('[Engine] WebView reported player error: $errorMsg');
+              if (_vcloudServerMap.isNotEmpty) {
+                _handleFailover();
+              }
+            },
+          );
+          controller.addJavaScriptHandler(
             handlerName: 'changeServer',
             callback: (args) {
               if (_isClosing) return;
               if (args.isNotEmpty) {
                 final serverName = args[0] as String;
                 debugPrint('[Engine] WebView changed server to: $serverName');
-                if (_currentStreamsMap != null && _currentStreamsMap!.containsKey(serverName)) {
+                if (_vcloudServerMap.containsKey(serverName)) {
+                  setState(() {
+                    _activeServer = serverName;
+                    _selectedServer = serverName;
+                  });
+                  _startVcloudPlayback();
+                } else if (_currentStreamsMap != null && _currentStreamsMap!.containsKey(serverName)) {
                   setState(() {
                     _selectedServer = serverName;
                   });
@@ -1416,9 +1591,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             final headersJson = jsonEncode(headersMap);
 
             String serversJs = '[]';
-            if (_currentStreamsMap != null && _currentStreamsMap!.isNotEmpty) {
+            if (_vcloudServerMap.isNotEmpty) {
+              serversJs = jsonEncode(_vcloudServerMap.keys.toList());
+            } else if (_currentStreamsMap != null && _currentStreamsMap!.isNotEmpty) {
               serversJs = jsonEncode(_currentStreamsMap!.keys.toList());
             }
+
+            final double resumeTime = _lastCurrentTime > 1 ? _lastCurrentTime : (widget.startPosition?.toDouble() ?? 0.0);
 
             await controller.evaluateJavascript(source: """
               (function() {
@@ -1452,8 +1631,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 }
 
                 // Seek to saved position for Continue Watching
-                if (${widget.startPosition ?? 0} > 1) {
-                  window.seekToPosition(${widget.startPosition ?? 0});
+                if ($resumeTime > 1) {
+                  window.seekToPosition($resumeTime);
                 }
 
                 // Init system volume
@@ -1758,17 +1937,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                                                       ep.playLink!.isNotEmpty) {
                                                     Navigator.pop(context);
                                                     setState(() {
-                                                      _currentEpisode =
-                                                          ep.episodeNumber;
-                                                      _currentExtractionUrl =
-                                                          ep.playLink;
-                                                      _isExtracting = true;
-                                                      _discoveryComplete =
-                                                          false;
-                                                      _isInitialized = false;
-                                                      _extractedLink = null;
-                                                      _discoveredLinks.clear();
-                                                    });
+                                                       _currentEpisode =
+                                                           ep.episodeNumber;
+                                                       _currentExtractionUrl =
+                                                           ep.playLink;
+                                                       _isExtracting = true;
+                                                       _discoveryComplete =
+                                                           false;
+                                                       _isInitialized = false;
+                                                       _extractedLink = null;
+                                                       _discoveredLinks.clear();
+                                                       _lastCurrentTime = 0.0; // Reset progress for new episode
+                                                     });
                                                     _webViewController
                                                         ?.evaluateJavascript(
                                                       source:
@@ -2067,16 +2247,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           ),
 
         // 3. Main UI Layer
+        if (_useWebViewEngine)
+          Positioned.fill(
+            child: _buildWebPlayer(key: const ValueKey('web_player')),
+          )
+        else if (_isInitialized && !_isLoading)
+          Positioned.fill(
+            child: _buildPlayerInterface(),
+          )
+        else
+          Positioned.fill(
+            child: _buildLoadingState(key: const ValueKey('prep')),
+          ),
+
+        // 4. Discovery Progress Loader Overlay
         Positioned.fill(
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 500),
             child: _isExtracting
                 ? _buildDiscoveryProgress(key: const ValueKey('loader'))
-                : _useWebViewEngine
-                    ? _buildWebPlayer(key: const ValueKey('web_player'))
-                    : (!_isInitialized || _isLoading)
-                        ? _buildLoadingState(key: const ValueKey('prep'))
-                        : _buildPlayerInterface(),
+                : const SizedBox.shrink(key: ValueKey('empty')),
           ),
         ),
       ],
@@ -2105,11 +2295,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildBottomControlsOverlay() {
-    // Only show if we have languages or resolutions to switch
-    final hasLanguages = widget.extractedStreams != null && widget.extractedStreams!.length > 1;
+    final hasServers = _vcloudServerMap.length > 1;
     final hasResolutions = _explicitResolutions != null && _explicitResolutions!.length > 1;
 
-    if (!hasLanguages && !hasResolutions) return const SizedBox.shrink();
+    if (!hasServers && !hasResolutions) return const SizedBox.shrink();
 
     return Positioned(
       bottom: 80, // Sit above the native BetterPlayer bottom controls
@@ -2118,7 +2307,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (hasLanguages)
+            if (hasServers)
               Container(
                 margin: const EdgeInsets.only(left: 8),
                 height: 36,
@@ -2131,26 +2320,28 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     dropdownColor: Colors.black87,
-                    value: _selectedServer,
+                    value: _activeServer,
                     icon: const Icon(Icons.language, color: Colors.white, size: 18),
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                     onChanged: (String? newValue) {
-                      if (newValue != null && newValue != _selectedServer) {
+                      if (newValue != null && newValue != _activeServer) {
                         setState(() {
+                          _activeServer = newValue;
                           _selectedServer = newValue;
-                          // Reset resolution when changing server
-                          _selectedResolution = null; 
                         });
-                        final newStream = widget.extractedStreams![newValue]!;
-                        _startPlayback(newStream.url, extractedStream: newStream);
+                        _startVcloudPlayback();
                       }
                     },
-                    items: widget.extractedStreams!.keys.map<DropdownMenuItem<String>>((String value) {
+                    items: _vcloudServerMap.keys.map<DropdownMenuItem<String>>((String value) {
+                      String label = value;
+                      if (value == 'Server 1') label = 'Server 1 (Hub)';
+                      if (value == 'Server 2') label = 'Server 2 (G-Drive)';
+                      if (value == 'Server 3') label = 'Server 3 (R2)';
                       return DropdownMenuItem<String>(
                         value: value,
                         child: Padding(
                           padding: const EdgeInsets.only(right: 8.0),
-                          child: Text(value.toUpperCase()),
+                          child: Text(label.toUpperCase()),
                         ),
                       );
                     }).toList(),
@@ -2180,11 +2371,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                           _selectedResolution = newValue;
                         });
                         final resUrl = _explicitResolutions![newValue]!;
-                        // BetterPlayer setResolution handles keeping the current position
-                        try {
-                           _betterPlayerController?.setResolution(resUrl);
-                        } catch (e) {
-                           debugPrint('[BetterPlayer] Error setting resolution: $e');
+                        if (_useWebViewEngine) {
+                          setState(() {
+                            _extractedLink = resUrl;
+                          });
+                        } else {
+                          try {
+                            _betterPlayerController?.setResolution(resUrl);
+                          } catch (e) {
+                            debugPrint('[BetterPlayer] Error setting resolution: $e');
+                          }
                         }
                       }
                     },

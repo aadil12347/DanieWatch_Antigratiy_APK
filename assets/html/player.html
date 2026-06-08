@@ -1993,7 +1993,12 @@
             clearSpriteCache();
 
             try {
-                if (Hls.isSupported()) {
+                if (url.indexOf('.m3u8') === -1) {
+                    previewVideo.src = url;
+                    previewReady = true;
+                    // Start background capture for direct media files
+                    startMultiPassCapture();
+                } else if (Hls.isSupported()) {
                     var previewConfig = {
                         enableWorker: false,
                         lowLatencyMode: false,
@@ -2733,7 +2738,7 @@
 
             if (hls) hls.destroy();
 
-            if (url.indexOf('.mp4') !== -1 || url.indexOf('-proxy') !== -1 && url.indexOf('m3u8') === -1) {
+            if (url.indexOf('.m3u8') === -1) {
                 video.src = url;
                 video.play();
                 hideLoader();
@@ -2787,6 +2792,9 @@
 
                 hls.on(Hls.Events.ERROR, (e, data) => {
                     if (data.fatal) {
+                        if (window.flutter_inappwebview) {
+                            window.flutter_inappwebview.callHandler('playerError', 'HLS fatal error: ' + data.details);
+                        }
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR: hls.startLoad(); break;
                             case Hls.ErrorTypes.MEDIA_ERROR: hls.recoverMediaError(); break;
@@ -3365,7 +3373,24 @@
         }
 
         video.addEventListener('waiting', showLoader);
-        video.addEventListener('canplay', hideLoader);
+        video.addEventListener('canplay', () => {
+            hideLoader();
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('playerReady');
+            }
+        });
+        video.addEventListener('playing', () => {
+            hideLoader();
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('playerReady');
+            }
+        });
+        video.addEventListener('error', (e) => {
+            console.error('Video loading error:', video.error);
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('playerError', video.error ? video.error.message : 'Unknown error');
+            }
+        });
 
         // ===== SETUP PICKERS =====
         function setupAudioPicker(tracks) {

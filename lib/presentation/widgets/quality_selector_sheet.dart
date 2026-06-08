@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
@@ -148,7 +149,67 @@ class _QualitySelectorContentState
     }
   }
 
+  PlaylistInfo? _parseMockPlaylist(String url) {
+    if (!url.startsWith('mock_vcloud://')) return null;
+    try {
+      final payload = url.substring('mock_vcloud://'.length);
+      final decodedJson = utf8.decode(base64Decode(payload));
+      final Map<String, dynamic> resMap = jsonDecode(decodedJson);
+      
+      final List<StreamVariant> variants = [];
+      resMap.forEach((res, streamUrl) {
+        int bandwidth = 1500000; // default 720p
+        String resSize = "1280x720";
+        if (res.contains('1080')) {
+          bandwidth = 3000000;
+          resSize = "1920x1080";
+        } else if (res.contains('480')) {
+          bandwidth = 800000;
+          resSize = "854x480";
+        } else if (res.contains('360')) {
+          bandwidth = 400000;
+          resSize = "640x360";
+        } else if (res.contains('2160') || res.contains('4k')) {
+          bandwidth = 8000000;
+          resSize = "3840x2160";
+        }
+        variants.add(StreamVariant(
+          url: streamUrl.toString(),
+          bandwidth: bandwidth,
+          resolution: resSize,
+        ));
+      });
+      
+      // Sort variants best to worst
+      variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+      
+      return PlaylistInfo(
+        variants: variants,
+        audioTracks: [],
+        subtitles: [],
+        isMasterPlaylist: true,
+      );
+    } catch (e) {
+      debugPrint('[QualitySelector] Error parsing mock vcloud payload: $e');
+      return null;
+    }
+  }
+
   Future<void> _loadPlaylistFromUrl(String url) async {
+    final mockPlaylist = _parseMockPlaylist(url);
+    if (mockPlaylist != null) {
+      if (mounted) {
+        setState(() {
+          _playlist = mockPlaylist;
+          _selectedAudio = null;
+          _selectedVariant = mockPlaylist.defaultVariant;
+          _selectedSubtitle = null;
+          _internalLoading = false;
+        });
+      }
+      return;
+    }
+
     try {
       final parser = M3u8Parser();
       final info = await parser.parse(url);
@@ -177,6 +238,20 @@ class _QualitySelectorContentState
   }
 
   Future<void> _loadPlaylist(PeachifyStream stream) async {
+    final mockPlaylist = _parseMockPlaylist(stream.url);
+    if (mockPlaylist != null) {
+      if (mounted) {
+        setState(() {
+          _playlist = mockPlaylist;
+          _selectedAudio = null;
+          _selectedVariant = mockPlaylist.defaultVariant;
+          _selectedSubtitle = null;
+          _internalLoading = false;
+        });
+      }
+      return;
+    }
+
     try {
       final parser = M3u8Parser();
       final info = await parser.parse(stream.url, headers: stream.headers);

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,6 +24,7 @@ import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
 import '../../../services/video_extractor_service.dart';
 import '../../../services/peachify_extractor.dart';
+import '../../../services/vcloud_extractor.dart';
 import '../../../services/vidnest_extractor.dart';
 import '../../../services/videasy_extractor.dart';
 import '../../../services/file_size_service.dart';
@@ -1425,75 +1427,126 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: content.runtime,
     );
 
-    List<PeachifyStream> streams = [];
     try {
-      // 2. Fetch merged parallel streams
-      streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
+      // 2. Fetch stream links from Vcloud database
+      final resolvedResMap = await VcloudExtractorService().fetchStreamLinks(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
-        season: content.isMovie ? 1 : _selectedSeason,
-        episode: content.isMovie ? 1 : episodeNumber,
+        title: content.title,
+        season: content.isMovie ? null : _selectedSeason,
+        episode: content.isMovie ? null : episodeNumber,
       );
 
       if (!mounted) return;
 
-      if (streams.isEmpty) {
-        ref.read(downloadModalProvider.notifier).state =
-            const DownloadModalState();
+      if (resolvedResMap.isEmpty) {
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
         _showToastError('Could not find stream source.');
         return;
       }
 
-      // Pre-validate streams in parallel, filtering out non-responding ones before updating the UI state
-      streams = await VidNestExtractorService.validateStreams(streams);
+      // Map resolvedResMap (resolution -> { server -> url }) to server -> { resolution -> url }
+      final Map<String, Map<String, String>> serverToResUrl = {};
+      resolvedResMap.forEach((res, serversMap) {
+        serversMap.forEach((serverName, directUrl) {
+          serverToResUrl.putIfAbsent(serverName, () => {})[res] = directUrl;
+        });
+      });
 
-      if (!mounted) return;
+      // Construct List<PeachifyStream>
+      final List<PeachifyStream> fetchedStreams = [];
+      final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
+      
+      for (final server in priorityServers) {
+        if (serverToResUrl.containsKey(server) && serverToResUrl[server]!.isNotEmpty) {
+          String displayName = '';
+          if (server == 'Server 1') {
+            displayName = 'Server 1 (High-Speed Hub Link)';
+          } else if (server == 'Server 2') {
+            displayName = 'Server 2 (Google Drive Direct)';
+          } else if (server == 'Server 3') {
+            displayName = 'Server 3 (Cloudflare R2 Direct)';
+          } else {
+            displayName = server;
+          }
 
-      if (streams.isEmpty) {
-        ref.read(downloadModalProvider.notifier).state =
-            const DownloadModalState();
-        _showToastError('All servers are unresponsive. Please try again.');
+          final payloadMap = serverToResUrl[server]!;
+          final base64Payload = base64Encode(utf8.encode(jsonEncode(payloadMap)));
+          final mockUrl = 'mock_vcloud://$base64Payload';
+
+          fetchedStreams.add(PeachifyStream(
+            providerName: displayName,
+            dub: 'Hindi',
+            type: 'video',
+            url: mockUrl,
+            headers: const {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          ));
+        }
+      }
+
+      if (fetchedStreams.isEmpty) {
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+        _showToastError('No downloadable servers found.');
         return;
       }
 
       // 3. Update modal with the real streams list and stop loading skeleton
       ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
-            streams: streams,
+            streams: fetchedStreams,
             isLoading: false,
           ));
     } catch (e) {
       if (mounted) {
-        ref.read(downloadModalProvider.notifier).state =
-            const DownloadModalState();
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
         _showToastError('Extraction error. Please try again.');
       }
       return;
     }
 
-    // 4. Wait for user to pick language, quality, audio
+    // 4. Wait for user to pick server and quality
     final selection = await selectionFuture;
     if (selection == null || !mounted) return;
 
-    // 5. Start HLS download
+    // 5. Start direct or HLS download
     try {
-      final item = await DownloadManager.instance.startSegmentDownload(
-        m3u8Url: selection.masterUrl,
-        title: content.title,
-        season: content.isMovie ? 0 : _selectedSeason,
-        episode: content.isMovie ? 0 : episodeNumber,
-        posterUrl: content.posterUrl,
-        variant: selection.quality,
-        audioTrack: selection.audioTrack,
-        subtitleTrack: selection.subtitleTrack,
-        context: context,
-        originalEmbedUrl: selection.masterUrl,
-        tmdbId: widget.tmdbId,
-        mediaType: widget.mediaType,
-        providerName: selection.providerName,
-        headers: selection.headers,
-      );
-      if (item != null && mounted) {
-        _showDownloadStartedToast(item);
+      final downloadUrl = selection.quality.url;
+      final isHlsStream = downloadUrl.contains('.m3u8');
+
+      if (isHlsStream) {
+        final item = await DownloadManager.instance.startSegmentDownload(
+          m3u8Url: selection.masterUrl,
+          title: content.title,
+          season: content.isMovie ? 0 : _selectedSeason,
+          episode: content.isMovie ? 0 : episodeNumber,
+          posterUrl: content.posterUrl,
+          variant: selection.quality,
+          audioTrack: selection.audioTrack,
+          subtitleTrack: selection.subtitleTrack,
+          context: context,
+          originalEmbedUrl: selection.masterUrl,
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          providerName: selection.providerName,
+          headers: selection.headers,
+        );
+        if (item != null && mounted) {
+          _showDownloadStartedToast(item);
+        }
+      } else {
+        // Direct file downloader (non-HLS, legacy download via FlutterDownloader)
+        final item = await DownloadManager.instance.startDownload(
+          url: downloadUrl,
+          title: content.title,
+          season: content.isMovie ? 0 : _selectedSeason,
+          episode: content.isMovie ? 0 : episodeNumber,
+          posterUrl: content.posterUrl,
+          context: context,
+        );
+        if (mounted) {
+          _showDownloadStartedToast(item);
+        }
       }
     } catch (e) {
       if (mounted) {
