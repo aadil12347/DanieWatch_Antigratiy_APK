@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
+import 'dart:ui' show ImageFilter, FontFeature;
 
 import '../../providers/detail_provider.dart';
 import '../../providers/watch_history_provider.dart';
@@ -100,6 +102,33 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Timer? _progressSaveTimer;  // Periodic Dart-side save
   bool _startPositionApplied = false;  // Track if we've seeked to startPosition
 
+  // Native Control State
+  bool _areControlsVisible = true;
+  Timer? _controlsTimer;
+  bool _isLocked = false;
+  double _brightness = 0.5;
+  double _volume = 1.0;
+  bool _showBrightnessIndicator = false;
+  bool _showVolumeIndicator = false;
+  Timer? _brightnessTimer;
+  Timer? _volumeTimer;
+  double _playbackSpeed = 1.0;
+  bool _isMuted = false;
+  double _preMuteVolume = 1.0;
+  bool _showSpeedPill = false;
+  bool _showLeftRipple = false;
+  bool _showRightRipple = false;
+  Timer? _leftRippleTimer;
+  Timer? _rightRippleTimer;
+  String? _notifyPillText;
+  Timer? _notifyPillTimer;
+
+  // Gesture drag accumulators & activity flags
+  double _volumeDragAccumulator = 0.0;
+  bool _volumeDragActive = false;
+  double _brightnessDragAccumulator = 0.0;
+  bool _brightnessDragActive = false;
+
   // PiP mode state
   bool _isInPipMode = false;
 
@@ -111,6 +140,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   // Extraction State
   BetterPlayerController? _betterPlayerController;
+  final GlobalKey _betterPlayerKey = GlobalKey();
   bool _useWebViewEngine = false;
   ValueKey? _webViewKey;
   int _retryCount = 0;
@@ -124,10 +154,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Map<String, Map<String, String>> _vcloudResMap = {};
   Map<String, Map<String, String>> _vcloudServerMap = {};
   String _activeServer = 'Server 1';
+  int _selectedAudioIndex = 0;
+  double? _resumeTimeOverride;
+  double? _seekingToTime;
+  Timer? _seekTimeoutTimer;
 
   @override
   void initState() {
     super.initState();
+    _resumeTimeOverride = widget.startPosition?.toDouble();
     WidgetsBinding.instance.addObserver(this);
     _currentSeason = widget.season;
     _currentEpisode = widget.episode;
@@ -136,43 +171,34 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     PipController.instance.onPipModeChanged = (isInPip) {
       if (mounted) {
         setState(() => _isInPipMode = isInPip);
-        if (isInPip) {
-          // Hide HTML controls in PiP mode using the existing player.html function
-          _webViewController?.evaluateJavascript(source: "enterPipModeUI();");
-        } else {
-          // Restore HTML controls when exiting PiP
-          _webViewController?.evaluateJavascript(source: "exitPipModeUI();");
-        }
       }
     };
 
     // Handle PiP action buttons (play/pause, seek backward/forward)
     PipController.instance.onPipAction = (action) {
-      if (!mounted || _webViewController == null) return;
+      if (!mounted || _betterPlayerController == null) return;
       debugPrint('[PIP] Handling action: $action');
       switch (action) {
         case 'play':
-          _webViewController?.evaluateJavascript(
-            source: "document.querySelector('video')?.play();",
-          );
+          _betterPlayerController?.play();
           break;
         case 'pause':
-          _webViewController?.evaluateJavascript(
-            source: "document.querySelector('video')?.pause();",
-          );
+          _betterPlayerController?.pause();
           break;
         case 'seekForward':
-          _webViewController?.evaluateJavascript(
-            source: "(function(){ var v = document.querySelector('video'); if(v) v.currentTime = Math.min(v.duration, v.currentTime + 10); })();",
-          );
+          final newPos = (_lastCurrentTime + 10).clamp(0.0, _lastDuration);
+          _betterPlayerController?.seekTo(Duration(seconds: newPos.toInt()));
           break;
         case 'seekBackward':
-          _webViewController?.evaluateJavascript(
-            source: "(function(){ var v = document.querySelector('video'); if(v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
-          );
+          final newPos = (_lastCurrentTime - 10).clamp(0.0, _lastDuration);
+          _betterPlayerController?.seekTo(Duration(seconds: newPos.toInt()));
           break;
       }
     };
+
+    _initBrightness();
+    _initVolume();
+    _resetControlsTimer();
 
     // Auto-enter PiP when user presses home while video is playing
     PipController.instance.onUserLeaveHint = () {
@@ -368,6 +394,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     try {
       if (_betterPlayerController != null) {
+        _betterPlayerController!.videoPlayerController?.removeListener(_videoPlayerListener);
         _betterPlayerController!.dispose();
         _betterPlayerController = null;
       }
@@ -375,15 +402,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       debugPrint('[VcloudPlayer] Error disposing BetterPlayer: $e');
     }
 
-    debugPrint('[VcloudPlayer] Playing in glassmorphic WebView player: $playUrl');
+    debugPrint('[VcloudPlayer] Playing in native BetterPlayer: $playUrl');
 
     setState(() {
-      _isExtracting = true;
-      _isLoading = false;
+      _isExtracting = false;
+      _isLoading = true;
       _isInitialized = false;
-      _useWebViewEngine = true; // WebView player
+      _useWebViewEngine = false; // Native player!
       _extractedLink = playUrl;
     });
+
+    _initializeBetterPlayer(playUrl, isOffline: false);
   }
 
   void _handleFailover() {
@@ -571,19 +600,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _extraction1pxSettleTimer?.cancel();
     _extraction1pxTimeoutTimer?.cancel();
 
-    debugPrint('[Engine] 🎬 Playing in custom glassmorphism player: ${stream.url}');
+    debugPrint('[Engine] 🎬 Playing in native BetterPlayer: ${stream.url}');
 
     setState(() {
       _extractedStream = stream;
       _extractedLink = stream.url;
       _extraction1pxActive = false; // Remove 1px WebView
-      _isExtracting = true;
+      _isExtracting = false;
       _discoveryComplete = true;
-      _useWebViewEngine = true;
-      _isLoading = false;
+      _useWebViewEngine = false;
+      _isLoading = true;
       _isInitialized = false;
       _selectedServer = stream.server;
     });
+
+    _initializeBetterPlayer(stream.url, isOffline: false, extractedStream: stream);
   }
 
   /// Extraction failed — show error with retry
@@ -641,12 +672,36 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       return;
     }
 
-    if (isOffline) {
-      _initializeBetterPlayer(link, isOffline: true);
-    } else {
-      // Direct link online: Use custom glassmorphism webview player
-      _switchToWebEngine();
+    _initializeBetterPlayer(link, isOffline: isOffline, extractedStream: extractedStream);
+  }
+
+  Future<String?> _downloadSubtitleContent(String url, Map<String, String>? headers) async {
+    try {
+      var finalUrl = url;
+      if (finalUrl.startsWith('//')) {
+        finalUrl = 'https:$finalUrl';
+      }
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5)
+        ..badCertificateCallback = (cert, host, port) => true;
+
+      final request = await client.getUrl(Uri.parse(finalUrl));
+      if (headers != null) {
+        headers.forEach((key, val) {
+          request.headers.set(key, val);
+        });
+      }
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        final content = await response.transform(utf8.decoder).join();
+        client.close();
+        return content;
+      }
+      client.close();
+    } catch (e) {
+      debugPrint('[Subtitles] Failed to download subtitle from $url: $e');
     }
+    return null;
   }
 
   Future<void> _initializeBetterPlayer(
@@ -655,6 +710,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     ExtractedVideasyStream? extractedStream,
   }) async {
     try {
+      _startPositionApplied = false;
       if (_betterPlayerController != null) {
         _betterPlayerController!.dispose();
       }
@@ -665,15 +721,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
       List<BetterPlayerSubtitlesSource>? subtitles;
       if (extractedStream != null && extractedStream.tracks.isNotEmpty) {
-        subtitles = extractedStream.tracks
+        final List<BetterPlayerSubtitlesSource> subsList = [];
+        final tracksToProcess = extractedStream.tracks
             .where((t) => t['kind'] == 'captions' || t['kind'] == 'subtitles')
-            .map((t) {
-          return BetterPlayerSubtitlesSource(
-            type: BetterPlayerSubtitlesSourceType.network,
-            name: t['label']?.toString() ?? 'Subtitle',
-            urls: [t['file']?.toString() ?? ''],
-          );
-        }).toList();
+            .toList();
+
+        for (final t in tracksToProcess) {
+          var subtitleUrl = t['file']?.toString() ?? '';
+          if (subtitleUrl.isEmpty) continue;
+          if (subtitleUrl.startsWith('//')) {
+            subtitleUrl = 'https:$subtitleUrl';
+          }
+          final label = t['label']?.toString() ?? 'Subtitle';
+          final isGoogleSubtitle = subtitleUrl.contains('googleusercontent.com') || subtitleUrl.contains('google.com');
+          final subHeaders = {
+            if (!isGoogleSubtitle) 'Referer': 'https://player.videasy.net/',
+            if (!isGoogleSubtitle) 'Origin': 'https://player.videasy.net',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          };
+
+          final String? subContent = await _downloadSubtitleContent(subtitleUrl, subHeaders);
+          if (subContent != null && subContent.isNotEmpty) {
+            subsList.add(BetterPlayerSubtitlesSource(
+              type: BetterPlayerSubtitlesSourceType.memory,
+              name: label,
+              content: subContent,
+            ));
+            debugPrint('[Subtitles] Loaded subtitles into memory for label: $label');
+          }
+        }
+        if (subsList.isNotEmpty) {
+          subtitles = subsList;
+        }
       }
 
       Map<String, String>? explicitResolutions;
@@ -693,8 +772,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
            if (_selectedResolution == null || !resMap.containsKey(_selectedResolution)) {
              _selectedResolution = resMap.keys.first;
            }
-           debugPrint('[BetterPlayer] Added explicit resolutions: \${resMap.keys.join(", ")}');
+           debugPrint('[BetterPlayer] Added explicit resolutions: ${resMap.keys.join(", ")}');
         }
+      } else if (_vcloudServerMap.isNotEmpty) {
+        // Preserve _explicitResolutions for Vcloud database streams!
+        explicitResolutions = _explicitResolutions;
+        debugPrint('[BetterPlayer] Preserving Vcloud explicit resolutions: ${_explicitResolutions?.keys.join(", ")}');
       } else {
         _explicitResolutions = null;
         _selectedResolution = null;
@@ -704,21 +787,28 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         isOffline ? BetterPlayerDataSourceType.file : BetterPlayerDataSourceType.network,
         url,
         subtitles: subtitles,
+        resolutions: explicitResolutions ?? _explicitResolutions,
+        videoFormat: url.toLowerCase().contains('.m3u8')
+            ? BetterPlayerVideoFormat.hls
+            : BetterPlayerVideoFormat.other,
         cacheConfiguration: const BetterPlayerCacheConfiguration(
           useCache: true,
           preCacheSize: 10 * 1024 * 1024,
           maxCacheSize: 500 * 1024 * 1024,
           maxCacheFileSize: 100 * 1024 * 1024,
         ),
-        useAsmsAudioTracks: true,
-        useAsmsTracks: true,
-        useAsmsSubtitles: true,
-        headers: !isOffline ? {
-          'Referer': 'https://player.videasy.net/',
-          'Origin': 'https://player.videasy.net',
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-          'Accept': '*/*',
-        } : null,
+        useAsmsAudioTracks: url.toLowerCase().contains('.m3u8'),
+        useAsmsTracks: url.toLowerCase().contains('.m3u8'),
+        useAsmsSubtitles: url.toLowerCase().contains('.m3u8'),
+        headers: !isOffline ? (() {
+          final isGoogle = url.contains('googleusercontent.com') || url.contains('google.com');
+          return {
+            if (!isGoogle) 'Referer': 'https://player.videasy.net/',
+            if (!isGoogle) 'Origin': 'https://player.videasy.net',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Accept': '*/*',
+          };
+        })() : null,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
           title: widget.mediaType != 'movie' &&
@@ -741,17 +831,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           autoPlay: true,
           allowedScreenSleep: false,
           fit: BoxFit.contain,
-          controlsConfiguration: BetterPlayerControlsConfiguration(
-            enableFullscreen: true,
-            enablePlayPause: true,
-            enableProgressBar: true,
-            enableSubtitles: true,
-            enableAudioTracks: true,
-            enableQualities: true,
-            progressBarPlayedColor: AppColors.primary,
-            progressBarHandleColor: AppColors.primary,
-            loadingColor: AppColors.primary,
-            controlBarColor: Colors.black.withValues(alpha: 0.6),
+          controlsConfiguration: const BetterPlayerControlsConfiguration(
+            showControls: false,
+            showControlsOnInitialize: false,
           ),
         ),
         betterPlayerDataSource: dataSource,
@@ -762,8 +844,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         if (event.betterPlayerEventType == BetterPlayerEventType.exception) {
           debugPrint('[BetterPlayer] Exception detected: ${event.parameters}');
           _switchToWebEngine();
+        } else if (event.betterPlayerEventType == BetterPlayerEventType.finished) {
+          debugPrint('[BetterPlayer] Playback finished. Playing next episode if available.');
+          _playNextEpisode();
+        } else if (event.betterPlayerEventType == BetterPlayerEventType.setupDataSource) {
+          debugPrint('[BetterPlayer] setupDataSource event. Re-attaching listener.');
+          _betterPlayerController!.videoPlayerController?.removeListener(_videoPlayerListener);
+          _betterPlayerController!.videoPlayerController?.addListener(_videoPlayerListener);
         }
       });
+
+      _betterPlayerController!.videoPlayerController?.addListener(_videoPlayerListener);
 
       if (mounted) {
         setState(() {
@@ -1158,6 +1249,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _extraction1pxAutoClickTimer?.cancel();
     _extraction1pxSettleTimer?.cancel();
     _extraction1pxTimeoutTimer?.cancel();
+    _seekTimeoutTimer?.cancel();
 
     // 1b. Restore system brightness
     try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
@@ -1242,6 +1334,48 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _tryDirectExtraction();
   }
 
+  List<BetterPlayerAsmsAudioTrack> _getAvailableAudioTracks() {
+    if (_betterPlayerController == null) return [];
+    
+    // First try the native ASMS audio tracks from controller
+    final asmsAudioTracks = _betterPlayerController!.betterPlayerAsmsAudioTracks;
+    if (asmsAudioTracks != null && asmsAudioTracks.length > 1) {
+      return asmsAudioTracks;
+    }
+    
+    // Fallback: If ASMS tracks are empty/null, check if we have languages from VcloudExtractor
+    final lastLangs = VcloudExtractorService().lastLanguages;
+    if (lastLangs.isNotEmpty) {
+      final List<BetterPlayerAsmsAudioTrack> fallbackTracks = [];
+      for (int i = 0; i < lastLangs.length; i++) {
+        fallbackTracks.add(BetterPlayerAsmsAudioTrack(
+          id: i,
+          label: lastLangs[i],
+          language: lastLangs[i],
+        ));
+      }
+      return fallbackTracks;
+    }
+    
+    return [];
+  }
+
+  BetterPlayerAsmsAudioTrack? _getActiveAudioTrack() {
+    if (_betterPlayerController == null) return null;
+    
+    final asmsAudioTracks = _betterPlayerController!.betterPlayerAsmsAudioTracks;
+    if (asmsAudioTracks != null && asmsAudioTracks.length > 1) {
+      return _betterPlayerController!.betterPlayerAsmsAudioTrack;
+    }
+    
+    final fallbackTracks = _getAvailableAudioTracks();
+    if (fallbackTracks.isNotEmpty && _selectedAudioIndex >= 0 && _selectedAudioIndex < fallbackTracks.length) {
+      return fallbackTracks[_selectedAudioIndex];
+    }
+    
+    return null;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1262,11 +1396,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _bgAutoClickTimer?.cancel();
     _bgTimeoutTimer?.cancel();
     _bgMasterWaitTimer?.cancel();
+    _controlsTimer?.cancel();
+    _brightnessTimer?.cancel();
+    _volumeTimer?.cancel();
+    _leftRippleTimer?.cancel();
+    _rightRippleTimer?.cancel();
+    _notifyPillTimer?.cancel();
+    _seekTimeoutTimer?.cancel();
 
     // Dispose controllers (null-safe since _goBack may have already nulled them)
     try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
     _searchController.dispose();
-    _betterPlayerController?.dispose();
+    try {
+      _betterPlayerController?.videoPlayerController?.removeListener(_videoPlayerListener);
+      _betterPlayerController?.dispose();
+    } catch (_) {}
     _betterPlayerController = null;
     _webViewController = null;
     _bgWebViewController = null;
@@ -2361,125 +2505,434 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildPlayerInterface() {
-    return Column(
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        children: [
+          BetterPlayer(
+            key: _betterPlayerKey,
+            controller: _betterPlayerController!,
+          ),
+          if (!_isInPipMode)
+            Positioned.fill(
+              child: _isLocked 
+                  ? _buildLockedControls() 
+                  : _buildUnlockedControls(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLockedControls() {
+    return Stack(
       children: [
-        Expanded(
-          child: Stack(
-            children: [
-              BetterPlayer(
-                key: const ValueKey('native_player'),
-                controller: _betterPlayerController!,
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _areControlsVisible = !_areControlsVisible;
+            });
+            if (_areControlsVisible) {
+              _controlsTimer?.cancel();
+              _controlsTimer = Timer(const Duration(seconds: 2), () {
+                if (mounted) setState(() => _areControlsVisible = false);
+              });
+            }
+          },
+          child: Container(color: Colors.transparent),
+        ),
+        Positioned(
+          left: 24,
+          top: MediaQuery.of(context).size.height / 2 - 28,
+          child: AnimatedOpacity(
+            opacity: _areControlsVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: IgnorePointer(
+              ignoring: !_areControlsVisible,
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isLocked = false;
+                    _areControlsVisible = true;
+                  });
+                  _resetControlsTimer();
+                  _triggerHaptic();
+                },
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: const Icon(
+                    Icons.lock_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
               ),
-              if (!_isInPipMode) _buildTopBar(),
-              if (!_isInPipMode) _buildBottomControlsOverlay(),
-              if (!_isInPipMode) _buildEpisodeInfoOverlay(),
-              if (!_isInPipMode) _buildControlHints(),
-            ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildBottomControlsOverlay() {
-    final hasServers = _vcloudServerMap.length > 1;
-    final hasResolutions = _explicitResolutions != null && _explicitResolutions!.length > 1;
+  Widget _buildUnlockedControls() {
+    final isPlaying = _betterPlayerController?.videoPlayerController?.value.isPlaying ?? false;
 
-    if (!hasServers && !hasResolutions) return const SizedBox.shrink();
-
-    return Positioned(
-      bottom: 80, // Sit above the native BetterPlayer bottom controls
-      right: 16,
-      child: SafeArea(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+    return Stack(
+      children: [
+        Row(
           children: [
-            if (hasServers)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white24),
+            Expanded(
+              child: GestureDetector(
+                onVerticalDragStart: _handleBrightnessDragStart,
+                onVerticalDragUpdate: _handleBrightnessDragUpdate,
+                onVerticalDragEnd: (_) => _fadeBrightnessIndicator(),
+                onDoubleTapDown: _handleDoubleTapLeft,
+                onDoubleTap: () {},
+                onTap: _toggleControlsVisibility,
+                onLongPressStart: (_) => _startFastForward(),
+                onLongPressEnd: (_) => _stopFastForward(),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+            Expanded(
+              child: GestureDetector(
+                onVerticalDragStart: _handleVolumeDragStart,
+                onVerticalDragUpdate: _handleVolumeDragUpdate,
+                onVerticalDragEnd: (_) => _fadeVolumeIndicator(),
+                onDoubleTapDown: _handleDoubleTapRight,
+                onDoubleTap: () {},
+                onTap: _toggleControlsVisibility,
+                onLongPressStart: (_) => _startFastForward(),
+                onLongPressEnd: (_) => _stopFastForward(),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+          ],
+        ),
+
+        if (_showBrightnessIndicator)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 48.0),
+              child: _buildVerticalGestureIndicator(
+                icon: Icons.brightness_6_rounded,
+                value: _brightness,
+                label: '${(_brightness * 100).toInt()}%',
+              ),
+            ),
+          ),
+
+        if (_showVolumeIndicator)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 48.0),
+              child: _buildVerticalGestureIndicator(
+                icon: _volume == 0 ? Icons.volume_mute_rounded : Icons.volume_up_rounded,
+                value: _volume,
+                label: '${(_volume * 100).toInt()}%',
+              ),
+            ),
+          ),
+
+        if (_showLeftRipple)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: MediaQuery.of(context).size.width * 0.4,
+            child: _buildSkipRipple(isLeft: true),
+          ),
+        if (_showRightRipple)
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: MediaQuery.of(context).size.width * 0.4,
+            child: _buildSkipRipple(isLeft: false),
+          ),
+
+        if (_showSpeedPill)
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 60.0),
+              child: _buildSpeedPill(),
+            ),
+          ),
+
+        if (_notifyPillText != null)
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Text(
+                _notifyPillText!,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    dropdownColor: Colors.black87,
-                    value: _activeServer,
-                    icon: const Icon(Icons.language, color: Colors.white, size: 18),
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                    onChanged: (String? newValue) {
-                      if (newValue != null && newValue != _activeServer) {
-                        setState(() {
-                          _activeServer = newValue;
-                          _selectedServer = newValue;
-                        });
-                        _startVcloudPlayback();
-                      }
-                    },
-                    items: _vcloudServerMap.keys.map<DropdownMenuItem<String>>((String value) {
-                      String label = value;
-                      if (value == 'Server 1') label = 'Server 1 (Hub)';
-                      if (value == 'Server 2') label = 'Server 2 (G-Drive)';
-                      if (value == 'Server 3') label = 'Server 3 (R2)';
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: Text(label.toUpperCase()),
-                        ),
-                      );
-                    }).toList(),
+              ),
+            ),
+          ),
+
+        IgnorePointer(
+          ignoring: !_areControlsVisible,
+          child: AnimatedOpacity(
+            opacity: _areControlsVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            child: Stack(
+              children: [
+                _buildTopHUD(),
+                _buildCenterHUD(isPlaying),
+                _buildBottomHUD(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVerticalGestureIndicator({
+    required IconData icon,
+    required double value,
+    required String label,
+  }) {
+    return Container(
+      width: 48,
+      height: 180,
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white, size: 20),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              width: 6,
+              decoration: BoxDecoration(
+                color: Colors.white12,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              alignment: Alignment.bottomCenter,
+              child: FractionallySizedBox(
+                heightFactor: value,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Color(0xFFB81D24), Color(0xFFE04048)],
+                    ),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
               ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            if (hasResolutions)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white24),
+  Widget _buildSkipRipple({required bool isLeft}) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: isLeft ? const Alignment(-0.5, 0.0) : const Alignment(0.5, 0.0),
+          radius: 0.8,
+          colors: [
+            Colors.white.withOpacity(0.08),
+            Colors.transparent,
+          ],
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isLeft ? Icons.fast_rewind_rounded : Icons.fast_forward_rounded,
+            color: Colors.white,
+            size: 40,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isLeft ? '−15s' : '+15s',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeedPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFB81D24).withOpacity(0.5)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.fast_forward_rounded, color: Color(0xFFB81D24), size: 16),
+          SizedBox(width: 8),
+          Text(
+            '2x Speed',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopHUD() {
+    final s = _currentSeason ?? widget.season;
+    final e = _currentEpisode ?? widget.episode;
+    String episodeLabel = '';
+    if (widget.mediaType != 'movie' && s != null && e != null) {
+      episodeLabel = 'S${s.toString().padLeft(2, '0')} E${e.toString().padLeft(2, '0')}';
+    }
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 80,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withOpacity(0.8),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Stack(
+          children: [
+            // Left: Back Button
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: _goBack,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: const BoxDecoration(
+                    color: Colors.black45,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    dropdownColor: Colors.black87,
-                    value: _selectedResolution,
-                    icon: const Icon(Icons.high_quality, color: Colors.white, size: 18),
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                    onChanged: (String? newValue) {
-                      if (newValue != null && newValue != _selectedResolution) {
-                        setState(() {
-                          _selectedResolution = newValue;
-                        });
-                        final resUrl = _explicitResolutions![newValue]!;
-                        if (_useWebViewEngine) {
-                          setState(() {
-                            _extractedLink = resUrl;
-                          });
-                        } else {
-                          try {
-                            _betterPlayerController?.setResolution(resUrl);
-                          } catch (e) {
-                            debugPrint('[BetterPlayer] Error setting resolution: $e');
-                          }
-                        }
-                      }
-                    },
-                    items: _explicitResolutions!.keys.map<DropdownMenuItem<String>>((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: Text(value.toUpperCase()),
+              ),
+            ),
+            
+            // Center: Title + Episode
+            Align(
+              alignment: Alignment.center,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 120),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      widget.title,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                    if (episodeLabel.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        episodeLabel,
+                        style: GoogleFonts.inter(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
                         ),
-                      );
-                    }).toList(),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            
+            // Right: Episodes button (if applicable)
+            if (widget.mediaType != 'movie')
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: _showEpisodeSelector,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Episodes',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2489,60 +2942,650 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     );
   }
 
-  Widget _buildTopBar() {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        height: 80,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.7),
-              Colors.transparent,
-            ],
+  Widget _buildCenterHUD(bool isPlaying) {
+    return Align(
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildCenterCircularButton(
+            icon: Icons.replay_10_rounded,
+            size: 56,
+            onTap: () {
+              final newPos = (_lastCurrentTime - 15).clamp(0.0, _lastDuration);
+              _betterPlayerController!.seekTo(Duration(seconds: newPos.toInt()));
+              _resetControlsTimer();
+              _triggerHaptic();
+            },
           ),
+          const SizedBox(width: 40),
+          _buildCenterCircularButton(
+            icon: isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: 80,
+            isPlayPause: true,
+            onTap: () {
+              if (isPlaying) {
+                _betterPlayerController!.pause();
+              } else {
+                _betterPlayerController!.play();
+              }
+              _resetControlsTimer();
+              _triggerHaptic();
+            },
+          ),
+          const SizedBox(width: 40),
+          _buildCenterCircularButton(
+            icon: Icons.forward_10_rounded,
+            size: 56,
+            onTap: () {
+              final newPos = (_lastCurrentTime + 15).clamp(0.0, _lastDuration);
+              _betterPlayerController!.seekTo(Duration(seconds: newPos.toInt()));
+              _resetControlsTimer();
+              _triggerHaptic();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCenterCircularButton({
+    required IconData icon,
+    required double size,
+    bool isPlayPause = false,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.5),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white10),
+          boxShadow: isPlayPause
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFB81D24).withOpacity(0.1),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                  )
+                ]
+              : null,
         ),
-        child: SafeArea(
-          bottom: false,
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                onPressed: _goBack,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  widget.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (widget.mediaType != 'movie')
-                IconButton(
-                  icon:
-                      const Icon(Icons.grid_view_rounded, color: Colors.white),
-                  onPressed: _showEpisodeSelector,
-                ),
-            ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(size / 2),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: size * 0.55,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildEpisodeInfoOverlay() => const SizedBox.shrink();
-  Widget _buildControlHints() => const SizedBox.shrink();
+  Widget _buildBottomHUD() {
+    final isPlaying = _betterPlayerController?.videoPlayerController?.value.isPlaying ?? false;
+    final bufferedSeconds = _getBufferedSeconds();
+
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withOpacity(0.9),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GlassmorphicVideoSeekBar(
+              position: _lastCurrentTime,
+              duration: _lastDuration,
+              buffered: bufferedSeconds,
+              onChanged: (val) {
+                setState(() {
+                  _lastCurrentTime = val;
+                });
+                _controlsTimer?.cancel();
+              },
+              onChangeEnd: (val) {
+                _betterPlayerController!.seekTo(Duration(seconds: val.toInt()));
+                _resetControlsTimer();
+              },
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(
+                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    if (isPlaying) {
+                      _betterPlayerController!.pause();
+                    } else {
+                      _betterPlayerController!.play();
+                    }
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (_isMuted) {
+                        _isMuted = false;
+                        _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
+                      } else {
+                        _preMuteVolume = _volume;
+                        _volume = 0.0;
+                        _isMuted = true;
+                      }
+                    });
+                    VolumeController.instance.showSystemUI = false;
+                    VolumeController.instance.setVolume(_volume);
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
+                  onPressed: () {
+                    setState(() {
+                      _isLocked = true;
+                      _areControlsVisible = true;
+                    });
+                    _controlsTimer?.cancel();
+                    _controlsTimer = Timer(const Duration(seconds: 3), () {
+                      if (mounted) setState(() => _areControlsVisible = false);
+                    });
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
+                  onPressed: () {
+                    _saveToWatchHistory();
+                    _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                  onPressed: () {
+                    _showSettingsSheet();
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
+                  onPressed: () {
+                    _cycleAspectRatio();
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _getBufferedSeconds() {
+    if (_betterPlayerController == null) return 0.0;
+    final value = _betterPlayerController!.videoPlayerController!.value;
+    if (value.buffered.isEmpty) return 0.0;
+    return value.buffered.last.end.inSeconds.toDouble();
+  }
+
+  String _formatDuration(double seconds) {
+    if (seconds.isNaN || seconds.isInfinite) return '00:00';
+    final duration = Duration(seconds: seconds.toInt());
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final secs = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (hours > 0) {
+      return '$hours:$minutes:$secs';
+    } else {
+      return '$minutes:$secs';
+    }
+  }
+
+  Future<void> _initBrightness() async {
+    try {
+      _brightness = await ScreenBrightness().current;
+    } catch (_) {
+      _brightness = 0.5;
+    }
+  }
+
+  void _initVolume() {
+    VolumeController.instance.getVolume().then((vol) {
+      if (mounted) {
+        setState(() {
+          _volume = vol;
+        });
+      }
+    });
+    VolumeController.instance.addListener((vol) {
+      if (mounted && !_showVolumeIndicator) {
+        setState(() {
+          _volume = vol;
+          _isMuted = vol == 0;
+        });
+      }
+    });
+  }
+
+  void _handleBrightnessDragStart(DragStartDetails details) {
+    _brightnessDragAccumulator = 0.0;
+    _brightnessDragActive = false;
+  }
+
+  void _handleBrightnessDragUpdate(DragUpdateDetails details) {
+    if (_isLocked) return;
+    if (!_brightnessDragActive) {
+      _brightnessDragAccumulator += details.delta.dy;
+      if (_brightnessDragAccumulator.abs() > 15.0) {
+        _brightnessDragActive = true;
+      } else {
+        return;
+      }
+    }
+    double delta = -details.primaryDelta! / MediaQuery.of(context).size.height;
+    double newBrightness = (_brightness + delta).clamp(0.0, 1.0);
+    setState(() {
+      _brightness = newBrightness;
+      _showBrightnessIndicator = true;
+    });
+    try {
+      ScreenBrightness().setScreenBrightness(newBrightness);
+    } catch (_) {}
+    _brightnessTimer?.cancel();
+  }
+
+  void _handleVolumeDragStart(DragStartDetails details) {
+    _volumeDragAccumulator = 0.0;
+    _volumeDragActive = false;
+  }
+
+  void _handleVolumeDragUpdate(DragUpdateDetails details) {
+    if (_isLocked) return;
+    if (!_volumeDragActive) {
+      _volumeDragAccumulator += details.delta.dy;
+      if (_volumeDragAccumulator.abs() > 15.0) {
+        _volumeDragActive = true;
+      } else {
+        return;
+      }
+    }
+    double delta = -details.primaryDelta! / MediaQuery.of(context).size.height;
+    double newVolume = (_volume + delta).clamp(0.0, 1.0);
+    setState(() {
+      _volume = newVolume;
+      _showVolumeIndicator = true;
+      _isMuted = newVolume == 0;
+    });
+    VolumeController.instance.showSystemUI = false;
+    VolumeController.instance.setVolume(newVolume);
+    _volumeTimer?.cancel();
+  }
+
+  void _fadeBrightnessIndicator() {
+    _brightnessTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _showBrightnessIndicator = false;
+        });
+      }
+    });
+  }
+
+  void _fadeVolumeIndicator() {
+    _volumeTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _showVolumeIndicator = false;
+        });
+      }
+    });
+  }
+
+  void _handleDoubleTapLeft(TapDownDetails details) {
+    if (_isLocked) return;
+    _triggerHaptic();
+    final newPos = (_lastCurrentTime - 15).clamp(0.0, _lastDuration);
+    _betterPlayerController!.seekTo(Duration(seconds: newPos.toInt()));
+    setState(() {
+      _showLeftRipple = true;
+      _areControlsVisible = true;
+    });
+    _resetControlsTimer();
+    _leftRippleTimer?.cancel();
+    _leftRippleTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) {
+        setState(() {
+          _showLeftRipple = false;
+        });
+      }
+    });
+  }
+
+  void _handleDoubleTapRight(TapDownDetails details) {
+    if (_isLocked) return;
+    _triggerHaptic();
+    final newPos = (_lastCurrentTime + 15).clamp(0.0, _lastDuration);
+    _betterPlayerController!.seekTo(Duration(seconds: newPos.toInt()));
+    setState(() {
+      _showRightRipple = true;
+      _areControlsVisible = true;
+    });
+    _resetControlsTimer();
+    _rightRippleTimer?.cancel();
+    _rightRippleTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) {
+        setState(() {
+          _showRightRipple = false;
+        });
+      }
+    });
+  }
+
+  void _startFastForward() {
+    if (_isLocked || _betterPlayerController == null) return;
+    _betterPlayerController!.setSpeed(2.0);
+    setState(() {
+      _showSpeedPill = true;
+    });
+    _triggerHaptic();
+  }
+
+  void _stopFastForward() {
+    if (_betterPlayerController == null) return;
+    _betterPlayerController!.setSpeed(_playbackSpeed);
+    setState(() {
+      _showSpeedPill = false;
+    });
+    _triggerHaptic();
+  }
+
+  void _resetControlsTimer() {
+    _controlsTimer?.cancel();
+    if (!_isLocked) {
+      _controlsTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _areControlsVisible = false;
+          });
+        }
+      });
+    }
+  }
+
+  void _toggleControlsVisibility() {
+    if (_isLocked) return;
+    setState(() {
+      _areControlsVisible = !_areControlsVisible;
+    });
+    if (_areControlsVisible) {
+      _resetControlsTimer();
+    } else {
+      _controlsTimer?.cancel();
+    }
+  }
+
+  void _triggerHaptic() {
+    try {
+      HapticFeedback.lightImpact();
+    } catch (_) {}
+  }
+
+  void _showNotifyPill(String text) {
+    setState(() {
+      _notifyPillText = text;
+    });
+    _notifyPillTimer?.cancel();
+    _notifyPillTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() {
+          _notifyPillText = null;
+        });
+      }
+    });
+  }
+
+  void _cycleAspectRatio() {
+    if (_betterPlayerController == null) return;
+    final fit = _betterPlayerController!.getFit();
+    BoxFit nextFit;
+    String label;
+    if (fit == BoxFit.contain) {
+      nextFit = BoxFit.cover;
+      label = 'Fill';
+    } else if (fit == BoxFit.cover) {
+      nextFit = BoxFit.fill;
+      label = 'Stretch';
+    } else {
+      nextFit = BoxFit.contain;
+      label = 'Fit';
+    }
+    _betterPlayerController!.setOverriddenFit(nextFit);
+    _showNotifyPill('Aspect Ratio: $label');
+  }
+
+  Future<void> _changeServer(String serverName) async {
+    final double currentPos = _betterPlayerController != null 
+        ? _betterPlayerController!.videoPlayerController!.value.position.inSeconds.toDouble()
+        : _lastCurrentTime;
+    
+    debugPrint('[ServerSwap] Saving position: $currentPos before switching to $serverName');
+    
+    setState(() {
+      _resumeTimeOverride = currentPos;
+      _startPositionApplied = false;
+      _activeServer = serverName;
+      _selectedServer = serverName;
+    });
+
+    await _startVcloudPlayback();
+  }
+
+  void _performSeek(double time) {
+    if (_betterPlayerController == null) return;
+    _seekingToTime = time;
+    _lastCurrentTime = time;
+    _betterPlayerController!.seekTo(Duration(seconds: time.toInt()));
+    _seekTimeoutTimer?.cancel();
+    _seekTimeoutTimer = Timer(const Duration(seconds: 4), () {
+      _seekingToTime = null;
+    });
+  }
+
+  Future<void> _changeResolution(String resolutionName) async {
+    final resUrl = _explicitResolutions![resolutionName]!;
+    final double currentPos = _betterPlayerController != null 
+        ? _betterPlayerController!.videoPlayerController!.value.position.inSeconds.toDouble()
+        : _lastCurrentTime;
+        
+    debugPrint('[QualitySwap] Quality swap to $resolutionName at position $currentPos');
+    
+    setState(() {
+      _selectedResolution = resolutionName;
+    });
+
+    if (_betterPlayerController != null) {
+      _performSeek(currentPos);
+      await _betterPlayerController!.setResolution(resUrl);
+    } else {
+      setState(() {
+        _resumeTimeOverride = currentPos;
+        _startPositionApplied = false;
+      });
+      await _initializeBetterPlayer(resUrl, isOffline: false, extractedStream: _extractedStream);
+    }
+  }
+
+  void _videoPlayerListener() {
+    if (!mounted || _betterPlayerController == null) return;
+    final value = _betterPlayerController!.videoPlayerController!.value;
+    
+    final position = value.position;
+    final duration = value.duration;
+    
+    if (value.initialized) {
+      if (!_startPositionApplied) {
+        _startPositionApplied = true;
+        final resumeTime = _resumeTimeOverride ?? widget.startPosition?.toDouble() ?? 0.0;
+        _resumeTimeOverride = null;
+        if (resumeTime > 1.0) {
+          debugPrint('[BetterPlayerListener] Seeking to resume time: $resumeTime');
+          _performSeek(resumeTime);
+        }
+      } else {
+        final currentPos = position.inSeconds.toDouble();
+        if (_seekingToTime != null) {
+          if ((currentPos - _seekingToTime!).abs() < 5) {
+            _seekingToTime = null;
+            _seekTimeoutTimer?.cancel();
+          } else {
+            // Ignore position updates while seeking to avoid resetting progress bar/history to 0
+            return;
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _lastCurrentTime = currentPos;
+            _lastDuration = duration?.inSeconds.toDouble() ?? _lastDuration;
+          });
+        }
+      }
+    }
+  }
+
+  void _showSettingsSheet() {
+    _controlsTimer?.cancel();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Settings',
+      barrierColor: Colors.black26,
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, anim1, anim2) => const SizedBox.shrink(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        final double width = 280;
+        final double height = 250;
+        final curve = Curves.easeOutCubic;
+        return ScaleTransition(
+          alignment: Alignment.bottomRight,
+          scale: CurvedAnimation(parent: anim1, curve: curve),
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: Container(
+              margin: const EdgeInsets.only(right: 64, bottom: 68),
+              width: width,
+              height: height,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F0F).withOpacity(0.85),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.4),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                  )
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: SettingsSheetContent(
+                      controller: _betterPlayerController,
+                      activeServer: _activeServer,
+                      selectedResolution: _selectedResolution,
+                      vcloudServerMap: _vcloudServerMap,
+                      explicitResolutions: _explicitResolutions,
+                      playbackSpeed: _playbackSpeed,
+                      availableAudioTracks: _getAvailableAudioTracks(),
+                      activeAudioTrack: _getActiveAudioTrack(),
+                      onServerChanged: (server) => _changeServer(server),
+                      onResolutionChanged: (res) => _changeResolution(res),
+                      onSpeedChanged: (speed) {
+                        setState(() {
+                          _playbackSpeed = speed;
+                        });
+                        _betterPlayerController?.setSpeed(speed);
+                      },
+                      onAspectChanged: (fit) {
+                        _betterPlayerController?.setOverriddenFit(fit);
+                      },
+                      onAudioChanged: (track) {
+                        final asmsAudioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
+                        if (asmsAudioTracks.isNotEmpty) {
+                          _betterPlayerController?.setAudioTrack(track);
+                        } else {
+                          // Fallback progressive audio track selection
+                          if (track.id != null) {
+                            setState(() {
+                              _selectedAudioIndex = track.id!;
+                            });
+                            _betterPlayerController?.videoPlayerController?.setAudioTrack(track.label, track.id);
+                          }
+                        }
+                        _showNotifyPill('Audio: ${track.label ?? track.language ?? "Track"}');
+                      },
+                      onSubtitleChanged: (source) {
+                        _betterPlayerController?.setupSubtitleSource(source);
+                        _showNotifyPill(source.type == BetterPlayerSubtitlesSourceType.none ? 'Subtitles Off' : 'Subtitles: ${source.name}');
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      _resetControlsTimer();
+    });
+  }
 
   Widget _buildErrorOverlay() {
     // NOTE: Timer is NOT created here — it's started in _completeDiscovery()
@@ -3073,5 +4116,595 @@ class DiscoveryLoadingViewState extends State<DiscoveryLoadingView>
         ),
       ),
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── GLASSMORPHIC VIDEO SEEK BAR
+// ─────────────────────────────────────────────────────────────────────────────
+class GlassmorphicVideoSeekBar extends StatefulWidget {
+  final double position;
+  final double duration;
+  final double buffered;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  const GlassmorphicVideoSeekBar({
+    super.key,
+    required this.position,
+    required this.duration,
+    required this.buffered,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  @override
+  State<GlassmorphicVideoSeekBar> createState() => _GlassmorphicVideoSeekBarState();
+}
+
+class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
+  bool _isDragging = false;
+  double? _dragValue;
+
+  @override
+  Widget build(BuildContext context) {
+    double activeValue = _isDragging ? (_dragValue ?? widget.position) : widget.position;
+    double progressPercent = widget.duration > 0 ? (activeValue / widget.duration).clamp(0.0, 1.0) : 0.0;
+    double bufferPercent = widget.duration > 0 ? (widget.buffered / widget.duration).clamp(0.0, 1.0) : 0.0;
+
+    return GestureDetector(
+      onHorizontalDragStart: (details) {
+        setState(() {
+          _isDragging = true;
+        });
+      },
+      onHorizontalDragUpdate: (details) {
+        final box = context.findRenderObject() as RenderBox;
+        final localPos = box.globalToLocal(details.globalPosition);
+        final val = (localPos.dx / box.size.width).clamp(0.0, 1.0) * widget.duration;
+        setState(() {
+          _dragValue = val;
+        });
+        widget.onChanged(val);
+      },
+      onHorizontalDragEnd: (details) {
+        final finalVal = _dragValue ?? widget.position;
+        setState(() {
+          _isDragging = false;
+          _dragValue = null;
+        });
+        widget.onChangeEnd(finalVal);
+      },
+      onTapDown: (details) {
+        final box = context.findRenderObject() as RenderBox;
+        final localPos = box.globalToLocal(details.globalPosition);
+        final val = (localPos.dx / box.size.width).clamp(0.0, 1.0) * widget.duration;
+        widget.onChanged(val);
+        widget.onChangeEnd(val);
+      },
+      child: Container(
+        height: 24,
+        color: Colors.transparent,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final thumbOffset = constraints.maxWidth * progressPercent;
+            return Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                // Background Track
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: _isDragging ? 6 : 4,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                // Buffer Bar
+                FractionallySizedBox(
+                  widthFactor: bufferPercent,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    height: _isDragging ? 6 : 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+                // Progress Bar
+                FractionallySizedBox(
+                  widthFactor: progressPercent,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    height: _isDragging ? 6 : 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFB81D24),
+                      borderRadius: BorderRadius.circular(3),
+                      boxShadow: _isDragging
+                          ? [
+                              const BoxShadow(
+                                color: Color(0x7FB81D24),
+                                blurRadius: 8,
+                              )
+                            ]
+                          : null,
+                    ),
+                  ),
+                ),
+                // Thumb
+                Positioned(
+                  left: (thumbOffset - 8).clamp(0.0, constraints.maxWidth - 16),
+                  child: AnimatedScale(
+                    scale: _isDragging ? 1.25 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFB81D24),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black45,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          )
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── SETTINGS BOTTOM SHEET CONTENT
+// ─────────────────────────────────────────────────────────────────────────────
+class SettingsSheetContent extends StatefulWidget {
+  final BetterPlayerController? controller;
+  final String activeServer;
+  final String? selectedResolution;
+  final Map<String, Map<String, String>> vcloudServerMap;
+  final Map<String, String>? explicitResolutions;
+  final double playbackSpeed;
+  final Function(String) onServerChanged;
+  final Function(String) onResolutionChanged;
+  final Function(double) onSpeedChanged;
+  final Function(BoxFit) onAspectChanged;
+  final Function(BetterPlayerAsmsAudioTrack) onAudioChanged;
+  final Function(BetterPlayerSubtitlesSource) onSubtitleChanged;
+  final List<BetterPlayerAsmsAudioTrack> availableAudioTracks;
+  final BetterPlayerAsmsAudioTrack? activeAudioTrack;
+
+  const SettingsSheetContent({
+    super.key,
+    required this.controller,
+    required this.activeServer,
+    required this.selectedResolution,
+    required this.vcloudServerMap,
+    required this.explicitResolutions,
+    required this.playbackSpeed,
+    required this.onServerChanged,
+    required this.onResolutionChanged,
+    required this.onSpeedChanged,
+    required this.onAspectChanged,
+    required this.onAudioChanged,
+    required this.onSubtitleChanged,
+    required this.availableAudioTracks,
+    required this.activeAudioTrack,
+  });
+
+  @override
+  State<SettingsSheetContent> createState() => _SettingsSheetContentState();
+}
+
+class _SettingsSheetContentState extends State<SettingsSheetContent> {
+  String _currentView = 'main';
+
+  @override
+  Widget build(BuildContext context) {
+    switch (_currentView) {
+      case 'server':
+        return _buildServerView();
+      case 'quality':
+        return _buildQualityView();
+      case 'audio':
+        return _buildAudioView();
+      case 'subtitles':
+        return _buildSubtitlesView();
+      case 'speed':
+        return _buildSpeedView();
+      case 'aspect':
+        return _buildAspectView();
+      case 'main':
+      default:
+        return _buildMainView();
+    }
+  }
+
+  Widget _buildHeader(String title) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          if (_currentView != 'main')
+            GestureDetector(
+              onTap: () => setState(() => _currentView = 'main'),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
+            ),
+          if (_currentView != 'main') const SizedBox(width: 12),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainView() {
+    final hasServers = widget.vcloudServerMap.isNotEmpty;
+    final hasResolutions = widget.explicitResolutions != null && widget.explicitResolutions!.isNotEmpty;
+    
+    final audioTracks = widget.availableAudioTracks;
+    final hasAudioTracks = audioTracks.length > 1;
+    
+    final subtitles = widget.controller?.betterPlayerSubtitlesSourceList ?? [];
+    final hasSubtitles = subtitles.isNotEmpty;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Settings'),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasServers)
+                  _buildMenuRow(
+                    icon: Icons.language_rounded,
+                    label: 'Server',
+                    value: widget.activeServer,
+                    onTap: () => setState(() => _currentView = 'server'),
+                  ),
+                if (hasResolutions)
+                  _buildMenuRow(
+                    icon: Icons.high_quality_rounded,
+                    label: 'Quality',
+                    value: widget.selectedResolution ?? 'Auto',
+                    onTap: () => setState(() => _currentView = 'quality'),
+                  ),
+                if (hasAudioTracks)
+                  _buildMenuRow(
+                    icon: Icons.audiotrack_rounded,
+                    label: 'Audio',
+                    value: widget.activeAudioTrack?.label ?? widget.activeAudioTrack?.language ?? 'Default',
+                    onTap: () => setState(() => _currentView = 'audio'),
+                  ),
+                if (hasSubtitles)
+                  _buildMenuRow(
+                    icon: Icons.subtitles_rounded,
+                    label: 'Subtitles',
+                    value: widget.controller?.betterPlayerSubtitlesSource?.name ?? 'Off',
+                    onTap: () => setState(() => _currentView = 'subtitles'),
+                  ),
+                _buildMenuRow(
+                  icon: Icons.speed_rounded,
+                  label: 'Speed',
+                  value: widget.playbackSpeed == 1.0 ? 'Normal' : '${widget.playbackSpeed}x',
+                  onTap: () => setState(() => _currentView = 'speed'),
+                ),
+                _buildMenuRow(
+                  icon: Icons.aspect_ratio_rounded,
+                  label: 'Aspect Ratio',
+                  value: _getAspectLabel(widget.controller?.getFit() ?? BoxFit.contain),
+                  onTap: () => setState(() => _currentView = 'aspect'),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMenuRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70),
+      title: Text(
+        label,
+        style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            style: GoogleFonts.inter(color: Colors.white54, fontSize: 13),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildServerView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Server'),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: widget.vcloudServerMap.keys.map((server) {
+                final isSelected = server == widget.activeServer;
+                String label = server;
+                if (server == 'Server 1') label = 'Server 1 (Hub)';
+                if (server == 'Server 2') label = 'Server 2 (G-Drive)';
+                if (server == 'Server 3') label = 'Server 3 (R2)';
+                
+                return ListTile(
+                  title: Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onServerChanged(server);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildQualityView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Quality'),
+        if (widget.explicitResolutions != null)
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: widget.explicitResolutions!.keys.map((res) {
+                  final isSelected = res == widget.selectedResolution;
+                  return ListTile(
+                    title: Text(
+                      res.toUpperCase(),
+                      style: GoogleFonts.inter(
+                        color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      widget.onResolutionChanged(res);
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildAudioView() {
+    final audioTracks = widget.availableAudioTracks;
+    final currentAudio = widget.activeAudioTrack;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Audio Language'),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: audioTracks.map((track) {
+                final isSelected = track.id == currentAudio?.id;
+                return ListTile(
+                  title: Text(
+                    track.label ?? track.language ?? 'Audio Track',
+                    style: GoogleFonts.inter(
+                      color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onAudioChanged(track);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildSubtitlesView() {
+    final subtitleSources = widget.controller?.betterPlayerSubtitlesSourceList ?? [];
+    final currentSub = widget.controller?.betterPlayerSubtitlesSource;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Subtitles'),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: [
+                ListTile(
+                  title: Text(
+                    'Off',
+                    style: GoogleFonts.inter(
+                      color: currentSub == null || currentSub.type == BetterPlayerSubtitlesSourceType.none ? const Color(0xFFB81D24) : Colors.white,
+                      fontWeight: currentSub == null || currentSub.type == BetterPlayerSubtitlesSourceType.none ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: currentSub == null || currentSub.type == BetterPlayerSubtitlesSourceType.none ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onSubtitleChanged(BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none));
+                  },
+                ),
+                ...subtitleSources.map((source) {
+                  if (source.type == BetterPlayerSubtitlesSourceType.none) return const SizedBox.shrink();
+                  final isSelected = currentSub != null && currentSub.name == source.name;
+                  return ListTile(
+                    title: Text(
+                      source.name ?? 'Subtitle',
+                      style: GoogleFonts.inter(
+                        color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      widget.onSubtitleChanged(source);
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildSpeedView() {
+    final speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Playback Speed'),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: speeds.map((speed) {
+                final isSelected = speed == widget.playbackSpeed;
+                return ListTile(
+                  title: Text(
+                    speed == 1.0 ? 'Normal' : '${speed}x',
+                    style: GoogleFonts.inter(
+                      color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onSpeedChanged(speed);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildAspectView() {
+    final fits = [BoxFit.contain, BoxFit.cover, BoxFit.fill];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader('Aspect Ratio'),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: fits.map((fit) {
+                final currentFit = widget.controller?.getFit() ?? BoxFit.contain;
+                final isSelected = fit == currentFit;
+                return ListTile(
+                  title: Text(
+                    _getAspectLabel(fit),
+                    style: GoogleFonts.inter(
+                      color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onAspectChanged(fit);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  String _getAspectLabel(BoxFit fit) {
+    switch (fit) {
+      case BoxFit.cover:
+        return 'Fill';
+      case BoxFit.fill:
+        return 'Stretch';
+      case BoxFit.contain:
+      default:
+        return 'Fit';
+    }
   }
 }

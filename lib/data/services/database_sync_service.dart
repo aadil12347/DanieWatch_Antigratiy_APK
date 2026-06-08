@@ -44,7 +44,8 @@ class DatabaseSyncService {
   Future<bool> syncIndex() async {
     try {
       dev.log('[DatabaseSync] Starting sync from $_remoteIndexUrl');
-      final response = await http.get(Uri.parse(_remoteIndexUrl));
+      final response = await http.get(Uri.parse(_remoteIndexUrl))
+          .timeout(const Duration(seconds: 5));
       
       if (response.statusCode != 200) {
         dev.log('[DatabaseSync] HTTP Error: ${response.statusCode}');
@@ -102,8 +103,15 @@ class DatabaseSyncService {
       final file = await _indexFile;
       
       if (!await file.exists()) {
-        dev.log('[DatabaseSync] Local index file not found. Returning empty list.');
-        return [];
+        dev.log('[DatabaseSync] Local index file not found. Copying from assets fallback...');
+        try {
+          final assetData = await rootBundle.loadString('assets/base_index.json');
+          await file.writeAsString(assetData, flush: true);
+          dev.log('[DatabaseSync] Fallback index copied from assets.');
+        } catch (assetErr) {
+          dev.log('[DatabaseSync] Failed to load index from assets: $assetErr');
+          return [];
+        }
       }
 
       final rawData = await file.readAsString();

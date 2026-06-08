@@ -167,6 +167,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     // ── CASE 2: User IS logged in ─────────────────────────────────────────────
     if (user != null) {
+      if (_showAuthModal) {
+        setState(() => _showAuthModal = false);
+      }
       // Handle manifest ERROR state: retry instead of waiting forever
       if (manifestAsync.hasError && !manifestAsync.isLoading) {
         if (_manifestRetryCount < _maxManifestRetries) {
