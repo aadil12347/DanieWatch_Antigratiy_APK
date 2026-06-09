@@ -1,0 +1,12 @@
+import requests
+
+url = "https://gamerxyt.com/dl.php?link=https://video-downloads.googleusercontent.com/ADGPM2lZg8Bo9dwXLyDffbW8aoi-mobgi_tGGa59sEcHPcQWDvO3jX-MFapDRHvtUtBBfRsfFEdeYZnVrM61cFKwix5lGVBa5SYw0ZTatyzp8vFayWw_ZNygLTRDnwat1AjMRUzF2TKH_ycXOLtpOP2fdK6orDwhTy8VNwDjcDR6ggs6lHDVCJ55FFd4LVKAaM4yz6ya1ogICbfYQi6E9Jz-wQePGP_bwwjIfSuRpeo_JU1W1bCBnio0YRza2uIhac8Cle0vMAxAkOkGqiQigyqqLuJ5pqumOiWEGyTdwjqVDjCXaidD0NCLRE3BcCitMEUc1Q0TDeT9D4XTFL6gGvHrCsxEv_Uq33RD4mLw5Mr4kmHYLMLAAFsky0qhGEXrrdiIr4swI_0G9RizHjkxRGYGVWZGgQzy-prf-iTuhiHIOP7cgkcW1jtmuP6rnGdtyF7FRKLj-CSQr-u9LbaDNbBQWtdfRQIEN3760vycek5afTNoHRyI8kqXsiiBNB_znteeAwL-k5LexE2T-5c-PmfdCuqJ2hYP2kqmO_TzMEchpmFFutzLeM-_BhoSEWycdibEtwTJiXw_1I9Mp1db_f_dQ9Xp_zlZDwbJwpwIpvNYSFPYCkmmm1tGGBqU05j24z28cT_yJZZk1wjq1QFY6Dkhgi9Adnfk57fLZPDKrnC5eaZ6qt0pZltQ3Ed1jDivxGTEaa74OJqY9q6YoHeh8iTUN9GTtGSkOeeszK0gW-uLhTqYhzI5k_pdn4noSDJq1CWVGa9sycwdb5REqEMgLUaI4kuSCdv76YmC7WpD9HXDvmfjuRVci9utooydAmJ6EwNvTd3kzx3ReaKyzp7nMezdl3zF23uStK6p16mOn8DGvlvTz5hpLMo36d_7JnY-h_W7TF6f_678P1N08duKKO6gCL0mU95-EmpMos0-HzoScPvrj1WBDuJYXJO7peLwSRSpAY2xFYRXOfz7GpBUm_kpa1dDDyhZj4Cu-Q6g9zMOykrADC_5d8PdwkqCcJH5ZQd1RKIfhXahDIzSiQF5eFz_rBPjTk1SnZYFpyvPGBYO6LHlIm99DSwl0mh6rqDwpad0hIK4Nrns"
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+}
+
+r = requests.get(url, headers=headers)
+with open("scratch/gamerxyt.html", "w", encoding="utf-8") as f:
+    f.write(r.text)
+
+print("Saved HTML, status code:", r.status_code)

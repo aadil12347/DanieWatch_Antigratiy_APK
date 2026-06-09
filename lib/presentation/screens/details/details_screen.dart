@@ -1582,6 +1582,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           providerName: selection.providerName,
           fileSizeBytes: selection.fileSizeBytes,
           headers: selection.headers,
+          originalEmbedUrl: selection.masterUrl,
         );
         if (mounted) {
           _showDownloadStartedToast(item);

@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HubCloud — Link Generator</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #1a2a6c;
+    --accent:  #4a3aff;
+    --bg:      #ffffff;
+    --text:    #0f1a3a;
+    --muted:   #6b7280;
+    --note-bg: #f5f6fb;
+    --wave:    #4a3aff;
+  }
+
+  html, body {
+    min-height: 100%;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* ---------- HEADER ---------- */
+  header {
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .logo-icon { width: 28px; height: 28px; color: var(--text); }
+  .logo-text { font-size: 22px; font-weight: 600; color: var(--primary); }
+
+  /* ---------- MAIN STAGE (shared by loading + success) ---------- */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 16px 20px 130px;
+    position: relative;
+  }
+
+  /* the two states share the same wrapper position */
+  .state {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .state.hidden {
+    position: absolute;
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+  }
+  .state.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ---------- TITLE (used by both states) ---------- */
+  .title {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .title .ico {
+    width: 34px; height: 34px;
+    color: var(--accent);
+    filter: drop-shadow(0 4px 10px rgba(74, 58, 255, 0.35));
+  }
+  /* bouncing arrow inside loading cloud */
+  .ico .arrow { animation: bounceDown 1.2s ease-in-out infinite; }
+  @keyframes bounceDown {
+    0%, 100% { transform: translateY(0);   opacity: 1;   }
+    50%      { transform: translateY(3px); opacity: 0.55;}
+  }
+  /* sparkles next to title */
+  .heading-wrap { position: relative; }
+  .sparkle {
+    position: absolute;
+    width: 10px; height: 10px;
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0% 50%, 40% 40%);
+    animation: twinkle 1.6s ease-in-out infinite;
+  }
+  .sparkle:nth-child(1){ top:-14px; left:-22px; }
+  .sparkle:nth-child(2){ top:-6px; right:-28px; width:7px; height:7px; animation-delay:0.4s; }
+  .sparkle:nth-child(3){ bottom:-10px; left:50%; width:6px; height:6px; animation-delay:0.8s; }
+  @keyframes twinkle {
+    0%, 100% { transform: scale(0.4); opacity: 0.3; }
+    50%      { transform: scale(1.1); opacity: 1;   }
+  }
+
+  /* ---------- CENTER BADGE (shared size — keeps layout stable) ---------- */
+  .badge {
+    position: relative;
+    width: 150px;
+    height: 150px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* soft glow behind everything */
+  .badge::before {
+    content: '';
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(74,58,255,0.22) 0%, transparent 70%);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(0.9); opacity: 0.6; }
+    50%      { transform: scale(1.08); opacity: 1;  }
+  }
+
+  /* spinner version */
+  .badge.spinning::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 5px solid transparent;
+    border-top-color: var(--accent);
+    border-right-color: var(--accent);
+    animation: spin 1.4s linear infinite;
+  }
+  .badge.spinning .ring {
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    border: 5px solid transparent;
+    border-top-color: var(--text);
+    border-left-color: var(--text);
+    animation: spin 1.8s linear infinite reverse;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* success version — celebrating character with confetti */
+  .badge.success {
+    width: 200px;
+    height: 200px;
+    animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .badge.success::before {
+    width: 240px; height: 240px;
+  }
+  .badge.success svg.scene {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    z-index: 1;
+    overflow: visible;
+  }
+  /* the character does a happy jump */
+  .scene .character {
+    transform-origin: 140px 240px;
+    animation: jump 1.6s ease-in-out infinite;
+  }
+  @keyframes jump {
+    0%, 100% { transform: translateY(0)    rotate(-1deg); }
+    50%      { transform: translateY(-10px) rotate(1deg); }
+  }
+  /* arms wave subtly */
+  .scene .arm-l { transform-origin: 115px 155px; animation: armL 1.6s ease-in-out infinite; }
+  .scene .arm-r { transform-origin: 165px 155px; animation: armR 1.6s ease-in-out infinite; }
+  @keyframes armL {
+    0%, 100% { transform: rotate(0deg); }
+    50%      { transform: rotate(-8deg); }
+  }
+  @keyframes armR {
+    0%, 100% { transform: rotate(0deg); }
+    50%      { transform: rotate(8deg); }
+  }
+
+  /* confetti pieces falling/spinning */
+  .scene .confetti {
+    animation: confettiFall 3s ease-in-out infinite;
+    transform-origin: center;
+  }
+  .scene .c1 { animation-delay: 0s;    }
+  .scene .c2 { animation-delay: -0.5s; animation-duration: 2.6s; }
+  .scene .c3 { animation-delay: -1s;   animation-duration: 3.4s; }
+  .scene .c4 { animation-delay: -1.5s; animation-duration: 2.8s; }
+  .scene .c5 { animation-delay: -2s;   animation-duration: 3.2s; }
+  .scene .c6 { animation-delay: -0.3s; animation-duration: 3s;   }
+  .scene .c7 { animation-delay: -1.2s; animation-duration: 2.7s; }
+  .scene .c8 { animation-delay: -0.8s; animation-duration: 3.3s; }
+  @keyframes confettiFall {
+    0%   { transform: translateY(-20px) rotate(0deg);   opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { transform: translateY(60px)  rotate(540deg); opacity: 0; }
+  }
+
+  /* twinkling stars */
+  .scene .star {
+    animation: starTwinkle 1.4s ease-in-out infinite;
+    transform-origin: center;
+  }
+  .scene .star.s2 { animation-delay: 0.4s; }
+  .scene .star.s3 { animation-delay: 0.8s; }
+  @keyframes starTwinkle {
+    0%, 100% { transform: scale(0.5); opacity: 0.3; }
+    50%      { transform: scale(1.1); opacity: 1;   }
+  }
+
+  @keyframes popIn {
+    0%   { transform: scale(0.4); opacity: 0; }
+    60%  { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1);    opacity: 1; }
+  }
+
+  /* loading subtitle */
+  .loading-text {
+    font-size: 18px;
+    color: var(--muted);
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .loading-text .dot { display: inline-block; animation: blink 1.4s infinite; }
+  .loading-text .dot:nth-child(2){ animation-delay: 0.2s; }
+  .loading-text .dot:nth-child(3){ animation-delay: 0.4s; }
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.2; }
+    40%           { opacity: 1;   }
+  }
+
+  /* ---------- DOWNLOAD BUTTON ---------- */
+  .btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 13px 36px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 6px 18px rgba(26, 42, 108, 0.25);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    text-decoration: none;
+  }
+  .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(26, 42, 108, 0.32);
+  }
+  .btn svg { width: 20px; height: 20px; }
+
+  hr.divider {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    width: 100%;
+    margin: 28px 0 16px;
+  }
+
+  .note {
+    background: var(--note-bg);
+    width: 100%;
+    padding: 14px 22px;
+    border-radius: 6px;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--primary);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  /* ---------- WAVE FOOTER ---------- */
+  .wave {
+    position: fixed;
+    bottom: 0; left: 0;
+    width: 100%;
+    height: 80px;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .wave svg { width: 100%; height: 100%; display: block; }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width: 600px) {
+    main { padding: 10px 16px 100px; }
+    .title { font-size: 26px; gap: 8px; margin-bottom: 14px; }
+    .title .ico { width: 26px; height: 26px; }
+    .badge { width: 110px; height: 110px; margin-bottom: 18px; }
+    .badge::before { width: 150px; height: 150px; }
+    .badge.success { width: 156px; height: 200px; }
+    .badge.success::before { width: 180px; height: 180px; }
+    .btn { padding: 11px 28px; font-size: 15px; }
+    hr.divider { margin: 18px 0 12px; }
+    .note { font-size: 12.5px; padding: 12px 14px; line-height: 1.45; }
+    header { padding: 12px 18px; }
+    .logo-text { font-size: 19px; }
+    .logo-icon { width: 24px; height: 24px; }
+    .wave { height: 60px; }
+    .loading-text { font-size: 14px; letter-spacing: 1.5px; }
+  }
+</style>
+</head>
+<body>
+    
+
+
+<script id="aclib" type="text/javascript" src="//acscdn.com/script/aclib.js"></script>
+<script type="text/javascript">
+    aclib.runPop({
+        zoneId: '10553222',
+    });
+</script>
+
+<script>
+function setCookie(e,t,i){let o=encodeURIComponent(t),$=new Date;$.setTime($.getTime()+36e5*i);let n=`${e}=${o}; expires=${$.toUTCString()}; path=/`;document.cookie=n}setCookie("xyt",1,24);
+</script>
+
+
+
+  <!-- HEADER (always visible) -->
+  <header>
+    <svg class="logo-icon" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="2" y="4"  width="20" height="6" rx="1.2"/>
+      <rect x="2" y="14" width="20" height="6" rx="1.2"/>
+      <circle cx="6"  cy="7"  r="1" fill="#fff"/>
+      <circle cx="6"  cy="17" r="1" fill="#fff"/>
+      <rect x="9" y="6.2"  width="9" height="1.6" fill="#fff"/>
+      <rect x="9" y="16.2" width="9" height="1.6" fill="#fff"/>
+    </svg>
+    <span class="logo-text">HubCloud</span>
+  </header>
+
+  <main>
+
+    <!-- =================== LOADING STATE =================== -->
+    <section class="state visible" id="loadingState">
+      <h1 class="title">
+        <svg class="ico" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 40 a10 10 0 0 1 2 -19.6 a13 13 0 0 1 25 3 a8 8 0 0 1 -1 16 Z" fill="currentColor" opacity="0.12" stroke="currentColor"/>
+          <g class="arrow">
+            <line x1="32" y1="30" x2="32" y2="50"/>
+            <polyline points="24,44 32,52 40,44"/>
+          </g>
+        </svg>
+        <span class="heading-wrap">
+          Generating Download Link
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+        </span>
+      </h1>
+
+      <div class="badge spinning">
+        <div class="ring"></div>
+      </div>
+
+      <div class="loading-text">
+        Please wait<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+      </div>
+    </section>
+
+    <!-- =================== SUCCESS STATE =================== -->
+    <section class="state hidden" id="successState">
+      <h1 class="title">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        Link Generated !
+      </h1>
+
+      <!-- celebrating character — pure SVG with emotion -->
+      <div class="badge success">
+        <svg class="scene" viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg">
+          <!-- ground shadow -->
+          <ellipse cx="140" cy="248" rx="55" ry="6" fill="#000" opacity="0.08"/>
+
+          <!-- confetti & sparkles around the character -->
+          <g class="confetti c1"><rect x="40"  y="50"  width="8" height="14" fill="#ff5a7a" transform="rotate(20 44 57)"/></g>
+          <g class="confetti c2"><rect x="230" y="55"  width="8" height="14" fill="#ffd54a" transform="rotate(-25 234 62)"/></g>
+          <g class="confetti c3"><circle cx="55"  cy="135" r="5" fill="#4ad7ff"/></g>
+          <g class="confetti c4"><rect x="225" y="140" width="7" height="7"  fill="#4a3aff" transform="rotate(45 228 143)"/></g>
+          <g class="confetti c5"><rect x="30"  y="200" width="6" height="12" fill="#6e5cff" transform="rotate(-15 33 206)"/></g>
+          <g class="confetti c6"><circle cx="250" cy="200" r="4" fill="#ff5a7a"/></g>
+          <g class="confetti c7"><rect x="75"  y="35"  width="6" height="6"  fill="#ffd54a" transform="rotate(30 78 38)"/></g>
+          <g class="confetti c8"><rect x="200" y="30"  width="8" height="12" fill="#4ad7ff" transform="rotate(-30 204 36)"/></g>
+
+          <!-- twinkling stars -->
+          <path class="star s1" d="M70 90 L73 97 L80 100 L73 103 L70 110 L67 103 L60 100 L67 97 Z" fill="#ffd54a"/>
+          <path class="star s2" d="M215 105 L218 112 L225 115 L218 118 L215 125 L212 118 L205 115 L212 112 Z" fill="#ff5a7a"/>
+          <path class="star s3" d="M140 40 L143 47 L150 50 L143 53 L140 60 L137 53 L130 50 L137 47 Z" fill="#4a3aff"/>
+
+          <!-- CHARACTER -->
+          <g class="character">
+            <!-- legs -->
+            <rect x="123" y="218" width="12" height="26" rx="4" fill="#1a2a6c"/>
+            <rect x="145" y="218" width="12" height="26" rx="4" fill="#1a2a6c"/>
+            <!-- shoes -->
+            <ellipse cx="129" cy="246" rx="9" ry="4" fill="#0f1a3a"/>
+            <ellipse cx="151" cy="246" rx="9" ry="4" fill="#0f1a3a"/>
+
+            <!-- body / shirt -->
+            <path d="M110 158 Q140 148 170 158 L165 222 L115 222 Z" fill="#4a3aff"/>
+            <!-- shirt highlight -->
+            <path d="M118 165 Q140 158 162 165 L160 180 Q140 173 120 180 Z" fill="#6e5cff" opacity="0.6"/>
+
+            <!-- LEFT ARM raised -->
+            <g class="arm-l">
+              <path d="M115 160 Q100 130 88 95" stroke="#4a3aff" stroke-width="11" stroke-linecap="round" fill="none"/>
+              <circle cx="86" cy="92" r="9" fill="#ffd4b8"/>
+            </g>
+            <!-- RIGHT ARM raised -->
+            <g class="arm-r">
+              <path d="M165 160 Q180 130 192 95" stroke="#4a3aff" stroke-width="11" stroke-linecap="round" fill="none"/>
+              <circle cx="194" cy="92" r="9" fill="#ffd4b8"/>
+            </g>
+
+            <!-- head -->
+            <circle cx="140" cy="128" r="30" fill="#ffd4b8"/>
+            <!-- hair -->
+            <path d="M112 122 Q112 95 140 92 Q168 95 168 122 Q160 108 140 108 Q120 108 112 122 Z" fill="#2b2c4e"/>
+            <!-- happy closed eyes ^_^ -->
+            <path d="M126 128 Q131 122 136 128" stroke="#2b2c4e" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+            <path d="M144 128 Q149 122 154 128" stroke="#2b2c4e" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+            <!-- big smile -->
+            <path d="M130 140 Q140 152 150 140" stroke="#2b2c4e" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+            <!-- rosy cheeks -->
+            <ellipse cx="121" cy="138" rx="4" ry="2.5" fill="#ff8da1" opacity="0.65"/>
+            <ellipse cx="159" cy="138" rx="4" ry="2.5" fill="#ff8da1" opacity="0.65"/>
+          </g>
+        </svg>
+      </div>
+
+      <a class="btn" id="downloadBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download Here
+      </a>
+
+      <hr class="divider" />
+
+      <div class="note">
+        Note: RESUME is Not Supported ! Please Don't Pause the Download or Close the App from Background.
+        <br/>- HubCloud
+      </div>
+      
+      <center>
+        <a href="https://snvhost.com/" target="_blank">
+          <img src="/snvhost.jpg" 
+               alt="SnvHost Offhsore Hosting" 
+               width="280" 
+               height="280" 
+               style="border: none;">
+        </a>
+    </center>
+                        
+    </section>
+
+  </main>
+
+  <!-- decorative wave -->
+  <div class="wave">
+    <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+      <path d="M0,80 C300,20 700,140 1080,60 C1260,30 1380,50 1440,40 L1440,120 L0,120 Z"
+            fill="var(--wave)"/>
+    </svg>
+  </div>
+
+<script>
+  // After 2 seconds, swap loading state for success state — same layout, in-place.
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const load = document.getElementById('loadingState');
+      const done = document.getElementById('successState');
+      load.classList.remove('visible');
+      load.classList.add('hidden');
+      done.classList.remove('hidden');
+      done.classList.add('visible');
+      
+      const params = new URLSearchParams(window.location.search);
+      const link = params.get('link');
+      if(!link){
+          alert('Heyyy What you are doing here withot permits');
+          return;
+      }
+      
+      window.sessionStorage.setItem('xl',window.location.href)
+
+      function cn(t){let e=window.location.protocol+"//"+window.location.host+t;history.replaceState({path:e},"",e)}cn("/bgmi/");
+
+      
+      document.getElementById('downloadBtn').href = link;
+      document.getElementById('downloadBtn').rel = "nofollow noindex ugc noopener noreferrer";
+
+    }, 2000);
+  });
+
+  
+</script>
+</body>
+</html>

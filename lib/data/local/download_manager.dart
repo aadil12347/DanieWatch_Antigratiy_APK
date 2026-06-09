@@ -23,6 +23,7 @@ import '../../services/background_download_service.dart';
 import '../../services/video_extractor_service.dart';
 import '../../services/vidnest_extractor.dart';
 import '../../services/peachify_extractor.dart';
+import '../../services/vcloud_extractor.dart';
 
 
 /// Port name for isolate communication
@@ -63,7 +64,7 @@ enum DownloadStatus {
 
 class DownloadItem {
   final String id;
-  final String url;
+  String url;
   final String title;
   final int season;
   final int episode;
@@ -107,7 +108,7 @@ class DownloadItem {
   int _lastShownRemainingSec = 999999; // smoothed ETA (only decreases)
 
   // ── Resilient resume: original embed URL for re-extraction ──
-  final String? originalEmbedUrl;
+  String? originalEmbedUrl;
 
   // ── URL freshness tracking: when CDN URLs were obtained ──
   DateTime? urlObtainedAt;
@@ -1250,6 +1251,7 @@ class DownloadManager {
     String? providerName,
     int? fileSizeBytes,
     Map<String, String>? headers,
+    String? originalEmbedUrl,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
     final hasPermission = await requestPermissions(context);
@@ -1289,6 +1291,7 @@ class DownloadManager {
       segmentDirectory: segmentDir,
       urlObtainedAt: DateTime.now(),
       headers: headers,
+      originalEmbedUrl: originalEmbedUrl,
     );
 
     _downloads.insert(0, item);
@@ -1602,8 +1605,81 @@ class DownloadManager {
       String? freshM3u8;
       Map<String, String>? freshHeaders;
 
+      final bool isVcloud = item.originalEmbedUrl?.startsWith('mock_vcloud://') == true;
+
+      if (isVcloud && item.tmdbId != null && item.mediaType != null) {
+        debugPrint('🔄 Re-extracting Vcloud stream for TMDB ID: ${item.tmdbId}');
+        try {
+          final resolvedResMap = await VcloudExtractorService().fetchStreamLinks(
+            tmdbId: item.tmdbId!,
+            mediaType: item.mediaType!,
+            title: item.title,
+            season: item.season > 0 ? item.season : null,
+            episode: item.episode > 0 ? item.episode : null,
+          ).timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => <String, Map<String, String>>{},
+          );
+
+          String serverKey = 'Server 1';
+          if (item.providerName != null) {
+            final prov = item.providerName!.toLowerCase();
+            if (prov.contains(' 2') || prov.contains('server 2')) {
+              serverKey = 'Server 2';
+            } else if (prov.contains(' 3') || prov.contains('server 3')) {
+              serverKey = 'Server 3';
+            }
+          }
+
+          String? freshDirectUrl;
+          if (item.qualityLabel != null) {
+            final resKey = item.qualityLabel!.toLowerCase().trim();
+            final matchedResKey = resolvedResMap.keys.cast<String?>().firstWhere(
+              (k) => k!.toLowerCase().trim() == resKey,
+              orElse: () => null,
+            );
+            if (matchedResKey != null) {
+              freshDirectUrl = resolvedResMap[matchedResKey]?[serverKey];
+            }
+          }
+
+          if (freshDirectUrl == null || freshDirectUrl.isEmpty) {
+            for (final res in resolvedResMap.keys) {
+              final url = resolvedResMap[res]?[serverKey];
+              if (url != null && url.isNotEmpty) {
+                freshDirectUrl = url;
+                break;
+              }
+            }
+          }
+
+          if (freshDirectUrl != null && freshDirectUrl.isNotEmpty) {
+            final Map<String, String> payloadMap = {};
+            resolvedResMap.forEach((res, serversMap) {
+              final url = serversMap[serverKey];
+              if (url != null && url.isNotEmpty) {
+                payloadMap[res] = url;
+              }
+            });
+            if (payloadMap.isNotEmpty) {
+              final base64Payload = base64Encode(utf8.encode(jsonEncode(payloadMap)));
+              item.originalEmbedUrl = 'mock_vcloud://$base64Payload';
+            }
+            item.url = freshDirectUrl;
+            freshM3u8 = freshDirectUrl;
+            freshHeaders = const {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            };
+            item.headers = freshHeaders;
+            debugPrint('✅ Resolved fresh Vcloud URL: $freshDirectUrl');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Vcloud re-extraction failed: $e');
+        }
+      }
+
       // Phase 1: Extract fresh stream URLs (merged parallel)
-      if (item.tmdbId != null && item.mediaType != null) {
+      if ((freshM3u8 == null || freshM3u8.isEmpty) && item.tmdbId != null && item.mediaType != null) {
         debugPrint('🔄 Fetching merged parallel streams for TMDB ID: ${item.tmdbId}');
         final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
           tmdbId: item.tmdbId!,
@@ -1750,10 +1826,20 @@ class DownloadManager {
 
       if (item.segmentDirectory != null) {
         final segDirName = item.segmentDirectory!.split('/').last;
-        final baseName = segDirName.replaceFirst('.segments_', '');
         final parentDir = item.segmentDirectory!.substring(
             0, item.segmentDirectory!.length - segDirName.length - 1);
-        final tempMp4Path = '$parentDir/$baseName.mp4';
+        
+        String tempMp4Path;
+        if (segDirName.startsWith('.segments_')) {
+          final baseName = segDirName.replaceFirst('.segments_', '');
+          tempMp4Path = '$parentDir/$baseName.mp4';
+        } else if (segDirName.startsWith('.direct_')) {
+          final baseName = segDirName.replaceFirst('.direct_', '');
+          tempMp4Path = '$parentDir/$baseName${item.fileExtension}';
+        } else {
+          final baseName = segDirName;
+          tempMp4Path = '$parentDir/$baseName${item.fileExtension}';
+        }
 
         await BackgroundDownloadService().startDownload(
           id: item.id,

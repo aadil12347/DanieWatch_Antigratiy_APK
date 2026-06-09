@@ -817,6 +817,14 @@ class HlsDownloaderService {
             continue; // Ignore connection reset/aborts caused by user pause
           }
           
+          if (e is DioException &&
+              (e.response?.statusCode == 403 || e.response?.statusCode == 404)) {
+            debugPrint('⚠️ Direct download URL expired (HTTP ${e.response?.statusCode}) — signaling re-extraction');
+            _isCancelled = true; // Prevent further download attempts
+            onLinkExpired?.call('Direct download URL expired (HTTP ${e.response?.statusCode})');
+            break;
+          }
+
           debugPrint('⚠️ Direct download error: $e. Retrying in 3 seconds...');
           await Future.delayed(const Duration(seconds: 3));
         }

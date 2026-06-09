@@ -440,6 +440,15 @@ class VcloudExtractorService {
                 ..badCertificateCallback = (cert, host, port) => true;
 
               while (redirectCount < 5) {
+                // If currentUrl itself has the direct link, extract it immediately
+                try {
+                  final uri = Uri.parse(currentUrl);
+                  if (uri.queryParameters.containsKey('link')) {
+                    finalUrl = uri.queryParameters['link']!;
+                    break;
+                  }
+                } catch (_) {}
+
                 final hcReq = await followClient.getUrl(Uri.parse(currentUrl));
                 headers.forEach((k, v) => hcReq.headers.set(k, v));
                 hcReq.followRedirects = false;
@@ -447,6 +456,16 @@ class VcloudExtractorService {
                 
                 final loc = hcResp.headers.value('location');
                 if (loc != null) {
+                  // Check if the redirect location itself has the link parameter
+                  try {
+                    final resolvedLoc = loc.startsWith('http') ? loc : Uri.parse(currentUrl).resolve(loc).toString();
+                    final locUri = Uri.parse(resolvedLoc);
+                    if (locUri.queryParameters.containsKey('link')) {
+                      finalUrl = locUri.queryParameters['link']!;
+                      break;
+                    }
+                  } catch (_) {}
+
                   if (loc.startsWith('http')) {
                     currentUrl = loc;
                   } else {
@@ -468,6 +487,11 @@ class VcloudExtractorService {
                   final uri = Uri.parse(currentUrl);
                   if (uri.queryParameters.containsKey('link')) {
                     resolved['Server 2'] = uri.queryParameters['link']!; // Google Drive (Server 2)
+                  } else {
+                    // Fallback: if finalUrl doesn't have link query param, but it has been extracted or is a direct link
+                    if (!finalUrl.contains('gamerxyt.com') && finalUrl.startsWith('http')) {
+                      resolved['Server 2'] = finalUrl;
+                    }
                   }
                 }
               }

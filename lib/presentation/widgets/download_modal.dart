@@ -131,6 +131,7 @@ class _DownloadModalState extends State<DownloadModal> {
       episode: widget.episode,
       posterUrl: widget.posterUrl,
       context: context,
+      originalEmbedUrl: widget.initialUrl,
     );
 
     Future.delayed(const Duration(seconds: 1), () {
