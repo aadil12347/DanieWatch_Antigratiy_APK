@@ -406,29 +406,37 @@ class VcloudExtractorService {
       }
       final html2 = await resp2.transform(utf8.decoder).join();
 
-      // Step 4: Parse all href links from token page
-      final hrefRegExp = RegExp(r'''href=["']([^"']+)["']''');
-      final matches = hrefRegExp.allMatches(html2);
-      final hrefs = matches.map((m) => m.group(1)!).toList();
-
-      // Step 5: Categorize and resolve links parallelly
+      // Step 4 & 5: Parse anchor tags and categorize by button attributes
+      final aTagRegExp = RegExp(r'<a\s+([^>]+)>(.*?)</a>', caseSensitive: false, dotAll: true);
+      final hrefAttrRegExp = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
+      final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
+      
+      final matches = aTagRegExp.allMatches(html2);
       final List<Future<void>> resolveTasks = [];
 
-      for (var href in hrefs) {
-        if (href.contains('css') ||
-            href.contains('fonts') ||
-            href.contains('favicon') ||
-            href.contains('manifest') ||
-            href.contains('telegram') ||
-            href == '#') {
+      for (var match in matches) {
+        final attributes = match.group(1)!;
+        final innerHtml = match.group(2) ?? '';
+        
+        final hrefMatch = hrefAttrRegExp.firstMatch(attributes);
+        if (hrefMatch == null) continue;
+        
+        final href = hrefMatch.group(1)!;
+        if (href == '#' || href.isEmpty) continue;
+        
+        // Exclude irrelevant links
+        if (href.contains('css') || href.contains('fonts') || href.contains('favicon') || href.contains('manifest') || href.contains('telegram')) {
           continue;
         }
 
-        if (href.contains('hub.obsession.buzz') || href.contains('obsession.buzz')) {
-          resolved['Server 1'] = href; // High-Speed Hub Link (Server 1)
-        } else if (href.contains('r2.cloudflarestorage.com') || href.contains('r2.dev') || href.contains('.r2.')) {
-          resolved['Server 3'] = href; // Cloudflare R2 Storage (Server 3)
-        } else if (href.contains('hubcloud') || href.contains('gpdl')) {
+        final idMatch = idAttrRegExp.firstMatch(attributes);
+        final id = idMatch?.group(1) ?? '';
+
+        if (id == 'fsl' || innerHtml.contains('[FSL Server]')) {
+          resolved['Server 1'] = href;
+        } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
+          resolved['Server 2'] = href;
+        } else if (attributes.contains('btn-danger') || innerHtml.contains('[Server : 10Gbps]') || href.contains('hubcloud') || href.contains('gpdl')) {
           // Resolve Google Drive direct link via HubCloud redirection
           resolveTasks.add(() async {
             try {
@@ -482,15 +490,15 @@ class VcloudExtractorService {
               if (finalUrl != null) {
                 final finalUri = Uri.parse(finalUrl);
                 if (finalUri.queryParameters.containsKey('link')) {
-                  resolved['Server 2'] = finalUri.queryParameters['link']!; // Google Drive (Server 2)
+                  resolved['Server 3'] = finalUri.queryParameters['link']!; // Google Drive (Server 3)
                 } else {
                   final uri = Uri.parse(currentUrl);
                   if (uri.queryParameters.containsKey('link')) {
-                    resolved['Server 2'] = uri.queryParameters['link']!; // Google Drive (Server 2)
+                    resolved['Server 3'] = uri.queryParameters['link']!; // Google Drive (Server 3)
                   } else {
                     // Fallback: if finalUrl doesn't have link query param, but it has been extracted or is a direct link
                     if (!finalUrl.contains('gamerxyt.com') && finalUrl.startsWith('http')) {
-                      resolved['Server 2'] = finalUrl;
+                      resolved['Server 3'] = finalUrl;
                     }
                   }
                 }
