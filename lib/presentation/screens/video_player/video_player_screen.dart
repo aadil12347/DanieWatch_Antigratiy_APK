@@ -113,7 +113,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _notifyPillText;
   Timer? _notifyPillTimer;
   Timer? _singleTapTimer;
-  DateTime? _lastTapDownTime;
+  DateTime? _lastTapUpTime;
   AnimationController? _speedPillController;
   Animation<Color?>? _speedPillColorAnimation;
 
@@ -2304,12 +2304,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTapDown: (details) {
+            onTapUp: (details) {
               if (_isLocked) return;
               final now = DateTime.now();
-              final isDoubleTap = _lastTapDownTime != null &&
-                  now.difference(_lastTapDownTime!) < const Duration(milliseconds: 250);
-              _lastTapDownTime = now;
+              final isDoubleTap = _lastTapUpTime != null &&
+                  now.difference(_lastTapUpTime!) < const Duration(milliseconds: 280);
+              _lastTapUpTime = now;
 
               if (isDoubleTap) {
                 _singleTapTimer?.cancel();
@@ -2323,7 +2323,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 }
               } else {
                 _singleTapTimer?.cancel();
-                _singleTapTimer = Timer(const Duration(milliseconds: 200), () {
+                _singleTapTimer = Timer(const Duration(milliseconds: 280), () {
                   _toggleControlsVisibility();
                 });
               }
@@ -2525,7 +2525,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         // HUD controls overlay — use IgnorePointer when hidden so taps pass through
         Positioned.fill(
           child: IgnorePointer(
-            ignoring: !_areControlsVisible,
+            ignoring: !(_areControlsVisible || _isSwipeSeeking),
             child: Stack(
               children: [
                 // Top HUD — slides down from above + fades
@@ -2563,11 +2563,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   left: 0,
                   right: 0,
                   child: AnimatedSlide(
-                    offset: _areControlsVisible ? Offset.zero : const Offset(0, 0.08),
+                    offset: (_areControlsVisible || _isSwipeSeeking) ? Offset.zero : const Offset(0, 0.08),
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOutCubic,
                     child: AnimatedOpacity(
-                      opacity: _areControlsVisible ? 1.0 : 0.0,
+                      opacity: (_areControlsVisible || _isSwipeSeeking) ? 1.0 : 0.0,
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeOutCubic,
                       child: _buildBottomHUD(),
@@ -2676,32 +2676,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     return AnimatedBuilder(
       animation: _speedPillColorAnimation!,
       builder: (context, child) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black54.withOpacity(0.45),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.12)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.fast_forward_rounded,
-                color: _speedPillColorAnimation!.value,
-                size: 14,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '2x Speed',
-                style: TextStyle(
-                  color: _speedPillColorAnimation!.value,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.fast_forward_rounded,
+              color: _speedPillColorAnimation!.value,
+              size: 14,
+              shadows: const [
+                Shadow(
+                  color: Colors.black54,
+                  offset: Offset(0, 1),
+                  blurRadius: 2,
                 ),
+              ],
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '2x Speed',
+              style: TextStyle(
+                color: _speedPillColorAnimation!.value,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                shadows: const [
+                  Shadow(
+                    color: Colors.black54,
+                    offset: Offset(0, 1),
+                    blurRadius: 2,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
@@ -2953,98 +2959,100 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               _resetControlsTimer();
             },
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  if (isPlaying) {
-                    _betterPlayerController!.pause();
-                  } else {
-                    _betterPlayerController!.play();
-                  }
-                  _resetControlsTimer();
-                  _triggerHaptic();
-                },
-              ),
-              IconButton(
-                icon: Icon(
-                  _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  setState(() {
-                    if (_isMuted) {
-                      _isMuted = false;
-                      _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
+          if (!_isSwipeSeeking) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(
+                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    if (isPlaying) {
+                      _betterPlayerController!.pause();
                     } else {
-                      _preMuteVolume = _volume;
-                      _volume = 0.0;
-                      _isMuted = true;
+                      _betterPlayerController!.play();
                     }
-                  });
-                  VolumeController.instance.showSystemUI = false;
-                  VolumeController.instance.setVolume(_volume);
-                  _betterPlayerController?.setVolume(_volume);
-                  _resetControlsTimer();
-                  _triggerHaptic();
-                },
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.85),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
-                onPressed: () {
-                  setState(() {
-                    _isLocked = true;
-                    _areControlsVisible = true;
-                  });
-                  _controlsTimer?.cancel();
-                  _controlsTimer = Timer(const Duration(seconds: 3), () {
-                    if (mounted) setState(() => _areControlsVisible = false);
-                  });
-                  _triggerHaptic();
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
-                onPressed: () {
-                  _saveToWatchHistory();
-                  _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
-                  _resetControlsTimer();
-                  _triggerHaptic();
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_rounded, color: Colors.white),
-                onPressed: () {
-                  _showSettingsSheet();
-                  _triggerHaptic();
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
-                onPressed: () {
-                  _cycleAspectRatio();
-                  _resetControlsTimer();
-                  _triggerHaptic();
-                },
-              ),
-            ],
-          ),
+                IconButton(
+                  icon: Icon(
+                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (_isMuted) {
+                        _isMuted = false;
+                        _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
+                      } else {
+                        _preMuteVolume = _volume;
+                        _volume = 0.0;
+                        _isMuted = true;
+                      }
+                    });
+                    VolumeController.instance.showSystemUI = false;
+                    VolumeController.instance.setVolume(_volume);
+                    _betterPlayerController?.setVolume(_volume);
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
+                  onPressed: () {
+                    setState(() {
+                      _isLocked = true;
+                      _areControlsVisible = true;
+                    });
+                    _controlsTimer?.cancel();
+                    _controlsTimer = Timer(const Duration(seconds: 3), () {
+                      if (mounted) setState(() => _areControlsVisible = false);
+                    });
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
+                  onPressed: () {
+                    _saveToWatchHistory();
+                    _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                  onPressed: () {
+                    _showSettingsSheet();
+                    _triggerHaptic();
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
+                  onPressed: () {
+                    _cycleAspectRatio();
+                    _resetControlsTimer();
+                    _triggerHaptic();
+                  },
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -3210,16 +3218,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _resetControlsTimer();
   }
 
-  void _handleDoubleTapLeft(TapDownDetails details) {
+  void _handleDoubleTapLeft(TapUpDetails details) {
     if (_isLocked) return;
     _triggerHaptic();
     final newPos = (_lastCurrentTime - 15).clamp(0.0, _lastDuration);
     _betterPlayerController!.seekTo(Duration(seconds: newPos.toInt()));
     setState(() {
       _showLeftRipple = true;
-      _areControlsVisible = true;
     });
-    _resetControlsTimer();
+    if (_areControlsVisible) {
+      _resetControlsTimer();
+    }
     _leftRippleTimer?.cancel();
     _leftRippleTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
@@ -3230,16 +3239,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
-  void _handleDoubleTapRight(TapDownDetails details) {
+  void _handleDoubleTapRight(TapUpDetails details) {
     if (_isLocked) return;
     _triggerHaptic();
     final newPos = (_lastCurrentTime + 15).clamp(0.0, _lastDuration);
     _betterPlayerController!.seekTo(Duration(seconds: newPos.toInt()));
     setState(() {
       _showRightRipple = true;
-      _areControlsVisible = true;
     });
-    _resetControlsTimer();
+    if (_areControlsVisible) {
+      _resetControlsTimer();
+    }
     _rightRippleTimer?.cancel();
     _rightRippleTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
@@ -3255,7 +3265,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _betterPlayerController!.setSpeed(2.0);
     setState(() {
       _showSpeedPill = true;
+      _areControlsVisible = false;
     });
+    _controlsTimer?.cancel();
     _triggerHaptic();
   }
 
