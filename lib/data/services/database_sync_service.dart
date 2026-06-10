@@ -3,7 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +15,11 @@ import '../../domain/models/manifest_item.dart';
 class DatabaseSyncService {
   DatabaseSyncService._();
   static final DatabaseSyncService instance = DatabaseSyncService._();
+
+  /// Active sync future — prevents duplicate concurrent downloads.
+  /// If syncIndex() is called while one is already in progress, it returns
+  /// the existing future instead of starting a new HTTP request.
+  Future<bool>? _activeSyncFuture;
 
   static const String _remoteIndexUrl =
       'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/index.json';
@@ -42,7 +47,17 @@ class DatabaseSyncService {
   /// Sync the index database from GitHub.
   /// Downloads to a temp file, validates it, and only overwrites the primary
   /// file on success. Returns true if sync succeeded.
-  Future<bool> syncIndex() async {
+  /// Deduplicates: if a sync is already in progress, returns the same Future.
+  Future<bool> syncIndex() {
+    if (_activeSyncFuture != null) {
+      dev.log('[DatabaseSync] Sync already in progress — joining existing future.');
+      return _activeSyncFuture!;
+    }
+    _activeSyncFuture = _doSync().whenComplete(() => _activeSyncFuture = null);
+    return _activeSyncFuture!;
+  }
+
+  Future<bool> _doSync() async {
     try {
       dev.log('[DatabaseSync] Starting sync from $_remoteIndexUrl');
       
@@ -62,7 +77,7 @@ class DatabaseSyncService {
       }
 
       final response = await http.get(Uri.parse(_remoteIndexUrl), headers: headers)
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 30));
       
       if (response.statusCode == 304) {
         dev.log('[DatabaseSync] 304 Not Modified. Using cached local index.');
@@ -134,20 +149,14 @@ class DatabaseSyncService {
   }
 
   /// Load and parse the positional index from the local file in a background isolate.
+  /// Returns an empty list if no cached index exists yet (e.g. first launch before sync).
   Future<List<ManifestItem>> loadLocalIndex() async {
     try {
       final file = await _indexFile;
       
       if (!await file.exists()) {
-        dev.log('[DatabaseSync] Local index file not found. Copying from assets fallback...');
-        try {
-          final assetData = await rootBundle.loadString('assets/base_index.json');
-          await file.writeAsString(assetData, flush: true);
-          dev.log('[DatabaseSync] Fallback index copied from assets.');
-        } catch (assetErr) {
-          dev.log('[DatabaseSync] Failed to load index from assets: $assetErr');
-          return [];
-        }
+        dev.log('[DatabaseSync] Local index file not found. No cached index available yet.');
+        return [];
       }
 
       final rawData = await file.readAsString();

@@ -12,6 +12,7 @@ import 'app.dart';
 import 'core/config/env.dart';
 import 'data/local/database.dart';
 import 'data/local/download_manager.dart';
+import 'data/services/database_sync_service.dart';
 import 'core/utils/restart_widget.dart';
 import 'pip/pip_controller.dart';
 import 'core/services/notification_service.dart';
@@ -106,6 +107,11 @@ Future<void> main() async {
 
     // Initialize Deep Link Service (catches cold-start links)
     await DeepLinkService.instance.initialize();
+
+    // Start downloading the remote index.json immediately (fire-and-forget).
+    // This runs in the background so the index is likely ready by login time.
+    // ignore: unawaited_futures
+    DatabaseSyncService.instance.syncIndex();
 
     // Remove splash screen just before running the app
     FlutterNativeSplash.remove();

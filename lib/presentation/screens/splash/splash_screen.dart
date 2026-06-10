@@ -37,7 +37,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   late DateTime _startTime;
 
   ProviderSubscription<AsyncValue<dynamic>>? _authSub;
-  ProviderSubscription<AsyncValue<dynamic>>? _manifestSub;
   ProviderSubscription<AsyncValue<List<String>>>? _postersSub;
 
   // TWO-LOCK navigation system:
@@ -49,9 +48,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
   // Safety timeout — prevents the splash screen from being stuck forever.
   Timer? _safetyTimer;
-  // Track manifest retry attempts to avoid infinite retry loops.
-  int _manifestRetryCount = 0;
-  static const _maxManifestRetries = 3;
 
   @override
   void initState() {
@@ -78,16 +74,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
+      // Kick off database sync in background — don't block navigation
+      ref.read(databaseSyncProvider);
+
       // Evaluate immediately on first frame
       _evaluateTransition();
 
       _authSub = ref.listenManual(authStateProvider, (previous, next) {
         debugPrint('SplashScreen: auth changed. User: ${next.valueOrNull?.id}');
-        _evaluateTransition();
-      });
-
-      _manifestSub = ref.listenManual(homeSectionsProvider, (previous, next) {
-        debugPrint('SplashScreen: homeSections changed. hasError: ${next.hasError}, hasValue: ${next.hasValue}');
         _evaluateTransition();
       });
 
@@ -156,8 +150,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     final authState = ref.read(authStateProvider);
     // Use stream value if available, fall back to synchronous Supabase check
     final user = authState.valueOrNull ?? ref.read(currentUserProvider);
-    final manifestAsync = ref.read(homeSectionsProvider);
-    final manifest = manifestAsync.valueOrNull;
 
     // ── CASE 1: Auth is still resolving ──────────────────────────────────────
     if (authState.isLoading && user == null) {
@@ -165,36 +157,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       return;
     }
 
-    // ── CASE 2: User IS logged in ─────────────────────────────────────────────
+    // ── CASE 2: User IS logged in — navigate to home immediately ─────────────
+    // We do NOT wait for the manifest/index to load. The home screen handles
+    // loading/empty states, and the background sync will populate content.
     if (user != null) {
       if (_showAuthModal) {
         setState(() => _showAuthModal = false);
       }
-      // Handle manifest ERROR state: retry instead of waiting forever
-      if (manifestAsync.hasError && !manifestAsync.isLoading) {
-        if (_manifestRetryCount < _maxManifestRetries) {
-          _manifestRetryCount++;
-          debugPrint('SplashScreen: manifest ERROR — retry attempt $_manifestRetryCount/$_maxManifestRetries');
-          ref.invalidate(homeSectionsProvider);
-          _isTransitioning = false;
-          return;
-        } else {
-          // All retries exhausted — force navigate to home.
-          // The home screen can show its own error/retry UI.
-          debugPrint('SplashScreen: manifest retries exhausted — forcing navigation to home');
-          _safetyTimer?.cancel();
-          _forceNavigateHome();
-          return;
-        }
-      }
 
-      if (manifest == null) {
-        // Manifest still loading. Release lock and wait for manifest listener.
-        _isTransitioning = false;
-        return;
-      }
-
-      // Both user and manifest confirmed. Enforce minimum splash display time.
+      // Enforce minimum splash display time for a smooth UX
       final elapsed = DateTime.now().difference(_startTime);
       const minDuration = Duration(milliseconds: 1500);
       if (elapsed < minDuration) {
@@ -311,7 +282,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     debugPrint('SplashScreen: DISPOSED.');
     _safetyTimer?.cancel();
     _authSub?.close();
-    _manifestSub?.close();
     _postersSub?.close();
     _fadeController.dispose();
     super.dispose();

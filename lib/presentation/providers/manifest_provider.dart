@@ -13,20 +13,28 @@ import '../../data/repositories/posting_record_repository.dart';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Triggers remote index.json synchronization from GitHub on startup.
-final databaseSyncProvider = FutureProvider<void>((ref) async {
-  dev.log('[DatabaseSyncProvider] Starting database sync check...');
+/// Runs independently — does NOT block manifest loading or splash navigation.
+/// On success, invalidates localManifestItemsProvider so the UI refreshes
+/// with the latest sorted data from the newly downloaded index.
+final databaseSyncProvider = FutureProvider<bool>((ref) async {
+  dev.log('[DatabaseSyncProvider] Starting background database sync...');
   final success = await DatabaseSyncService.instance.syncIndex();
   dev.log('[DatabaseSyncProvider] Sync finished. Success = $success');
+  if (success) {
+    // New index downloaded & validated — refresh all manifest-derived providers
+    ref.invalidate(localManifestItemsProvider);
+  }
+  return success;
 });
 
 /// Exposes all ManifestItems loaded from the locally cached database file.
-/// Safely waits for databaseSyncProvider to complete (so it reads the fresh index).
+/// Loads from cache IMMEDIATELY (even if empty on first launch).
+/// Does NOT block on network sync — the sync runs in background and will
+/// invalidate this provider when a new index is ready.
 final localManifestItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  // Wait for sync to complete (success or failure)
-  await ref.watch(databaseSyncProvider.future);
-  
-  // Load local database
+  // Load whatever is cached locally right now (may be empty on first launch)
   final items = await DatabaseSyncService.instance.loadLocalIndex();
+  dev.log('[localManifestItemsProvider] Loaded ${items.length} items from cache.');
   return items;
 });
 

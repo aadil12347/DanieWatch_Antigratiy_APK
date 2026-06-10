@@ -266,30 +266,169 @@ class _ErrorHome extends StatelessWidget {
   }
 }
 
-class _EmptyHome extends StatelessWidget {
+class _EmptyHome extends ConsumerWidget {
   const _EmptyHome();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final syncState = ref.watch(databaseSyncProvider);
+    final isStillSyncing = syncState.isLoading;
+
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.movie_outlined,
-                size: 64, color: AppColors.textMuted),
-            const SizedBox(height: 16),
-            Text(
-              'No content available',
-              style: GoogleFonts.lora(
-                color: AppColors.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w500,
+      body: Stack(
+        children: [
+          // Skeleton shimmer cards underneath
+          SafeArea(
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 60),
+                  // Hero shimmer
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: ShimmerBox(width: double.infinity, height: 220),
+                  ),
+                  const SizedBox(height: 28),
+                  // Section 1 shimmer
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const ShimmerBox(width: 140, height: 18),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 180,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: 5,
+                            separatorBuilder: (_, __) => const SizedBox(width: 10),
+                            itemBuilder: (_, __) =>
+                                const ShimmerBox(width: 120, height: 180),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Section 2 shimmer
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const ShimmerBox(width: 100, height: 18),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 180,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: 5,
+                            separatorBuilder: (_, __) => const SizedBox(width: 10),
+                            itemBuilder: (_, __) =>
+                                const ShimmerBox(width: 120, height: 180),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+
+          // Centered loading overlay on top of skeleton
+          if (isStillSyncing)
+            Positioned.fill(
+              child: Container(
+                color: AppColors.background.withValues(alpha: 0.6),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE91E63)),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Please wait',
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Loading content...',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // If sync finished but still empty — show retry
+          if (!isStillSyncing)
+            Positioned.fill(
+              child: Container(
+                color: AppColors.background.withValues(alpha: 0.7),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_download_outlined,
+                          size: 56, color: Colors.white38),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Content loading...',
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Fetching latest catalog',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.white60,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          ref.invalidate(databaseSyncProvider);
+                        },
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Retry'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE91E63),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
