@@ -1918,6 +1918,16 @@
         let gainNode = null;
         let audioSourceConnected = false;
 
+        function resumeAudioContext() {
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().then(() => {
+                    console.log('AudioContext resumed successfully');
+                }).catch(err => {
+                    console.warn('Failed to resume AudioContext:', err);
+                });
+            }
+        }
+
         function setupAudioBoost() {
             if (audioSourceConnected) return;
             try {
@@ -1933,21 +1943,38 @@
             }
         }
 
-        function setGainVolume(vol01) {
+        function setGainVolume(vol01, fromFlutter) {
+            setupAudioBoost();
+            resumeAudioContext();
             // vol01 is 0.0-1.0 from gesture; maps to gain 0.0-3.0
             if (gainNode) {
                 gainNode.gain.value = vol01 * 3.0;
             }
-            // Also control system volume via Flutter
-            sendSystemVolume(vol01);
-            // Update boost indicator color
+            gestureVolume = vol01;
+            // Update boost indicator color and fill height
             const fill = document.getElementById('volumeFill');
+            const label = document.getElementById('volumeLabel');
+            if (fill) fill.style.height = (vol01 * 100) + '%';
+            if (label) label.textContent = Math.round(vol01 * 100) + '%';
+
+            if (vol01 <= 0.01) {
+                iconVolumeUp.classList.add('icon-hidden');
+                iconVolumeMuted.classList.remove('icon-hidden');
+            } else {
+                iconVolumeUp.classList.remove('icon-hidden');
+                iconVolumeMuted.classList.add('icon-hidden');
+            }
+
             if (fill) {
                 if (vol01 > 0.34) {
                     fill.classList.add('boost');
                 } else {
                     fill.classList.remove('boost');
                 }
+            }
+
+            if (!fromFlutter) {
+                sendSystemVolume(vol01);
             }
         }
 
@@ -2449,6 +2476,7 @@
         let tapTimeout = null;
 
         function onTouchStart(e) {
+            resumeAudioContext();
             if (isLocked) return;
             if (e.touches.length >= 2) return; // Don't start single-finger gestures when two fingers are down
             if (e.target.closest('.ctrl-btn, .back-btn, .center-btn, .seek-bar-container, #settings-menu, .subtitle-panel, .next-episode-overlay, .lock-btn')) return;
@@ -2552,22 +2580,9 @@
                 const rect = videoContainer.getBoundingClientRect();
                 const sensitivity = 1.8 / rect.height;
                 gestureVolume = Math.max(0, Math.min(1, gestureVolume + (-dy * sensitivity)));
-                // Control volume via GainNode (0-3x boost) + system volume
-                setGainVolume(gestureVolume);
+                setGainVolume(gestureVolume, false);
                 const indicator = document.getElementById('volumeIndicator');
-                const fill = document.getElementById('volumeFill');
-                const label = document.getElementById('volumeLabel');
-                indicator.classList.add('visible');
-                fill.style.height = (gestureVolume * 100) + '%';
-                label.textContent = Math.round(gestureVolume * 100) + '%';
-                // Update volume icon
-                if (gestureVolume <= 0.01) {
-                    iconVolumeUp.classList.add('icon-hidden');
-                    iconVolumeMuted.classList.remove('icon-hidden');
-                } else {
-                    iconVolumeUp.classList.remove('icon-hidden');
-                    iconVolumeMuted.classList.add('icon-hidden');
-                }
+                if (indicator) indicator.classList.add('visible');
                 gestureStartY = touch.clientY;
             } else if (gestureType === 'seek') {
                 if (!isScrubbing) {
@@ -2824,6 +2839,7 @@
 
         function playPause(e) {
             if (e) e.stopPropagation();
+            resumeAudioContext();
             haptic('light');
             if (video.paused) {
                 video.play();
@@ -2865,23 +2881,16 @@
         // ===== VOLUME =====
         function volumeToggle(e) {
             if (e) e.stopPropagation();
+            resumeAudioContext();
             if (gestureVolume <= 0.01) {
                 // Unmute: restore previous volume
                 gestureVolume = savedVolumeBeforeMute || 1.0;
-                iconVolumeUp.classList.remove('icon-hidden');
-                iconVolumeMuted.classList.add('icon-hidden');
             } else {
                 // Mute: save current and set to 0
                 savedVolumeBeforeMute = gestureVolume;
                 gestureVolume = 0;
-                iconVolumeUp.classList.add('icon-hidden');
-                iconVolumeMuted.classList.remove('icon-hidden');
             }
-            sendSystemVolume(gestureVolume);
-            var fill = document.getElementById('volumeFill');
-            var label = document.getElementById('volumeLabel');
-            if (fill) fill.style.height = (gestureVolume * 100) + '%';
-            if (label) label.textContent = Math.round(gestureVolume * 100) + '%';
+            setGainVolume(gestureVolume, false);
             showControls();
         }
 
@@ -3227,9 +3236,14 @@
 
         function selectQuality(index) {
             selectedQualityIndex = index;
-            hls.currentLevel = index;
-            const text = index === -1 ? 'Auto' : qualityLevels[index].height + 'p';
-            document.getElementById('qualityValueText').textContent = text;
+            if (index === -1) {
+                hls.currentLevel = -1;
+                document.getElementById('qualityValueText').textContent = 'Auto';
+            } else {
+                const targetLevel = qualityLevels[index];
+                hls.currentLevel = targetLevel.originalIndex;
+                document.getElementById('qualityValueText').textContent = targetLevel.height + 'p';
+            }
             renderQualityOptions();
             setTimeout(showMainMenu, 200);
         }
@@ -3424,7 +3438,19 @@
 
         function setupQualityPicker(levels) {
             if (!levels || levels.length < 1) return;
-            qualityLevels = levels;
+            // Map original indices and copy details
+            let mapped = levels.map((l, idx) => {
+                return {
+                    height: l.height,
+                    width: l.width,
+                    bitrate: l.bitrate,
+                    originalIndex: idx
+                };
+            });
+            // Sort by height ascending (lowest resolution to highest resolution)
+            mapped.sort((a, b) => a.height - b.height);
+            
+            qualityLevels = mapped;
             selectedQualityIndex = -1;
             document.getElementById('qualityMenuItem').classList.remove('hidden');
             document.getElementById('qualityValueText').textContent = 'Auto';
@@ -3554,18 +3580,7 @@
 
         // Called by Flutter to sync system volume level
         window.initSystemVolume = function(level) {
-            gestureVolume = Math.max(0, Math.min(1, level));
-            var fill = document.getElementById('volumeFill');
-            var label = document.getElementById('volumeLabel');
-            if (fill) fill.style.height = (gestureVolume * 100) + '%';
-            if (label) label.textContent = Math.round(gestureVolume * 100) + '%';
-            if (gestureVolume <= 0.01) {
-                iconVolumeUp.classList.add('icon-hidden');
-                iconVolumeMuted.classList.remove('icon-hidden');
-            } else {
-                iconVolumeUp.classList.remove('icon-hidden');
-                iconVolumeMuted.classList.add('icon-hidden');
-            }
+            setGainVolume(level, true);
         };
 
         function sendSystemVolume(vol) {

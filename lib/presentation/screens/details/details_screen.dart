@@ -1485,7 +1485,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           sortedResKeys.sort((a, b) {
             final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
             final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
-            return bInt.compareTo(aInt);
+            return aInt.compareTo(bInt);
           });
           final resSuffix = sortedResKeys.isNotEmpty ? ' (${sortedResKeys.join(", ")})' : '';
 

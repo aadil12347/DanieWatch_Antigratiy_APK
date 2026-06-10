@@ -339,7 +339,7 @@ class _QualitySelectorContentState
       });
       
       // Sort variants best to worst
-      variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+      variants.sort((a, b) => a.bandwidth.compareTo(b.bandwidth));
       
       return PlaylistInfo(
         variants: variants,
@@ -458,7 +458,7 @@ class _QualitySelectorContentState
         return res.contains('720') || res.contains('1280');
       });
     } catch (_) {
-      return groupVariants.first;
+      return groupVariants.last;
     }
   }
 
@@ -740,20 +740,21 @@ class _QualitySelectorContentState
 
     final filtered = _getFilteredVariants(playlist, _selectedAudio);
     final sortedVariants = List<StreamVariant>.from(filtered)
-      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+      ..sort((a, b) => a.bandwidth.compareTo(b.bandwidth));
 
     final uniqueResolutions = sortedVariants.map((sv) => sv.qualityLabel).toSet();
     final isSingleResolution = uniqueResolutions.length <= 1;
-    final fbq = ref.read(downloadModalProvider).fallbackQuality;
     final index = sortedVariants.indexWhere((sv) => sv.url == v.url);
+    final fbq = ref.read(downloadModalProvider).fallbackQuality;
 
     if (isSingleResolution) {
       String label;
-      if (index == 0) {
+      final reverseIndex = sortedVariants.length - 1 - index;
+      if (reverseIndex == 0) {
         label = '720p';
-      } else if (index == 1) {
+      } else if (reverseIndex == 1) {
         label = '480p';
-      } else if (index == 2) {
+      } else if (reverseIndex == 2) {
         label = '360p';
       } else {
         label = v.qualityLabel;
@@ -865,7 +866,7 @@ class _QualitySelectorContentState
     final playlist = _playlist!;
     final filteredVariants = _getFilteredVariants(playlist, _selectedAudio);
     final sortedVariants = List<StreamVariant>.from(filteredVariants)
-      ..sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+      ..sort((a, b) => a.bandwidth.compareTo(b.bandwidth));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

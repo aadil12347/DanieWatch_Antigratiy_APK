@@ -163,7 +163,7 @@ class PlaylistInfo {
   bool get hasMultipleAudioTracks => audioTracks.length > 1;
   bool get hasSubtitles => subtitles.isNotEmpty;
 
-  StreamVariant? get bestVariant => variants.isNotEmpty ? variants.first : null;
+  StreamVariant? get bestVariant => variants.isNotEmpty ? variants.last : null;
 
   /// Find variant closest to 720p for default selection
   StreamVariant? get defaultVariant {
@@ -177,7 +177,7 @@ class PlaylistInfo {
         return res.contains('720') || res.contains('1280');
       });
     } catch (_) {
-      return variants.first;
+      return variants.last;
     }
   }
 
@@ -333,8 +333,8 @@ class M3u8Parser {
       }
     }
 
-    // Sort variants: best quality first
-    variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+    // Sort variants: worst quality first (ascending)
+    variants.sort((a, b) => a.bandwidth.compareTo(b.bandwidth));
 
     // Deduplicate audio tracks by name+language
     final seenAudio = <String>{};

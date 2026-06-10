@@ -134,9 +134,9 @@ class HlsResolutionParser {
       }
     }
 
-    // Sort by height descending (highest first)
+    // Sort by height ascending (lowest first)
     final sortedEntries = variants.entries.toList()
-      ..sort((a, b) => b.value.height.compareTo(a.value.height));
+      ..sort((a, b) => a.value.height.compareTo(b.value.height));
 
     final result = <String, String>{};
     for (final entry in sortedEntries) {

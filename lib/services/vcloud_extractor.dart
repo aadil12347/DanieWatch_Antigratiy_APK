@@ -412,7 +412,6 @@ class VcloudExtractorService {
       final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
       
       final matches = aTagRegExp.allMatches(html2);
-      final List<Future<void>> resolveTasks = [];
 
       for (var match in matches) {
         final attributes = match.group(1)!;
@@ -433,84 +432,16 @@ class VcloudExtractorService {
         final id = idMatch?.group(1) ?? '';
 
         if (id == 'fsl' || innerHtml.contains('[FSL Server]')) {
-          resolved['Server 1'] = href;
+          final minutes = DateTime.now().minute;
+          resolved['Server 1'] = href + '1$minutes';
         } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
           resolved['Server 2'] = href;
         } else if (attributes.contains('btn-danger') || innerHtml.contains('[Server : 10Gbps]') || href.contains('hubcloud') || href.contains('gpdl')) {
-          // Resolve Google Drive direct link via HubCloud redirection
-          resolveTasks.add(() async {
-            try {
-              var currentUrl = href;
-              var redirectCount = 0;
-              String? finalUrl;
-              final followClient = HttpClient()
-                ..connectionTimeout = const Duration(seconds: 4)
-                ..badCertificateCallback = (cert, host, port) => true;
-
-              while (redirectCount < 5) {
-                // If currentUrl itself has the direct link, extract it immediately
-                try {
-                  final uri = Uri.parse(currentUrl);
-                  if (uri.queryParameters.containsKey('link')) {
-                    finalUrl = uri.queryParameters['link']!;
-                    break;
-                  }
-                } catch (_) {}
-
-                final hcReq = await followClient.getUrl(Uri.parse(currentUrl));
-                headers.forEach((k, v) => hcReq.headers.set(k, v));
-                hcReq.followRedirects = false;
-                final hcResp = await hcReq.close();
-                
-                final loc = hcResp.headers.value('location');
-                if (loc != null) {
-                  // Check if the redirect location itself has the link parameter
-                  try {
-                    final resolvedLoc = loc.startsWith('http') ? loc : Uri.parse(currentUrl).resolve(loc).toString();
-                    final locUri = Uri.parse(resolvedLoc);
-                    if (locUri.queryParameters.containsKey('link')) {
-                      finalUrl = locUri.queryParameters['link']!;
-                      break;
-                    }
-                  } catch (_) {}
-
-                  if (loc.startsWith('http')) {
-                    currentUrl = loc;
-                  } else {
-                    currentUrl = Uri.parse(currentUrl).resolve(loc).toString();
-                  }
-                  redirectCount++;
-                } else {
-                  finalUrl = currentUrl;
-                  break;
-                }
-              }
-              followClient.close();
-
-              if (finalUrl != null) {
-                final finalUri = Uri.parse(finalUrl);
-                if (finalUri.queryParameters.containsKey('link')) {
-                  resolved['Server 3'] = finalUri.queryParameters['link']!; // Google Drive (Server 3)
-                } else {
-                  final uri = Uri.parse(currentUrl);
-                  if (uri.queryParameters.containsKey('link')) {
-                    resolved['Server 3'] = uri.queryParameters['link']!; // Google Drive (Server 3)
-                  } else {
-                    // Fallback: if finalUrl doesn't have link query param, but it has been extracted or is a direct link
-                    if (!finalUrl.contains('gamerxyt.com') && finalUrl.startsWith('http')) {
-                      resolved['Server 3'] = finalUrl;
-                    }
-                  }
-                }
-              }
-            } catch (e) {
-              debugPrint('[VcloudExtractor] Error resolving redirect for $href: $e');
-            }
-          }());
+          // Defer Google Drive direct link resolution until playback to prevent expiration
+          resolved['Server 3'] = href;
         }
       }
 
-      await Future.wait(resolveTasks);
     } catch (e) {
       debugPrint('[VcloudExtractor] Error during vcloud extraction: $e');
     } finally {
@@ -519,4 +450,64 @@ class VcloudExtractorService {
 
     return resolved;
   }
+
+  /// Resolves GPDL / HubCloud redirect URL just-in-time.
+  /// Follows redirects up to 8 hops, and extracts the direct URL from the 'link' parameter.
+  Future<String?> resolveHubCloudRedirect(String url) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10)
+      ..badCertificateCallback = (cert, host, port) => true;
+
+    final headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    };
+
+    try {
+      var currentUrl = url;
+      var redirectCount = 0;
+      String? finalUrl;
+
+      while (redirectCount < 8) {
+        final req = await client.getUrl(Uri.parse(currentUrl));
+        headers.forEach((k, v) => req.headers.set(k, v));
+        req.followRedirects = false;
+        final resp = await req.close();
+
+        final loc = resp.headers.value('location');
+        if (loc != null) {
+          if (loc.startsWith('http')) {
+            currentUrl = loc;
+          } else {
+            currentUrl = Uri.parse(currentUrl).resolve(loc).toString();
+          }
+          redirectCount++;
+        } else {
+          finalUrl = currentUrl;
+          break;
+        }
+      }
+
+      if (finalUrl != null) {
+        final uri = Uri.parse(finalUrl);
+        if (uri.queryParameters.containsKey('link')) {
+          final directLink = uri.queryParameters['link']!;
+          debugPrint('[VcloudExtractor] Resolved direct link from final URL query: $directLink');
+          return directLink;
+        }
+      }
+
+      final uri = Uri.parse(currentUrl);
+      if (uri.queryParameters.containsKey('link')) {
+        final directLink = uri.queryParameters['link']!;
+        debugPrint('[VcloudExtractor] Resolved direct link from last redirect query: $directLink');
+        return directLink;
+      }
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Error resolving HubCloud redirect: $e');
+    } finally {
+      client.close();
+    }
+    return null;
+  }
 }
+

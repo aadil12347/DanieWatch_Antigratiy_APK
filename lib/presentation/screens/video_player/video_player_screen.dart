@@ -295,9 +295,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         });
       });
 
-      // Find first available server in order of priority (Server 1 -> Server 3 -> Server 2)
+      // Find first available server in order of priority (Server 1 -> Server 2 -> Server 3)
       String? defaultServer;
-      final priorityServers = ['Server 1', 'Server 3', 'Server 2'];
+      final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
       for (final srv in priorityServers) {
         if (serverToResUrl.containsKey(srv) && serverToResUrl[srv]!.isNotEmpty) {
           defaultServer = srv;
@@ -343,12 +343,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       return;
     }
 
-    // Sort resolutions: best to worst (1080p -> 720p -> 480p -> 360p)
+    // Sort resolutions: worst to best (360p -> 480p -> 720p -> 1080p)
     final sortedResKeys = resolutions.keys.toList();
     sortedResKeys.sort((a, b) {
       final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
       final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
-      return bInt.compareTo(aInt);
+      return aInt.compareTo(bInt);
     });
 
     // Pick default resolution (closest to 720p or highest if not found)
@@ -356,16 +356,28 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     try {
       defaultRes = sortedResKeys.firstWhere((k) => k.contains('720'));
     } catch (_) {
-      defaultRes = sortedResKeys.first;
+      defaultRes = sortedResKeys.last;
     }
 
     _selectedResolution = defaultRes;
-    final playUrl = resolutions[defaultRes]!;
+    String playUrl = resolutions[defaultRes]!;
 
-    // Populate explicit resolutions for dropdown UI
+    if (playUrl.contains('hubcloud') || playUrl.contains('gpdl')) {
+      debugPrint('[VcloudPlayer] Resolving HubCloud redirect just-in-time...');
+      setState(() {
+        _isExtracting = true;
+      });
+      final gDriveUrl = await VcloudExtractorService().resolveHubCloudRedirect(playUrl);
+      if (gDriveUrl != null && gDriveUrl.isNotEmpty) {
+        playUrl = gDriveUrl;
+        debugPrint('[VcloudPlayer] JIT resolved url: $playUrl');
+      }
+    }
+
+    // Populate explicit resolutions for dropdown UI in ascending sorted order
     final Map<String, String> explicitResolutions = {};
-    for (var entry in resolutions.entries) {
-      explicitResolutions[entry.key] = entry.value;
+    for (var key in sortedResKeys) {
+      explicitResolutions[key] = resolutions[key]!;
     }
     _explicitResolutions = explicitResolutions;
 
@@ -397,17 +409,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     debugPrint('[VcloudPlayer] Failover triggered. Current active server: $_activeServer');
 
-    // Priority: Server 1 -> Server 3 -> Server 2
+    // Priority: Server 1 -> Server 2 -> Server 3
     String? nextServer;
     if (_activeServer == 'Server 1') {
-      if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
-        nextServer = 'Server 3';
-      } else if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
-        nextServer = 'Server 2';
-      }
-    } else if (_activeServer == 'Server 3') {
       if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
         nextServer = 'Server 2';
+      } else if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
+        nextServer = 'Server 3';
+      }
+    } else if (_activeServer == 'Server 2') {
+      if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
+        nextServer = 'Server 3';
       }
     }
 
@@ -650,9 +662,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         useAsmsSubtitles: url.toLowerCase().contains('.m3u8'),
         headers: !isOffline ? (() {
           final isGoogle = url.contains('googleusercontent.com') || url.contains('google.com');
+          if (isGoogle) return <String, String>{};
           return {
             if (extractedStream != null) ...extractedStream.headers,
-            if (extractedStream == null && !isGoogle) ...{
+            if (extractedStream == null) ...{
               'Referer': 'https://peachify.top/',
               'Origin': 'https://peachify.top',
             },
@@ -689,6 +702,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         ),
         betterPlayerDataSource: dataSource,
       );
+      _betterPlayerController!.setVolume(_isMuted ? 0.0 : _volume);
 
       // Listen for events
       _betterPlayerController!.addEventsListener((event) {
@@ -735,7 +749,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _explicitResolutions = resolutions;
           // Default to highest available resolution
           if (_selectedResolution == null || !resolutions.containsKey(_selectedResolution)) {
-            _selectedResolution = resolutions.keys.first;
+            _selectedResolution = resolutions.keys.last;
           }
         });
         debugPrint('[BetterPlayer] 🎬 Resolutions available: ${resolutions.keys.join(", ")}');
@@ -1269,11 +1283,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             },
           );
           controller.addJavaScriptHandler(
+            handlerName: 'getSystemVolume',
+            callback: (args) {
+              return _volume;
+            },
+          );
+          controller.addJavaScriptHandler(
             handlerName: 'setSystemVolume',
             callback: (args) {
               if (_isClosing) return;
               if (args.isNotEmpty) {
                 final vol = (args[0] as num).toDouble().clamp(0.0, 1.0);
+                if (mounted) {
+                  setState(() {
+                    _volume = vol;
+                    _isMuted = vol == 0;
+                  });
+                }
                 VolumeController.instance.showSystemUI = false;
                 VolumeController.instance.setVolume(vol);
               }
@@ -1468,17 +1494,46 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               tracksJs = '[${tracksList.join(',')}]';
             }
 
-            final headersMap = _extractedStream?.headers ?? {
+            final isGoogle = _extractedLink!.contains('googleusercontent.com') || _extractedLink!.contains('google.com');
+            final headersMap = isGoogle ? <String, String>{} : (_extractedStream?.headers ?? {
               'Referer': 'https://peachify.top/',
               'Origin': 'https://peachify.top'
-            };
+            });
             final headersJson = jsonEncode(headersMap);
 
             String serversJs = '[]';
             if (_vcloudServerMap.isNotEmpty) {
-              serversJs = jsonEncode(_vcloudServerMap.keys.toList());
+              final serversList = _vcloudServerMap.keys.toList();
+              final priority = ['Server 1', 'Server 2', 'Server 3'];
+              serversList.sort((a, b) {
+                final aIndex = priority.indexOf(a);
+                final bIndex = priority.indexOf(b);
+                if (aIndex != -1 && bIndex != -1) {
+                  return aIndex.compareTo(bIndex);
+                } else if (aIndex != -1) {
+                  return -1;
+                } else if (bIndex != -1) {
+                  return 1;
+                }
+                return a.compareTo(b);
+              });
+              serversJs = jsonEncode(serversList);
             } else if (_currentStreamsMap != null && _currentStreamsMap!.isNotEmpty) {
-              serversJs = jsonEncode(_currentStreamsMap!.keys.toList());
+              final serversList = _currentStreamsMap!.keys.toList();
+              final priority = ['Server 1', 'Server 2', 'Server 3'];
+              serversList.sort((a, b) {
+                final aIndex = priority.indexOf(a);
+                final bIndex = priority.indexOf(b);
+                if (aIndex != -1 && bIndex != -1) {
+                  return aIndex.compareTo(bIndex);
+                } else if (aIndex != -1) {
+                  return -1;
+                } else if (bIndex != -1) {
+                  return 1;
+                }
+                return a.compareTo(b);
+              });
+              serversJs = jsonEncode(serversList);
             }
 
             final double resumeTime = _lastCurrentTime > 1 ? _lastCurrentTime : (widget.startPosition?.toDouble() ?? 0.0);
@@ -2757,6 +2812,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                     });
                     VolumeController.instance.showSystemUI = false;
                     VolumeController.instance.setVolume(_volume);
+                    _betterPlayerController?.setVolume(_volume);
                     _resetControlsTimer();
                     _triggerHaptic();
                   },
@@ -2852,6 +2908,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         setState(() {
           _volume = vol;
         });
+        _betterPlayerController?.setVolume(vol);
       }
     });
     VolumeController.instance.addListener((vol) {
@@ -2860,6 +2917,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           _volume = vol;
           _isMuted = vol == 0;
         });
+        _betterPlayerController?.setVolume(vol);
+        if (_useWebViewEngine) {
+          _webViewController?.evaluateJavascript(
+            source: 'if (window.initSystemVolume) window.initSystemVolume($vol);',
+          );
+        }
       }
     });
   }
@@ -2915,6 +2978,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
     VolumeController.instance.showSystemUI = false;
     VolumeController.instance.setVolume(newVolume);
+    _betterPlayerController?.setVolume(newVolume);
     _volumeTimer?.cancel();
   }
 
@@ -3101,9 +3165,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _changeServer(String serverName) async {
-    final double currentPos = _betterPlayerController != null 
-        ? _betterPlayerController!.videoPlayerController!.value.position.inSeconds.toDouble()
-        : _lastCurrentTime;
+    double currentPos = _lastCurrentTime;
+    try {
+      if (_betterPlayerController?.videoPlayerController?.value.initialized == true) {
+        currentPos = _betterPlayerController!.videoPlayerController!.value.position.inSeconds.toDouble();
+      }
+    } catch (_) {}
     
     debugPrint('[ServerSwap] Saving position: $currentPos before switching to $serverName');
     
@@ -4200,7 +4267,7 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
 
   Widget _buildServerView() {
     final sortedServers = widget.vcloudServerMap.keys.toList();
-    final priority = ['Server 1', 'Server 3', 'Server 2'];
+    final priority = ['Server 1', 'Server 2', 'Server 3'];
     sortedServers.sort((a, b) {
       final aIndex = priority.indexOf(a);
       final bIndex = priority.indexOf(b);
@@ -4222,9 +4289,9 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
               children: sortedServers.map((server) {
                 final isSelected = server == widget.activeServer;
                 String label = server;
-                if (server == 'Server 1') label = 'Server 1 (Hub)';
-                if (server == 'Server 2') label = 'Server 2 (G-Drive)';
-                if (server == 'Server 3') label = 'Server 3 (R2)';
+                if (server == 'Server 1') label = 'Server 1 (FSL)';
+                if (server == 'Server 2') label = 'Server 2 (FSLv2)';
+                if (server == 'Server 3') label = 'Server 3 (G-Drive)';
                 
                 return ListTile(
                   title: Text(

@@ -1259,7 +1259,22 @@ class DownloadManager {
       throw Exception('Storage permission denied');
     }
 
-    final ext = fileExtension ?? extractExtension(url);
+    var downloadUrl = url;
+    Map<String, String>? finalHeaders = headers;
+    if (downloadUrl.contains('hubcloud') || downloadUrl.contains('gpdl')) {
+      debugPrint('[DownloadManager] Resolving HubCloud redirect: $downloadUrl');
+      final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(downloadUrl);
+      if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+        downloadUrl = resolvedUrl;
+        debugPrint('[DownloadManager] Resolved HubCloud to: $downloadUrl');
+      }
+    }
+
+    if (downloadUrl.contains('googleusercontent.com') || downloadUrl.contains('google.com')) {
+      finalHeaders = null;
+    }
+
+    final ext = fileExtension ?? extractExtension(downloadUrl);
     final safeTitle = _buildSafeTitle(title, season, episode, qualityLabel);
     final ts = DateTime.now().millisecondsSinceEpoch;
 
@@ -1273,7 +1288,7 @@ class DownloadManager {
 
     final item = DownloadItem(
       id: ts.toString(),
-      url: url,
+      url: downloadUrl,
       title: title,
       season: season,
       episode: episode,
@@ -1290,7 +1305,7 @@ class DownloadManager {
       localPath: publicFilePath,
       segmentDirectory: segmentDir,
       urlObtainedAt: DateTime.now(),
-      headers: headers,
+      headers: finalHeaders,
       originalEmbedUrl: originalEmbedUrl,
     );
 
@@ -1305,7 +1320,7 @@ class DownloadManager {
         saveDir: segmentDir,
         outputMp4Path: tempFilePath,
         fileName: item.fileName,
-        headers: headers,
+        headers: finalHeaders,
       );
 
       onDownloadUpdate?.call(item);
@@ -1654,6 +1669,14 @@ class DownloadManager {
           }
 
           if (freshDirectUrl != null && freshDirectUrl.isNotEmpty) {
+            if (freshDirectUrl.contains('hubcloud') || freshDirectUrl.contains('gpdl')) {
+              debugPrint('[DownloadManager] Resolving HubCloud redirect during resume: $freshDirectUrl');
+              final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(freshDirectUrl);
+              if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+                freshDirectUrl = resolvedUrl;
+              }
+            }
+
             final Map<String, String> payloadMap = {};
             resolvedResMap.forEach((res, serversMap) {
               final url = serversMap[serverKey];
@@ -1667,9 +1690,13 @@ class DownloadManager {
             }
             item.url = freshDirectUrl;
             freshM3u8 = freshDirectUrl;
-            freshHeaders = const {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            };
+            if (freshDirectUrl.contains('googleusercontent.com') || freshDirectUrl.contains('google.com')) {
+              freshHeaders = null;
+            } else {
+              freshHeaders = const {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              };
+            }
             item.headers = freshHeaders;
             debugPrint('✅ Resolved fresh Vcloud URL: $freshDirectUrl');
           }
@@ -1812,6 +1839,11 @@ class DownloadManager {
       }
 
       freshVideoUrl ??= freshM3u8;
+
+      if (freshVideoUrl != null && (freshVideoUrl.contains('googleusercontent.com') || freshVideoUrl.contains('google.com'))) {
+        freshHeaders = null;
+        item.headers = null;
+      }
 
       // Phase 3: Clean corrupted partial segments
       if (item.segmentDirectory != null) {
