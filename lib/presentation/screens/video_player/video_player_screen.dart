@@ -153,6 +153,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   bool _isSwipeSeeking = false;
   double _swipeSeekTarget = 0.0;
   String? _activeVerticalDrag;
+  bool _wasPlayingBeforeFastForward = true;
 
   @override
   void initState() {
@@ -2374,36 +2375,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           ),
         ),
 
-        // Brightness indicator — animated fade+scale
-        Positioned(
-          left: 24,
-          top: 0,
-          bottom: 0,
-          child: IgnorePointer(
-            child: AnimatedOpacity(
-              opacity: _showBrightnessIndicator ? 1.0 : 0.0,
-              duration: Duration(milliseconds: _showBrightnessIndicator ? 150 : 300),
-              curve: Curves.easeOutCubic,
-              child: AnimatedScale(
-                scale: _showBrightnessIndicator ? 1.0 : 0.85,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _buildVerticalGestureIndicator(
-                    icon: Icons.brightness_6_rounded,
-                    value: _brightness,
-                    label: '${(_brightness * 100).toInt()}%',
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-
         // Volume indicator — animated fade+scale
         Positioned(
-          right: 24,
+          left: 24,
           top: 0,
           bottom: 0,
           child: IgnorePointer(
@@ -2416,11 +2390,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOutCubic,
                 child: Align(
-                  alignment: Alignment.centerRight,
+                  alignment: Alignment.centerLeft,
                   child: _buildVerticalGestureIndicator(
                     icon: _volume == 0 ? Icons.volume_mute_rounded : Icons.volume_up_rounded,
                     value: _volume,
                     label: '${(_volume * 100).toInt()}%',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Brightness indicator — animated fade+scale
+        Positioned(
+          right: 24,
+          top: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _showBrightnessIndicator ? 1.0 : 0.0,
+              duration: Duration(milliseconds: _showBrightnessIndicator ? 150 : 300),
+              curve: Curves.easeOutCubic,
+              child: AnimatedScale(
+                scale: _showBrightnessIndicator ? 1.0 : 0.85,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildVerticalGestureIndicator(
+                    icon: Icons.brightness_6_rounded,
+                    value: _brightness,
+                    label: '${(_brightness * 100).toInt()}%',
                   ),
                 ),
               ),
@@ -3280,7 +3281,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _startFastForward() {
     if (_isLocked || _betterPlayerController == null) return;
+    _wasPlayingBeforeFastForward = _betterPlayerController!.videoPlayerController?.value.isPlaying ?? false;
     _betterPlayerController!.setSpeed(2.0);
+    if (!_wasPlayingBeforeFastForward) {
+      _betterPlayerController!.play();
+    }
     setState(() {
       _showSpeedPill = true;
       _areControlsVisible = false;
@@ -3292,6 +3297,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void _stopFastForward() {
     if (_betterPlayerController == null) return;
     _betterPlayerController!.setSpeed(_playbackSpeed);
+    if (!_wasPlayingBeforeFastForward) {
+      _betterPlayerController!.pause();
+    }
     setState(() {
       _showSpeedPill = false;
     });
