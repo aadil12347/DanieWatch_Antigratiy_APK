@@ -460,7 +460,8 @@ class VcloudExtractorService {
           final minutes = DateTime.now().minute;
           resolved['Server 1'] = href + '1$minutes';
         } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
-          resolved['Server 2'] = href;
+          final minutes2 = DateTime.now().minute;
+          resolved['Server 2'] = href + '1$minutes2';
         } else if (attributes.contains('btn-danger') || innerHtml.contains('[Server : 10Gbps]') || href.contains('hubcloud') || href.contains('gpdl')) {
           // Defer Google Drive direct link resolution until playback to prevent expiration
           resolved['Server 3'] = href;

@@ -152,6 +152,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   double? _resumeTimeOverride;
   double? _seekingToTime;
   Timer? _seekTimeoutTimer;
+  Timer? _playbackWatchdogTimer;
   bool _isSwipeSeeking = false;
   double _swipeSeekTarget = 0.0;
   String? _activeVerticalDrag;
@@ -512,6 +513,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
 
     _initializeBetterPlayer(playUrl, isOffline: false);
+
+    // Watchdog: if video doesn't start within 12s, fall back to WebView engine
+    _playbackWatchdogTimer?.cancel();
+    _playbackWatchdogTimer = Timer(const Duration(seconds: 12), () {
+      if (!mounted || _isClosing || _hasVideoStarted) return;
+      debugPrint('[Watchdog] Video did not start within 12s on $_activeServer. Falling back to WebView engine.');
+      try {
+        _betterPlayerController?.videoPlayerController?.removeListener(_videoPlayerListener);
+        _betterPlayerController?.dispose();
+        _betterPlayerController = null;
+      } catch (_) {}
+      _switchToWebEngine();
+    });
   }
 
   void _handleFailover() {
@@ -1085,6 +1099,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _masterWaitTimer?.cancel();
     _autoClickTimer?.cancel();
     _seekTimeoutTimer?.cancel();
+    _playbackWatchdogTimer?.cancel();
 
     // 1b. Restore system brightness
     try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
@@ -1231,6 +1246,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _notifyPillTimer?.cancel();
     _seekTimeoutTimer?.cancel();
     _singleTapTimer?.cancel();
+    _playbackWatchdogTimer?.cancel();
     _speedPillController?.dispose();
 
     // Dispose controllers (null-safe since _goBack may have already nulled them)
@@ -3541,6 +3557,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             setState(() {
               _hasVideoStarted = true;
             });
+            _playbackWatchdogTimer?.cancel();
+            // Re-apply volume to ensure audio works after server switch
+            _betterPlayerController?.setVolume(_isMuted ? 0.0 : _volume);
             debugPrint('[BetterPlayerListener] Video started playing at ${position.inMilliseconds}ms');
           }
         }
