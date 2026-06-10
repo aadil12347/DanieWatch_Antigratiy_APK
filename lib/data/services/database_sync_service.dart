@@ -26,6 +26,13 @@ class DatabaseSyncService {
   static const String _indexFileName = 'index_positional.json';
   static const String _tempFileName = 'index_positional_temp.json';
 
+  // ─── 3rd Party Hosted Index ──────────────────────────────────────────────
+  static const String _remote3rdPartyUrl =
+      'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/3rd%20party%20hosted/3rd_party_hosted_index.json';
+  static const String _3rdPartyFileName = '3rd_party_hosted_index.json';
+  static const String _3rdPartyTempFileName = '3rd_party_hosted_temp.json';
+  Future<bool>? _active3rdPartySyncFuture;
+
   /// Returns the file path for the active local index.json database.
   Future<File> get _indexFile async {
     final dir = await getApplicationDocumentsDirectory();
@@ -134,6 +141,11 @@ class DatabaseSyncService {
       }
 
       dev.log('[DatabaseSync] Database successfully synchronized & cached.');
+
+      // Also trigger 3rd party sync in parallel (fire-and-forget)
+      // ignore: unawaited_futures
+      sync3rdPartyIndex();
+
       return true;
     } catch (e, stack) {
       dev.log('[DatabaseSync] Sync failed with error: $e', stackTrace: stack);
@@ -144,6 +156,11 @@ class DatabaseSyncService {
           await tempFile.delete();
         }
       } catch (_) {}
+
+      // Even if main sync fails, still try 3rd party sync
+      // ignore: unawaited_futures
+      sync3rdPartyIndex();
+
       return false;
     }
   }
@@ -167,6 +184,132 @@ class DatabaseSyncService {
       return items;
     } catch (e, stack) {
       dev.log('[DatabaseSync] Failed to load local database: $e', stackTrace: stack);
+      return [];
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 3rd Party Hosted Index — Download, Cache, Load
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Future<File> get _3rdPartyFile async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_3rdPartyFileName');
+  }
+
+  Future<File> get _3rdPartyTempFile async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_3rdPartyTempFileName');
+  }
+
+  Future<bool> hasLocal3rdPartyIndex() async {
+    final file = await _3rdPartyFile;
+    return await file.exists();
+  }
+
+  /// Sync the 3rd party hosted index from GitHub.
+  /// Deduplicates concurrent calls like syncIndex().
+  Future<bool> sync3rdPartyIndex() {
+    if (_active3rdPartySyncFuture != null) {
+      dev.log('[DatabaseSync] 3rd party sync already in progress — joining.');
+      return _active3rdPartySyncFuture!;
+    }
+    _active3rdPartySyncFuture = _do3rdPartySync()
+        .whenComplete(() => _active3rdPartySyncFuture = null);
+    return _active3rdPartySyncFuture!;
+  }
+
+  Future<bool> _do3rdPartySync() async {
+    try {
+      dev.log('[DatabaseSync] Starting 3rd party sync from $_remote3rdPartyUrl');
+
+      final fileExists = await hasLocal3rdPartyIndex();
+      final prefs = await SharedPreferences.getInstance();
+
+      final headers = <String, String>{};
+      if (fileExists) {
+        final savedEtag = prefs.getString('3rdparty_etag');
+        final savedLastModified = prefs.getString('3rdparty_last_modified');
+        if (savedEtag != null) headers['If-None-Match'] = savedEtag;
+        if (savedLastModified != null) headers['If-Modified-Since'] = savedLastModified;
+      }
+
+      final response = await http.get(Uri.parse(_remote3rdPartyUrl), headers: headers)
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 304) {
+        dev.log('[DatabaseSync] 3rd party: 304 Not Modified.');
+        return true;
+      }
+
+      if (response.statusCode != 200) {
+        dev.log('[DatabaseSync] 3rd party HTTP Error: ${response.statusCode}');
+        return false;
+      }
+
+      final rawData = response.body;
+      if (rawData.isEmpty) {
+        dev.log('[DatabaseSync] 3rd party: Downloaded data is empty.');
+        return false;
+      }
+
+      // 1. Write to temp file
+      final tempFile = await _3rdPartyTempFile;
+      await tempFile.writeAsString(rawData, flush: true);
+
+      // 2. Validate
+      final isValid = await compute(_validateIndexIsolate, rawData);
+      if (!isValid) {
+        dev.log('[DatabaseSync] 3rd party validation failed.');
+        if (await tempFile.exists()) await tempFile.delete();
+        return false;
+      }
+
+      // 3. Atomic swap
+      final primaryFile = await _3rdPartyFile;
+      await tempFile.copy(primaryFile.path);
+      if (await tempFile.exists()) await tempFile.delete();
+
+      // 4. Save ETag / Last-Modified
+      final etag = response.headers['etag'];
+      final lastModified = response.headers['last-modified'];
+      if (etag != null) {
+        await prefs.setString('3rdparty_etag', etag);
+      } else {
+        await prefs.remove('3rdparty_etag');
+      }
+      if (lastModified != null) {
+        await prefs.setString('3rdparty_last_modified', lastModified);
+      } else {
+        await prefs.remove('3rdparty_last_modified');
+      }
+
+      dev.log('[DatabaseSync] 3rd party index synced successfully.');
+      return true;
+    } catch (e, stack) {
+      dev.log('[DatabaseSync] 3rd party sync failed: $e', stackTrace: stack);
+      try {
+        final tempFile = await _3rdPartyTempFile;
+        if (await tempFile.exists()) await tempFile.delete();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  /// Load and parse the 3rd party index from local cache.
+  Future<List<ManifestItem>> load3rdPartyIndex() async {
+    try {
+      final file = await _3rdPartyFile;
+      if (!await file.exists()) {
+        dev.log('[DatabaseSync] 3rd party index not cached yet.');
+        return [];
+      }
+      final rawData = await file.readAsString();
+      final items = await compute(_parseIndexIsolate, rawData);
+      dev.log('[DatabaseSync] Loaded ${items.length} 3rd party items.');
+      return items;
+    } catch (e, stack) {
+      dev.log('[DatabaseSync] Failed to load 3rd party index: $e', stackTrace: stack);
       return [];
     }
   }
