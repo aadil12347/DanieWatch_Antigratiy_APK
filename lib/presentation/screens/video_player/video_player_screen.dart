@@ -112,6 +112,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Timer? _rightRippleTimer;
   String? _notifyPillText;
   Timer? _notifyPillTimer;
+  Timer? _singleTapTimer;
+  DateTime? _lastTapDownTime;
+  AnimationController? _speedPillController;
+  Animation<Color?>? _speedPillColorAnimation;
 
   // Gesture drag accumulators & activity flags
   double _volumeDragAccumulator = 0.0;
@@ -154,6 +158,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void initState() {
     super.initState();
     _resumeTimeOverride = widget.startPosition?.toDouble();
+    _speedPillController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _speedPillColorAnimation = ColorTween(
+      begin: Colors.white,
+      end: Colors.white30,
+    ).animate(
+      CurvedAnimation(
+        parent: _speedPillController!,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _speedPillController!.repeat(reverse: true);
     WidgetsBinding.instance.addObserver(this);
     _currentSeason = widget.season;
     _currentEpisode = widget.episode;
@@ -1121,6 +1139,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _rightRippleTimer?.cancel();
     _notifyPillTimer?.cancel();
     _seekTimeoutTimer?.cancel();
+    _singleTapTimer?.cancel();
+    _speedPillController?.dispose();
 
     // Dispose controllers (null-safe since _goBack may have already nulled them)
     try { ScreenBrightness().resetScreenBrightness(); } catch (_) {}
@@ -2218,19 +2238,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Widget _buildLockedControls() {
     return Stack(
       children: [
-        GestureDetector(
-          onTap: () {
-            setState(() {
-              _areControlsVisible = !_areControlsVisible;
-            });
-            if (_areControlsVisible) {
-              _controlsTimer?.cancel();
-              _controlsTimer = Timer(const Duration(seconds: 2), () {
-                if (mounted) setState(() => _areControlsVisible = false);
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              setState(() {
+                _areControlsVisible = !_areControlsVisible;
               });
-            }
-          },
-          child: Container(color: Colors.transparent),
+              if (_areControlsVisible) {
+                _controlsTimer?.cancel();
+                _controlsTimer = Timer(const Duration(seconds: 2), () {
+                  if (mounted) setState(() => _areControlsVisible = false);
+                });
+              }
+            },
+            child: Container(color: Colors.transparent),
+          ),
         ),
         Positioned(
           left: 24,
@@ -2275,162 +2298,282 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final isPlaying = _betterPlayerController?.videoPlayerController?.value.isPlaying ?? false;
 
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    bool isAtEdge(double x, double y) {
-      return x < 24 || x > screenWidth - 24 || y < 24 || y > screenHeight - 24;
-    }
 
     return Stack(
       children: [
-        GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTapUp: (details) {
-            final x = details.localPosition.dx;
-            final y = details.localPosition.dy;
-            if (isAtEdge(x, y)) return;
-            _toggleControlsVisibility();
-          },
-          onDoubleTapDown: (details) {
-            if (_isLocked) return;
-            final x = details.localPosition.dx;
-            final y = details.localPosition.dy;
-            if (isAtEdge(x, y)) return;
-            if (x < screenWidth * 0.35) {
-              _handleDoubleTapLeft(details);
-            } else if (x > screenWidth * 0.65) {
-              _handleDoubleTapRight(details);
-            }
-          },
-          onLongPressStart: (details) {
-            final x = details.localPosition.dx;
-            final y = details.localPosition.dy;
-            if (isAtEdge(x, y)) return;
-            if (x < screenWidth * 0.35 || x > screenWidth * 0.65) {
-              _startFastForward();
-            }
-          },
-          onLongPressEnd: (_) => _stopFastForward(),
-          onVerticalDragStart: (details) {
-            final x = details.localPosition.dx;
-            final y = details.localPosition.dy;
-            if (isAtEdge(x, y)) {
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapDown: (details) {
+              if (_isLocked) return;
+              final now = DateTime.now();
+              final isDoubleTap = _lastTapDownTime != null &&
+                  now.difference(_lastTapDownTime!) < const Duration(milliseconds: 250);
+              _lastTapDownTime = now;
+
+              if (isDoubleTap) {
+                _singleTapTimer?.cancel();
+                _singleTapTimer = null;
+
+                final x = details.localPosition.dx;
+                if (x < screenWidth * 0.35) {
+                  _handleDoubleTapLeft(details);
+                } else if (x > screenWidth * 0.65) {
+                  _handleDoubleTapRight(details);
+                }
+              } else {
+                _singleTapTimer?.cancel();
+                _singleTapTimer = Timer(const Duration(milliseconds: 200), () {
+                  _toggleControlsVisibility();
+                });
+              }
+            },
+            onLongPressStart: (details) {
+              _singleTapTimer?.cancel();
+              final x = details.localPosition.dx;
+              if (x < screenWidth * 0.35 || x > screenWidth * 0.65) {
+                _startFastForward();
+              }
+            },
+            onLongPressEnd: (_) => _stopFastForward(),
+            onVerticalDragStart: (details) {
+              _singleTapTimer?.cancel();
+              final x = details.localPosition.dx;
+              if (x < screenWidth * 0.35) {
+                _activeVerticalDrag = 'brightness';
+                _handleBrightnessDragStart(details);
+              } else if (x > screenWidth * 0.65) {
+                _activeVerticalDrag = 'volume';
+                _handleVolumeDragStart(details);
+              } else {
+                _activeVerticalDrag = null;
+              }
+            },
+            onVerticalDragUpdate: (details) {
+              if (_activeVerticalDrag == 'brightness') {
+                _handleBrightnessDragUpdate(details);
+              } else if (_activeVerticalDrag == 'volume') {
+                _handleVolumeDragUpdate(details);
+              }
+            },
+            onVerticalDragEnd: (_) {
+              if (_activeVerticalDrag == 'brightness') {
+                _fadeBrightnessIndicator();
+              } else if (_activeVerticalDrag == 'volume') {
+                _fadeVolumeIndicator();
+              }
               _activeVerticalDrag = null;
-              return;
-            }
-            if (x < screenWidth * 0.35) {
-              _activeVerticalDrag = 'brightness';
-              _handleBrightnessDragStart(details);
-            } else if (x > screenWidth * 0.65) {
-              _activeVerticalDrag = 'volume';
-              _handleVolumeDragStart(details);
-            } else {
-              _activeVerticalDrag = null;
-            }
-          },
-          onVerticalDragUpdate: (details) {
-            if (_activeVerticalDrag == 'brightness') {
-              _handleBrightnessDragUpdate(details);
-            } else if (_activeVerticalDrag == 'volume') {
-              _handleVolumeDragUpdate(details);
-            }
-          },
-          onVerticalDragEnd: (_) {
-            if (_activeVerticalDrag == 'brightness') {
-              _fadeBrightnessIndicator();
-            } else if (_activeVerticalDrag == 'volume') {
-              _fadeVolumeIndicator();
-            }
-            _activeVerticalDrag = null;
-          },
-          onHorizontalDragStart: _handleSwipeSeekStart,
-          onHorizontalDragUpdate: _handleSwipeSeekUpdate,
-          onHorizontalDragEnd: _handleSwipeSeekEnd,
-          child: Container(color: Colors.transparent),
+            },
+            onHorizontalDragStart: (details) {
+              _singleTapTimer?.cancel();
+              _handleSwipeSeekStart(details);
+            },
+            onHorizontalDragUpdate: _handleSwipeSeekUpdate,
+            onHorizontalDragEnd: _handleSwipeSeekEnd,
+            child: Container(color: Colors.transparent),
+          ),
         ),
 
-        if (_showBrightnessIndicator)
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 48.0),
-              child: _buildVerticalGestureIndicator(
-                icon: Icons.brightness_6_rounded,
-                value: _brightness,
-                label: '${(_brightness * 100).toInt()}%',
-              ),
-            ),
-          ),
-
-        if (_showVolumeIndicator)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 48.0),
-              child: _buildVerticalGestureIndicator(
-                icon: _volume == 0 ? Icons.volume_mute_rounded : Icons.volume_up_rounded,
-                value: _volume,
-                label: '${(_volume * 100).toInt()}%',
-              ),
-            ),
-          ),
-
-        if (_showLeftRipple)
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: MediaQuery.of(context).size.width * 0.4,
-            child: _buildSkipRipple(isLeft: true),
-          ),
-        if (_showRightRipple)
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: MediaQuery.of(context).size.width * 0.4,
-            child: _buildSkipRipple(isLeft: false),
-          ),
-
-        if (_showSpeedPill)
-          Align(
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 24.0),
-              child: _buildSpeedPill(),
-            ),
-          ),
-
-        if (_notifyPillText != null)
-          Align(
-            alignment: const Alignment(0.0, -0.4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _notifyPillText!,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 13,
+        // Brightness indicator — animated fade+scale
+        Positioned(
+          left: 24,
+          top: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _showBrightnessIndicator ? 1.0 : 0.0,
+              duration: Duration(milliseconds: _showBrightnessIndicator ? 150 : 300),
+              curve: Curves.easeOutCubic,
+              child: AnimatedScale(
+                scale: _showBrightnessIndicator ? 1.0 : 0.85,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _buildVerticalGestureIndicator(
+                    icon: Icons.brightness_6_rounded,
+                    value: _brightness,
+                    label: '${(_brightness * 100).toInt()}%',
+                  ),
                 ),
               ),
             ),
           ),
+        ),
 
+        // Volume indicator — animated fade+scale
+        Positioned(
+          right: 24,
+          top: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _showVolumeIndicator ? 1.0 : 0.0,
+              duration: Duration(milliseconds: _showVolumeIndicator ? 150 : 300),
+              curve: Curves.easeOutCubic,
+              child: AnimatedScale(
+                scale: _showVolumeIndicator ? 1.0 : 0.85,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildVerticalGestureIndicator(
+                    icon: _volume == 0 ? Icons.volume_mute_rounded : Icons.volume_up_rounded,
+                    value: _volume,
+                    label: '${(_volume * 100).toInt()}%',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Left skip ripple — animated scale+fade
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: MediaQuery.of(context).size.width * 0.4,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _showLeftRipple ? 1.0 : 0.0,
+              duration: Duration(milliseconds: _showLeftRipple ? 150 : 400),
+              curve: Curves.easeOutCubic,
+              child: AnimatedScale(
+                scale: _showLeftRipple ? 1.0 : 0.7,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                child: _buildSkipRipple(isLeft: true),
+              ),
+            ),
+          ),
+        ),
+        // Right skip ripple — animated scale+fade
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: MediaQuery.of(context).size.width * 0.4,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _showRightRipple ? 1.0 : 0.0,
+              duration: Duration(milliseconds: _showRightRipple ? 150 : 400),
+              curve: Curves.easeOutCubic,
+              child: AnimatedScale(
+                scale: _showRightRipple ? 1.0 : 0.7,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                child: _buildSkipRipple(isLeft: false),
+              ),
+            ),
+          ),
+        ),
+
+        // Speed pill — animated bloom in/out
         IgnorePointer(
-          ignoring: !_areControlsVisible,
           child: AnimatedOpacity(
-            opacity: _areControlsVisible ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 250),
+            opacity: _showSpeedPill ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            child: AnimatedScale(
+              scale: _showSpeedPill ? 1.0 : 0.8,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutBack,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 24.0),
+                  child: _buildSpeedPill(),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Notification pill — animated bloom in/out
+        IgnorePointer(
+          child: AnimatedOpacity(
+            opacity: _notifyPillText != null ? 1.0 : 0.0,
+            duration: Duration(milliseconds: _notifyPillText != null ? 200 : 300),
+            curve: Curves.easeOutCubic,
+            child: AnimatedScale(
+              scale: _notifyPillText != null ? 1.0 : 0.8,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutBack,
+              child: Align(
+                alignment: const Alignment(0.0, -0.4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _notifyPillText ?? '',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // HUD controls overlay — use IgnorePointer when hidden so taps pass through
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !_areControlsVisible,
             child: Stack(
               children: [
-                _buildTopHUD(),
-                _buildCenterHUD(isPlaying),
-                _buildBottomHUD(),
+                // Top HUD — slides down from above + fades
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: AnimatedSlide(
+                    offset: _areControlsVisible ? Offset.zero : const Offset(0, -0.08),
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedOpacity(
+                      opacity: _areControlsVisible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      child: _buildTopHUD(),
+                    ),
+                  ),
+                ),
+                // Center HUD — scales in + fades
+                AnimatedScale(
+                  scale: _areControlsVisible ? 1.0 : 0.85,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedOpacity(
+                    opacity: _areControlsVisible ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    child: _buildCenterHUD(isPlaying),
+                  ),
+                ),
+                // Bottom HUD — slides up from below + fades
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: AnimatedSlide(
+                    offset: _areControlsVisible ? Offset.zero : const Offset(0, 0.08),
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedOpacity(
+                      opacity: _areControlsVisible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      child: _buildBottomHUD(),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -2530,20 +2673,37 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildSpeedPill() {
-    return const Text(
-      '2x Speed',
-      style: TextStyle(
-        color: Colors.white38,
-        fontWeight: FontWeight.w400,
-        fontSize: 12,
-        shadows: [
-          Shadow(
-            color: Colors.black54,
-            offset: Offset(0, 1),
-            blurRadius: 2,
+    return AnimatedBuilder(
+      animation: _speedPillColorAnimation!,
+      builder: (context, child) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black54.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.12)),
           ),
-        ],
-      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.fast_forward_rounded,
+                color: _speedPillColorAnimation!.value,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '2x Speed',
+                style: TextStyle(
+                  color: _speedPillColorAnimation!.value,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2555,113 +2715,108 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       episodeLabel = 'S${s.toString().padLeft(2, '0')} E${e.toString().padLeft(2, '0')}';
     }
 
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        height: 80,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withOpacity(0.8),
-              Colors.transparent,
-            ],
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Stack(
-          children: [
-            // Left: Back Button
-            Align(
-              alignment: Alignment.centerLeft,
-              child: GestureDetector(
-                onTap: _goBack,
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: const BoxDecoration(
-                    color: Colors.black45,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24),
-                ),
-              ),
-            ),
-            
-            // Center: Title + Episode
-            Align(
-              alignment: Alignment.center,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 120),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                    if (episodeLabel.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        episodeLabel,
-                        style: GoogleFonts.inter(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            
-            // Right: Episodes button (if applicable)
-            if (widget.mediaType != 'movie')
-              Align(
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: _showEpisodeSelector,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Episodes',
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+    return Container(
+      height: 80,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(0.8),
+            Colors.transparent,
           ],
         ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Stack(
+        children: [
+          // Left: Back Button
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: _goBack,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: Colors.black45,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24),
+              ),
+            ),
+          ),
+          
+          // Center: Title + Episode
+          Align(
+            alignment: Alignment.center,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 120),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    widget.title,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                  if (episodeLabel.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      episodeLabel,
+                      style: GoogleFonts.inter(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          
+          // Right: Episodes button (if applicable)
+          if (widget.mediaType != 'movie')
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: _showEpisodeSelector,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Episodes',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -2719,7 +2874,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     bool isPlayPause = false,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return _AnimatedTapScale(
       onTap: onTap,
       child: Container(
         width: size,
@@ -2742,10 +2897,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           borderRadius: BorderRadius.circular(size / 2),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Icon(
-              icon,
-              color: Colors.white,
-              size: size * 0.55,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(scale: animation, child: child);
+              },
+              child: Icon(
+                icon,
+                key: ValueKey<IconData>(icon),
+                color: Colors.white,
+                size: size * 0.55,
+              ),
             ),
           ),
         ),
@@ -2757,136 +2921,131 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final isPlaying = _betterPlayerController?.videoPlayerController?.value.isPlaying ?? false;
     final bufferedSeconds = _getBufferedSeconds();
 
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              Colors.black.withOpacity(0.9),
-              Colors.transparent,
-            ],
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GlassmorphicVideoSeekBar(
-              position: _lastCurrentTime,
-              duration: _lastDuration,
-              buffered: bufferedSeconds,
-              isSwipeSeeking: _isSwipeSeeking,
-              swipeSeekValue: _swipeSeekTarget,
-              onChanged: (val) {
-                setState(() {
-                  _lastCurrentTime = val;
-                });
-                _controlsTimer?.cancel();
-              },
-              onChangeEnd: (val) {
-                _betterPlayerController!.seekTo(Duration(seconds: val.toInt()));
-                _resetControlsTimer();
-              },
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    if (isPlaying) {
-                      _betterPlayerController!.pause();
-                    } else {
-                      _betterPlayerController!.play();
-                    }
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      if (_isMuted) {
-                        _isMuted = false;
-                        _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
-                      } else {
-                        _preMuteVolume = _volume;
-                        _volume = 0.0;
-                        _isMuted = true;
-                      }
-                    });
-                    VolumeController.instance.showSystemUI = false;
-                    VolumeController.instance.setVolume(_volume);
-                    _betterPlayerController?.setVolume(_volume);
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.85),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
-                  onPressed: () {
-                    setState(() {
-                      _isLocked = true;
-                      _areControlsVisible = true;
-                    });
-                    _controlsTimer?.cancel();
-                    _controlsTimer = Timer(const Duration(seconds: 3), () {
-                      if (mounted) setState(() => _areControlsVisible = false);
-                    });
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
-                  onPressed: () {
-                    _saveToWatchHistory();
-                    _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_rounded, color: Colors.white),
-                  onPressed: () {
-                    _showSettingsSheet();
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
-                  onPressed: () {
-                    _cycleAspectRatio();
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-              ],
-            ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [
+            Colors.black.withOpacity(0.9),
+            Colors.transparent,
           ],
         ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GlassmorphicVideoSeekBar(
+            position: _lastCurrentTime,
+            duration: _lastDuration,
+            buffered: bufferedSeconds,
+            isSwipeSeeking: _isSwipeSeeking,
+            swipeSeekValue: _swipeSeekTarget,
+            onChanged: (val) {
+              setState(() {
+                _lastCurrentTime = val;
+              });
+              _controlsTimer?.cancel();
+            },
+            onChangeEnd: (val) {
+              _betterPlayerController!.seekTo(Duration(seconds: val.toInt()));
+              _resetControlsTimer();
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  if (isPlaying) {
+                    _betterPlayerController!.pause();
+                  } else {
+                    _betterPlayerController!.play();
+                  }
+                  _resetControlsTimer();
+                  _triggerHaptic();
+                },
+              ),
+              IconButton(
+                icon: Icon(
+                  _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  setState(() {
+                    if (_isMuted) {
+                      _isMuted = false;
+                      _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
+                    } else {
+                      _preMuteVolume = _volume;
+                      _volume = 0.0;
+                      _isMuted = true;
+                    }
+                  });
+                  VolumeController.instance.showSystemUI = false;
+                  VolumeController.instance.setVolume(_volume);
+                  _betterPlayerController?.setVolume(_volume);
+                  _resetControlsTimer();
+                  _triggerHaptic();
+                },
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.85),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
+                onPressed: () {
+                  setState(() {
+                    _isLocked = true;
+                    _areControlsVisible = true;
+                  });
+                  _controlsTimer?.cancel();
+                  _controlsTimer = Timer(const Duration(seconds: 3), () {
+                    if (mounted) setState(() => _areControlsVisible = false);
+                  });
+                  _triggerHaptic();
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
+                onPressed: () {
+                  _saveToWatchHistory();
+                  _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
+                  _resetControlsTimer();
+                  _triggerHaptic();
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                onPressed: () {
+                  _showSettingsSheet();
+                  _triggerHaptic();
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
+                onPressed: () {
+                  _cycleAspectRatio();
+                  _resetControlsTimer();
+                  _triggerHaptic();
+                },
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -3022,17 +3181,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void _handleSwipeSeekStart(DragStartDetails details) {
     if (_isLocked || _betterPlayerController == null) return;
     
-    final x = details.localPosition.dx;
-    final y = details.localPosition.dy;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    
-    // Ignore gestures starting close to the edges to avoid system conflict
-    if (x < 24 || x > screenWidth - 24 || y < 24 || y > screenHeight - 24) {
-      _isSwipeSeeking = false;
-      return;
-    }
-    
     setState(() {
       _isSwipeSeeking = true;
       _swipeSeekTarget = _lastCurrentTime;
@@ -3123,7 +3271,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void _resetControlsTimer() {
     _controlsTimer?.cancel();
     if (!_isLocked) {
-      _controlsTimer = Timer(const Duration(seconds: 2), () {
+      _controlsTimer = Timer(const Duration(seconds: 3), () {
         if (mounted) {
           setState(() {
             _areControlsVisible = false;
@@ -3275,83 +3423,93 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _showSettingsSheet() {
     _controlsTimer?.cancel();
+    final screenH = MediaQuery.of(context).size.height;
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Settings',
-      barrierColor: Colors.black26,
-      transitionDuration: const Duration(milliseconds: 200),
+      barrierColor: Colors.black38,
+      transitionDuration: const Duration(milliseconds: 350),
       pageBuilder: (context, anim1, anim2) => const SizedBox.shrink(),
       transitionBuilder: (context, anim1, anim2, child) {
-        final double width = 280;
-        final double height = 250;
-        final curve = Curves.easeOutCubic;
-        return ScaleTransition(
-          alignment: Alignment.bottomRight,
-          scale: CurvedAnimation(parent: anim1, curve: curve),
-          child: Align(
-            alignment: Alignment.bottomRight,
-            child: Container(
-              margin: const EdgeInsets.only(right: 64, bottom: 68),
-              width: width,
-              height: height,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F0F0F).withOpacity(0.85),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.4),
-                    blurRadius: 16,
-                    spreadRadius: 2,
-                  )
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: SettingsSheetContent(
-                      controller: _betterPlayerController,
-                      activeServer: _activeServer,
-                      selectedResolution: _selectedResolution,
-                      vcloudServerMap: _vcloudServerMap,
-                      explicitResolutions: _explicitResolutions,
-                      playbackSpeed: _playbackSpeed,
-                      availableAudioTracks: _getAvailableAudioTracks(),
-                      activeAudioTrack: _getActiveAudioTrack(),
-                      onServerChanged: (server) => _changeServer(server),
-                      onResolutionChanged: (res) => _changeResolution(res),
-                      onSpeedChanged: (speed) {
-                        setState(() {
-                          _playbackSpeed = speed;
-                        });
-                        _betterPlayerController?.setSpeed(speed);
-                      },
-                      onAspectChanged: (fit) {
-                        _betterPlayerController?.setOverriddenFit(fit);
-                      },
-                      onAudioChanged: (track) {
-                        final asmsAudioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
-                        if (asmsAudioTracks.isNotEmpty) {
-                          _betterPlayerController?.setAudioTrack(track);
-                        } else {
-                          // Fallback progressive audio track selection
-                          if (track.id != null) {
-                            setState(() {
-                              _selectedAudioIndex = track.id!;
-                            });
-                            _betterPlayerController?.videoPlayerController?.setAudioTrack(track.label, track.id);
+        final double width = 240;
+        final curvedAnim = CurvedAnimation(parent: anim1, curve: Curves.easeOutQuart);
+        return FadeTransition(
+          opacity: curvedAnim,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.15, 0.0),
+              end: Offset.zero,
+            ).animate(curvedAnim),
+            child: Align(
+              alignment: Alignment.bottomRight,
+              child: Container(
+                margin: const EdgeInsets.only(right: 16, bottom: 68),
+                width: width,
+                constraints: BoxConstraints(maxHeight: screenH * 0.55),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A0A0A).withOpacity(0.88),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 24,
+                      spreadRadius: 4,
+                    ),
+                    BoxShadow(
+                      color: Colors.white.withOpacity(0.03),
+                      blurRadius: 1,
+                      spreadRadius: 0,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: SettingsSheetContent(
+                        controller: _betterPlayerController,
+                        activeServer: _activeServer,
+                        selectedResolution: _selectedResolution,
+                        vcloudServerMap: _vcloudServerMap,
+                        explicitResolutions: _explicitResolutions,
+                        playbackSpeed: _playbackSpeed,
+                        availableAudioTracks: _getAvailableAudioTracks(),
+                        activeAudioTrack: _getActiveAudioTrack(),
+                        onServerChanged: (server) => _changeServer(server),
+                        onResolutionChanged: (res) => _changeResolution(res),
+                        onSpeedChanged: (speed) {
+                          setState(() {
+                            _playbackSpeed = speed;
+                          });
+                          _betterPlayerController?.setSpeed(speed);
+                        },
+                        onAspectChanged: (fit) {
+                          _betterPlayerController?.setOverriddenFit(fit);
+                        },
+                        onAudioChanged: (track) {
+                          final asmsAudioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
+                          if (asmsAudioTracks.isNotEmpty) {
+                            _betterPlayerController?.setAudioTrack(track);
+                          } else {
+                            // Fallback progressive audio track selection
+                            if (track.id != null) {
+                              setState(() {
+                                _selectedAudioIndex = track.id!;
+                              });
+                              _betterPlayerController?.videoPlayerController?.setAudioTrack(track.label, track.id);
+                            }
                           }
-                        }
-                        _showNotifyPill('Audio: ${track.label ?? track.language ?? "Track"}');
-                      },
-                      onSubtitleChanged: (source) {
-                        _betterPlayerController?.setupSubtitleSource(source);
-                        _showNotifyPill(source.type == BetterPlayerSubtitlesSourceType.none ? 'Subtitles Off' : 'Subtitles: ${source.name}');
-                      },
+                          _showNotifyPill('Audio: ${track.label ?? track.language ?? "Track"}');
+                        },
+                        onSubtitleChanged: (source) {
+                          _betterPlayerController?.setupSubtitleSource(source);
+                          _showNotifyPill(source.type == BetterPlayerSubtitlesSourceType.none ? 'Subtitles Off' : 'Subtitles: ${source.name}');
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -3981,7 +4139,7 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
         widget.onChangeEnd(val);
       },
       child: Container(
-        height: 24,
+        height: 36,
         color: Colors.transparent,
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -3992,7 +4150,8 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
               children: [
                 // Background Track
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
                   height: isSeeking ? 6 : 4,
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -4004,7 +4163,8 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                 FractionallySizedBox(
                   widthFactor: bufferPercent,
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
                     height: isSeeking ? 6 : 4,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.35),
@@ -4016,7 +4176,8 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                 FractionallySizedBox(
                   widthFactor: progressPercent,
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
                     height: isSeeking ? 6 : 4,
                     decoration: BoxDecoration(
                       color: const Color(0xFFB81D24),
@@ -4032,53 +4193,75 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                     ),
                   ),
                 ),
-                // Floating Tooltip above the Sliding Dot
-                if (isSeeking)
-                  Positioned(
-                    left: (thumbOffset - 30).clamp(0.0, constraints.maxWidth - 60),
-                    bottom: 24,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.85),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFB81D24), width: 1),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black54,
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                          )
-                        ],
-                      ),
-                      child: Text(
-                        _formatDuration(activeValue),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                // Floating Tooltip — animated fade+slide from below
+                Positioned(
+                  left: (thumbOffset - 30).clamp(0.0, constraints.maxWidth - 60),
+                  bottom: 28,
+                  child: AnimatedOpacity(
+                    opacity: isSeeking ? 1.0 : 0.0,
+                    duration: Duration(milliseconds: isSeeking ? 150 : 250),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedSlide(
+                      offset: isSeeking ? Offset.zero : const Offset(0, 0.3),
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFB81D24), width: 1),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFB81D24).withOpacity(0.15),
+                              blurRadius: 8,
+                              spreadRadius: 1,
+                            ),
+                            const BoxShadow(
+                              color: Colors.black54,
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: Text(
+                          _formatDuration(activeValue),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                // Thumb
+                ),
+                // Thumb with animated glow
                 Positioned(
                   left: (thumbOffset - 8).clamp(0.0, constraints.maxWidth - 16),
                   child: AnimatedScale(
-                    scale: isSeeking ? 1.25 : 1.0,
-                    duration: const Duration(milliseconds: 150),
-                    child: Container(
+                    scale: isSeeking ? 1.3 : 1.0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
                       width: 16,
                       height: 16,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFB81D24),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFB81D24),
                         shape: BoxShape.circle,
                         boxShadow: [
-                          BoxShadow(
+                          const BoxShadow(
                             color: Colors.black45,
                             blurRadius: 4,
                             offset: Offset(0, 2),
-                          )
+                          ),
+                          if (isSeeking)
+                            BoxShadow(
+                              color: const Color(0xFFB81D24).withOpacity(0.4),
+                              blurRadius: 12,
+                              spreadRadius: 2,
+                            ),
                         ],
                       ),
                     ),
@@ -4139,23 +4322,54 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
 
   @override
   Widget build(BuildContext context) {
+    Widget currentChild;
     switch (_currentView) {
       case 'server':
-        return _buildServerView();
+        currentChild = _buildServerView();
+        break;
       case 'quality':
-        return _buildQualityView();
+        currentChild = _buildQualityView();
+        break;
       case 'audio':
-        return _buildAudioView();
+        currentChild = _buildAudioView();
+        break;
       case 'subtitles':
-        return _buildSubtitlesView();
+        currentChild = _buildSubtitlesView();
+        break;
       case 'speed':
-        return _buildSpeedView();
+        currentChild = _buildSpeedView();
+        break;
       case 'aspect':
-        return _buildAspectView();
+        currentChild = _buildAspectView();
+        break;
       case 'main':
       default:
-        return _buildMainView();
+        currentChild = _buildMainView();
     }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 250),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final isForward = _currentView != 'main';
+        final offsetTween = Tween<Offset>(
+          begin: Offset(isForward ? 0.15 : -0.15, 0),
+          end: Offset.zero,
+        );
+        return SlideTransition(
+          position: offsetTween.animate(animation),
+          child: FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+        );
+      },
+      child: KeyedSubtree(
+        key: ValueKey<String>(_currentView),
+        child: currentChild,
+      ),
+    );
   }
 
   Widget _buildHeader(String title) {
@@ -4543,5 +4757,79 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
       default:
         return 'Fit';
     }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── ANIMATED TAP SCALE — press-and-release bounce for buttons
+// ─────────────────────────────────────────────────────────────────────────────
+class _AnimatedTapScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double scaleDown;
+
+  const _AnimatedTapScale({
+    required this.child,
+    required this.onTap,
+    this.scaleDown = 0.85,
+  });
+
+  @override
+  State<_AnimatedTapScale> createState() => _AnimatedTapScaleState();
+}
+
+class _AnimatedTapScaleState extends State<_AnimatedTapScale>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: widget.scaleDown,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+      reverseCurve: Curves.easeOutBack,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) {
+    _controller.forward();
+  }
+
+  void _onTapUp(TapUpDetails _) {
+    _controller.reverse();
+    widget.onTap();
+  }
+
+  void _onTapCancel() {
+    _controller.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: widget.child,
+      ),
+    );
   }
 }
