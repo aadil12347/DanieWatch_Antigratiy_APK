@@ -74,6 +74,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _extractedLink;
   InAppWebViewController? _webViewController;
   Timer? _extractionTimer;
+  Timer? _fallbackTimer;
 
 
 
@@ -297,8 +298,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _hasError = false;
     });
 
+    // Start 30-second fallback timer
+    _fallbackTimer?.cancel();
+    _fallbackTimer = Timer(const Duration(seconds: 30), () {
+      if (mounted && !_isClosing && _isExtracting) {
+        debugPrint('[Engine] 30 seconds reached. Falling back to VidNest/Peachify extraction.');
+        _tryVidNestPeachifyExtraction();
+      }
+    });
+
     try {
-      final resolvedResMap = await VcloudExtractorService().fetchStreamLinks(
+      final vcloudLinksMap = await VcloudExtractorService().fetchResolutionLinksMap(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
         title: widget.title,
@@ -308,18 +318,59 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
       if (!mounted || _isClosing) return;
 
-      if (resolvedResMap.isEmpty) {
-        debugPrint('[Engine] No streaming links found in Vcloud database. Falling back.');
-        _onExtractionFailed();
+      if (vcloudLinksMap.isEmpty) {
+        debugPrint('[Engine] No streaming links found in Vcloud database. Waiting for fallback timer.');
         return;
       }
 
-      // Map resolvedResMap (resolution -> { server -> url }) to server -> { resolution -> url }
+      // Build preference list: 720p > 480p > 1080p > 4k
+      final preferenceOrder = ['720p', '480p', '1080p', '4k'];
+      final List<String> availableOrdered = [];
+      for (final pref in preferenceOrder) {
+        final match = vcloudLinksMap.keys.firstWhere(
+          (k) => k.toLowerCase() == pref || k.toLowerCase().contains(pref.replaceAll('p', '')),
+          orElse: () => '',
+        );
+        if (match.isNotEmpty && !availableOrdered.contains(match)) {
+          availableOrdered.add(match);
+        }
+      }
+      for (final k in vcloudLinksMap.keys) {
+        if (!availableOrdered.contains(k)) {
+          availableOrdered.add(k);
+        }
+      }
+
+      String? successRes;
+      Map<String, String>? successServers;
+
+      // Extract preferred resolution first (one at a time)
+      for (final res in availableOrdered) {
+        debugPrint('[Engine] Extracting preferred resolution: $res');
+        try {
+          final url = vcloudLinksMap[res]!;
+          final resolved = await VcloudExtractorService().extractVcloud(url);
+          if (resolved.isNotEmpty) {
+            successRes = res;
+            successServers = resolved;
+            break; // Found one!
+          }
+        } catch (err) {
+          debugPrint('[Engine] Failed to extract resolution $res: $err');
+        }
+      }
+
+      if (!mounted || _isClosing) return;
+
+      if (successRes == null || successServers == null || successServers.isEmpty) {
+        debugPrint('[Engine] Failed to extract any Vcloud resolution. Waiting for fallback timer.');
+        return;
+      }
+
+      // Map successServers (server -> url) to _vcloudServerMap format (server -> { resolution -> url })
       final Map<String, Map<String, String>> serverToResUrl = {};
-      resolvedResMap.forEach((res, serversMap) {
-        serversMap.forEach((serverName, directUrl) {
-          serverToResUrl.putIfAbsent(serverName, () => {})[res] = directUrl;
-        });
+      successServers.forEach((serverName, directUrl) {
+        serverToResUrl[serverName] = {successRes!: directUrl};
       });
 
       // Find first available server in order of priority (Server 1 -> Server 2 -> Server 3)
@@ -338,10 +389,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
 
       if (defaultServer == null) {
-        setState(() {
-          _isExtracting = false;
-          _hasError = true;
-        });
+        debugPrint('[Engine] No default server found. Waiting for fallback timer.');
         return;
       }
 
@@ -351,17 +399,51 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _selectedServer = defaultServer;
       });
 
+      // Start playback immediately on the prioritized resolution
       await _startVcloudPlayback();
-    } catch (err) {
-      debugPrint('[Engine] Vcloud extraction failed: $err. Falling back.');
-      if (mounted && !_isClosing) {
-        _onExtractionFailed();
+
+      // Extract all other resolutions in the background
+      for (final res in vcloudLinksMap.keys) {
+        if (res == successRes) continue;
+        VcloudExtractorService().extractVcloud(vcloudLinksMap[res]!).then((resolvedServers) {
+          if (!mounted || _isClosing) return;
+          if (resolvedServers.isNotEmpty) {
+            setState(() {
+              resolvedServers.forEach((serverName, directUrl) {
+                _vcloudServerMap.putIfAbsent(serverName, () => {})[res] = directUrl;
+              });
+              // Update explicit resolutions for the active server if needed
+              final resolutions = _vcloudServerMap[_activeServer];
+              if (resolutions != null) {
+                final sortedResKeys = resolutions.keys.toList();
+                sortedResKeys.sort((a, b) {
+                  final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                  final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                  return aInt.compareTo(bInt);
+                });
+                final Map<String, String> explicitResolutions = {};
+                for (var key in sortedResKeys) {
+                  explicitResolutions[key] = resolutions[key]!;
+                }
+                _explicitResolutions = explicitResolutions;
+              }
+            });
+            debugPrint('[Engine] Dynamically updated background resolution: $res');
+          }
+        }).catchError((err) {
+          debugPrint('[Engine] Background extraction failed for $res: $err');
+        });
       }
+
+    } catch (err) {
+      debugPrint('[Engine] Vcloud extraction failed: $err. Waiting for fallback timer.');
     }
   }
 
   Future<void> _startVcloudPlayback() async {
     if (_isClosing) return;
+
+    _fallbackTimer?.cancel();
 
     final resolutions = _vcloudServerMap[_activeServer];
     if (resolutions == null || resolutions.isEmpty) {
@@ -511,6 +593,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _tryVidNestPeachifyExtraction() async {
+    _fallbackTimer?.cancel();
     final s = _currentSeason ?? widget.season ?? 1;
     final e = _currentEpisode ?? widget.episode ?? 1;
 
@@ -991,6 +1074,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     try { _saveToWatchHistory(); } catch (_) {}
 
     // 1. Cancel ALL timers immediately to stop any pending callbacks
+    _fallbackTimer?.cancel();
     _errorAutoCloseTimer?.cancel();
     _progressSaveTimer?.cancel();
     _extractionTimer?.cancel();
@@ -1128,6 +1212,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     try { _saveToWatchHistory(); } catch (_) {}
 
     // Cancel ALL timers to prevent leaks
+    _fallbackTimer?.cancel();
     _errorAutoCloseTimer?.cancel();
     _progressSaveTimer?.cancel();
     _extractionTimer?.cancel();

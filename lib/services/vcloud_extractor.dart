@@ -232,17 +232,17 @@ class VcloudExtractorService {
     return null;
   }
 
-  /// Fetches the stream links file from GitHub and extracts direct URLs parallelly for all resolutions.
+  /// Fetches the stream JSON URL and parses the available resolution mapping (resolution -> vcloudUrl).
   ///
-  /// Returns a Map: resolution -> { 'Server 1': url, 'Server 2': url, 'Server 3': url }
-  Future<Map<String, Map<String, String>>> fetchStreamLinks({
+  /// Returns a Map: resolution -> vcloudUrl (zip page URL)
+  Future<Map<String, String>> fetchResolutionLinksMap({
     required int tmdbId,
     required String mediaType,
     required String title,
     int? season,
     int? episode,
   }) async {
-    final Map<String, Map<String, String>> resolvedResMap = {};
+    final Map<String, String> vcloudLinksMap = {};
 
     final jsonUrl = await getStreamJsonUrl(
       tmdbId: tmdbId,
@@ -253,7 +253,7 @@ class VcloudExtractorService {
 
     if (jsonUrl == null) {
       debugPrint('[VcloudExtractor] Streaming database file not found.');
-      return resolvedResMap;
+      return vcloudLinksMap;
     }
 
     try {
@@ -261,7 +261,7 @@ class VcloudExtractorService {
       final response = await http.get(Uri.parse(jsonUrl)).timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) {
         debugPrint('[VcloudExtractor] Failed to fetch JSON: ${response.statusCode}');
-        return resolvedResMap;
+        return vcloudLinksMap;
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -272,7 +272,6 @@ class VcloudExtractorService {
       } else {
         lastLanguages = [];
       }
-      final Map<String, String> vcloudLinksMap = {};
 
       debugPrint('[VcloudExtractor] Parameters received: mediaType=$mediaType, season=$season, episode=$episode');
 
@@ -335,12 +334,38 @@ class VcloudExtractorService {
           }
         }
       }
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Error parsing streaming links JSON: $e');
+    }
 
-      if (vcloudLinksMap.isEmpty) {
-        debugPrint('[VcloudExtractor] No vcloud links found for the active item. vcloudLinksMap is empty.');
-        return resolvedResMap;
-      }
+    return vcloudLinksMap;
+  }
 
+  /// Fetches the stream links file from GitHub and extracts direct URLs parallelly for all resolutions.
+  ///
+  /// Returns a Map: resolution -> { 'Server 1': url, 'Server 2': url, 'Server 3': url }
+  Future<Map<String, Map<String, String>>> fetchStreamLinks({
+    required int tmdbId,
+    required String mediaType,
+    required String title,
+    int? season,
+    int? episode,
+  }) async {
+    final Map<String, Map<String, String>> resolvedResMap = {};
+
+    final vcloudLinksMap = await fetchResolutionLinksMap(
+      tmdbId: tmdbId,
+      mediaType: mediaType,
+      title: title,
+      season: season,
+      episode: episode,
+    );
+
+    if (vcloudLinksMap.isEmpty) {
+      return resolvedResMap;
+    }
+
+    try {
       // Parallelly extract direct streaming URLs from all resolutions
       final List<Future<void>> extractTasks = [];
       for (var entry in vcloudLinksMap.entries) {
