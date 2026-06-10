@@ -40,6 +40,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String? posterUrl;
   final double? startPosition;
   final Map<String, PeachifyStream>? extractedStreams;
+  final bool is3rdPartyHosted;
 
   const VideoPlayerScreen({
     super.key,
@@ -56,6 +57,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.posterUrl,
     this.startPosition,
     this.extractedStreams,
+    this.is3rdPartyHosted = false,
   });
 
   @override
@@ -248,8 +250,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _isExtracting = true;
     _isLoading = false;
 
-    // Try direct Bysebuho API extraction first (much faster ~1-2s)
-    _tryDirectExtraction();
+    // 3rd party hosted items skip Vcloud — go straight to VidNest/Peachify WebView
+    if (widget.is3rdPartyHosted) {
+      debugPrint('[Engine] 3rd party hosted item — skipping Vcloud, using VidNest/Peachify WebView.');
+      _tryVidNestPeachifyExtraction();
+    } else {
+      // Try direct Vcloud API extraction first (much faster ~1-2s)
+      _tryDirectExtraction();
+    }
 
     // Start periodic progress save timer (every 15 seconds)
     _progressSaveTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -512,12 +520,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         return;
       }
 
-      // Automatically select the first stream
-      final stream = streams.first;
-      debugPrint('[Engine] Selected VidNest/Peachify stream: ${stream.providerName}');
-      
-      // Load and play the selected stream
-      _onExtractionSuccess(stream);
+      // Store ALL streams for server switching
+      _currentStreamsMap = {for (var s in streams) s.providerName: s};
+      _selectedServer = streams.first.providerName;
+      _extractedLink = streams.first.url;
+      _extractedStream = streams.first;
+
+      debugPrint('[Engine] Routing ${streams.length} VidNest/Peachify streams to WebView HLS player.');
+
+      // Route to WebView HLS player (NOT BetterPlayer)
+      setState(() {
+        _isExtracting = false;
+        _useWebViewEngine = true;
+        _isLoading = false;
+        _isInitialized = false;
+      });
     } catch (err) {
       debugPrint('[Engine] VidNest/Peachify extraction failed: $err');
       if (mounted && !_isClosing) {

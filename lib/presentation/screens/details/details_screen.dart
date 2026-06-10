@@ -37,6 +37,7 @@ import '../../widgets/pressable_scale.dart';
 import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
+import '../../providers/manifest_provider.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -1441,8 +1442,46 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       if (!mounted) return;
 
       if (resolvedResMap.isEmpty) {
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-        _showToastError('Could not find stream source.');
+        // Vcloud returned nothing — fall back to VidNest/Peachify streams for download
+        debugPrint('[Download] Vcloud empty, falling back to VidNest/Peachify...');
+        try {
+          final vidNestStreams = await VidNestExtractorService.fetchMergedAndSortedStreams(
+            tmdbId: widget.tmdbId,
+            mediaType: widget.mediaType,
+            season: content.isMovie ? 1 : _selectedSeason,
+            episode: content.isMovie ? 1 : episodeNumber,
+          );
+          if (!mounted) return;
+          if (vidNestStreams.isEmpty) {
+            ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+            _showToastError('No download sources found.');
+            return;
+          }
+          // Build download list from VidNest/Peachify streams grouped by language
+          final List<PeachifyStream> fallbackStreams = [];
+          final Map<String, int> langCounter = {};
+          for (final stream in vidNestStreams) {
+            final lang = stream.dub.isNotEmpty ? stream.dub : 'Server';
+            langCounter[lang] = (langCounter[lang] ?? 0) + 1;
+            final displayName = '$lang - ${langCounter[lang]}';
+            fallbackStreams.add(PeachifyStream(
+              providerName: displayName,
+              dub: stream.dub,
+              type: stream.type,
+              url: stream.url,
+              headers: stream.headers,
+            ));
+          }
+          ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
+            streams: fallbackStreams,
+            isLoading: false,
+          ));
+        } catch (e) {
+          if (mounted) {
+            ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+            _showToastError('No download sources found.');
+          }
+        }
         return;
       }
 
@@ -1613,6 +1652,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final content = ref.read(detailProvider(_detailParams)).valueOrNull;
     if (content == null) return;
 
+    // Check if this item is from the 3rd party hosted index
+    final manifestItems = ref.read(localManifestItemsProvider).valueOrNull ?? [];
+    final manifestItem = manifestItems.where((m) => m.id == widget.tmdbId).firstOrNull;
+    final bool is3rdParty = manifestItem?.is3rdPartyHosted ?? false;
+
     await Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(
         transitionDuration: Duration.zero,
@@ -1627,6 +1671,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           episode: episode,
           posterUrl: content.posterUrl,
           isDirectLink: false,
+          is3rdPartyHosted: is3rdParty,
         ),
       ),
     );

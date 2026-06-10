@@ -27,6 +27,7 @@ class ManifestItem {
   final String? result;
   final bool isTrending;
   final bool isPopular;
+  final bool is3rdPartyHosted;
   final int? trendingRank;
   final String? tmdbPosterPath;
   final String? tmdbBackdropPath;
@@ -58,6 +59,7 @@ class ManifestItem {
     this.result,
     this.isTrending = false,
     this.isPopular = false,
+    this.is3rdPartyHosted = false,
     this.trendingRank,
     this.tmdbPosterPath,
     this.tmdbBackdropPath,
@@ -340,6 +342,7 @@ class ManifestItem {
     String? overview,
     bool? isTrending,
     bool? isPopular,
+    bool? is3rdPartyHosted,
     int? trendingRank,
     String? tmdbPosterPath,
     String? tmdbBackdropPath,
@@ -371,6 +374,7 @@ class ManifestItem {
       result: result,
       isTrending: isTrending ?? this.isTrending,
       isPopular: isPopular ?? this.isPopular,
+      is3rdPartyHosted: is3rdPartyHosted ?? this.is3rdPartyHosted,
       trendingRank: trendingRank ?? this.trendingRank,
       tmdbPosterPath: tmdbPosterPath ?? this.tmdbPosterPath,
       tmdbBackdropPath: tmdbBackdropPath ?? this.tmdbBackdropPath,

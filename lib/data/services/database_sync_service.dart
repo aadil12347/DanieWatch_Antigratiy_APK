@@ -306,8 +306,10 @@ class DatabaseSyncService {
       }
       final rawData = await file.readAsString();
       final items = await compute(_parseIndexIsolate, rawData);
-      dev.log('[DatabaseSync] Loaded ${items.length} 3rd party items.');
-      return items;
+      // Tag all 3rd party items so the player routes them to WebView HLS
+      final taggedItems = items.map((item) => item.copyWith(is3rdPartyHosted: true)).toList();
+      dev.log('[DatabaseSync] Loaded ${taggedItems.length} 3rd party items.');
+      return taggedItems;
     } catch (e, stack) {
       dev.log('[DatabaseSync] Failed to load 3rd party index: $e', stackTrace: stack);
       return [];
