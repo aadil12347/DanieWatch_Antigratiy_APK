@@ -70,6 +70,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   bool _hasError = false;
   bool _isInitialized = false;
   bool _isExtracting = true;
+  bool _hasVideoStarted = false;
   String? _extractionError;
   String? _extractedLink;
   InAppWebViewController? _webViewController;
@@ -651,6 +652,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void _startPlayback(String link, {bool isOffline = false, PeachifyStream? extractedStream}) {
     debugPrint('[Playback] Starting for link: $link (isOffline: $isOffline)');
     setState(() {
+      _hasVideoStarted = false;
       _extractedLink = link;
       _isLoading = true;
       _isExtracting = false;
@@ -709,6 +711,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     PeachifyStream? extractedStream,
   }) async {
     try {
+      _hasVideoStarted = false;
       _startPositionApplied = false;
       if (_betterPlayerController != null) {
         _betterPlayerController!.dispose();
@@ -1052,6 +1055,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _betterPlayerController?.dispose();
     _betterPlayerController = null;
 
+    _hasVideoStarted = false;
     _extractedLink = null;
     _discoveredLinks.clear();
     _isExtracting = true;
@@ -1147,6 +1151,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     debugPrint('[NextEp] Playing Episode ${nextEp.episodeNumber}');
 
     setState(() {
+      _hasVideoStarted = false;
       _currentEpisode = nextEp.episodeNumber;
       _currentExtractionUrl = targetLink;
       _isExtracting = true;
@@ -2292,7 +2297,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         Positioned.fill(
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 500),
-            child: _isExtracting
+            child: (_isExtracting || (_isInitialized && !_hasVideoStarted && !_useWebViewEngine))
                 ? _buildDiscoveryProgress(key: const ValueKey('loader'))
                 : const SizedBox.shrink(key: ValueKey('empty')),
           ),
@@ -2310,12 +2315,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             key: _betterPlayerKey,
             controller: _betterPlayerController!,
           ),
-          if (!_isInPipMode)
-            Positioned.fill(
-              child: _isLocked 
-                  ? _buildLockedControls() 
-                  : _buildUnlockedControls(),
-            ),
+          if (!_isInPipMode) ...[
+            if (!_hasVideoStarted)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: _isLocked 
+                    ? _buildLockedControls() 
+                    : _buildUnlockedControls(),
+              ),
+          ],
         ],
       ),
     );
@@ -3463,6 +3482,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     debugPrint('[ServerSwap] Saving position: $currentPos before switching to $serverName');
     
     setState(() {
+      _hasVideoStarted = false;
       _resumeTimeOverride = currentPos;
       _startPositionApplied = false;
       _activeServer = serverName;
@@ -3515,6 +3535,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final duration = value.duration;
     
     if (value.initialized) {
+      if (_startPositionApplied && _seekingToTime == null) {
+        if (value.isPlaying && !value.isBuffering && position.inMilliseconds > 0) {
+          if (!_hasVideoStarted) {
+            setState(() {
+              _hasVideoStarted = true;
+            });
+            debugPrint('[BetterPlayerListener] Video started playing at ${position.inMilliseconds}ms');
+          }
+        }
+      }
       if (!_startPositionApplied) {
         _startPositionApplied = true;
         final resumeTime = _resumeTimeOverride ?? widget.startPosition?.toDouble() ?? 0.0;
