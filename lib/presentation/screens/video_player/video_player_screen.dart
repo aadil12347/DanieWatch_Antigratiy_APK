@@ -2886,7 +2886,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.5),
+          color: Colors.black.withOpacity(0.75),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white10),
           boxShadow: isPlayPause
@@ -2899,23 +2899,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ]
               : null,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(size / 2),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(scale: animation, child: child);
-              },
-              child: Icon(
-                icon,
-                key: ValueKey<IconData>(icon),
-                color: Colors.white,
-                size: size * 0.55,
-              ),
+        child: Center(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              return ScaleTransition(scale: animation, child: child);
+            },
+            child: Icon(
+              icon,
+              key: ValueKey<IconData>(icon),
+              color: Colors.white,
+              size: size * 0.55,
             ),
           ),
         ),
@@ -2959,7 +2955,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               _resetControlsTimer();
             },
           ),
-          if (!_isSwipeSeeking) ...[
+          if (_isSwipeSeeking) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                '${_formatDuration(_swipeSeekTarget)} / ${_formatDuration(_lastDuration)}',
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.85),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ],
+          if (_areControlsVisible && !_isSwipeSeeking) ...[
             const SizedBox(height: 8),
             Row(
               children: [
@@ -3061,7 +3071,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   double _getBufferedSeconds() {
     if (_betterPlayerController == null) return 0.0;
     final value = _betterPlayerController!.videoPlayerController!.value;
+    if (!value.initialized) return 0.0;
     if (value.buffered.isEmpty) return 0.0;
+    
+    final position = value.position;
+    for (final range in value.buffered) {
+      if (range.start <= position && range.end >= position) {
+        return range.end.inSeconds.toDouble();
+      }
+    }
     return value.buffered.last.end.inSeconds.toDouble();
   }
 
@@ -4179,7 +4197,7 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
                     curve: Curves.easeOut,
                     height: isSeeking ? 6 : 4,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.35),
+                      color: Colors.white.withOpacity(0.55),
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
