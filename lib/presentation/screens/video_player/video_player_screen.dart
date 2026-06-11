@@ -343,98 +343,113 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         }
       }
 
-      String? successRes;
-      Map<String, String>? successServers;
+      bool startedPlayback = false;
 
-      // Extract preferred resolution first (one at a time)
-      for (final res in availableOrdered) {
-        debugPrint('[Engine] Extracting preferred resolution: $res');
+      // Extract all resolutions in parallel
+      final List<Future<void>> parallelTasks = availableOrdered.map((res) async {
         try {
           final url = vcloudLinksMap[res]!;
+          debugPrint('[Engine] Starting parallel extraction for resolution: $res');
           final resolved = await VcloudExtractorService().extractVcloud(url);
+          
+          if (!mounted || _isClosing) return;
+
           if (resolved.isNotEmpty) {
-            successRes = res;
-            successServers = resolved;
-            break; // Found one!
+            // Process and verify each server in order of priority: Server 1 -> Server 2 -> Server 3
+            final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
+            Map<String, String> verifiedServers = {};
+
+            for (final srv in priorityServers) {
+              if (resolved.containsKey(srv)) {
+                var playUrl = resolved[srv]!;
+                
+                // If it is Server 3 (Gbps/HubCloud redirect), resolve it first
+                if (srv == 'Server 3' && (playUrl.contains('hubcloud') || playUrl.contains('gpdl'))) {
+                  debugPrint('[Engine] Pre-resolving HubCloud redirect for Server 3...');
+                  final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(playUrl);
+                  if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+                    playUrl = resolvedUrl;
+                  }
+                }
+
+                // Verify if the link is actually valid and playable
+                debugPrint('[Engine] Verifying direct link for $srv ($res)...');
+                final isValid = await VcloudExtractorService().verifyDirectLink(playUrl);
+                if (isValid) {
+                  verifiedServers[srv] = playUrl;
+                  debugPrint('[Engine] Direct link for $srv ($res) is verified and working.');
+                } else {
+                  debugPrint('[Engine] Direct link for $srv ($res) failed verification.');
+                }
+              }
+            }
+
+            if (verifiedServers.isNotEmpty) {
+              if (!mounted || _isClosing) return;
+              
+              setState(() {
+                verifiedServers.forEach((serverName, directUrl) {
+                  _vcloudServerMap.putIfAbsent(serverName, () => {})[res] = directUrl;
+                });
+              });
+
+              // Start playback immediately on the first working link we find
+              if (!startedPlayback) {
+                String? defaultServer;
+                for (final srv in priorityServers) {
+                  if (verifiedServers.containsKey(srv)) {
+                    defaultServer = srv;
+                    break;
+                  }
+                }
+                
+                if (defaultServer == null && verifiedServers.isNotEmpty) {
+                  defaultServer = verifiedServers.keys.first;
+                }
+
+                if (defaultServer != null) {
+                  startedPlayback = true;
+                  setState(() {
+                    _activeServer = defaultServer!;
+                    _selectedServer = defaultServer;
+                  });
+                  debugPrint('[Engine] Starting playback immediately on verified link ($res on $_activeServer)');
+                  await _startVcloudPlayback();
+                }
+              } else {
+                // If video already playing, just update resolution dropdown configs
+                final resolutions = _vcloudServerMap[_activeServer];
+                if (resolutions != null) {
+                  final sortedResKeys = resolutions.keys.toList();
+                  sortedResKeys.sort((a, b) {
+                    final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                    final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                    return aInt.compareTo(bInt);
+                  });
+                  final Map<String, String> explicitResolutions = {};
+                  for (var key in sortedResKeys) {
+                    explicitResolutions[key] = resolutions[key]!;
+                  }
+                  setState(() {
+                    _explicitResolutions = explicitResolutions;
+                  });
+                }
+                debugPrint('[Engine] Background resolution resolved and verified: $res');
+              }
+            }
           }
         } catch (err) {
-          debugPrint('[Engine] Failed to extract resolution $res: $err');
+          debugPrint('[Engine] Parallel extraction failed for resolution $res: $err');
         }
-      }
+      }).toList();
+
+      await Future.wait(parallelTasks);
 
       if (!mounted || _isClosing) return;
 
-      if (successRes == null || successServers == null || successServers.isEmpty) {
-        debugPrint('[Engine] Failed to extract any Vcloud resolution. Waiting for fallback timer.');
+      if (!startedPlayback && _vcloudServerMap.isEmpty) {
+        debugPrint('[Engine] Failed to extract any valid/working Vcloud links. Waiting for fallback timer.');
         return;
-      }
-
-      // Map successServers (server -> url) to _vcloudServerMap format (server -> { resolution -> url })
-      final Map<String, Map<String, String>> serverToResUrl = {};
-      successServers.forEach((serverName, directUrl) {
-        serverToResUrl[serverName] = {successRes!: directUrl};
-      });
-
-      // Find first available server in order of priority (Server 1 -> Server 2 -> Server 3)
-      String? defaultServer;
-      final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
-      for (final srv in priorityServers) {
-        if (serverToResUrl.containsKey(srv) && serverToResUrl[srv]!.isNotEmpty) {
-          defaultServer = srv;
-          break;
-        }
-      }
-
-      // Fallback
-      if (defaultServer == null && serverToResUrl.isNotEmpty) {
-        defaultServer = serverToResUrl.keys.first;
-      }
-
-      if (defaultServer == null) {
-        debugPrint('[Engine] No default server found. Waiting for fallback timer.');
-        return;
-      }
-
-      setState(() {
-        _vcloudServerMap = serverToResUrl;
-        _activeServer = defaultServer!;
-        _selectedServer = defaultServer;
-      });
-
-      // Start playback immediately on the prioritized resolution
-      await _startVcloudPlayback();
-
-      // Extract all other resolutions in the background
-      for (final res in vcloudLinksMap.keys) {
-        if (res == successRes) continue;
-        VcloudExtractorService().extractVcloud(vcloudLinksMap[res]!).then((resolvedServers) {
-          if (!mounted || _isClosing) return;
-          if (resolvedServers.isNotEmpty) {
-            setState(() {
-              resolvedServers.forEach((serverName, directUrl) {
-                _vcloudServerMap.putIfAbsent(serverName, () => {})[res] = directUrl;
-              });
-              // Update explicit resolutions for the active server if needed
-              final resolutions = _vcloudServerMap[_activeServer];
-              if (resolutions != null) {
-                final sortedResKeys = resolutions.keys.toList();
-                sortedResKeys.sort((a, b) {
-                  final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
-                  final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
-                  return aInt.compareTo(bInt);
-                });
-                final Map<String, String> explicitResolutions = {};
-                for (var key in sortedResKeys) {
-                  explicitResolutions[key] = resolutions[key]!;
-                }
-                _explicitResolutions = explicitResolutions;
-              }
-            });
-            debugPrint('[Engine] Dynamically updated background resolution: $res');
-          }
-        }).catchError((err) {
-          debugPrint('[Engine] Background extraction failed for $res: $err');
-        });
       }
 
     } catch (err) {
@@ -482,6 +497,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       if (gDriveUrl != null && gDriveUrl.isNotEmpty) {
         playUrl = gDriveUrl;
         debugPrint('[VcloudPlayer] JIT resolved url: $playUrl');
+      }
+
+      // Verify JIT resolved URL is a valid playable video
+      final isValid = await VcloudExtractorService().verifyDirectLink(playUrl);
+      if (!isValid) {
+        debugPrint('[VcloudPlayer] JIT resolved link failed verification. Handling failover.');
+        _handleFailover();
+        return;
       }
     }
 
@@ -798,7 +821,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         useAsmsSubtitles: url.toLowerCase().contains('.m3u8'),
         headers: !isOffline ? (() {
           final isGoogle = url.contains('googleusercontent.com') || url.contains('google.com');
-          if (isGoogle) return <String, String>{};
+          if (isGoogle) {
+            // Google video downloads NEED a User-Agent but must NOT have Referer/Origin
+            return <String, String>{
+              'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+              'Accept': '*/*',
+            };
+          }
           return {
             if (extractedStream != null) ...extractedStream.headers,
             if (extractedStream == null) ...{
@@ -906,16 +935,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
          _extractedLink!.contains('r2') ||
          _vcloudServerMap.isNotEmpty);
 
-    if (mounted) {
-      setState(() {
-        _useWebViewEngine = true;
-        _isLoading = false;
-        _isInitialized = !isExtractedM3u8;
-        if (!isExtractedM3u8) {
-          _isExtracting = false;
-        }
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _useWebViewEngine = true;
+          _isLoading = false;
+          _isInitialized = !isExtractedM3u8;
+          if (!isExtractedM3u8) {
+            _isExtracting = false;
+          }
+        });
+      }
+    });
   }
 
 

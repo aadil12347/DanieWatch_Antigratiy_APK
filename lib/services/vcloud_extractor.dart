@@ -389,11 +389,113 @@ class VcloudExtractorService {
     return resolvedResMap;
   }
 
-  /// Resolves the vcloud.zip page and extracts Server 1, Server 2, and Server 3 direct URLs.
+  /// Helper to parse download server links from page HTML.
+  Map<String, String> _parseServerLinks(String html) {
+    final Map<String, String> resolved = {};
+    final aTagRegExp = RegExp(r'<a\s+([^>]+)>(.*?)</a>', caseSensitive: false, dotAll: true);
+    final hrefAttrRegExp = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
+    final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
+    
+    final matches = aTagRegExp.allMatches(html);
+
+    // List of known ad, betting, shortener keywords to ignore in URL
+    const List<String> adKeywords = [
+      'bit.ly', 'tinyurl', 'cutt.ly', 'linkvertise', 'adf.ly', 'shorturl',
+      'doubleclick', 'popads', 'onclickads', 'exoclick', 'adsterra', 'adlink',
+      'winexch', 'lotus', 'bet', 'casino', '1xbet', 'mostbet', 'parimatch',
+      'melbet', 'dafanews', 'sportybet', 'betway', 'bet365', 'adsystem',
+      'adservices', 'googlesyndication', 'googleadservices'
+    ];
+
+    for (var match in matches) {
+      final attributes = match.group(1)!;
+      final innerHtml = match.group(2) ?? '';
+      
+      final hrefMatch = hrefAttrRegExp.firstMatch(attributes);
+      if (hrefMatch == null) continue;
+      
+      final href = hrefMatch.group(1)!;
+      if (href == '#' || href.isEmpty) continue;
+      
+      // Exclude irrelevant links and ad keywords
+      final hrefLower = href.toLowerCase();
+      if (hrefLower.contains('css') || 
+          hrefLower.contains('fonts') || 
+          hrefLower.contains('favicon') || 
+          hrefLower.contains('manifest') || 
+          hrefLower.contains('telegram') || 
+          hrefLower.contains('t.me') || 
+          hrefLower.contains('google.com') ||
+          hrefLower.contains('github.com') ||
+          hrefLower.contains('admin') ||
+          hrefLower.contains('login') ||
+          hrefLower.contains('signup') ||
+          hrefLower.contains('sign-up') ||
+          hrefLower.contains('create') ||
+          hrefLower.contains('account') ||
+          hrefLower.contains('hubcloud.php')) {
+        continue;
+      }
+
+      bool isAd = false;
+      for (final keyword in adKeywords) {
+        if (hrefLower.contains(keyword)) {
+          isAd = true;
+          break;
+        }
+      }
+      if (isAd) {
+        debugPrint('[VcloudExtractor] Skipping parsed ad link: $href');
+        continue;
+      }
+
+      final idMatch = idAttrRegExp.firstMatch(attributes);
+      final id = idMatch?.group(1) ?? '';
+
+      // Specific matched servers based on known attributes/text
+      if (id == 'fsl' || innerHtml.contains('[FSL Server]')) {
+        final minutes = DateTime.now().minute;
+        resolved['Server 1'] = href.contains('X-Amz-Signature') || href.contains('r2.cloudflarestorage') || href.contains('r2.dev')
+            ? href
+            : href + '1$minutes';
+      } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
+        final minutes2 = DateTime.now().minute;
+        resolved['Server 2'] = href.contains('X-Amz-Signature') || href.contains('r2.cloudflarestorage') || href.contains('r2.dev')
+            ? href
+            : href + '1$minutes2';
+      } else if (innerHtml.contains('[Server : 10Gbps]') || 
+                 (href.contains('hubcloud') && (href.contains('id=') || href.contains('/tg/'))) || 
+                 href.contains('gpdl') ||
+                 href.contains('gamerxyt') ||
+                 (attributes.contains('btn-danger') && 
+                  (href.contains('hubcloud') || 
+                   href.contains('gpdl') || 
+                   href.contains('gamerxyt') || 
+                   href.contains('vcloud') || 
+                   href.contains('gofile') || 
+                   href.contains('pixeldrain') || 
+                   href.contains('cloudflarestorage') || 
+                   href.contains('auvps')))) {
+        resolved['Server 3'] = href;
+      } else if ((attributes.toLowerCase().contains('btn') || innerHtml.toLowerCase().contains('server')) && href.contains('token=')) {
+        if (!resolved.containsKey('Server 1')) {
+          resolved['Server 1'] = href;
+        } else if (!resolved.containsKey('Server 2')) {
+          resolved['Server 2'] = href;
+        } else if (!resolved.containsKey('Server 3')) {
+          resolved['Server 3'] = href;
+        }
+      }
+    }
+
+    return resolved;
+  }
+
+  /// Resolves the page (vcloud/hubcloud/etc.) and extracts Server 1, Server 2, and Server 3 direct URLs.
   Future<Map<String, String>> extractVcloud(String vcloudUrl) async {
     final Map<String, String> resolved = {};
     final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 6)
+      ..connectionTimeout = const Duration(seconds: 20)
       ..badCertificateCallback = (cert, host, port) => true;
 
     final headers = {
@@ -411,16 +513,61 @@ class VcloudExtractorService {
       }
       final html = await resp.transform(utf8.decoder).join();
 
-      // Step 2: Extract token URL
-      final tokenRegExp = RegExp(r"var url\s*=\s*'(https?://[^'\s]+token=[^'\s]+)'");
-      final match = tokenRegExp.firstMatch(html);
-      if (match == null) {
+      // Step 2: Try to parse server links directly from the first page (in case it is already pre-generated)
+      final directServers = _parseServerLinks(html);
+      if (directServers.containsKey('Server 1') || directServers.containsKey('Server 2') || directServers.containsKey('Server 3')) {
+        debugPrint('[VcloudExtractor] Found server links directly on the initial page.');
+        return directServers;
+      }
+
+      // Step 3: Extract token URL from JS variable or download buttons
+      String? tokenUrl;
+
+      // Try 3a: Extract from JS variable var url = '...' or var url = "..."
+      final varUrlRegExp = RegExp(r'''var\s+url\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false);
+      final varUrlMatch = varUrlRegExp.firstMatch(html);
+      if (varUrlMatch != null) {
+        tokenUrl = varUrlMatch.group(1);
+        debugPrint('[VcloudExtractor] Extracted token URL from JS variable: $tokenUrl');
+      }
+
+      // Try 3b: Extract from anchor tag with id="download" or containing text "generate"
+      if (tokenUrl == null) {
+        final aTagRegExp = RegExp(r'<a\s+([^>]+)>(.*?)</a>', caseSensitive: false, dotAll: true);
+        final hrefAttrRegExp = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
+        final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
+        
+        final matches = aTagRegExp.allMatches(html);
+        for (var match in matches) {
+          final attributes = match.group(1)!;
+          final innerHtml = match.group(2) ?? '';
+          
+          final idMatch = idAttrRegExp.firstMatch(attributes);
+          final id = idMatch?.group(1) ?? '';
+          
+          if (id == 'download' || 
+              innerHtml.toLowerCase().contains('generate direct download') || 
+              innerHtml.toLowerCase().contains('generate download')) {
+            final hrefMatch = hrefAttrRegExp.firstMatch(attributes);
+            if (hrefMatch != null) {
+              final href = hrefMatch.group(1)!;
+              if (href.isNotEmpty && href.startsWith('http')) {
+                tokenUrl = href;
+                debugPrint('[VcloudExtractor] Extracted token URL from download button: $tokenUrl');
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (tokenUrl == null) {
+        debugPrint('[VcloudExtractor] Could not locate token URL or download button on main page.');
         client.close();
         return resolved;
       }
-      final tokenUrl = match.group(1)!;
 
-      // Step 3: Fetch token page with Referer header
+      // Step 4: Fetch token page with Referer header
       final req2 = await client.getUrl(Uri.parse(tokenUrl));
       headers.forEach((k, v) => req2.headers.set(k, v));
       req2.headers.set('Referer', vcloudUrl);
@@ -431,42 +578,8 @@ class VcloudExtractorService {
       }
       final html2 = await resp2.transform(utf8.decoder).join();
 
-      // Step 4 & 5: Parse anchor tags and categorize by button attributes
-      final aTagRegExp = RegExp(r'<a\s+([^>]+)>(.*?)</a>', caseSensitive: false, dotAll: true);
-      final hrefAttrRegExp = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
-      final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
-      
-      final matches = aTagRegExp.allMatches(html2);
-
-      for (var match in matches) {
-        final attributes = match.group(1)!;
-        final innerHtml = match.group(2) ?? '';
-        
-        final hrefMatch = hrefAttrRegExp.firstMatch(attributes);
-        if (hrefMatch == null) continue;
-        
-        final href = hrefMatch.group(1)!;
-        if (href == '#' || href.isEmpty) continue;
-        
-        // Exclude irrelevant links
-        if (href.contains('css') || href.contains('fonts') || href.contains('favicon') || href.contains('manifest') || href.contains('telegram')) {
-          continue;
-        }
-
-        final idMatch = idAttrRegExp.firstMatch(attributes);
-        final id = idMatch?.group(1) ?? '';
-
-        if (id == 'fsl' || innerHtml.contains('[FSL Server]')) {
-          final minutes = DateTime.now().minute;
-          resolved['Server 1'] = href + '1$minutes';
-        } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
-          final minutes2 = DateTime.now().minute;
-          resolved['Server 2'] = href + '1$minutes2';
-        } else if (attributes.contains('btn-danger') || innerHtml.contains('[Server : 10Gbps]') || href.contains('hubcloud') || href.contains('gpdl')) {
-          // Defer Google Drive direct link resolution until playback to prevent expiration
-          resolved['Server 3'] = href;
-        }
-      }
+      // Step 5: Parse server links from token page HTML
+      return _parseServerLinks(html2);
 
     } catch (e) {
       debugPrint('[VcloudExtractor] Error during vcloud extraction: $e');
@@ -477,11 +590,10 @@ class VcloudExtractorService {
     return resolved;
   }
 
-  /// Resolves GPDL / HubCloud redirect URL just-in-time.
-  /// Follows redirects up to 8 hops, and extracts the direct URL from the 'link' parameter.
+  /// Resolves GPDL / HubCloud redirect URL dynamically checking for 'link=' at each hop.
   Future<String?> resolveHubCloudRedirect(String url) async {
     final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10)
+      ..connectionTimeout = const Duration(seconds: 20)
       ..badCertificateCallback = (cert, host, port) => true;
 
     final headers = {
@@ -491,9 +603,16 @@ class VcloudExtractorService {
     try {
       var currentUrl = url;
       var redirectCount = 0;
-      String? finalUrl;
 
       while (redirectCount < 8) {
+        // Quick check: if the URL itself contains '?link=' or '&link=', capture the direct video link immediately!
+        final uri = Uri.parse(currentUrl);
+        if (uri.queryParameters.containsKey('link')) {
+          final directLink = uri.queryParameters['link']!;
+          debugPrint('[VcloudExtractor] Captured direct link dynamically at hop $redirectCount: $directLink');
+          return directLink;
+        }
+
         final req = await client.getUrl(Uri.parse(currentUrl));
         headers.forEach((k, v) => req.headers.set(k, v));
         req.followRedirects = false;
@@ -508,24 +627,15 @@ class VcloudExtractorService {
           }
           redirectCount++;
         } else {
-          finalUrl = currentUrl;
           break;
         }
       }
 
-      if (finalUrl != null) {
-        final uri = Uri.parse(finalUrl);
-        if (uri.queryParameters.containsKey('link')) {
-          final directLink = uri.queryParameters['link']!;
-          debugPrint('[VcloudExtractor] Resolved direct link from final URL query: $directLink');
-          return directLink;
-        }
-      }
-
+      // Final URL query parameter check
       final uri = Uri.parse(currentUrl);
       if (uri.queryParameters.containsKey('link')) {
         final directLink = uri.queryParameters['link']!;
-        debugPrint('[VcloudExtractor] Resolved direct link from last redirect query: $directLink');
+        debugPrint('[VcloudExtractor] Captured direct link from final redirect URL: $directLink');
         return directLink;
       }
     } catch (e) {
@@ -534,6 +644,79 @@ class VcloudExtractorService {
       client.close();
     }
     return null;
+  }
+
+  /// Checks if the direct link is playable by sending a quick HEAD request (2s timeout).
+  /// Verifies that the status code is < 400 and the Content-Type starts with 'video/' or is HLS/media format.
+  Future<bool> verifyDirectLink(String url) async {
+    if (url.isEmpty || !url.startsWith('http')) return false;
+
+    // Filter out obvious ad/shortener/betting URLs before doing a network request
+    final lowerUrl = url.toLowerCase();
+    const List<String> adKeywords = [
+      'bit.ly', 'tinyurl', 'cutt.ly', 'linkvertise', 'adf.ly', 'shorturl',
+      'doubleclick', 'popads', 'onclickads', 'exoclick', 'adsterra', 'adlink',
+      'winexch', 'lotus', 'bet', 'casino', '1xbet', 'mostbet', 'parimatch',
+      'melbet', 'dafanews', 'sportybet', 'betway', 'bet365', 'adsystem',
+      'adservices', 'googlesyndication', 'googleadservices'
+    ];
+
+    for (final keyword in adKeywords) {
+      if (lowerUrl.contains(keyword)) {
+        debugPrint('[VcloudExtractor] Rejecting known ad/shortener/betting link pattern: $url');
+        return false;
+      }
+    }
+
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 5)
+      ..badCertificateCallback = (cert, host, port) => true;
+
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      req.headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      req.headers.set('Range', 'bytes=0-1024');
+      final resp = await req.close();
+      
+      // Abort downloading the rest of the stream immediately
+      try {
+        await resp.listen((_) {}).cancel();
+      } catch (_) {}
+      client.close();
+
+      if (resp.statusCode >= 400 && resp.statusCode != 206) {
+        debugPrint('[VcloudExtractor] Direct link returned failure status: ${resp.statusCode}');
+        return false;
+      }
+
+      final contentType = resp.headers.value('content-type')?.toLowerCase() ?? '';
+      
+      // If the content type is HTML/Text, it is NOT a playable raw video file/stream.
+      // (Exception: HLS playlists are sometimes served as text/plain or similar, so check extension)
+      if (contentType.contains('html') || contentType.contains('text/')) {
+        if (!contentType.contains('mpegurl') && !contentType.contains('mpeg-url') && !url.toLowerCase().contains('.m3u8')) {
+          debugPrint('[VcloudExtractor] Rejecting link due to non-video HTML/Text content type: $contentType');
+          return false;
+        }
+      }
+
+      final isPlayable = contentType.startsWith('video/') ||
+          contentType.contains('mpegurl') ||
+          contentType.contains('application/octet-stream') ||
+          url.toLowerCase().contains('.mkv') ||
+          url.toLowerCase().contains('.mp4') ||
+          url.toLowerCase().contains('.m3u8') ||
+          url.toLowerCase().contains('googleusercontent') ||
+          url.toLowerCase().contains('r2.cloudflarestorage') ||
+          url.toLowerCase().contains('r2.dev');
+      
+      debugPrint('[VcloudExtractor] Verification result for $url: $isPlayable (type: $contentType)');
+      return isPlayable;
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Verification exception for $url: $e');
+      client.close();
+      return false;
+    }
   }
 }
 
