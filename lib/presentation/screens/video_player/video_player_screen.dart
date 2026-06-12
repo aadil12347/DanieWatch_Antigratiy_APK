@@ -147,6 +147,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Map<String, String>? _explicitResolutions;
   Map<String, PeachifyStream>? _currentStreamsMap;
   Map<String, Map<String, String>> _vcloudServerMap = {};
+  final Set<String> _failedVcloudCombinations = {};
   String _activeServer = 'Server 1';
   int _selectedAudioIndex = 0;
   double? _resumeTimeOverride;
@@ -345,27 +346,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
       bool startedPlayback = false;
 
-      // Extract all resolutions in parallel
-      final List<Future<void>> parallelTasks = availableOrdered.map((res) async {
+      // Sequential fast-playback search (First Pass)
+      for (final res in availableOrdered) {
+        if (startedPlayback) break;
+
+        final url = vcloudLinksMap[res]!;
+        debugPrint('[Engine] Fast Pass: extracting servers for resolution $res');
+        
         try {
-          final url = vcloudLinksMap[res]!;
-          debugPrint('[Engine] Starting parallel extraction for resolution: $res');
           final resolved = await VcloudExtractorService().extractVcloud(url);
-          
           if (!mounted || _isClosing) return;
 
           if (resolved.isNotEmpty) {
-            // Process and verify each server in order of priority: Server 1 -> Server 2 -> Server 3
             final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
-            Map<String, String> verifiedServers = {};
-
             for (final srv in priorityServers) {
               if (resolved.containsKey(srv)) {
                 var playUrl = resolved[srv]!;
                 
-                // If it is Server 3 (Gbps/HubCloud redirect), resolve it first
+                // If it is Server 3, resolve it
                 if (srv == 'Server 3' && (playUrl.contains('hubcloud') || playUrl.contains('gpdl'))) {
-                  debugPrint('[Engine] Pre-resolving HubCloud redirect for Server 3...');
+                  debugPrint('[Engine] Fast Pass: Pre-resolving HubCloud redirect for Server 3...');
                   final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(playUrl);
                   if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
                     playUrl = resolvedUrl;
@@ -373,88 +373,117 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 }
 
                 // Verify if the link is actually valid and playable
-                debugPrint('[Engine] Verifying direct link for $srv ($res)...');
+                debugPrint('[Engine] Fast Pass: Verifying direct link for $srv ($res)...');
                 final isValid = await VcloudExtractorService().verifyDirectLink(playUrl);
                 if (isValid) {
-                  verifiedServers[srv] = playUrl;
-                  debugPrint('[Engine] Direct link for $srv ($res) is verified and working.');
-                } else {
-                  debugPrint('[Engine] Direct link for $srv ($res) failed verification.');
-                }
-              }
-            }
+                  debugPrint('[Engine] Fast Pass: Direct link for $srv ($res) verified working! Starting playback...');
+                  
+                  if (!mounted || _isClosing) return;
+                  
+                  setState(() {
+                    _vcloudServerMap.putIfAbsent(srv, () => {})[res] = playUrl;
+                    _activeServer = srv;
+                    _selectedServer = srv;
+                    _selectedResolution = res;
+                  });
 
-            if (verifiedServers.isNotEmpty) {
-              if (!mounted || _isClosing) return;
-              
-              setState(() {
-                verifiedServers.forEach((serverName, directUrl) {
-                  _vcloudServerMap.putIfAbsent(serverName, () => {})[res] = directUrl;
-                });
-              });
-
-              // Start playback immediately on the first working link we find
-              if (!startedPlayback) {
-                String? defaultServer;
-                for (final srv in priorityServers) {
-                  if (verifiedServers.containsKey(srv)) {
-                    defaultServer = srv;
-                    break;
-                  }
-                }
-                
-                if (defaultServer == null && verifiedServers.isNotEmpty) {
-                  defaultServer = verifiedServers.keys.first;
-                }
-
-                if (defaultServer != null) {
                   startedPlayback = true;
-                  setState(() {
-                    _activeServer = defaultServer!;
-                    _selectedServer = defaultServer;
-                  });
-                  debugPrint('[Engine] Starting playback immediately on verified link ($res on $_activeServer)');
                   await _startVcloudPlayback();
+                  break; // break server loop
+                } else {
+                  debugPrint('[Engine] Fast Pass: Direct link for $srv ($res) failed verification.');
                 }
-              } else {
-                // If video already playing, just update resolution dropdown configs
-                final resolutions = _vcloudServerMap[_activeServer];
-                if (resolutions != null) {
-                  final sortedResKeys = resolutions.keys.toList();
-                  sortedResKeys.sort((a, b) {
-                    final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
-                    final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
-                    return aInt.compareTo(bInt);
-                  });
-                  final Map<String, String> explicitResolutions = {};
-                  for (var key in sortedResKeys) {
-                    explicitResolutions[key] = resolutions[key]!;
-                  }
-                  setState(() {
-                    _explicitResolutions = explicitResolutions;
-                  });
-                }
-                debugPrint('[Engine] Background resolution resolved and verified: $res');
               }
             }
           }
         } catch (err) {
-          debugPrint('[Engine] Parallel extraction failed for resolution $res: $err');
+          debugPrint('[Engine] Fast Pass failed for resolution $res: $err');
         }
-      }).toList();
+      }
 
-      await Future.wait(parallelTasks);
-
-      if (!mounted || _isClosing) return;
-
-      if (!startedPlayback && _vcloudServerMap.isEmpty) {
-        debugPrint('[Engine] Failed to extract any valid/working Vcloud links. Waiting for fallback timer.');
-        return;
+      // If we found a working link, fetch remaining servers/resolutions in the background
+      if (startedPlayback) {
+        // Fire-and-forget background extraction
+        _extractRemainingLinksInBackground(vcloudLinksMap, availableOrdered);
+      } else {
+        // If all resolutions and servers failed in VCloud, fallback to VidNest/Peachify
+        debugPrint('[Engine] Fast Pass failed for all resolutions. Falling back to VidNest/Peachify.');
+        await _tryVidNestPeachifyExtraction();
       }
 
     } catch (err) {
       debugPrint('[Engine] Vcloud extraction failed: $err. Waiting for fallback timer.');
     }
+  }
+
+  Future<void> _extractRemainingLinksInBackground(
+      Map<String, String> vcloudLinksMap, List<String> availableOrdered) async {
+    debugPrint('[BackgroundExtractor] Starting background extraction for other servers and resolutions...');
+    
+    for (final res in availableOrdered) {
+      if (!mounted || _isClosing) return;
+      
+      final url = vcloudLinksMap[res]!;
+      try {
+        final resolved = await VcloudExtractorService().extractVcloud(url);
+        if (!mounted || _isClosing) return;
+
+        if (resolved.isNotEmpty) {
+          final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
+          for (final srv in priorityServers) {
+            if (!mounted || _isClosing) return;
+
+            // Skip if already verified in the map
+            if (_vcloudServerMap[srv]?.containsKey(res) == true) {
+              continue;
+            }
+
+            if (resolved.containsKey(srv)) {
+              var playUrl = resolved[srv]!;
+              if (srv == 'Server 3' && (playUrl.contains('hubcloud') || playUrl.contains('gpdl'))) {
+                final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(playUrl);
+                if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+                  playUrl = resolvedUrl;
+                }
+              }
+
+              // Verify
+              final isValid = await VcloudExtractorService().verifyDirectLink(playUrl);
+              if (isValid) {
+                if (mounted) {
+                  setState(() {
+                    _vcloudServerMap.putIfAbsent(srv, () => {})[res] = playUrl;
+                    
+                    // If this is the active server, update explicit resolutions dropdown
+                    if (srv == _activeServer) {
+                      final resolutions = _vcloudServerMap[_activeServer];
+                      if (resolutions != null) {
+                        final sortedResKeys = resolutions.keys.toList();
+                        sortedResKeys.sort((a, b) {
+                          final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                          final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+                          return aInt.compareTo(bInt);
+                        });
+                        final Map<String, String> explicitResolutions = {};
+                        for (var key in sortedResKeys) {
+                          explicitResolutions[key] = resolutions[key]!;
+                        }
+                        _explicitResolutions = explicitResolutions;
+                      }
+                    }
+                  });
+                  debugPrint('[BackgroundExtractor] Added verified $srv ($res) to server map.');
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        debugPrint('[BackgroundExtractor] Failed extracting $res in background: $err');
+      }
+    }
+    
+    debugPrint('[BackgroundExtractor] Background extraction finished.');
   }
 
   Future<void> _startVcloudPlayback() async {
@@ -477,16 +506,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       return aInt.compareTo(bInt);
     });
 
-    // Pick default resolution (closest to 720p or highest if not found)
-    String? defaultRes;
-    try {
-      defaultRes = sortedResKeys.firstWhere((k) => k.contains('720'));
-    } catch (_) {
-      defaultRes = sortedResKeys.last;
+    // Try to preserve current resolution if available, otherwise fallback to closest to 720p
+    String? targetRes = _selectedResolution;
+    if (targetRes == null || !resolutions.containsKey(targetRes)) {
+      try {
+        targetRes = sortedResKeys.firstWhere((k) => k.contains('720'));
+      } catch (_) {
+        targetRes = sortedResKeys.last;
+      }
     }
 
-    _selectedResolution = defaultRes;
-    String playUrl = resolutions[defaultRes]!;
+    _selectedResolution = targetRes;
+    String playUrl = resolutions[targetRes]!;
 
     if (playUrl.contains('hubcloud') || playUrl.contains('gpdl')) {
       debugPrint('[VcloudPlayer] Resolving HubCloud redirect just-in-time...');
@@ -496,6 +527,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       final gDriveUrl = await VcloudExtractorService().resolveHubCloudRedirect(playUrl);
       if (gDriveUrl != null && gDriveUrl.isNotEmpty) {
         playUrl = gDriveUrl;
+        // Cache it back
+        _vcloudServerMap[_activeServer]![targetRes] = playUrl;
+        if (_selectedResolution == targetRes) {
+          _explicitResolutions?[targetRes] = playUrl;
+        }
         debugPrint('[VcloudPlayer] JIT resolved url: $playUrl');
       }
 
@@ -537,54 +573,99 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     _initializeBetterPlayer(playUrl, isOffline: false);
 
-    // Watchdog: if video doesn't start within 12s, fall back to WebView engine
+    // Watchdog: if video doesn't start within 12s, fall back to failover or WebView
     _playbackWatchdogTimer?.cancel();
     _playbackWatchdogTimer = Timer(const Duration(seconds: 12), () {
       if (!mounted || _isClosing || _hasVideoStarted) return;
-      debugPrint('[Watchdog] Video did not start within 12s on $_activeServer. Falling back to WebView engine.');
+      debugPrint('[Watchdog] Video did not start within 12s on $_activeServer. Handling failover.');
       try {
         _betterPlayerController?.videoPlayerController?.removeListener(_videoPlayerListener);
         _betterPlayerController?.dispose();
         _betterPlayerController = null;
       } catch (_) {}
-      _switchToWebEngine();
+      _handleFailover();
     });
   }
 
   void _handleFailover() {
     if (!mounted || _isClosing) return;
 
-    debugPrint('[VcloudPlayer] Failover triggered. Current active server: $_activeServer');
+    final currentKey = '${_activeServer}_$_selectedResolution';
+    _failedVcloudCombinations.add(currentKey);
+    debugPrint('[VcloudPlayer] Failover: Marked $currentKey as failed.');
 
-    // Priority: Server 1 -> Server 2 -> Server 3
+    // Priority order for servers and resolutions
+    final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
+    final priorityResolutions = ['720p', '480p', '1080p', '4k'];
+
     String? nextServer;
-    if (_activeServer == 'Server 1') {
-      if (_vcloudServerMap.containsKey('Server 2') && _vcloudServerMap['Server 2']!.isNotEmpty) {
-        nextServer = 'Server 2';
-      } else if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
-        nextServer = 'Server 3';
-      }
-    } else if (_activeServer == 'Server 2') {
-      if (_vcloudServerMap.containsKey('Server 3') && _vcloudServerMap['Server 3']!.isNotEmpty) {
-        nextServer = 'Server 3';
+    String? nextRes = _selectedResolution;
+
+    // 1. Try to find another server for the CURRENT resolution
+    if (nextRes != null) {
+      for (final srv in priorityServers) {
+        final key = '${srv}_$nextRes';
+        if (!_failedVcloudCombinations.contains(key) &&
+            _vcloudServerMap[srv]?.containsKey(nextRes) == true) {
+          nextServer = srv;
+          break;
+        }
       }
     }
 
-    if (nextServer != null) {
-      debugPrint('[VcloudPlayer] Failing over from $_activeServer to $nextServer');
+    // 2. If no server found for current resolution, search other resolutions
+    if (nextServer == null) {
+      for (final res in priorityResolutions) {
+        final matchedRes = _vcloudServerMap.values
+            .expand((m) => m.keys)
+            .cast<String?>()
+            .firstWhere((k) => k!.toLowerCase() == res.toLowerCase() || k.toLowerCase().contains(res.replaceAll('p', '')), orElse: () => null);
+
+        if (matchedRes != null) {
+          for (final srv in priorityServers) {
+            final key = '${srv}_$matchedRes';
+            if (!_failedVcloudCombinations.contains(key) &&
+                _vcloudServerMap[srv]?.containsKey(matchedRes) == true) {
+              nextServer = srv;
+              nextRes = matchedRes;
+              break;
+            }
+          }
+        }
+        if (nextServer != null) break;
+      }
+    }
+
+    // 3. Final fallback: try any available untried combination in the entire map
+    if (nextServer == null) {
+      for (final srv in _vcloudServerMap.keys) {
+        for (final res in _vcloudServerMap[srv]!.keys) {
+          final key = '${srv}_$res';
+          if (!_failedVcloudCombinations.contains(key)) {
+            nextServer = srv;
+            nextRes = res;
+            break;
+          }
+        }
+        if (nextServer != null) break;
+      }
+    }
+
+    if (nextServer != null && nextRes != null) {
+      debugPrint('[VcloudPlayer] Failing over to server $nextServer on resolution $nextRes');
       setState(() {
         _activeServer = nextServer!;
         _selectedServer = nextServer;
+        _selectedResolution = nextRes;
       });
-      // Start playback on next server
       _startVcloudPlayback();
-      
+
       // Notify user
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Server failed, falling back to $nextServer...'),
+              content: Text('Server/Quality failed, falling back to $nextServer ($nextRes)...'),
               backgroundColor: AppColors.primary,
               duration: const Duration(seconds: 3),
             ),
@@ -592,12 +673,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         }
       });
     } else {
-      // No more servers to failover to!
-      debugPrint('[VcloudPlayer] All servers failed!');
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-      });
+      debugPrint('[VcloudPlayer] All servers and resolutions failed! Switching to WebView.');
+      _switchToWebEngine();
     }
   }
 
@@ -688,6 +765,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _startPlayback(String link, {bool isOffline = false, PeachifyStream? extractedStream}) {
     debugPrint('[Playback] Starting for link: $link (isOffline: $isOffline)');
+    _failedVcloudCombinations.clear();
     setState(() {
       _hasVideoStarted = false;
       _extractedLink = link;
@@ -873,7 +951,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _betterPlayerController!.addEventsListener((event) {
         if (event.betterPlayerEventType == BetterPlayerEventType.exception) {
           debugPrint('[BetterPlayer] Exception detected: ${event.parameters}');
-          _switchToWebEngine();
+          if (_vcloudServerMap.isNotEmpty) {
+            _handleFailover();
+          } else {
+            _switchToWebEngine();
+          }
         } else if (event.betterPlayerEventType == BetterPlayerEventType.finished) {
           debugPrint('[BetterPlayer] Playback finished. Playing next episode if available.');
           _playNextEpisode();
@@ -900,7 +982,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
     } catch (e) {
       debugPrint('[BetterPlayer] Setup error: $e');
-      _switchToWebEngine();
+      if (_vcloudServerMap.isNotEmpty) {
+        _handleFailover();
+      } else {
+        _switchToWebEngine();
+      }
     }
   }
 
@@ -3528,6 +3614,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     
     debugPrint('[ServerSwap] Saving position: $currentPos before switching to $serverName');
     
+    _failedVcloudCombinations.clear();
     setState(() {
       _hasVideoStarted = false;
       _resumeTimeOverride = currentPos;
@@ -3551,16 +3638,35 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _changeResolution(String resolutionName) async {
-    final resUrl = _explicitResolutions![resolutionName]!;
+    var resUrl = _explicitResolutions![resolutionName]!;
     final double currentPos = _betterPlayerController != null 
         ? _betterPlayerController!.videoPlayerController!.value.position.inSeconds.toDouble()
         : _lastCurrentTime;
         
     debugPrint('[QualitySwap] Quality swap to $resolutionName at position $currentPos');
     
+    _failedVcloudCombinations.clear();
     setState(() {
       _selectedResolution = resolutionName;
     });
+
+    if (resUrl.contains('hubcloud') || resUrl.contains('gpdl')) {
+      debugPrint('[QualitySwap] Resolving HubCloud redirect just-in-time for resolution change...');
+      setState(() {
+        _isExtracting = true;
+      });
+      final gDriveUrl = await VcloudExtractorService().resolveHubCloudRedirect(resUrl);
+      if (gDriveUrl != null && gDriveUrl.isNotEmpty) {
+        resUrl = gDriveUrl;
+        _explicitResolutions![resolutionName] = resUrl;
+        if (_vcloudServerMap[_activeServer] != null) {
+          _vcloudServerMap[_activeServer]![resolutionName] = resUrl;
+        }
+      }
+      setState(() {
+        _isExtracting = false;
+      });
+    }
 
     if (_betterPlayerController != null) {
       _performSeek(currentPos);
