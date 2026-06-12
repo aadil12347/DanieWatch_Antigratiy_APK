@@ -407,6 +407,8 @@ class VcloudExtractorService {
       'adservices', 'googlesyndication', 'googleadservices'
     ];
 
+    final minutes = DateTime.now().minute;
+
     for (var match in matches) {
       final attributes = match.group(1)!;
       final innerHtml = match.group(2) ?? '';
@@ -425,6 +427,7 @@ class VcloudExtractorService {
           hrefLower.contains('manifest') || 
           hrefLower.contains('telegram') || 
           hrefLower.contains('t.me') || 
+          hrefLower.contains('/tg/') || 
           hrefLower.contains('google.com') ||
           hrefLower.contains('github.com') ||
           hrefLower.contains('admin') ||
@@ -454,28 +457,20 @@ class VcloudExtractorService {
 
       // Specific matched servers based on known attributes/text
       if (id == 'fsl' || innerHtml.contains('[FSL Server]')) {
-        final minutes = DateTime.now().minute;
-        resolved['Server 1'] = href.contains('X-Amz-Signature') || href.contains('r2.cloudflarestorage') || href.contains('r2.dev')
-            ? href
-            : href + '1$minutes';
+        resolved['Server 1'] = href + '1$minutes';
       } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
-        final minutes2 = DateTime.now().minute;
-        resolved['Server 2'] = href.contains('X-Amz-Signature') || href.contains('r2.cloudflarestorage') || href.contains('r2.dev')
-            ? href
-            : href + '1$minutes2';
+        if (href.contains('X-Amz-Signature') || href.contains('r2.cloudflarestorage') || href.contains('r2.dev')) {
+          resolved['Server 2'] = href;
+        } else {
+          resolved['Server 2'] = href + '_1$minutes';
+        }
       } else if (innerHtml.contains('[Server : 10Gbps]') || 
-                 (href.contains('hubcloud') && (href.contains('id=') || href.contains('/tg/'))) || 
-                 href.contains('gpdl') ||
-                 href.contains('gamerxyt') ||
-                 (attributes.contains('btn-danger') && 
-                  (href.contains('hubcloud') || 
-                   href.contains('gpdl') || 
-                   href.contains('gamerxyt') || 
-                   href.contains('vcloud') || 
-                   href.contains('gofile') || 
-                   href.contains('pixeldrain') || 
-                   href.contains('cloudflarestorage') || 
-                   href.contains('auvps')))) {
+                 href.contains('pixel.hubcloud') || 
+                 href.contains('gpdl') || 
+                 (href.contains('hubcloud') && href.contains('id='))) {
+        if (href.contains('telegram') || href.contains('t.me') || href.contains('admin') || href.contains('/tg/')) {
+          continue;
+        }
         resolved['Server 3'] = href;
       } else if ((attributes.toLowerCase().contains('btn') || innerHtml.toLowerCase().contains('server')) && href.contains('token=')) {
         if (!resolved.containsKey('Server 1')) {
@@ -561,10 +556,30 @@ class VcloudExtractorService {
         }
       }
 
+      // Try 3c: Extract and decode Base64 token URL from JS atob(...) variable
       if (tokenUrl == null) {
-        debugPrint('[VcloudExtractor] Could not locate token URL or download button on main page.');
-        client.close();
-        return resolved;
+        final atobUrlRegExp = RegExp(r'''url\s*=\s*atob\(['"]([A-Za-z0-9+/=]+)['"]\)''', caseSensitive: false);
+        final atobUrlMatch = atobUrlRegExp.firstMatch(html);
+        if (atobUrlMatch != null) {
+          try {
+            final decodedBytes = base64.decode(atobUrlMatch.group(1)!);
+            tokenUrl = utf8.decode(decodedBytes);
+            debugPrint('[VcloudExtractor] Extracted decoded token URL from JS variable: $tokenUrl');
+          } catch (e) {
+            debugPrint('[VcloudExtractor] Failed to decode base64 token URL: $e');
+          }
+        }
+      }
+
+      if (tokenUrl == null) {
+        if (vcloudUrl.contains('token=')) {
+          tokenUrl = vcloudUrl;
+          debugPrint('[VcloudExtractor] Using main URL as token URL: $tokenUrl');
+        } else {
+          debugPrint('[VcloudExtractor] Could not locate token URL or download button on main page.');
+          client.close();
+          return resolved;
+        }
       }
 
       // Step 4: Fetch token page with Referer header
@@ -604,8 +619,7 @@ class VcloudExtractorService {
       var currentUrl = url;
       var redirectCount = 0;
 
-      while (redirectCount < 8) {
-        // Quick check: if the URL itself contains '?link=' or '&link=', capture the direct video link immediately!
+      while (redirectCount < 10) {
         final uri = Uri.parse(currentUrl);
         if (uri.queryParameters.containsKey('link')) {
           final directLink = uri.queryParameters['link']!;
@@ -627,11 +641,32 @@ class VcloudExtractorService {
           }
           redirectCount++;
         } else {
-          break;
+          // Read body to check for JS redirects or meta refresh
+          final body = await resp.transform(utf8.decoder).join();
+          
+          final jsLocMatch = RegExp(r'''window\.location\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false).firstMatch(body);
+          final jsLocHrefMatch = RegExp(r'''window\.location\.href\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false).firstMatch(body);
+          final metaRefreshMatch = RegExp(r'''<meta\s+http-equiv=["']refresh["']\s+content=["']\d+;\s*url=([^"']+)["']''', caseSensitive: false).firstMatch(body);
+          
+          // Exclude blocker/ad redirects in window.location
+          if (jsLocMatch != null && !jsLocMatch.group(1)!.contains('bonuscaf.com') && !jsLocMatch.group(1)!.contains('go/')) {
+            currentUrl = jsLocMatch.group(1)!;
+            redirectCount++;
+            debugPrint('[VcloudExtractor] Followed window.location JS redirect to: $currentUrl');
+          } else if (jsLocHrefMatch != null && !jsLocHrefMatch.group(1)!.contains('bonuscaf.com') && !jsLocHrefMatch.group(1)!.contains('go/')) {
+            currentUrl = jsLocHrefMatch.group(1)!;
+            redirectCount++;
+            debugPrint('[VcloudExtractor] Followed window.location.href JS redirect to: $currentUrl');
+          } else if (metaRefreshMatch != null) {
+            currentUrl = metaRefreshMatch.group(1)!;
+            redirectCount++;
+            debugPrint('[VcloudExtractor] Followed Meta Refresh to: $currentUrl');
+          } else {
+            break;
+          }
         }
       }
 
-      // Final URL query parameter check
       final uri = Uri.parse(currentUrl);
       if (uri.queryParameters.containsKey('link')) {
         final directLink = uri.queryParameters['link']!;
