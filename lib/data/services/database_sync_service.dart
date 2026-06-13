@@ -142,9 +142,11 @@ class DatabaseSyncService {
 
       dev.log('[DatabaseSync] Database successfully synchronized & cached.');
 
-      // Also trigger 3rd party sync in parallel (fire-and-forget)
+      // Also trigger 3rd party sync and top picks sync in parallel (fire-and-forget)
       // ignore: unawaited_futures
       sync3rdPartyIndex();
+      // ignore: unawaited_futures
+      syncTopPicks();
 
       return true;
     } catch (e, stack) {
@@ -157,9 +159,11 @@ class DatabaseSyncService {
         }
       } catch (_) {}
 
-      // Even if main sync fails, still try 3rd party sync
+      // Even if main sync fails, still try 3rd party sync and top picks
       // ignore: unawaited_futures
       sync3rdPartyIndex();
+      // ignore: unawaited_futures
+      syncTopPicks();
 
       return false;
     }
@@ -313,6 +317,127 @@ class DatabaseSyncService {
     } catch (e, stack) {
       dev.log('[DatabaseSync] Failed to load 3rd party index: $e', stackTrace: stack);
       return [];
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Top 5 / Top 10 Curated Picks — Fetch from GitHub, Cache Locally
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  static const String _githubApiBase =
+      'https://api.github.com/repos/aadil12347/DanieWatch_Apk_Database/contents';
+  static const String _top5CacheFile = 'top_picks_5.json';
+  static const String _top10CacheFile = 'top_picks_10.json';
+
+  Future<File> _topPicksFile(String folder) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final fileName = folder == 'Top 5' ? _top5CacheFile : _top10CacheFile;
+    return File('${dir.path}/$fileName');
+  }
+
+  /// Sync both Top 5 and Top 10 curated picks from GitHub.
+  /// Returns true if at least one succeeded.
+  Future<bool> syncTopPicks() async {
+    final results = await Future.wait([
+      _syncTopPicksFolder('Top 5'),
+      _syncTopPicksFolder('Top 10'),
+    ]);
+    return results[0] || results[1];
+  }
+
+  /// Fetch a Top N folder from GitHub API, download each numbered JSON file,
+  /// extract tmdb_id, and cache as {position: tmdb_id} map.
+  Future<bool> _syncTopPicksFolder(String folder) async {
+    try {
+      dev.log('[DatabaseSync] Syncing $folder curated picks...');
+
+      // 1. Get directory listing from GitHub API
+      final encodedFolder = Uri.encodeComponent(folder);
+      final dirUrl = '$_githubApiBase/$encodedFolder';
+      final dirResponse = await http.get(
+        Uri.parse(dirUrl),
+        headers: {'Accept': 'application/vnd.github.v3+json'},
+      ).timeout(const Duration(seconds: 15));
+
+      if (dirResponse.statusCode != 200) {
+        dev.log('[DatabaseSync] $folder directory listing failed: ${dirResponse.statusCode}');
+        return false;
+      }
+
+      final List<dynamic> files = jsonDecode(dirResponse.body);
+      if (files.isEmpty) {
+        dev.log('[DatabaseSync] $folder folder is empty.');
+        // Cache empty map
+        final cacheFile = await _topPicksFile(folder);
+        await cacheFile.writeAsString('{}', flush: true);
+        return true;
+      }
+
+      // 2. For each JSON file, extract position number and download content
+      final Map<String, int> positionMap = {}; // position string → tmdb_id
+
+      final downloadFutures = <Future<void>>[];
+      for (final fileEntry in files) {
+        final String name = fileEntry['name']?.toString() ?? '';
+        final String? downloadUrl = fileEntry['download_url']?.toString();
+
+        if (!name.endsWith('.json') || downloadUrl == null) continue;
+
+        // Extract position number from filename (e.g., "1.json" → 1)
+        final posStr = name.replaceAll('.json', '');
+        final pos = int.tryParse(posStr);
+        if (pos == null) continue;
+
+        downloadFutures.add(_fetchTopPickFile(downloadUrl, pos, positionMap));
+      }
+
+      await Future.wait(downloadFutures);
+
+      // 3. Cache the position → tmdb_id map
+      final cacheFile = await _topPicksFile(folder);
+      await cacheFile.writeAsString(jsonEncode(positionMap), flush: true);
+
+      dev.log('[DatabaseSync] $folder synced: ${positionMap.length} curated picks cached.');
+      return true;
+    } catch (e, stack) {
+      dev.log('[DatabaseSync] $folder sync failed: $e', stackTrace: stack);
+      return false;
+    }
+  }
+
+  /// Download a single top pick JSON file and extract its tmdb_id.
+  Future<void> _fetchTopPickFile(
+      String downloadUrl, int position, Map<String, int> positionMap) async {
+    try {
+      final response = await http.get(Uri.parse(downloadUrl))
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final tmdbId = data['tmdb_id'];
+        if (tmdbId is int && tmdbId > 0) {
+          positionMap[position.toString()] = tmdbId;
+        }
+      }
+    } catch (e) {
+      dev.log('[DatabaseSync] Failed to fetch top pick at position $position: $e');
+    }
+  }
+
+  /// Load cached Top N picks. Returns {position: tmdb_id} map.
+  /// Position is 1-indexed (1 = first slot).
+  Future<Map<int, int>> loadTopPicks(String folder) async {
+    try {
+      final file = await _topPicksFile(folder);
+      if (!await file.exists()) {
+        return {};
+      }
+      final raw = await file.readAsString();
+      final Map<String, dynamic> parsed = jsonDecode(raw);
+      // Convert string keys back to int
+      return parsed.map((key, value) => MapEntry(int.parse(key), value as int));
+    } catch (e) {
+      dev.log('[DatabaseSync] Failed to load $folder picks: $e');
+      return {};
     }
   }
 }

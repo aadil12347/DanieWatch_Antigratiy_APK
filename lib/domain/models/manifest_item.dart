@@ -269,6 +269,53 @@ class ManifestItem {
     );
   }
 
+  /// Create a ManifestItem from a TMDB trending API response item.
+  /// These are display-only items used to fill empty Top 5/10 slots.
+  factory ManifestItem.fromTmdbTrending(Map<String, dynamic> json, {int? rank}) {
+    final int id = _safeInt(json['id']) ?? 0;
+    final String mediaType = (json['media_type'] ?? 'movie').toString();
+    final String title = (json['title'] ?? json['name'] ?? '').toString();
+    final String? posterPath = json['poster_path']?.toString();
+    final String? backdropPath = json['backdrop_path']?.toString();
+    final String? releaseDate = (json['release_date'] ?? json['first_air_date'])?.toString();
+    int? releaseYear;
+    if (releaseDate != null && releaseDate.length >= 4) {
+      releaseYear = int.tryParse(releaseDate.substring(0, 4));
+    }
+    final List<int> genreIds = (json['genre_ids'] as List<dynamic>?)
+            ?.map((e) => _safeInt(e) ?? 0)
+            .toList() ??
+        [];
+    final List<String> genres = genreIds
+        .map((gid) => _genreMap[gid])
+        .whereType<String>()
+        .toList();
+
+    return ManifestItem(
+      id: id,
+      mediaType: mediaType,
+      title: title,
+      posterUrl: posterPath != null ? 'https://image.tmdb.org/t/p/w342$posterPath' : null,
+      backdropUrl: backdropPath != null ? 'https://image.tmdb.org/t/p/w780$backdropPath' : null,
+      voteAverage: _safeDouble(json['vote_average']),
+      voteCount: _safeInt(json['vote_count']) ?? 0,
+      releaseYear: releaseYear,
+      originalLanguage: json['original_language']?.toString(),
+      originCountry: (json['origin_country'] as List<dynamic>?)
+              ?.map((e) => e.toString().toUpperCase())
+              .toList() ??
+          [],
+      genreIds: genreIds,
+      genres: genres,
+      overview: json['overview']?.toString(),
+      isTrending: true,
+      trendingRank: rank,
+      tmdbPosterPath: posterPath,
+      tmdbBackdropPath: backdropPath,
+      releaseDate: releaseDate,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

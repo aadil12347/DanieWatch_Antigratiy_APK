@@ -168,22 +168,175 @@ class ContentSection {
   });
 }
 
-/// Trending content for the Carousel (first 5 sorted items)
-final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final sorted = await ref.watch(sortedManifestItemsProvider.future);
-  return sorted.take(5).toList();
+/// Shared helper: build a hybrid Top N list from database curated picks + TMDB trending.
+/// [folder] is 'Top 5' or 'Top 10'.
+/// [maxSlots] is 5 or 10.
+/// [excludeIds] is a set of tmdb_ids to exclude (for cross-section dedup).
+/// TMDB trending items are cross-checked against localMap — only items present
+/// in the local database index are used as fillers (ensures all items are playable).
+/// Falls back to sorted manifest items to guarantee exactly [maxSlots] items.
+Future<List<ManifestItem>> _buildHybridTopList({
+  required String folder,
+  required int maxSlots,
+  required Map<String, ManifestItem> localMap,
+  required List<Map<String, dynamic>> trendingPool,
+  required Set<int> excludeIds,
+  required List<ManifestItem> sortedItems,
+}) async {
+  // 1. Load curated picks from cache: {position: tmdb_id}
+  final curatedPicks = await DatabaseSyncService.instance.loadTopPicks(folder);
+  dev.log('[HybridTop] $folder: ${curatedPicks.length} curated picks loaded');
+
+  // 2. Build the result array with curated items at their fixed positions
+  final List<ManifestItem?> slots = List.filled(maxSlots, null);
+  final Set<int> usedIds = {...excludeIds};
+
+  for (final entry in curatedPicks.entries) {
+    final pos = entry.key; // 1-indexed
+    final tmdbId = entry.value;
+    if (pos < 1 || pos > maxSlots) continue;
+    if (usedIds.contains(tmdbId)) continue; // skip duplicates
+
+    // Only use curated pick if it exists in local manifest (playable content)
+    final localItem = localMap[tmdbId.toString()];
+    if (localItem != null) {
+      slots[pos - 1] = localItem.copyWith(isTrending: true, trendingRank: pos);
+      usedIds.add(tmdbId);
+    }
+    // If not in local index, skip — slot will be filled below
+  }
+
+  // 3. Fill remaining empty slots from TMDB trending (daily+weekly)
+  //    ONLY use trending items that also exist in the local index (cross-check)
+  int trendingIdx = 0;
+  for (int i = 0; i < maxSlots; i++) {
+    if (slots[i] != null) continue;
+
+    // Find next trending item that exists in local manifest
+    while (trendingIdx < trendingPool.length) {
+      final trendingItem = trendingPool[trendingIdx];
+      trendingIdx++;
+      final tId = trendingItem['id'];
+      if (tId is! int || tId <= 0) continue;
+      if (usedIds.contains(tId)) continue;
+
+      // Cross-check: only use if present in local index
+      final localItem = localMap[tId.toString()];
+      if (localItem != null) {
+        slots[i] = localItem.copyWith(isTrending: true, trendingRank: i + 1);
+        usedIds.add(tId);
+        break;
+      }
+    }
+  }
+
+  // 4. Final fallback: fill any remaining empty slots from sorted manifest
+  //    Guarantees exactly [maxSlots] items are always returned
+  int sortedIdx = 0;
+  for (int i = 0; i < maxSlots; i++) {
+    if (slots[i] != null) continue;
+
+    while (sortedIdx < sortedItems.length) {
+      final item = sortedItems[sortedIdx];
+      sortedIdx++;
+      if (usedIds.contains(item.id)) continue;
+
+      slots[i] = item.copyWith(isTrending: true, trendingRank: i + 1);
+      usedIds.add(item.id);
+      break;
+    }
+  }
+
+  // 5. Return non-null items in order
+  return slots.whereType<ManifestItem>().toList();
+}
+
+/// Cached TMDB trending results — daily + weekly merged, shared between Top 5 and Top 10
+final _tmdbDailyTrendingProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  dev.log('[TmdbTrending] Fetching daily + weekly trending...');
+  final results = await Future.wait([
+    TmdbClient.instance.getTrending('all', timeWindow: 'day'),
+    TmdbClient.instance.getTrending('all', timeWindow: 'week'),
+  ]);
+  
+  // Merge daily + weekly, daily items first, dedup by id
+  final seen = <int>{};
+  final merged = <Map<String, dynamic>>[];
+  for (final list in results) {
+    for (final item in list) {
+      final id = item['id'];
+      if (id is int && !seen.contains(id)) {
+        seen.add(id);
+        merged.add(item);
+      }
+    }
+  }
+  
+  dev.log('[TmdbTrending] Got ${merged.length} trending items (daily + weekly merged)');
+  return merged;
 });
 
-/// Top 10 Today list
-final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
+/// Top picks sync provider — triggers sync during app startup
+final topPicksSyncProvider = FutureProvider<bool>((ref) async {
+  dev.log('[TopPicksSync] Starting top picks sync...');
+  final result = await DatabaseSyncService.instance.syncTopPicks();
+  if (result) {
+    // Refresh carousel and top10 providers after sync completes
+    ref.invalidate(mergedCarouselProvider);
+    ref.invalidate(mergedTop10Provider);
+  }
+  return result;
+});
+
+/// Trending content for the Carousel (Top 5: database curated + TMDB trending cross-check + manifest fallback)
+final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final localMap = ref.watch(localManifestMapProvider);
+  final trending = await ref.watch(_tmdbDailyTrendingProvider.future);
   final sorted = await ref.watch(sortedManifestItemsProvider.future);
-  return sorted.take(10).toList();
+
+  final top5 = await _buildHybridTopList(
+    folder: 'Top 5',
+    maxSlots: 5,
+    localMap: localMap,
+    trendingPool: trending,
+    excludeIds: {},
+    sortedItems: sorted,
+  );
+
+  dev.log('[mergedCarouselProvider] Built ${top5.length} carousel items');
+  return top5;
+});
+
+/// Top 10 Today list (database curated + TMDB trending cross-check + manifest fallback, excluding Top 5 items)
+final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
+  final localMap = ref.watch(localManifestMapProvider);
+  final trending = await ref.watch(_tmdbDailyTrendingProvider.future);
+  final sorted = await ref.watch(sortedManifestItemsProvider.future);
+
+  // Get Top 5 ids to exclude from Top 10
+  final top5Items = await ref.watch(mergedCarouselProvider.future);
+  final top5Ids = top5Items.map((item) => item.id).toSet();
+
+  final top10 = await _buildHybridTopList(
+    folder: 'Top 10',
+    maxSlots: 10,
+    localMap: localMap,
+    trendingPool: trending,
+    excludeIds: top5Ids,
+    sortedItems: sorted,
+  );
+
+  dev.log('[mergedTop10Provider] Built ${top10.length} top 10 items');
+  return top10;
 });
 
 /// Home screen sections compiled locally from the cached database
 final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
   final sorted = await ref.watch(sortedManifestItemsProvider.future);
   final sections = <ContentSection>[];
+  
+  // Also trigger top picks sync in background
+  ref.watch(topPicksSyncProvider);
   
   // 1. Top 10 Today
   final top10 = await ref.watch(mergedTop10Provider.future);
