@@ -156,6 +156,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Timer? _playbackWatchdogTimer;
   bool _isSwipeSeeking = false;
   double _swipeSeekTarget = 0.0;
+  double _swipeSeekStartValue = 0.0;
   String? _activeVerticalDrag;
   bool _wasPlayingBeforeFastForward = true;
 
@@ -935,11 +936,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         useAsmsAudioTracks: url.toLowerCase().contains('.m3u8'),
         useAsmsTracks: url.toLowerCase().contains('.m3u8'),
         useAsmsSubtitles: url.toLowerCase().contains('.m3u8'),
-        headers: !isOffline ? (isStorageOrGoogle ? <String, String>{
-          // S3/R2 endpoints need a real browser User-Agent but MUST NOT have custom headers (like Accept, Referer, Origin)
-          // that cause signature mismatch failures. Caching is also disabled for these streams to prevent ExoPlayer CacheDataSource hangs.
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        } : {
+        headers: !isOffline ? (isStorageOrGoogle ? null : {
           if (extractedStream != null) ...extractedStream.headers,
           if (extractedStream == null) ...{
             'Referer': 'https://peachify.top/',
@@ -2856,8 +2853,49 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             ),
           ),
         ),
+        if (_isSwipeSeeking)
+          IgnorePointer(
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withOpacity(0.12)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: Text(
+                  _getSwipeDeltaText(_swipeSeekTarget - _swipeSeekStartValue),
+                  style: GoogleFonts.inter(
+                    color: (_swipeSeekTarget >= _swipeSeekStartValue)
+                        ? const Color(0xFF00E5FF)
+                        : const Color(0xFFE74C3C),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
+  }
+
+  String _getSwipeDeltaText(double diff) {
+    final prefix = diff >= 0 ? '+' : '−';
+    final absDiff = diff.abs().toInt();
+    final minutes = absDiff ~/ 60;
+    final seconds = absDiff % 60;
+    if (minutes > 0) {
+      return '$prefix${minutes}m ${seconds}s';
+    } else {
+      return '$prefix${seconds}s';
+    }
   }
 
   Widget _buildVerticalGestureIndicator({
@@ -3202,7 +3240,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final bufferedSeconds = _getBufferedSeconds();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      height: 96,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
@@ -3213,85 +3252,41 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           ],
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          GlassmorphicVideoSeekBar(
-            position: _lastCurrentTime,
-            duration: _lastDuration,
-            buffered: bufferedSeconds,
-            isSwipeSeeking: _isSwipeSeeking,
-            swipeSeekValue: _swipeSeekTarget,
-            onChanged: (val) {
-              setState(() {
-                _lastCurrentTime = val;
-              });
-              _controlsTimer?.cancel();
-            },
-            onChangeEnd: (val) {
-              _betterPlayerController!.seekTo(Duration(seconds: val.toInt()));
-              _resetControlsTimer();
-            },
-          ),
-          if (_isSwipeSeeking) ...[
-            const SizedBox(height: 8),
-            Center(
-              child: Text(
-                '${_formatDuration(_swipeSeekTarget)} / ${_formatDuration(_lastDuration)}',
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.85),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
+          // Seeker - positioned above the controls stably
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 44,
+            child: GlassmorphicVideoSeekBar(
+              position: _lastCurrentTime,
+              duration: _lastDuration,
+              buffered: bufferedSeconds,
+              isSwipeSeeking: _isSwipeSeeking,
+              swipeSeekValue: _swipeSeekTarget,
+              onChanged: (val) {
+                setState(() {
+                  _lastCurrentTime = val;
+                });
+                _controlsTimer?.cancel();
+              },
+              onChangeEnd: (val) {
+                _betterPlayerController!.seekTo(Duration(seconds: val.toInt()));
+                _resetControlsTimer();
+              },
             ),
-          ],
-          if (_areControlsVisible && !_isSwipeSeeking) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    if (isPlaying) {
-                      _betterPlayerController!.pause();
-                    } else {
-                      _betterPlayerController!.play();
-                    }
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      if (_isMuted) {
-                        _isMuted = false;
-                        _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
-                      } else {
-                        _preMuteVolume = _volume;
-                        _volume = 0.0;
-                        _isMuted = true;
-                      }
-                    });
-                    VolumeController.instance.showSystemUI = false;
-                    VolumeController.instance.setVolume(_volume);
-                    _betterPlayerController?.setVolume(_volume);
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
+          ),
+          // Controls / Swipe Seek Info below the seeker
+          if (_isSwipeSeeking)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 12,
+              child: Center(
+                child: Text(
+                  '${_formatDuration(_swipeSeekTarget)} / ${_formatDuration(_lastDuration)}',
                   style: GoogleFonts.inter(
                     color: Colors.white.withOpacity(0.85),
                     fontSize: 13,
@@ -3299,48 +3294,105 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
-                  onPressed: () {
-                    setState(() {
-                      _isLocked = true;
-                      _areControlsVisible = true;
-                    });
-                    _controlsTimer?.cancel();
-                    _controlsTimer = Timer(const Duration(seconds: 3), () {
-                      if (mounted) setState(() => _areControlsVisible = false);
-                    });
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
-                  onPressed: () {
-                    _saveToWatchHistory();
-                    _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_rounded, color: Colors.white),
-                  onPressed: () {
-                    _showSettingsSheet();
-                    _triggerHaptic();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
-                  onPressed: () {
-                    _cycleAspectRatio();
-                    _resetControlsTimer();
-                    _triggerHaptic();
-                  },
-                ),
-              ],
+              ),
+            )
+          else if (_areControlsVisible)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      if (isPlaying) {
+                        _betterPlayerController!.pause();
+                      } else {
+                        _betterPlayerController!.play();
+                      }
+                      _resetControlsTimer();
+                      _triggerHaptic();
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (_isMuted) {
+                          _isMuted = false;
+                          _volume = _preMuteVolume > 0 ? _preMuteVolume : 0.5;
+                        } else {
+                          _preMuteVolume = _volume;
+                          _volume = 0.0;
+                          _isMuted = true;
+                        }
+                      });
+                      VolumeController.instance.showSystemUI = false;
+                      VolumeController.instance.setVolume(_volume);
+                      _betterPlayerController?.setVolume(_volume);
+                      _resetControlsTimer();
+                      _triggerHaptic();
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_formatDuration(_lastCurrentTime)} / ${_formatDuration(_lastDuration)}',
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.lock_open_rounded, color: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _isLocked = true;
+                        _areControlsVisible = true;
+                      });
+                      _controlsTimer?.cancel();
+                      _controlsTimer = Timer(const Duration(seconds: 3), () {
+                        if (mounted) setState(() => _areControlsVisible = false);
+                      });
+                      _triggerHaptic();
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
+                    onPressed: () {
+                      _saveToWatchHistory();
+                      _betterPlayerController?.enablePictureInPicture(_betterPlayerKey);
+                      _resetControlsTimer();
+                      _triggerHaptic();
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                    onPressed: () {
+                      _showSettingsSheet();
+                      _triggerHaptic();
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
+                    onPressed: () {
+                      _cycleAspectRatio();
+                      _resetControlsTimer();
+                      _triggerHaptic();
+                    },
+                  ),
+                ],
+              ),
             ),
-          ],
         ],
       ),
     );
@@ -3488,6 +3540,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     setState(() {
       _isSwipeSeeking = true;
       _swipeSeekTarget = _lastCurrentTime;
+      _swipeSeekStartValue = _lastCurrentTime;
     });
     _controlsTimer?.cancel();
   }
@@ -3495,10 +3548,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   void _handleSwipeSeekUpdate(DragUpdateDetails details) {
     if (!_isSwipeSeeking) return;
     
-    double range = _lastDuration > 0 ? _lastDuration * 0.25 : 180.0;
-    if (range < 120.0) range = 120.0;
-    
-    double delta = details.delta.dx / MediaQuery.of(context).size.width * range;
+    // Sensitivity: 0.15 seconds per logical pixel (gentle and precise)
+    final double sensitivity = 0.15;
+    double delta = details.delta.dx * sensitivity;
     setState(() {
       _swipeSeekTarget = (_swipeSeekTarget + delta).clamp(0.0, _lastDuration);
     });
@@ -3790,11 +3842,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         final curvedAnim = CurvedAnimation(parent: anim1, curve: Curves.easeOutQuart);
         return FadeTransition(
           opacity: curvedAnim,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.15, 0.0),
-              end: Offset.zero,
-            ).animate(curvedAnim),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.75, end: 1.0).animate(curvedAnim),
+            alignment: const Alignment(0.75, 0.95),
             child: Align(
               alignment: Alignment.bottomRight,
               child: Container(
@@ -4738,28 +4788,33 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
   }
 
   Widget _buildHeader(String title) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.white10)),
-      ),
-      child: Row(
-        children: [
-          if (_currentView != 'main')
-            GestureDetector(
-              onTap: () => setState(() => _currentView = 'main'),
-              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
-            ),
-          if (_currentView != 'main') const SizedBox(width: 12),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+    final canGoBack = _currentView != 'main';
+    final headerContent = Row(
+      children: [
+        if (canGoBack) ...[
+          const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
+          const SizedBox(width: 12),
         ],
+        Text(
+          title,
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+
+    return GestureDetector(
+      onTap: canGoBack ? () => setState(() => _currentView = 'main') : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Colors.white10)),
+        ),
+        child: headerContent,
       ),
     );
   }
@@ -4909,10 +4964,9 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
                     height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.5,
-                      color: Colors.white38,
+                      color: Colors.white70,
                     ),
                   );
-                  label = '$label (Extracting...)';
                 } else {
                   textColor = Colors.white24;
                   trailingWidget = Text(
@@ -4925,6 +4979,8 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
                   enabled: clickable,
                   title: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       color: textColor,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -4991,10 +5047,9 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
                     height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.5,
-                      color: Colors.white38,
+                      color: Colors.white70,
                     ),
                   );
-                  label = '$label (Extracting...)';
                 } else {
                   textColor = Colors.white24;
                   trailingWidget = Text(
@@ -5007,6 +5062,8 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
                   enabled: clickable,
                   title: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       color: textColor,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,

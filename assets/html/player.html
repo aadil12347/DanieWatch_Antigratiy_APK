@@ -898,11 +898,52 @@
             fill: #B81D24;
         }
 
-        /* ===== HORIZONTAL SEEK INDICATOR (center pill for swipe seek) — HIDDEN, replaced by thumbnail preview ===== */
+        /* ===== HORIZONTAL SEEK INDICATOR (center pill for swipe seek) ===== */
         .seek-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 24px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            z-index: 250;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .seek-indicator.visible {
+            display: flex !important;
+            opacity: 1 !important;
+        }
+
+        .seek-delta {
+            color: #FFFFFF;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .seek-delta.forward {
+            color: #00E5FF !important;
+        }
+
+        .seek-delta.backward {
+            color: #E74C3C !important;
+        }
+
+        .seek-time {
             display: none !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            font-weight: 600;
         }
 
         /* ===== THUMBNAIL SEEK PREVIEW (above progress bar) ===== */
@@ -2606,9 +2647,36 @@
                 }
 
                 const rect = videoContainer.getBoundingClientRect();
-                const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
+                const seekSensitivity = 0.15; // 0.15 seconds per pixel (gentle and precise)
                 const seekDelta = dx * seekSensitivity;
                 const newTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
+
+                // Show and update seek indicator in the center of the screen
+                const seekIndicator = document.getElementById('seekIndicator');
+                if (seekIndicator) {
+                    seekIndicator.classList.add('visible');
+                    const diff = newTime - gestureSeekStart;
+                    const prefix = diff >= 0 ? '+' : '−';
+                    const absDiff = Math.abs(diff);
+                    const diffMin = Math.floor(absDiff / 60);
+                    const diffSec = Math.floor(absDiff % 60);
+                    let deltaText = '';
+                    if (diffMin > 0) {
+                        deltaText = prefix + diffMin + 'm ' + diffSec + 's';
+                    } else {
+                        deltaText = prefix + diffSec + 's';
+                    }
+                    const seekDeltaEl = document.getElementById('seekDelta');
+                    seekDeltaEl.textContent = deltaText;
+                    if (diff >= 0) {
+                        seekDeltaEl.classList.remove('backward');
+                        seekDeltaEl.classList.add('forward');
+                    } else {
+                        seekDeltaEl.classList.remove('forward');
+                        seekDeltaEl.classList.add('backward');
+                    }
+                    document.getElementById('seekTimePreview').textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
+                }
 
                 const percent = (newTime / video.duration) * 100;
                 const previewProg = document.getElementById('seekPreviewProgress');
@@ -2670,11 +2738,12 @@
                 const touch = e.changedTouches[0];
                 const dx = touch.clientX - gestureStartX;
                 const rect = videoContainer.getBoundingClientRect();
-                const seekSensitivity = (video.duration || 300) / rect.width * 0.5;
+                const seekSensitivity = 0.15; // 0.15 seconds per pixel (gentle and precise)
                 const seekDelta = dx * seekSensitivity;
                 video.currentTime = Math.max(0, Math.min(video.duration || 0, gestureSeekStart + seekDelta));
 
                 seekThumbnailContainer.classList.remove('visible');
+                document.getElementById('seekIndicator').classList.remove('visible');
                 if (seekThumbnailLine) seekThumbnailLine.style.left = '0';
                 isScrubbing = false;
                 seekBarContainer.classList.remove('scrubbing');
