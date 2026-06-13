@@ -1379,6 +1379,9 @@ class DownloadManager {
       // Also explicitly cancel the foreground service notification in case
       // stopSelf() doesn't dismiss it immediately on some OEMs
       _notifService.cancel(_foregroundServiceNotifId);
+      // Cancel ALL lingering per-download notifications (progress/complete/failed)
+      // to prevent any phantom "Downloading" notifications from persisting
+      FlutterLocalNotificationsPlugin().cancelAll();
     }
   }
 

@@ -19,7 +19,7 @@ import '../core/utils/error_sanitizer.dart';
 ///  - Native Android MediaMuxer for .mp4 with guaranteed A/V sync
 class HlsDownloaderService {
   // â”€â”€ Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  static const int _maxWorkers = 8;
+  static const int _maxWorkers = 4;
   static const int _maxRetries = 3;
   static const List<int> _retryDelaysMs = [0, 500, 1500];
 
@@ -46,7 +46,7 @@ class HlsDownloaderService {
         client.badCertificateCallback =
             (X509Certificate cert, String host, int port) => true;
         client.maxConnectionsPerHost = _maxWorkers * 2;
-        client.idleTimeout = const Duration(seconds: 15);
+        client.idleTimeout = const Duration(seconds: 5);
         return client;
       },
     );
@@ -680,10 +680,27 @@ class HlsDownloaderService {
       FFmpegKit.executeAsync(cmd.toString(), (_) {});
 
       // Poll output file for progress + completion (size stabilizes = done)
+      // Safety: 10-minute max timeout prevents infinite spin if FFmpeg hangs.
       int stableCount = 0;
       int lastSize = 0;
+      int pollCount = 0;
+      const maxPolls = 150; // 150 * 4s = 10 minutes max
       while (true) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(const Duration(seconds: 4));
+        pollCount++;
+
+        // Cancel check
+        if (_isCancelled) {
+          debugPrint('⚠ FFmpeg mux cancelled during polling');
+          break;
+        }
+
+        // Safety timeout
+        if (pollCount >= maxPolls) {
+          debugPrint('⚠ FFmpeg polling timeout (10 min) — assuming done or hung');
+          break;
+        }
+
         final outFile = File(outputMp4Path);
         if (outFile.existsSync()) {
           final currentSize = outFile.lengthSync();

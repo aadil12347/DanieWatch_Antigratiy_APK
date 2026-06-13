@@ -8,7 +8,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'hls_downloader_service.dart';
 import '../core/utils/error_sanitizer.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+// WakeLock removed — the foreground service already keeps the CPU alive.
+// WakelockPlus was redundantly keeping the SCREEN on during background downloads.
 import 'package:echo_wifi_lock/echo_wifi_lock.dart';
 
 // ── Event/command constants (top-level so both isolates can use them) ──
@@ -304,7 +305,7 @@ void _onStart(ServiceInstance service) async {
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.reload(); // Ensure we have the latest data
+      // prefs.reload() removed — this isolate is the only writer, no need for disk re-read
       final data = prefs.getString(_downloadsKey);
       if (data == null) return;
 
@@ -361,17 +362,28 @@ void _onStart(ServiceInstance service) async {
     }
   }
 
-  // Update notification to show service is ready
+  // Update notification to show service is ready (neutral text — NOT "Downloading")
   if (service is AndroidServiceInstance) {
     service.setForegroundNotificationInfo(
-      title: 'DanieWatch Downloading . . .',
-      content: 'Preparing download...',
+      title: 'DanieWatch',
+      content: 'Starting...',
     );
   }
 
   // Signal to the UI isolate that listeners are registered
   service.invoke('serviceReady', {});
   debugPrint('🟢 BackgroundService listeners registered, sent serviceReady');
+
+  // ── AUTO-SHUTDOWN: If no downloads start within 10 seconds, kill the service.
+  // This prevents the phantom "DanieWatch Downloading" notification when Android
+  // restarts the service without any pending download commands.
+  Timer(const Duration(seconds: 10), () {
+    if (downloaders.isEmpty) {
+      debugPrint('🛑 No downloads started within 10s — auto-stopping service');
+      wifiLock?.release();
+      service.stopSelf();
+    }
+  });
 
   // ── Handle notification action events (from the notification callback isolate) ──
   service.on(_notifActionEvent).listen((data) {
@@ -416,7 +428,7 @@ void _onStart(ServiceInstance service) async {
         service.invoke('notifCancel', {'id': id});
         // Stop service if idle
         if (downloaders.isEmpty) {
-          WakelockPlus.disable().catchError((_) {});
+          // WakeLock removed — foreground service handles CPU wakefulness
           wifiLock?.release();
           Future.delayed(const Duration(seconds: 1), () {
             if (downloaders.isEmpty) {
@@ -451,12 +463,11 @@ void _onStart(ServiceInstance service) async {
       return;
     }
 
-    // Enable locks for background stability
+    // Enable WiFi lock for background stability (normal mode, not high-perf to save battery)
     try {
-      WakelockPlus.enable();
-      await wifiLock?.acquire(EchoWifiMode.wifiModeFullHighPerf);
+      await wifiLock?.acquire(EchoWifiMode.wifiModeFull);
     } catch (e) {
-      debugPrint('⚠ Lock acquire failed (non-fatal): $e');
+      debugPrint('⚠ WiFi lock acquire failed (non-fatal): $e');
     }
 
     final downloader = HlsDownloaderService();
@@ -630,7 +641,7 @@ void _onStart(ServiceInstance service) async {
       updateSummaryNotification();
 
       if (downloaders.isEmpty) {
-        WakelockPlus.disable().catchError((_) {});
+        // WakeLock removed — foreground service handles CPU wakefulness
         wifiLock?.release();
         Future.delayed(const Duration(seconds: 2), () {
           if (downloaders.isEmpty) {
@@ -665,7 +676,7 @@ void _onStart(ServiceInstance service) async {
       updateSummaryNotification();
 
       if (downloaders.isEmpty) {
-        WakelockPlus.disable().catchError((_) {});
+        // WakeLock removed — foreground service handles CPU wakefulness
         wifiLock?.release();
         Future.delayed(const Duration(seconds: 2), () {
           if (downloaders.isEmpty) {
@@ -780,7 +791,7 @@ void _onStart(ServiceInstance service) async {
     updateSummaryNotification();
 
     if (downloaders.isEmpty) {
-      WakelockPlus.disable().catchError((_) {});
+      // WakeLock removed — foreground service handles CPU wakefulness
       wifiLock?.release();
       Future.delayed(const Duration(seconds: 1), () {
         if (downloaders.isEmpty) {
@@ -801,7 +812,7 @@ void _onStart(ServiceInstance service) async {
     downloaders.clear();
     downloadTitles.clear();
     downloadPausedState.clear();
-    WakelockPlus.disable().catchError((_) {});
+    // WakeLock removed — foreground service handles CPU wakefulness
     wifiLock?.release();
     service.stopSelf();
   });
@@ -841,8 +852,8 @@ class BackgroundDownloadService {
         autoStart: false,
         isForegroundMode: true,
         notificationChannelId: 'download_service_channel',
-        initialNotificationTitle: 'DanieWatch Downloading . . .',
-        initialNotificationContent: 'Preparing download...',
+        initialNotificationTitle: 'DanieWatch',
+        initialNotificationContent: 'Starting...',
         foregroundServiceNotificationId: _foregroundNotifId,
       ),
       iosConfiguration: IosConfiguration(
