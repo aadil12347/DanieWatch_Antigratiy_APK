@@ -254,9 +254,8 @@
             left: 0;
             right: 0;
             z-index: 20;
-            display: flex;
-            flex-direction: column;
-            padding: 0 20px 16px 20px;
+            height: 96px;
+            padding: 0 20px;
             opacity: 0;
             transition: opacity 0.35s ease;
             pointer-events: none;
@@ -269,13 +268,15 @@
 
         /* ===== SEEK BAR ===== */
         .seek-bar-container {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 44px;
             width: 100%;
             height: 44px;
             display: flex;
             align-items: center;
             cursor: pointer;
-            position: relative;
-            margin-bottom: 6px;
         }
 
         .seek-bar {
@@ -369,19 +370,50 @@
             white-space: nowrap;
             z-index: 3;
             transition: opacity 0.15s ease;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid #B81D24;
+            box-shadow: 0 0 8px rgba(184, 29, 36, 0.3);
         }
 
         .seek-tooltip.visible {
             opacity: 1;
         }
 
+        /* ===== SEEK TIME DISPLAY (visible during swipe seek, replaces controls row) ===== */
+        .seek-time-display {
+            display: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 12px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 13px;
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+            padding: 4px 0;
+            pointer-events: none;
+        }
+
+        .seek-time-display.visible {
+            display: block;
+        }
+
         /* ===== CONTROLS ROW ===== */
         .controls-row {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 8px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             width: 100%;
+            transition: opacity 0.2s ease;
+        }
+
+        .controls-row.seek-hidden {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .controls-left,
@@ -465,14 +497,15 @@
             overflow-y: auto;
             z-index: 100;
             box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-            transform: translateY(12px);
+            transform: scale(0.75);
+            transform-origin: 85% 100%;
             opacity: 0;
             pointer-events: none;
             transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
         }
 
         #settings-menu.visible {
-            transform: translateY(0);
+            transform: scale(1);
             opacity: 1;
             pointer-events: auto;
         }
@@ -560,13 +593,15 @@
             align-items: center;
             gap: 10px;
             padding: 14px 16px;
+            min-height: 52px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             cursor: pointer;
             transition: background 0.2s ease;
         }
 
-        .menu-back:hover {
-            background: rgba(255, 255, 255, 0.04);
+        .menu-back:hover,
+        .menu-back:active {
+            background: rgba(255, 255, 255, 0.08);
         }
 
         .menu-back svg {
@@ -581,6 +616,7 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.6px;
+            flex: 1;
         }
 
         .menu-option {
@@ -604,6 +640,10 @@
             color: #FFFFFF;
             font-size: 14px;
             font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 170px;
         }
 
         .menu-option.selected .menu-option-text {
@@ -702,7 +742,7 @@
         /* ===== NOTIFICATION PILL ===== */
         .notify-pill {
             position: absolute;
-            top: 50%;
+            top: 30%;
             left: 50%;
             transform: translate(-50%, -50%);
             background: rgba(0, 0, 0, 0.85);
@@ -857,45 +897,44 @@
             -webkit-backdrop-filter: blur(4px);
         }
 
-        /* ===== LONG-PRESS SPEED PILL ===== */
+        /* ===== LONG-PRESS SPEED PILL (matches native VCloud player) ===== */
         .speed-pill {
             position: absolute;
-            top: 50px;
+            top: 24px;
             left: 50%;
-            transform: translateX(-50%) translateY(-20px) scale(0.85);
-            background: rgba(0, 0, 0, 0.88);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1.5px solid rgba(184, 29, 36, 0.4);
+            transform: translateX(-50%) scale(0.8);
             color: white;
-            padding: 10px 22px;
-            border-radius: 24px;
-            font-size: 15px;
-            font-weight: 700;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             opacity: 0;
-            transition: opacity 0.25s ease, transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             z-index: 201;
             pointer-events: none;
         }
 
         .speed-pill.visible {
             opacity: 1;
-            transform: translateX(-50%) translateY(0) scale(1);
-            animation: speedPillPulse 1.5s ease-in-out infinite;
+            transform: translateX(-50%) scale(1);
+            animation: speedPillPulse 0.8s ease-in-out infinite alternate;
         }
 
         @keyframes speedPillPulse {
-            0%, 100% { border-color: rgba(184, 29, 36, 0.4); box-shadow: 0 0 12px rgba(184, 29, 36, 0.15); }
-            50% { border-color: rgba(184, 29, 36, 0.8); box-shadow: 0 0 20px rgba(184, 29, 36, 0.3); }
+            0% { opacity: 1; }
+            100% { opacity: 0.35; }
         }
 
         .speed-pill svg {
-            width: 18px;
-            height: 18px;
-            fill: #B81D24;
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+        }
+
+        .speed-pill span {
+            font-size: 12px;
+            font-weight: 700;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
         }
 
         /* ===== HORIZONTAL SEEK INDICATOR (center pill for swipe seek) ===== */
@@ -946,24 +985,13 @@
             font-weight: 600;
         }
 
-        /* ===== THUMBNAIL SEEK PREVIEW (above progress bar) ===== */
+        /* ===== THUMBNAIL SEEK PREVIEW (hidden — removed per design sync) ===== */
         .seek-thumbnail-container {
-            position: absolute;
-            bottom: 36px;
-            z-index: 202;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            opacity: 0;
-            transform: translateX(-50%) translateY(8px);
-            transition: opacity 0.15s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-            pointer-events: none;
+            display: none !important;
         }
 
         .seek-thumbnail-container.visible {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
+            display: none !important;
         }
 
         .seek-thumbnail-frame {
@@ -1919,6 +1947,8 @@
                     </button>
                 </div>
             </div>
+            <!-- Seek Time Display (shown during swipe seek, replaces controls row) -->
+            <div class="seek-time-display" id="seekTimeDisplay">00:00 / 00:00</div>
         </div>
 
         <!-- Mini Progress Bar (always visible, YouTube-style) -->
@@ -2606,7 +2636,7 @@
 
             if (gestureType === 'brightness') {
                 const rect = videoContainer.getBoundingClientRect();
-                const sensitivity = 1.8 / rect.height;
+                const sensitivity = 1.0 / rect.height;
                 gestureBrightness = Math.max(0, Math.min(1, gestureBrightness + (-dy * sensitivity)));
                 // Control system brightness via Flutter bridge
                 sendSystemBrightness(gestureBrightness);
@@ -2619,7 +2649,7 @@
                 gestureStartY = touch.clientY;
             } else if (gestureType === 'volume') {
                 const rect = videoContainer.getBoundingClientRect();
-                const sensitivity = 1.8 / rect.height;
+                const sensitivity = 1.0 / rect.height;
                 gestureVolume = Math.max(0, Math.min(1, gestureVolume + (-dy * sensitivity)));
                 setGainVolume(gestureVolume, false);
                 const indicator = document.getElementById('volumeIndicator');
@@ -2628,7 +2658,7 @@
             } else if (gestureType === 'seek') {
                 if (!isScrubbing) {
                     isScrubbing = true;
-                    // Show bottom controls for seek bar, hide other overlays
+                    // Show bottom controls (seek bar only), hide other overlays
                     controlsBar.classList.add('visible');
                     headline.classList.remove('visible');
                     centerControls.classList.remove('visible');
@@ -2636,6 +2666,12 @@
                     topGradient.classList.remove('visible');
                     clearTimeout(controlsTimeout);
                     seekBarContainer.classList.add('scrubbing');
+                    
+                    // Hide controls row, show seek time display (like native player)
+                    var controlsRow = document.querySelector('.controls-row');
+                    if (controlsRow) controlsRow.classList.add('seek-hidden');
+                    var seekTimeEl = document.getElementById('seekTimeDisplay');
+                    if (seekTimeEl) seekTimeEl.classList.add('visible');
                     
                     const marker = document.getElementById('seekMarker');
                     if (marker && video.duration > 0) {
@@ -2678,23 +2714,16 @@
                     document.getElementById('seekTimePreview').textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
                 }
 
+                // Update seek time display below progress bar
+                var seekTimeEl = document.getElementById('seekTimeDisplay');
+                if (seekTimeEl) seekTimeEl.textContent = formatTime(newTime) + ' / ' + formatTime(video.duration);
+
                 const percent = (newTime / video.duration) * 100;
                 const previewProg = document.getElementById('seekPreviewProgress');
                 if (previewProg) previewProg.style.width = percent + '%';
                 seekThumb.style.left = percent + '%';
 
-                // Thumbnail preview above seek bar (single source of seek time)
-                const barRect = seekBar.getBoundingClientRect();
-                const thumbX = (percent / 100) * barRect.width;
-                const clampedX = Math.max(85, Math.min(barRect.width - 85, thumbX));
-                seekThumbnailContainer.style.left = clampedX + 'px';
-                seekThumbnailContainer.classList.add('visible');
-                seekThumbnailTime.textContent = formatTime(newTime);
-                // Offset line to point at actual seek position on progress bar
-                if (seekThumbnailLine) seekThumbnailLine.style.left = (thumbX - clampedX) + 'px';
-                capturePreviewFrame(newTime);
-
-                // Hide the seek tooltip — thumbnail time is sufficient
+                // Hide the seek tooltip during gesture seek
                 seekTooltip.classList.remove('visible');
             }
         }
@@ -2754,6 +2783,12 @@
                 const previewProg = document.getElementById('seekPreviewProgress');
                 if (previewProg) previewProg.style.display = 'none';
 
+                // Restore controls row, hide seek time display
+                var controlsRow = document.querySelector('.controls-row');
+                if (controlsRow) controlsRow.classList.remove('seek-hidden');
+                var seekTimeEl = document.getElementById('seekTimeDisplay');
+                if (seekTimeEl) seekTimeEl.classList.remove('visible');
+
                 // Restore all UI controls (headline, center controls, bottom bar)
                 seekBarJustEnded = Date.now(); // Guard: prevent tap handler from toggling UI off
                 showControls();
@@ -2808,6 +2843,8 @@
             void ripple.offsetWidth;
             ripple.classList.add('active');
             setTimeout(() => ripple.classList.remove('active'), 600);
+            // Show controls after skip so UI stays visible for follow-up taps
+            showControls();
         }
 
         // ===== HLS LOADING =====
@@ -3648,7 +3685,9 @@
         let savedVolumeBeforeMute = 1.0;
 
         // Called by Flutter to sync system volume level
+        // Gated: ignore during active volume gesture to prevent feedback loop glitch
         window.initSystemVolume = function(level) {
+            if (gestureType === 'volume') return;
             setGainVolume(level, true);
         };
 
