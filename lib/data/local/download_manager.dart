@@ -1270,7 +1270,15 @@ class DownloadManager {
       }
     }
 
-    if (downloadUrl.contains('googleusercontent.com') || downloadUrl.contains('google.com')) {
+    final isStorageOrGoogle = downloadUrl.contains('googleusercontent.com') ||
+        downloadUrl.contains('google.com') ||
+        downloadUrl.contains('r2.dev') ||
+        downloadUrl.contains('r2.cloudflarestorage.com') ||
+        downloadUrl.contains('cloudflarestorage') ||
+        downloadUrl.contains('gdrive') ||
+        downloadUrl.contains('fsl') ||
+        downloadUrl.contains('fslv2');
+    if (isStorageOrGoogle) {
       finalHeaders = null;
     }
 
@@ -1690,7 +1698,15 @@ class DownloadManager {
             }
             item.url = freshDirectUrl;
             freshM3u8 = freshDirectUrl;
-            if (freshDirectUrl.contains('googleusercontent.com') || freshDirectUrl.contains('google.com')) {
+            final isStorageOrGoogle = freshDirectUrl.contains('googleusercontent.com') ||
+                freshDirectUrl.contains('google.com') ||
+                freshDirectUrl.contains('r2.dev') ||
+                freshDirectUrl.contains('r2.cloudflarestorage.com') ||
+                freshDirectUrl.contains('cloudflarestorage') ||
+                freshDirectUrl.contains('gdrive') ||
+                freshDirectUrl.contains('fsl') ||
+                freshDirectUrl.contains('fslv2');
+            if (isStorageOrGoogle) {
               freshHeaders = null;
             } else {
               freshHeaders = const {
@@ -1840,7 +1856,16 @@ class DownloadManager {
 
       freshVideoUrl ??= freshM3u8;
 
-      if (freshVideoUrl != null && (freshVideoUrl.contains('googleusercontent.com') || freshVideoUrl.contains('google.com'))) {
+      final isStorageOrGoogle = freshVideoUrl != null && (
+          freshVideoUrl.contains('googleusercontent.com') ||
+          freshVideoUrl.contains('google.com') ||
+          freshVideoUrl.contains('r2.dev') ||
+          freshVideoUrl.contains('r2.cloudflarestorage.com') ||
+          freshVideoUrl.contains('cloudflarestorage') ||
+          freshVideoUrl.contains('gdrive') ||
+          freshVideoUrl.contains('fsl') ||
+          freshVideoUrl.contains('fslv2'));
+      if (isStorageOrGoogle) {
         freshHeaders = null;
         item.headers = null;
       }

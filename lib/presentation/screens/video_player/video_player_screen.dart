@@ -159,6 +159,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _activeVerticalDrag;
   bool _wasPlayingBeforeFastForward = true;
 
+  // Real-time extraction tracking variables
+  bool _isBackgroundExtracting = false;
+  List<String> _dbResolutions = [];
+  final ValueNotifier<int> _vcloudUpdateNotifier = ValueNotifier<int>(0);
+
   @override
   void initState() {
     super.initState();
@@ -299,7 +304,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _isExtracting = true;
       _isLoading = false;
       _hasError = false;
+      _isBackgroundExtracting = false;
+      _dbResolutions = [];
     });
+    _vcloudUpdateNotifier.value++;
 
     // Start 30-second fallback timer
     _fallbackTimer?.cancel();
@@ -325,6 +333,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         debugPrint('[Engine] No streaming links found in Vcloud database. Waiting for fallback timer.');
         return;
       }
+
+      setState(() {
+        _dbResolutions = vcloudLinksMap.keys.toList();
+      });
+      _vcloudUpdateNotifier.value++;
 
       // Build preference list: 720p > 480p > 1080p > 4k
       final preferenceOrder = ['720p', '480p', '1080p', '4k'];
@@ -386,6 +399,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                     _selectedServer = srv;
                     _selectedResolution = res;
                   });
+                  _vcloudUpdateNotifier.value++;
 
                   startedPlayback = true;
                   await _startVcloudPlayback();
@@ -419,6 +433,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Future<void> _extractRemainingLinksInBackground(
       Map<String, String> vcloudLinksMap, List<String> availableOrdered) async {
     debugPrint('[BackgroundExtractor] Starting background extraction for other servers and resolutions...');
+    if (mounted) {
+      setState(() {
+        _isBackgroundExtracting = true;
+      });
+      _vcloudUpdateNotifier.value++;
+    }
     
     for (final res in availableOrdered) {
       if (!mounted || _isClosing) return;
@@ -472,6 +492,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                       }
                     }
                   });
+                  _vcloudUpdateNotifier.value++;
                   debugPrint('[BackgroundExtractor] Added verified $srv ($res) to server map.');
                 }
               }
@@ -483,6 +504,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
     }
     
+    if (mounted) {
+      setState(() {
+        _isBackgroundExtracting = false;
+      });
+      _vcloudUpdateNotifier.value++;
+    }
     debugPrint('[BackgroundExtractor] Background extraction finished.');
   }
 
@@ -570,14 +597,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _useWebViewEngine = false; // Native player!
       _extractedLink = playUrl;
     });
+    _vcloudUpdateNotifier.value++;
 
     _initializeBetterPlayer(playUrl, isOffline: false);
 
-    // Watchdog: if video doesn't start within 12s, fall back to failover or WebView
+    // Watchdog: if video doesn't start within 20s, fall back to failover or WebView
     _playbackWatchdogTimer?.cancel();
-    _playbackWatchdogTimer = Timer(const Duration(seconds: 12), () {
+    _playbackWatchdogTimer = Timer(const Duration(seconds: 20), () {
       if (!mounted || _isClosing || _hasVideoStarted) return;
-      debugPrint('[Watchdog] Video did not start within 12s on $_activeServer. Handling failover.');
+      debugPrint('[Watchdog] Video did not start within 20s on $_activeServer. Handling failover.');
       try {
         _betterPlayerController?.videoPlayerController?.removeListener(_videoPlayerListener);
         _betterPlayerController?.dispose();
@@ -658,6 +686,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _selectedServer = nextServer;
         _selectedResolution = nextRes;
       });
+      _vcloudUpdateNotifier.value++;
       _startVcloudPlayback();
 
       // Notify user
@@ -880,6 +909,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _selectedResolution = null;
       }
 
+      final isStorageOrGoogle = url.contains('googleusercontent.com') ||
+          url.contains('google.com') ||
+          url.contains('r2.dev') ||
+          url.contains('r2.cloudflarestorage.com') ||
+          url.contains('cloudflarestorage') ||
+          url.contains('gdrive') ||
+          url.contains('fsl') ||
+          url.contains('fslv2');
+
       BetterPlayerDataSource dataSource = BetterPlayerDataSource(
         isOffline ? BetterPlayerDataSourceType.file : BetterPlayerDataSourceType.network,
         url,
@@ -888,8 +926,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         videoFormat: url.toLowerCase().contains('.m3u8')
             ? BetterPlayerVideoFormat.hls
             : BetterPlayerVideoFormat.other,
-        cacheConfiguration: const BetterPlayerCacheConfiguration(
-          useCache: true,
+        cacheConfiguration: BetterPlayerCacheConfiguration(
+          useCache: !isStorageOrGoogle && !isOffline,
           preCacheSize: 10 * 1024 * 1024,
           maxCacheSize: 500 * 1024 * 1024,
           maxCacheFileSize: 100 * 1024 * 1024,
@@ -897,25 +935,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         useAsmsAudioTracks: url.toLowerCase().contains('.m3u8'),
         useAsmsTracks: url.toLowerCase().contains('.m3u8'),
         useAsmsSubtitles: url.toLowerCase().contains('.m3u8'),
-        headers: !isOffline ? (() {
-          final isGoogle = url.contains('googleusercontent.com') || url.contains('google.com');
-          if (isGoogle) {
-            // Google video downloads NEED a User-Agent but must NOT have Referer/Origin
-            return <String, String>{
-              'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-              'Accept': '*/*',
-            };
-          }
-          return {
-            if (extractedStream != null) ...extractedStream.headers,
-            if (extractedStream == null) ...{
-              'Referer': 'https://peachify.top/',
-              'Origin': 'https://peachify.top',
-            },
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-            'Accept': '*/*',
-          };
-        })() : null,
+        headers: !isOffline ? (isStorageOrGoogle ? <String, String>{
+          // S3/R2 endpoints need a real browser User-Agent but MUST NOT have custom headers (like Accept, Referer, Origin)
+          // that cause signature mismatch failures. Caching is also disabled for these streams to prevent ExoPlayer CacheDataSource hangs.
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        } : {
+          if (extractedStream != null) ...extractedStream.headers,
+          if (extractedStream == null) ...{
+            'Referer': 'https://peachify.top/',
+            'Origin': 'https://peachify.top',
+          },
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          'Accept': '*/*',
+        }) : null,
         notificationConfiguration: BetterPlayerNotificationConfiguration(
           showNotification: true,
           title: widget.mediaType != 'movie' &&
@@ -1386,6 +1418,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       overlays: [],
     );
 
+    _vcloudUpdateNotifier.dispose();
     super.dispose();
   }
 
@@ -1755,8 +1788,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               tracksJs = '[${tracksList.join(',')}]';
             }
 
-            final isGoogle = _extractedLink!.contains('googleusercontent.com') || _extractedLink!.contains('google.com');
-            final headersMap = isGoogle ? <String, String>{} : (_extractedStream?.headers ?? {
+            final isStorageOrGoogle = _extractedLink!.contains('googleusercontent.com') ||
+                _extractedLink!.contains('google.com') ||
+                _extractedLink!.contains('r2.dev') ||
+                _extractedLink!.contains('r2.cloudflarestorage.com') ||
+                _extractedLink!.contains('cloudflarestorage') ||
+                _extractedLink!.contains('gdrive') ||
+                _extractedLink!.contains('fsl') ||
+                _extractedLink!.contains('fslv2');
+            final headersMap = isStorageOrGoogle ? <String, String>{} : (_extractedStream?.headers ?? {
               'Referer': 'https://peachify.top/',
               'Origin': 'https://peachify.top'
             });
@@ -3622,6 +3662,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _activeServer = serverName;
       _selectedServer = serverName;
     });
+    _vcloudUpdateNotifier.value++;
 
     await _startVcloudPlayback();
   }
@@ -3649,12 +3690,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     setState(() {
       _selectedResolution = resolutionName;
     });
+    _vcloudUpdateNotifier.value++;
 
     if (resUrl.contains('hubcloud') || resUrl.contains('gpdl')) {
       debugPrint('[QualitySwap] Resolving HubCloud redirect just-in-time for resolution change...');
       setState(() {
         _isExtracting = true;
       });
+      _vcloudUpdateNotifier.value++;
       final gDriveUrl = await VcloudExtractorService().resolveHubCloudRedirect(resUrl);
       if (gDriveUrl != null && gDriveUrl.isNotEmpty) {
         resUrl = gDriveUrl;
@@ -3666,6 +3709,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       setState(() {
         _isExtracting = false;
       });
+      _vcloudUpdateNotifier.value++;
     }
 
     if (_betterPlayerController != null) {
@@ -3676,6 +3720,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _resumeTimeOverride = currentPos;
         _startPositionApplied = false;
       });
+      _vcloudUpdateNotifier.value++;
       await _initializeBetterPlayer(resUrl, isOffline: false, extractedStream: _extractedStream);
     }
   }
@@ -3779,7 +3824,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                     filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
                     child: Material(
                       color: Colors.transparent,
-                      child: SettingsSheetContent(
+                      child: _SettingsSheetContent(
                         controller: _betterPlayerController,
                         activeServer: _activeServer,
                         selectedResolution: _selectedResolution,
@@ -3818,6 +3863,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                           _betterPlayerController?.setupSubtitleSource(source);
                           _showNotifyPill(source.type == BetterPlayerSubtitlesSourceType.none ? 'Subtitles Off' : 'Subtitles: ${source.name}');
                         },
+                        playerState: this,
+                        updateNotifier: _vcloudUpdateNotifier,
                       ),
                     ),
                   ),
@@ -4588,7 +4635,7 @@ class _GlassmorphicVideoSeekBarState extends State<GlassmorphicVideoSeekBar> {
 // ─────────────────────────────────────────────────────────────────────────────
 // ── SETTINGS BOTTOM SHEET CONTENT
 // ─────────────────────────────────────────────────────────────────────────────
-class SettingsSheetContent extends StatefulWidget {
+class _SettingsSheetContent extends StatefulWidget {
   final BetterPlayerController? controller;
   final String activeServer;
   final String? selectedResolution;
@@ -4603,8 +4650,10 @@ class SettingsSheetContent extends StatefulWidget {
   final Function(BetterPlayerSubtitlesSource) onSubtitleChanged;
   final List<BetterPlayerAsmsAudioTrack> availableAudioTracks;
   final BetterPlayerAsmsAudioTrack? activeAudioTrack;
+  final _VideoPlayerScreenState playerState;
+  final ValueNotifier<int> updateNotifier;
 
-  const SettingsSheetContent({
+  const _SettingsSheetContent({
     super.key,
     required this.controller,
     required this.activeServer,
@@ -4620,64 +4669,71 @@ class SettingsSheetContent extends StatefulWidget {
     required this.onSubtitleChanged,
     required this.availableAudioTracks,
     required this.activeAudioTrack,
+    required this.playerState,
+    required this.updateNotifier,
   });
 
   @override
-  State<SettingsSheetContent> createState() => _SettingsSheetContentState();
+  State<_SettingsSheetContent> createState() => _SettingsSheetContentState();
 }
 
-class _SettingsSheetContentState extends State<SettingsSheetContent> {
+class _SettingsSheetContentState extends State<_SettingsSheetContent> {
   String _currentView = 'main';
 
   @override
   Widget build(BuildContext context) {
-    Widget currentChild;
-    switch (_currentView) {
-      case 'server':
-        currentChild = _buildServerView();
-        break;
-      case 'quality':
-        currentChild = _buildQualityView();
-        break;
-      case 'audio':
-        currentChild = _buildAudioView();
-        break;
-      case 'subtitles':
-        currentChild = _buildSubtitlesView();
-        break;
-      case 'speed':
-        currentChild = _buildSpeedView();
-        break;
-      case 'aspect':
-        currentChild = _buildAspectView();
-        break;
-      case 'main':
-      default:
-        currentChild = _buildMainView();
-    }
+    return ValueListenableBuilder<int>(
+      valueListenable: widget.updateNotifier,
+      builder: (context, _, __) {
+        Widget currentChild;
+        switch (_currentView) {
+          case 'server':
+            currentChild = _buildServerView();
+            break;
+          case 'quality':
+            currentChild = _buildQualityView();
+            break;
+          case 'audio':
+            currentChild = _buildAudioView();
+            break;
+          case 'subtitles':
+            currentChild = _buildSubtitlesView();
+            break;
+          case 'speed':
+            currentChild = _buildSpeedView();
+            break;
+          case 'aspect':
+            currentChild = _buildAspectView();
+            break;
+          case 'main':
+          default:
+            currentChild = _buildMainView();
+        }
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        final isForward = _currentView != 'main';
-        final offsetTween = Tween<Offset>(
-          begin: Offset(isForward ? 0.15 : -0.15, 0),
-          end: Offset.zero,
-        );
-        return SlideTransition(
-          position: offsetTween.animate(animation),
-          child: FadeTransition(
-            opacity: animation,
-            child: child,
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final isForward = _currentView != 'main';
+            final offsetTween = Tween<Offset>(
+              begin: Offset(isForward ? 0.15 : -0.15, 0),
+              end: Offset.zero,
+            );
+            return SlideTransition(
+              position: offsetTween.animate(animation),
+              child: FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+            );
+          },
+          child: KeyedSubtree(
+            key: ValueKey<String>(_currentView),
+            child: currentChild,
           ),
         );
       },
-      child: KeyedSubtree(
-        key: ValueKey<String>(_currentView),
-        child: currentChild,
-      ),
     );
   }
 
@@ -4709,8 +4765,13 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
   }
 
   Widget _buildMainView() {
-    final hasServers = widget.vcloudServerMap.isNotEmpty;
-    final hasResolutions = widget.explicitResolutions != null && widget.explicitResolutions!.isNotEmpty;
+    final isOffline = widget.playerState.widget.isOffline;
+    final isDirectLink = widget.playerState.widget.isDirectLink;
+    final is3rdPartyHosted = widget.playerState.widget.is3rdPartyHosted;
+    final isVcloud = !isOffline && !isDirectLink && !is3rdPartyHosted;
+
+    final hasServers = isVcloud || widget.vcloudServerMap.isNotEmpty;
+    final hasResolutions = isVcloud || (widget.explicitResolutions != null && widget.explicitResolutions!.isNotEmpty);
     
     final audioTracks = widget.availableAudioTracks;
     final hasAudioTracks = audioTracks.length > 1;
@@ -4806,16 +4867,10 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
   }
 
   Widget _buildServerView() {
-    final sortedServers = widget.vcloudServerMap.keys.toList();
-    final priority = ['Server 1', 'Server 2', 'Server 3'];
-    sortedServers.sort((a, b) {
-      final aIndex = priority.indexOf(a);
-      final bIndex = priority.indexOf(b);
-      if (aIndex == -1 && bIndex == -1) return a.compareTo(b);
-      if (aIndex == -1) return 1;
-      if (bIndex == -1) return -1;
-      return aIndex.compareTo(bIndex);
-    });
+    final allServers = ['Server 1', 'Server 2', 'Server 3'];
+    final vcloudMap = widget.playerState._vcloudServerMap;
+    final activeServer = widget.playerState._activeServer;
+    final isExtracting = widget.playerState._isExtracting || widget.playerState._isBackgroundExtracting;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -4826,26 +4881,62 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
-              children: sortedServers.map((server) {
-                final isSelected = server == widget.activeServer;
+              children: allServers.map((server) {
+                final isSelected = server == activeServer;
+                final resolutionsMap = vcloudMap[server];
+                final isAvailable = resolutionsMap != null && resolutionsMap.isNotEmpty;
+                
                 String label = server;
                 if (server == 'Server 1') label = 'Server 1 (FSL)';
                 if (server == 'Server 2') label = 'Server 2 (FSLv2)';
                 if (server == 'Server 3') label = 'Server 3 (G-Drive)';
                 
+                Widget? trailingWidget;
+                bool clickable = isAvailable;
+                Color textColor = Colors.white;
+
+                if (isSelected) {
+                  textColor = const Color(0xFFB81D24);
+                  trailingWidget = const Icon(Icons.check_rounded, color: Color(0xFFB81D24));
+                  clickable = true;
+                } else if (isAvailable) {
+                  textColor = Colors.white;
+                  trailingWidget = null;
+                } else if (isExtracting) {
+                  textColor = Colors.white38;
+                  trailingWidget = const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: Colors.white38,
+                    ),
+                  );
+                  label = '$label (Extracting...)';
+                } else {
+                  textColor = Colors.white24;
+                  trailingWidget = Text(
+                    'Unavailable',
+                    style: GoogleFonts.inter(color: Colors.white24, fontSize: 11),
+                  );
+                }
+
                 return ListTile(
+                  enabled: clickable,
                   title: Text(
                     label,
                     style: GoogleFonts.inter(
-                      color: isSelected ? const Color(0xFFB81D24) : Colors.white,
+                      color: textColor,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
-                  trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
-                  onTap: () {
-                    Navigator.pop(context);
-                    widget.onServerChanged(server);
-                  },
+                  trailing: trailingWidget,
+                  onTap: clickable
+                      ? () {
+                          Navigator.pop(context);
+                          widget.onServerChanged(server);
+                        }
+                      : null,
                 );
               }).toList(),
             ),
@@ -4857,36 +4948,82 @@ class _SettingsSheetContentState extends State<SettingsSheetContent> {
   }
 
   Widget _buildQualityView() {
+    final dbResolutions = widget.playerState._dbResolutions;
+    final activeServer = widget.playerState._activeServer;
+    final vcloudMap = widget.playerState._vcloudServerMap;
+    final selectedResolution = widget.playerState._selectedResolution;
+    final isExtracting = widget.playerState._isExtracting || widget.playerState._isBackgroundExtracting;
+
+    final resolutionsToShow = dbResolutions.isNotEmpty
+        ? dbResolutions
+        : (widget.explicitResolutions?.keys.toList() ?? []);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildHeader('Quality'),
-        if (widget.explicitResolutions != null)
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: widget.explicitResolutions!.keys.map((res) {
-                  final isSelected = res == widget.selectedResolution;
-                  return ListTile(
-                    title: Text(
-                      res.toUpperCase(),
-                      style: GoogleFonts.inter(
-                        color: isSelected ? const Color(0xFFB81D24) : Colors.white,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: resolutionsToShow.map((res) {
+                final isSelected = res == selectedResolution;
+                final serverResolutions = vcloudMap[activeServer];
+                final isAvailable = serverResolutions != null && serverResolutions.containsKey(res);
+
+                String label = res.toUpperCase();
+                Widget? trailingWidget;
+                bool clickable = isAvailable;
+                Color textColor = Colors.white;
+
+                if (isSelected) {
+                  textColor = const Color(0xFFB81D24);
+                  trailingWidget = const Icon(Icons.check_rounded, color: Color(0xFFB81D24));
+                  clickable = true;
+                } else if (isAvailable) {
+                  textColor = Colors.white;
+                  trailingWidget = null;
+                } else if (isExtracting) {
+                  textColor = Colors.white38;
+                  trailingWidget = const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: Colors.white38,
                     ),
-                    trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFFB81D24)) : null,
-                    onTap: () {
-                      Navigator.pop(context);
-                      widget.onResolutionChanged(res);
-                    },
                   );
-                }).toList(),
-              ),
+                  label = '$label (Extracting...)';
+                } else {
+                  textColor = Colors.white24;
+                  trailingWidget = Text(
+                    'Unavailable',
+                    style: GoogleFonts.inter(color: Colors.white24, fontSize: 11),
+                  );
+                }
+
+                return ListTile(
+                  enabled: clickable,
+                  title: Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      color: textColor,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: trailingWidget,
+                  onTap: clickable
+                      ? () {
+                          Navigator.pop(context);
+                          widget.onResolutionChanged(res);
+                        }
+                      : null,
+                );
+              }).toList(),
             ),
           ),
+        ),
         const SizedBox(height: 16),
       ],
     );

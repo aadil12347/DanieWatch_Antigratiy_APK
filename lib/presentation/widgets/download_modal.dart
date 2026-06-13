@@ -108,10 +108,26 @@ class _DownloadModalState extends State<DownloadModal> {
 
   bool _isCdnLink(String url) {
     final l = url.toLowerCase();
-    return (l.contains('r66nv9ed.com') ||
+    // Original CDN patterns
+    final isOriginalCdn = (l.contains('r66nv9ed.com') ||
             l.contains('edge1-waw') ||
             l.contains('sprintcdn')) &&
         (l.contains('.mp4') || l.contains('download/'));
+        
+    // Gdrive patterns
+    final isGdrive = l.contains('googleusercontent.com') ||
+        l.contains('drive.google.com') ||
+        l.contains('google.com/uc') ||
+        l.contains('gdrive');
+        
+    // Fsl / FSLv2 / R2 storage patterns
+    final isFsl = l.contains('r2.dev') ||
+        l.contains('r2.cloudflarestorage.com') ||
+        l.contains('cloudflarestorage') ||
+        l.contains('fsl') ||
+        l.contains('fslv2');
+
+    return isOriginalCdn || isGdrive || isFsl || l.endsWith('.mp4') || l.endsWith('.mkv');
   }
 
   void _onLinkCaptured(String url) {
@@ -156,6 +172,13 @@ class _DownloadModalState extends State<DownloadModal> {
     super.initState();
     // Fetch file size in parallel (non-blocking)
     _fetchFileSize();
+
+    // Check if initialUrl is already a direct link
+    if (_isCdnLink(widget.initialUrl)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _onLinkCaptured(widget.initialUrl);
+      });
+    }
   }
 
   @override
