@@ -1481,9 +1481,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
             _showToastError('No download sources found.');
           }
+          return;
         }
-        return;
-      }
+      } else {
 
       // Map resolvedResMap (resolution -> { server -> url }) to server -> { resolution -> url }
       final Map<String, Map<String, String>> serverToResUrl = {};
@@ -1565,6 +1565,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             streams: fetchedStreams,
             isLoading: false,
           ));
+      }
     } catch (e) {
       if (mounted) {
         ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
