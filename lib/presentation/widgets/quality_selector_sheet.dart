@@ -868,163 +868,173 @@ class _QualitySelectorContentState
     final sortedVariants = List<StreamVariant>.from(filteredVariants)
       ..sort((a, b) => a.bandwidth.compareTo(b.bandwidth));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Audio Track Above Quality
-        if (playlist.audioTracks.isNotEmpty) ...[
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Text('AUDIO TRACK',
-                style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1)),
-          ),
-          ...playlist.audioTracks.map((track) {
-            final isSelected = _selectedAudio == track;
-            
-            String displayLabel = _getAudioDisplayName(track);
-            if (playlist.audioTracks.length == 1 && ref.read(downloadModalProvider).fallbackLanguage != null) {
-              displayLabel = _mapNativeToEnglish(ref.read(downloadModalProvider).fallbackLanguage!);
-            }
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.4,
+      ),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Audio Track Above Quality
+            if (playlist.audioTracks.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text('AUDIO TRACK',
+                    style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1)),
+              ),
+              ...playlist.audioTracks.map((track) {
+                final isSelected = _selectedAudio == track;
+                
+                String displayLabel = _getAudioDisplayName(track);
+                if (playlist.audioTracks.length == 1 && ref.read(downloadModalProvider).fallbackLanguage != null) {
+                  displayLabel = _mapNativeToEnglish(ref.read(downloadModalProvider).fallbackLanguage!);
+                }
 
-            final resCount = playlist.variants.where((v) => v.audioGroupId == track.groupId).length;
-            final resText = resCount > 0 ? ' ($resCount Resolutions)' : '';
-            final fullLabel = '$displayLabel$resText';
+                final resCount = playlist.variants.where((v) => v.audioGroupId == track.groupId).length;
+                final resText = resCount > 0 ? ' ($resCount Resolutions)' : '';
+                final fullLabel = '$displayLabel$resText';
 
-            return GestureDetector(
-              onTap: () => _onAudioTrackSelected(track),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
-                ),
+                return GestureDetector(
+                  onTap: () => _onAudioTrackSelected(track),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(fullLabel,
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w600)),
+                        const Spacer(),
+                        if (isSelected)
+                          const Icon(Icons.check_circle,
+                              color: Colors.white, size: 20),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+
+            const SizedBox(height: 16),
+
+            // Quality/Resolution
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text('SELECT QUALITY',
+                  style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1)),
+            ),
+            SizedBox(
+              height: 48,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: sortedVariants.length,
+                itemBuilder: (_, i) {
+                  final v = sortedVariants[i];
+                  final isSelected = _selectedVariant == v;
+                  final displayLabel = _getVariantDisplayLabel(v);
+
+                  return GestureDetector(
+                    onTap: () {
+                      if (_selectedVariant != v) {
+                        setState(() {
+                          _selectedVariant = v;
+                          _fetchedSizeText = 'Fetching size...';
+                          _fileSizeBytes = null;
+                        });
+                        if (v != null && !v.url.contains('.m3u8')) {
+                          _fetchActualFileSize(v.url, headers: _selectedStream?.headers);
+                        }
+                      }
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        displayLabel,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.white70,
+                          fontWeight:
+                              isSelected ? FontWeight.w800 : FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // Subtitles
+            if (playlist.subtitles.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    Text(fullLabel,
-                        style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    if (isSelected)
-                      const Icon(Icons.check_circle,
-                          color: Colors.white, size: 20),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('SUBTITLES',
+                              style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1)),
+                          SizedBox(height: 4),
+                          Text('Include subtitles in download',
+                              style: TextStyle(color: Colors.white54, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _downloadSubtitles,
+                      activeThumbColor: Colors.white,
+                      onChanged: (val) {
+                        setState(() {
+                          _downloadSubtitles = val;
+                          _selectedSubtitle = val ? playlist.subtitles.first : null;
+                        });
+                      },
+                    ),
                   ],
                 ),
               ),
-            );
-          }),
-        ],
-
-        const SizedBox(height: 16),
-
-        // Quality/Resolution
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: Text('SELECT QUALITY',
-              style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1)),
+            ],
+          ],
         ),
-        SizedBox(
-          height: 48,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: sortedVariants.length,
-            itemBuilder: (_, i) {
-              final v = sortedVariants[i];
-              final isSelected = _selectedVariant == v;
-              final displayLabel = _getVariantDisplayLabel(v);
-
-              return GestureDetector(
-                onTap: () {
-                  if (_selectedVariant != v) {
-                    setState(() {
-                      _selectedVariant = v;
-                      _fetchedSizeText = 'Fetching size...';
-                      _fileSizeBytes = null;
-                    });
-                    if (v != null && !v.url.contains('.m3u8')) {
-                      _fetchActualFileSize(v.url, headers: _selectedStream?.headers);
-                    }
-                  }
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(right: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.white.withValues(alpha: 0.15)
-                        : AppColors.surfaceElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.border),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    displayLabel,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white70,
-                      fontWeight:
-                          isSelected ? FontWeight.w800 : FontWeight.w500,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-
-        // Subtitles
-        if (playlist.subtitles.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('SUBTITLES',
-                          style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1)),
-                      SizedBox(height: 4),
-                      Text('Include subtitles in download',
-                          style: TextStyle(color: Colors.white54, fontSize: 13)),
-                    ],
-                  ),
-                ),
-                Switch(
-                  value: _downloadSubtitles,
-                  activeThumbColor: Colors.white,
-                  onChanged: (val) {
-                    setState(() {
-                      _downloadSubtitles = val;
-                      _selectedSubtitle = val ? playlist.subtitles.first : null;
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 

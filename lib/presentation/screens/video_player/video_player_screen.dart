@@ -4906,16 +4906,23 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
         label,
         style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: GoogleFonts.inter(color: Colors.white54, fontSize: 13),
-          ),
-          const SizedBox(width: 4),
-          const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
-        ],
+      trailing: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 120),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                value,
+                style: GoogleFonts.inter(color: Colors.white54, fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
+          ],
+        ),
       ),
       onTap: onTap,
     );
