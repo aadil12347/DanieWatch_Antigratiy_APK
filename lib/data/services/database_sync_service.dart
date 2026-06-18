@@ -3,6 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -142,9 +143,9 @@ class DatabaseSyncService {
 
       dev.log('[DatabaseSync] Database successfully synchronized & cached.');
 
-      // Also trigger 3rd party sync and top picks sync in parallel (fire-and-forget)
+      // 3rd party index DEACTIVATED — only main index is used
       // ignore: unawaited_futures
-      sync3rdPartyIndex();
+      // sync3rdPartyIndex();
       // ignore: unawaited_futures
       syncTopPicks();
 
@@ -159,9 +160,9 @@ class DatabaseSyncService {
         }
       } catch (_) {}
 
-      // Even if main sync fails, still try 3rd party sync and top picks
+      // 3rd party index DEACTIVATED — only main index is used
       // ignore: unawaited_futures
-      sync3rdPartyIndex();
+      // sync3rdPartyIndex();
       // ignore: unawaited_futures
       syncTopPicks();
 
@@ -176,8 +177,17 @@ class DatabaseSyncService {
       final file = await _indexFile;
       
       if (!await file.exists()) {
-        dev.log('[DatabaseSync] Local index file not found. No cached index available yet.');
-        return [];
+        // First launch: load bundled seed index from app assets
+        dev.log('[DatabaseSync] Local index not found — loading bundled seed index.');
+        try {
+          final seedData = await rootBundle.loadString('assets/index_seed.json');
+          final seedItems = await compute(_parseDictIndexIsolate, seedData);
+          dev.log('[DatabaseSync] Loaded ${seedItems.length} items from bundled seed index.');
+          return seedItems;
+        } catch (seedErr) {
+          dev.log('[DatabaseSync] Failed to load seed index: $seedErr');
+          return [];
+        }
       }
 
       final rawData = await file.readAsString();
@@ -212,15 +222,18 @@ class DatabaseSyncService {
   }
 
   /// Sync the 3rd party hosted index from GitHub.
-  /// Deduplicates concurrent calls like syncIndex().
+  /// DEACTIVATED — 3rd party index is no longer used. Kept for future reactivation.
   Future<bool> sync3rdPartyIndex() {
-    if (_active3rdPartySyncFuture != null) {
-      dev.log('[DatabaseSync] 3rd party sync already in progress — joining.');
-      return _active3rdPartySyncFuture!;
-    }
-    _active3rdPartySyncFuture = _do3rdPartySync()
-        .whenComplete(() => _active3rdPartySyncFuture = null);
-    return _active3rdPartySyncFuture!;
+    dev.log('[DatabaseSync] 3rd party sync DEACTIVATED — skipping.');
+    return Future.value(true);
+    // --- Original code below (kept for reactivation) ---
+    // if (_active3rdPartySyncFuture != null) {
+    //   dev.log('[DatabaseSync] 3rd party sync already in progress — joining.');
+    //   return _active3rdPartySyncFuture!;
+    // }
+    // _active3rdPartySyncFuture = _do3rdPartySync()
+    //     .whenComplete(() => _active3rdPartySyncFuture = null);
+    // return _active3rdPartySyncFuture!;
   }
 
   Future<bool> _do3rdPartySync() async {
@@ -301,23 +314,10 @@ class DatabaseSyncService {
   }
 
   /// Load and parse the 3rd party index from local cache.
+  /// DEACTIVATED — 3rd party index is no longer used. Kept for future reactivation.
   Future<List<ManifestItem>> load3rdPartyIndex() async {
-    try {
-      final file = await _3rdPartyFile;
-      if (!await file.exists()) {
-        dev.log('[DatabaseSync] 3rd party index not cached yet.');
-        return [];
-      }
-      final rawData = await file.readAsString();
-      final items = await compute(_parseIndexIsolate, rawData);
-      // Tag all 3rd party items so the player routes them to WebView HLS
-      final taggedItems = items.map((item) => item.copyWith(is3rdPartyHosted: true)).toList();
-      dev.log('[DatabaseSync] Loaded ${taggedItems.length} 3rd party items.');
-      return taggedItems;
-    } catch (e, stack) {
-      dev.log('[DatabaseSync] Failed to load 3rd party index: $e', stackTrace: stack);
-      return [];
-    }
+    dev.log('[DatabaseSync] 3rd party load DEACTIVATED — returning empty list.');
+    return [];
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -478,6 +478,20 @@ List<ManifestItem> _parseIndexIsolate(String rawJson) {
     }).toList();
   } catch (e) {
     dev.log('[DatabaseSync Isolate] Parsing error: $e');
+    return [];
+  }
+}
+
+/// Helper function to parse dict-format seed index (from bundled assets).
+/// The seed uses {title, tmdb_id, imdb_id, languages, type, aired_date} format.
+List<ManifestItem> _parseDictIndexIsolate(String rawJson) {
+  try {
+    final List<dynamic> parsedList = jsonDecode(rawJson);
+    return parsedList.where((e) => e is Map<String, dynamic>).map((e) {
+      return ManifestItem.fromJson(e as Map<String, dynamic>);
+    }).toList();
+  } catch (e) {
+    dev.log('[DatabaseSync Isolate] Seed parsing error: $e');
     return [];
   }
 }

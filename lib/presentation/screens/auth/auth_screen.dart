@@ -14,11 +14,13 @@ enum AuthMode { select, login, signup, forgot, checkEmail, resetPassword }
 class AuthScreen extends ConsumerStatefulWidget {
   final bool isLogin;
   final VoidCallback onToggle;
+  final VoidCallback? onLoginSuccess;
 
   const AuthScreen({
     super.key,
     required this.isLogin,
     this.onToggle = _dummyToggle,
+    this.onLoginSuccess,
   });
 
   static void _dummyToggle() {}
@@ -122,6 +124,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        // Notify splash immediately after successful login
+        widget.onLoginSuccess?.call();
       } else if (_mode == AuthMode.signup) {
         await authNotifier.signUp(
           email: _emailController.text.trim(),
@@ -203,6 +207,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> with TickerProviderStat
 
     try {
       await ref.read(profileProvider.notifier).signInWithGoogle();
+      // Notify splash immediately after successful Google sign-in
+      widget.onLoginSuccess?.call();
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = _getFriendlyErrorMessage(e));

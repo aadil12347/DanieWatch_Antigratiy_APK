@@ -1442,47 +1442,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       if (!mounted) return;
 
       if (resolvedResMap.isEmpty) {
-        // Vcloud returned nothing — fall back to VidNest/Peachify streams for download
-        debugPrint('[Download] Vcloud empty, falling back to VidNest/Peachify...');
-        try {
-          final vidNestStreams = await VidNestExtractorService.fetchMergedAndSortedStreams(
-            tmdbId: widget.tmdbId,
-            mediaType: widget.mediaType,
-            season: content.isMovie ? 1 : _selectedSeason,
-            episode: content.isMovie ? 1 : episodeNumber,
-          );
-          if (!mounted) return;
-          if (vidNestStreams.isEmpty) {
-            ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-            _showToastError('No download sources found.');
-            return;
-          }
-          // Build download list from VidNest/Peachify streams grouped by language
-          final List<PeachifyStream> fallbackStreams = [];
-          final Map<String, int> langCounter = {};
-          for (final stream in vidNestStreams) {
-            final lang = stream.dub.isNotEmpty ? stream.dub : 'Server';
-            langCounter[lang] = (langCounter[lang] ?? 0) + 1;
-            final displayName = '$lang - ${langCounter[lang]}';
-            fallbackStreams.add(PeachifyStream(
-              providerName: displayName,
-              dub: stream.dub,
-              type: stream.type,
-              url: stream.url,
-              headers: stream.headers,
-            ));
-          }
-          ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
-            streams: fallbackStreams,
-            isLoading: false,
-          ));
-        } catch (e) {
-          if (mounted) {
-            ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-            _showToastError('No download sources found.');
-          }
-          return;
-        }
+        // Vcloud returned nothing — show error (VidNest/Peachify fallback REMOVED for downloads)
+        debugPrint('[Download] Vcloud empty — no download sources available.');
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+        _showToastError('No download sources found.');
+        return;
       } else {
 
       // Map resolvedResMap (resolution -> { server -> url }) to server -> { resolution -> url }

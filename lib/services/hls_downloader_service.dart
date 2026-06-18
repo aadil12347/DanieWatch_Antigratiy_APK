@@ -6,8 +6,9 @@ import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:native_muxer/native_muxer.dart';
-import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
+// FFmpeg REMOVED — using native_muxer instead (~15-30MB APK savings)
+// import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+// import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import '../core/utils/error_sanitizer.dart';
 
 /// Robust HLS segment downloader with:
@@ -625,7 +626,7 @@ class HlsDownloaderService {
     }
   }
 
-  // FFmpeg-based muxing: -c:v copy + -c:a aac
+  // Native MediaMuxer-based muxing (replaces FFmpeg — zero APK overhead)
   Future<void> _muxToMp4(
     List<_SegmentTask> videoSegments,
     List<_SegmentTask> audioSegments,
@@ -633,107 +634,33 @@ class HlsDownloaderService {
     String saveDir,
     String outputMp4Path,
   ) async {
-    final dir = Directory(saveDir);
-    if (!await dir.exists()) throw Exception('Segment directory not found');
-
     final sw = Stopwatch()..start();
-    debugPrint('FFmpeg muxer: starting from $saveDir');
-    onMuxProgress?.call('concat', 0.0, 'ffmpeg', 0);
-
-    final files = dir.listSync().whereType<File>().toList();
-    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
-    final vInits = files.where((f) => p.basename(f.path).startsWith('v_init_')).toList();
-    final vSegs = files.where((f) => p.basename(f.path).startsWith('v_seg_')).toList();
-    final aInits = files.where((f) => p.basename(f.path).startsWith('a_init_')).toList();
-    final aSegs = files.where((f) => p.basename(f.path).startsWith('a_seg_')).toList();
-    if (vSegs.isEmpty) throw Exception('No video segments found');
-    final hasAudio = aSegs.isNotEmpty;
-
-    final vCombined = File(p.join(saveDir, '_video_combined.ts'));
-    final aCombined = hasAudio ? File(p.join(saveDir, '_audio_combined.ts')) : null;
-    await _binaryConcat([...vInits, ...vSegs], vCombined);
-    if (hasAudio && aCombined != null) {
-      await _binaryConcat([...aInits, ...aSegs], aCombined);
-    }
-    onMuxProgress?.call('muxing', 0.05, 'ffmpeg', sw.elapsedMilliseconds);
+    debugPrint('NativeMuxer: starting from $saveDir');
+    onMuxProgress?.call('muxing', 0.0, 'native_muxer', 0);
 
     try {
-      final outputFile = File(outputMp4Path);
-      if (await outputFile.exists()) await outputFile.delete();
-      final cmd = StringBuffer();
-      cmd.write('-i "${vCombined.path}" ');
-      if (hasAudio) {
-        cmd.write('-i "${aCombined!.path}" ');
-        cmd.write('-map 0:v -map 1:a ');
-      }
-      cmd.write('-c:v copy ');
-      if (hasAudio) cmd.write('-c:a aac -b:a 128k ');
-      cmd.write('-y "$outputMp4Path"');
-      debugPrint('FFmpeg: ${cmd.toString()}');
+      // Wire up progress reporting from native side
+      NativeMuxer.onMuxProgress = (phase, progress, method, elapsedMs) {
+        onMuxProgress?.call(phase, progress, method, elapsedMs);
+      };
 
-      // Estimate expected output size for progress
-      final expectedSize = await vCombined.length() + (aCombined != null ? (await aCombined.length()) * 0.9 : 0);
-
-      // FFmpegKit execute/executeAsync both hang in background isolates
-      // because the EventChannel is null. Instead: fire-and-forget via
-      // executeAsync, then poll the output file size for completion.
-      FFmpegKit.executeAsync(cmd.toString(), (_) {});
-
-      // Poll output file for progress + completion (size stabilizes = done)
-      // Safety: 10-minute max timeout prevents infinite spin if FFmpeg hangs.
-      int stableCount = 0;
-      int lastSize = 0;
-      int pollCount = 0;
-      const maxPolls = 150; // 150 * 4s = 10 minutes max
-      while (true) {
-        await Future.delayed(const Duration(seconds: 4));
-        pollCount++;
-
-        // Cancel check
-        if (_isCancelled) {
-          debugPrint('⚠ FFmpeg mux cancelled during polling');
-          break;
-        }
-
-        // Safety timeout
-        if (pollCount >= maxPolls) {
-          debugPrint('⚠ FFmpeg polling timeout (10 min) — assuming done or hung');
-          break;
-        }
-
-        final outFile = File(outputMp4Path);
-        if (outFile.existsSync()) {
-          final currentSize = outFile.lengthSync();
-          final progress = expectedSize > 0
-              ? (currentSize / expectedSize).clamp(0.0, 0.95)
-              : 0.0;
-          onMuxProgress?.call('muxing', progress, 'ffmpeg', sw.elapsedMilliseconds);
-
-          // Check if file size stabilized (FFmpeg finished writing)
-          if (currentSize > 0 && currentSize == lastSize) {
-            stableCount++;
-            if (stableCount >= 3) {
-              // FFmpeg is done
-              break;
-            }
-          } else {
-            stableCount = 0;
-          }
-          lastSize = currentSize;
-        }
-      }
+      final result = await NativeMuxer.muxToMp4(
+        segmentDir: saveDir,
+        outputPath: outputMp4Path,
+      );
 
       final sz = await File(outputMp4Path).length();
       if (sz < 1024) {
-        throw Exception('FFmpeg produced empty/tiny output ($sz bytes)');
+        throw Exception('NativeMuxer produced empty/tiny output ($sz bytes)');
       }
 
-      onMuxProgress?.call('muxing', 1.0, 'ffmpeg', sw.elapsedMilliseconds);
-      debugPrint('MP4 done: ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB in ${sw.elapsed.inSeconds}s');
-      onMuxProgress?.call('complete', 1.0, 'ffmpeg', sw.elapsedMilliseconds);
+      onMuxProgress?.call('complete', 1.0, 'native_muxer', sw.elapsedMilliseconds);
+      debugPrint('MP4 done: ${(sz / (1024 * 1024)).toStringAsFixed(1)} MB in ${sw.elapsed.inSeconds}s (native_muxer)');
+    } catch (e) {
+      debugPrint('NativeMuxer failed: $e');
+      rethrow;
     } finally {
-      try { if (await vCombined.exists()) await vCombined.delete(); } catch (_) {}
-      try { if (aCombined != null && await aCombined.exists()) await aCombined.delete(); } catch (_) {}
+      NativeMuxer.onMuxProgress = null;
     }
   }
 

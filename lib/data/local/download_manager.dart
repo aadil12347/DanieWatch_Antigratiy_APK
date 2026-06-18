@@ -1724,34 +1724,8 @@ class DownloadManager {
         }
       }
 
-      // Phase 1: Extract fresh stream URLs (merged parallel)
-      if ((freshM3u8 == null || freshM3u8.isEmpty) && item.tmdbId != null && item.mediaType != null) {
-        debugPrint('🔄 Fetching merged parallel streams for TMDB ID: ${item.tmdbId}');
-        final streams = await VidNestExtractorService.fetchMergedAndSortedStreams(
-          tmdbId: item.tmdbId!,
-          mediaType: item.mediaType!,
-          season: item.season > 0 ? item.season : 1,
-          episode: item.episode > 0 ? item.episode : 1,
-        ).timeout(
-          const Duration(seconds: 20),
-          onTimeout: () => <PeachifyStream>[],
-        );
-
-        PeachifyStream? matchedStream;
-        if (item.providerName != null) {
-          matchedStream = streams.cast<PeachifyStream?>().firstWhere(
-            (s) => s!.providerName == item.providerName,
-            orElse: () => null,
-          );
-        }
-        matchedStream ??= streams.isNotEmpty ? streams.first : null;
-        if (matchedStream != null) {
-          freshM3u8 = matchedStream.url;
-          freshHeaders = matchedStream.headers;
-          item.headers = freshHeaders;
-          debugPrint('✅ Found matching fresh stream: ${matchedStream.providerName}');
-        }
-      }
+      // VidNest/Peachify re-extraction REMOVED for downloads
+      // Skipping directly to webview fallback if Vcloud failed
 
       // Fallback: Webview extraction if tmdbId/mediaType not present or failed to resolve
       if (freshM3u8 == null || freshM3u8.isEmpty) {

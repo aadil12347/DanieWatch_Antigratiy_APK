@@ -62,10 +62,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     _startTime = DateTime.now();
     _checkFirstRun();
 
-    // Safety timeout: if splash hasn't resolved after 15 seconds, force a decision.
-    _safetyTimer = Timer(const Duration(seconds: 15), () {
+    // Safety timeout: if splash hasn't resolved after 8 seconds, force a decision.
+    _safetyTimer = Timer(const Duration(seconds: 8), () {
       if (!_hasNavigated && mounted) {
-        debugPrint('SplashScreen: ⚠️ SAFETY TIMEOUT (15s) — forcing navigation');
+        debugPrint('SplashScreen: ⚠️ SAFETY TIMEOUT (8s) — forcing navigation');
         _forceNavigateHome();
       }
     });
@@ -147,124 +147,133 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     _isTransitioning = true;
 
-    final authState = ref.read(authStateProvider);
-    // Use stream value if available, fall back to synchronous Supabase check
-    final user = authState.valueOrNull ?? ref.read(currentUserProvider);
+    try {
+      final authState = ref.read(authStateProvider);
+      // Use stream value if available, fall back to synchronous Supabase check
+      var user = authState.valueOrNull ?? ref.read(currentUserProvider);
 
-    // ── CASE 1: Auth is still resolving ──────────────────────────────────────
-    if (authState.isLoading && user == null) {
-      _isTransitioning = false; // Release lock — wait for listener to call us again
-      return;
-    }
+      // ── CASE 1: Auth is still resolving — wait max 3s then check synchronously ──
+      if (authState.isLoading && user == null) {
+        // Don't wait forever — give Supabase 3 seconds then check synchronously
+        debugPrint('SplashScreen: Auth loading, waiting up to 3s...');
+        _isTransitioning = false;
 
-    // ── CASE 2: User IS logged in — navigate to home immediately ─────────────
-    // We do NOT wait for the manifest/index to load. The home screen handles
-    // loading/empty states, and the background sync will populate content.
-    if (user != null) {
-      if (_showAuthModal) {
-        setState(() => _showAuthModal = false);
+        // Schedule a fallback check after 3s
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_hasNavigated || !mounted) return;
+          // Re-check synchronously
+          final syncUser = ref.read(currentUserProvider);
+          if (syncUser != null) {
+            debugPrint('SplashScreen: Auth resolved via sync check after 3s');
+            _evaluateTransition();
+          } else {
+            // Still no user after 3s — show auth modal
+            debugPrint('SplashScreen: No user after 3s — showing auth modal');
+            if (mounted && !_showAuthModal && !_hasNavigated) {
+              setState(() => _showAuthModal = true);
+            }
+          }
+        });
+        return;
       }
 
-      // Enforce minimum splash display time for a smooth UX
+      // ── CASE 2: User IS logged in — navigate to home immediately ─────────────
+      if (user != null) {
+        if (_showAuthModal) {
+          setState(() => _showAuthModal = false);
+        }
+
+        // Enforce minimum splash display time for a smooth UX
+        final elapsed = DateTime.now().difference(_startTime);
+        const minDuration = Duration(milliseconds: 1500);
+        if (elapsed < minDuration) {
+          await Future.delayed(minDuration - elapsed);
+        }
+
+        // After every await: check mounted and _hasNavigated before continuing.
+        if (!mounted || _hasNavigated) return;
+
+        // Play the exit animation
+        try {
+          await _fadeController.forward();
+        } catch (e) {
+          debugPrint('SplashScreen: Fade animation failed (non-fatal): $e');
+        }
+
+        // Check again after animation completes
+        if (!mounted || _hasNavigated) return;
+
+        // SET THE PERMANENT LATCH synchronously
+        _safetyTimer?.cancel();
+        _hasNavigated = true;
+        try {
+          // Check for pending notification deep link
+          final pending = NotificationService.instance.consumePendingPayload();
+          final navigateTo = pending?['navigate_to']?.toString();
+
+          if (navigateTo == 'notifications') {
+            final hlId = pending?['highlight_tmdb_id']?.toString();
+            if (hlId != null && hlId.isNotEmpty) {
+              NotificationService.instance.highlightTmdbId = hlId;
+            }
+            debugPrint('📱 Deep linking to /notifications (highlight=$hlId)');
+            if (AppRouter.rootNavKey.currentContext != null) {
+              AppRouter.rootNavKey.currentContext!.go('/notifications');
+            } else if (context.mounted) {
+              context.go('/notifications');
+            }
+          } else {
+            final pendingDeepLink = await DeepLinkService.consumePendingLink();
+            if (!mounted) return;
+
+            if (pendingDeepLink != null) {
+              debugPrint('🔗 Splash: Navigating to pending deep link: $pendingDeepLink');
+              if (AppRouter.rootNavKey.currentContext != null) {
+                AppRouter.rootNavKey.currentContext!.go('/home');
+                Future.delayed(const Duration(milliseconds: 200), () {
+                  AppRouter.rootNavKey.currentContext?.push(pendingDeepLink);
+                });
+              } else if (context.mounted) {
+                context.go('/home');
+                Future.delayed(const Duration(milliseconds: 200), () {
+                  if (context.mounted) context.push(pendingDeepLink);
+                });
+              }
+            } else {
+              if (AppRouter.rootNavKey.currentContext != null) {
+                AppRouter.rootNavKey.currentContext!.go('/home');
+              } else if (context.mounted) {
+                context.go('/home');
+              }
+            }
+          }
+
+          DeepLinkService.instance.setAppReady();
+          fetchAndCachePosters();
+        } catch (e) {
+          debugPrint('SplashScreen: Exception during context.go: $e');
+        }
+        return;
+      }
+
+      // ── CASE 3: User is NOT logged in — show auth modal ──────────────────
       final elapsed = DateTime.now().difference(_startTime);
       const minDuration = Duration(milliseconds: 1500);
       if (elapsed < minDuration) {
         await Future.delayed(minDuration - elapsed);
       }
 
-      // After every await: check mounted and _hasNavigated before continuing.
-      if (!mounted || _hasNavigated) return;
+      if (!mounted) return;
 
-      // Play the exit animation — wrapped in try-catch because the controller
-      // can be in a bad state after Google Sign-In returns from a different Activity
-      try {
-        await _fadeController.forward();
-      } catch (e) {
-        debugPrint('SplashScreen: Fade animation failed (non-fatal): $e');
+      setState(() => _showAuthModal = true);
+    } finally {
+      // Always release the lock (unless we navigated, in which case it doesn't matter)
+      if (!_hasNavigated) {
+        _isTransitioning = false;
       }
-
-      // Check again after animation completes
-      if (!mounted || _hasNavigated) return;
-
-      // SET THE PERMANENT LATCH synchronously — this guarantees context.go()
-      // is called EXACTLY once, no matter how many listeners fire.
-      _safetyTimer?.cancel();
-      _hasNavigated = true;
-      try {
-        // Check for pending notification deep link
-        final pending = NotificationService.instance.consumePendingPayload();
-        final navigateTo = pending?['navigate_to']?.toString();
-
-        if (navigateTo == 'notifications') {
-          // Notification tap: go to notifications page (bell icon)
-          // Re-set highlightTmdbId from payload so NotificationsScreen can read it
-          final hlId = pending?['highlight_tmdb_id']?.toString();
-          if (hlId != null && hlId.isNotEmpty) {
-            NotificationService.instance.highlightTmdbId = hlId;
-          }
-          debugPrint('📱 Deep linking to /notifications (highlight=$hlId)');
-          if (AppRouter.rootNavKey.currentContext != null) {
-            AppRouter.rootNavKey.currentContext!.go('/notifications');
-          } else if (context.mounted) {
-            context.go('/notifications');
-          }
-        } else {
-          // Check for pending deep link (user clicked a shared link)
-          final pendingDeepLink = await DeepLinkService.consumePendingLink();
-          if (!mounted) return;
-
-          if (pendingDeepLink != null) {
-            debugPrint('🔗 Splash: Navigating to pending deep link: $pendingDeepLink');
-            if (AppRouter.rootNavKey.currentContext != null) {
-              AppRouter.rootNavKey.currentContext!.go('/home');
-              // Push the details page on top of home after a brief delay
-              Future.delayed(const Duration(milliseconds: 200), () {
-                AppRouter.rootNavKey.currentContext?.push(pendingDeepLink);
-              });
-            } else if (context.mounted) {
-              context.go('/home');
-              Future.delayed(const Duration(milliseconds: 200), () {
-                if (context.mounted) context.push(pendingDeepLink);
-              });
-            }
-          } else {
-            // Normal app launch
-            if (AppRouter.rootNavKey.currentContext != null) {
-              AppRouter.rootNavKey.currentContext!.go('/home');
-            } else if (context.mounted) {
-              context.go('/home');
-            }
-          }
-        }
-
-        // Mark DeepLinkService as ready for future incoming links
-        DeepLinkService.instance.setAppReady();
-        // Fetch new posters in background for next launch
-        fetchAndCachePosters();
-      } catch (e) {
-        debugPrint('SplashScreen: Exception during context.go: $e');
-      }
-      return;
     }
 
-    // ── CASE 3: User is NOT logged in — show auth modal ──────────────────────
-    final elapsed = DateTime.now().difference(_startTime);
-    const minDuration = Duration(milliseconds: 1500);
-    if (elapsed < minDuration) {
-      await Future.delayed(minDuration - elapsed);
-    }
-
-    if (!mounted) return;
-
-    setState(() => _showAuthModal = true);
-
-    // Release the lock here — NOT _hasNavigated — because the user still needs
-    // to log in, and when they do, _evaluateTransition must run again (Case 2).
-    _isTransitioning = false;
-
-    // Re-check: if auth resolved during the min-duration delay above,
-    // the listener callback was blocked by _isTransitioning and the change
-    // was silently dropped. Detect that case and re-run immediately.
+    // Re-check: if auth resolved during the min-duration delay above
     final latestUser = ref.read(authStateProvider).valueOrNull ?? ref.read(currentUserProvider);
     if (latestUser != null) {
       _evaluateTransition();
@@ -396,6 +405,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                     child: AuthScreen(
                       isLogin: _isLogin,
                       onToggle: () => setState(() => _isLogin = !_isLogin),
+                      onLoginSuccess: () {
+                        debugPrint('SplashScreen: onLoginSuccess callback fired');
+                        // Immediately re-evaluate transition after successful login
+                        _evaluateTransition();
+                      },
                     ),
                   ),
                 ),

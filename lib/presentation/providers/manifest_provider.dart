@@ -19,58 +19,28 @@ import '../../data/repositories/posting_record_repository.dart';
 final databaseSyncProvider = FutureProvider<bool>((ref) async {
   dev.log('[DatabaseSyncProvider] Starting background database sync...');
 
-  // Run both syncs in parallel for speed
-  final results = await Future.wait([
-    DatabaseSyncService.instance.syncIndex(),
-    DatabaseSyncService.instance.sync3rdPartyIndex(),
-  ]);
+  // Only sync main index (3rd party index DEACTIVATED)
+  final mainSuccess = await DatabaseSyncService.instance.syncIndex();
 
-  final mainSuccess = results[0];
-  final thirdPartySuccess = results[1];
+  dev.log('[DatabaseSyncProvider] Sync finished. Main=$mainSuccess');
 
-  dev.log('[DatabaseSyncProvider] Sync finished. Main=$mainSuccess, 3rdParty=$thirdPartySuccess');
-
-  if (mainSuccess || thirdPartySuccess) {
-    // Refresh all manifest-derived providers with merged data
+  if (mainSuccess) {
+    // Refresh all manifest-derived providers with new data
     ref.invalidate(localManifestItemsProvider);
   }
   return mainSuccess;
 });
 
 /// Exposes all ManifestItems loaded from the locally cached database file.
-/// Merges main index + 3rd party hosted index, deduplicating by TMDB ID
-/// (main index takes priority for duplicate IDs).
-/// Loads from cache IMMEDIATELY (even if empty on first launch).
+/// On first launch, loads from bundled seed index for instant content.
 /// Does NOT block on network sync — the sync runs in background and will
 /// invalidate this provider when a new index is ready.
 final localManifestItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  // Load both indexes in parallel
-  final results = await Future.wait([
-    DatabaseSyncService.instance.loadLocalIndex(),
-    DatabaseSyncService.instance.load3rdPartyIndex(),
-  ]);
+  // Load main index only (3rd party index DEACTIVATED)
+  final items = await DatabaseSyncService.instance.loadLocalIndex();
 
-  final mainItems = results[0];
-  final thirdPartyItems = results[1];
-
-  // Merge: main index takes priority for duplicate TMDB IDs
-  final seenIds = <int>{};
-  final merged = <ManifestItem>[];
-
-  for (final item in mainItems) {
-    seenIds.add(item.id);
-    merged.add(item);
-  }
-
-  for (final item in thirdPartyItems) {
-    if (!seenIds.contains(item.id)) {
-      seenIds.add(item.id);
-      merged.add(item);
-    }
-  }
-
-  dev.log('[localManifestItemsProvider] Loaded ${merged.length} items (${mainItems.length} main + ${thirdPartyItems.length} 3rd party, ${mainItems.length + thirdPartyItems.length - merged.length} dupes removed).');
-  return merged;
+  dev.log('[localManifestItemsProvider] Loaded ${items.length} items from local database.');
+  return items;
 });
 
 /// Exposes an O(1) lookup map of all items: ID -> ManifestItem
