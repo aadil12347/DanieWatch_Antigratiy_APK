@@ -70,6 +70,29 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       }
     });
 
+    // Fallback periodic timer to check for session/user recovery every 500ms.
+    // This handles cases where the Supabase session is recovered asynchronously
+    // but the stream listener is registered after the event has already fired.
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (_hasNavigated || !mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      // Stop periodic check after 6 seconds
+      if (DateTime.now().difference(_startTime).inSeconds >= 6) {
+        timer.cancel();
+        return;
+      }
+
+      final user = ref.read(authStateProvider).valueOrNull ?? ref.read(currentUserProvider);
+      if (user != null) {
+        debugPrint('SplashScreen: Session recovered via periodic check timer.');
+        timer.cancel();
+        _evaluateTransition();
+      }
+    });
+
     // CRITICAL FIX: To listen outside of build, we must use ref.listenManual
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -193,11 +216,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         // After every await: check mounted and _hasNavigated before continuing.
         if (!mounted || _hasNavigated) return;
 
-        // Play the exit animation
+        // Play the exit animation with a safety timeout so it never hangs indefinitely
         try {
-          await _fadeController.forward();
+          await _fadeController.forward().timeout(const Duration(milliseconds: 1500));
         } catch (e) {
-          debugPrint('SplashScreen: Fade animation failed (non-fatal): $e');
+          debugPrint('SplashScreen: Fade animation failed or timed out (non-fatal): $e');
         }
 
         // Check again after animation completes
@@ -284,6 +307,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   /// This is a last-resort safety valve to prevent the splash from being stuck.
   void _forceNavigateHome() {
     if (_hasNavigated || !mounted) return;
+
+    // Check if the user is actually logged in. If not, don't force navigate
+    // to home because GoRouter will redirect back to splash, causing an infinite loop.
+    final user = ref.read(authStateProvider).valueOrNull ?? ref.read(currentUserProvider);
+    if (user == null) {
+      debugPrint('SplashScreen: Safety timeout fired, but no user is logged in. Showing auth modal instead.');
+      if (!_showAuthModal) {
+        setState(() => _showAuthModal = true);
+      }
+      return;
+    }
+
     _hasNavigated = true;
     debugPrint('SplashScreen: 🚀 Force navigating to /home');
     try {

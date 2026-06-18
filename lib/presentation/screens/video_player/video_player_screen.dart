@@ -4900,23 +4900,30 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
     required String value,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.white70),
-      title: Text(
-        label,
-        style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-      ),
-      trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 120),
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(icon, color: Colors.white70, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
             Flexible(
               child: Text(
                 value,
                 style: GoogleFonts.inter(color: Colors.white54, fontSize: 13),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
               ),
             ),
             const SizedBox(width: 4),
@@ -4924,7 +4931,6 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
           ],
         ),
       ),
-      onTap: onTap,
     );
   }
 
@@ -5065,24 +5071,37 @@ class _SettingsSheetContentState extends State<_SettingsSheetContent> {
                   );
                 }
 
-                return ListTile(
-                  enabled: clickable,
-                  title: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: textColor,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  trailing: trailingWidget,
+                return InkWell(
                   onTap: clickable
                       ? () {
                           Navigator.pop(context);
                           widget.onResolutionChanged(res);
                         }
                       : null,
+                  child: Opacity(
+                    opacity: clickable ? 1.0 : 0.5,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                color: textColor,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (trailingWidget != null) trailingWidget,
+                        ],
+                      ),
+                    ),
+                  ),
                 );
               }).toList(),
             ),
