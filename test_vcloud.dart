@@ -68,13 +68,44 @@ Future<void> extractVcloud(String vcloudUrl, HttpClient client) async {
     }
     
     // Step 2: Extract token URL
+    String? tokenUrl;
     final tokenRegExp = RegExp(r"var url\s*=\s*'(https?://[^'\s]+token=[^'\s]+)'");
     final match = tokenRegExp.firstMatch(html);
-    if (match == null) {
+    if (match != null) {
+      tokenUrl = match.group(1)!;
+    } else {
+      // Try double atob
+      final atob2UrlRegExp = RegExp(r'''atob\(atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)\)''', caseSensitive: false);
+      final atob2UrlMatch = atob2UrlRegExp.firstMatch(html);
+      if (atob2UrlMatch != null) {
+        try {
+          final decodedBytes1 = base64.decode(atob2UrlMatch.group(1)!);
+          final decodedStr1 = utf8.decode(decodedBytes1);
+          final decodedBytes2 = base64.decode(decodedStr1);
+          tokenUrl = utf8.decode(decodedBytes2);
+        } catch (e) {
+          print('    Failed to decode double-base64: $e');
+        }
+      }
+      // Try single atob
+      if (tokenUrl == null) {
+        final atobUrlRegExp = RegExp(r'''url\s*=\s*atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)''', caseSensitive: false);
+        final atobUrlMatch = atobUrlRegExp.firstMatch(html);
+        if (atobUrlMatch != null) {
+          try {
+            final decodedBytes = base64.decode(atobUrlMatch.group(1)!);
+            tokenUrl = utf8.decode(decodedBytes);
+          } catch (e) {
+            print('    Failed to decode single-base64: $e');
+          }
+        }
+      }
+    }
+
+    if (tokenUrl == null) {
       print('    Error: Token URL not found in HTML');
       return;
     }
-    final tokenUrl = match.group(1)!;
     print('    Found Token URL: $tokenUrl');
     
     // Step 3: Fetch token page with referer

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../presentation/screens/shell/app_shell.dart';
 import '../../presentation/screens/home/home_screen.dart';
@@ -126,7 +127,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
-      final user = authState.valueOrNull;
+      // Use synchronous Supabase session check as fallback when the
+      // StreamProvider hasn't emitted yet (still AsyncLoading).
+      // Without this, returning users get stuck on splash because the
+      // redirect thinks they're not logged in.
+      final user = authState.valueOrNull ?? Supabase.instance.client.auth.currentUser;
       
       final bool isLoggedIn = user != null;
       final bool onSplash = state.matchedLocation == '/splash';

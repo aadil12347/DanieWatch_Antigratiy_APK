@@ -26,28 +26,71 @@ void main() async {
     // Step 2: Extract token URL from JS variable or generate button
     print('\n[Step 2] Extracting token URL...');
     String? tokenUrl;
+    
+    // Debug print some parts of HTML
+    print('Checking HTML for keywords...');
+    final lines = html.split('\n');
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (line.contains('atob') || line.contains('token') || line.contains('url =') || line.contains('download')) {
+        print('  Line ${i+1}: ${line.trim()}');
+      }
+    }
+
     final varUrlRegExp = RegExp(r'''var\s+url\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false);
     final varUrlMatch = varUrlRegExp.firstMatch(html);
     if (varUrlMatch != null) {
       tokenUrl = varUrlMatch.group(1);
       print('  Found token URL in JS: $tokenUrl');
     } else {
+      // Try double atob
+      final atob2UrlRegExp = RegExp(r'''atob\(atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)\)''', caseSensitive: false);
+      final atob2UrlMatch = atob2UrlRegExp.firstMatch(html);
+      if (atob2UrlMatch != null) {
+        try {
+          final decodedBytes1 = base64.decode(atob2UrlMatch.group(1)!);
+          final decodedStr1 = utf8.decode(decodedBytes1);
+          final decodedBytes2 = base64.decode(decodedStr1);
+          tokenUrl = utf8.decode(decodedBytes2);
+          print('  Found decoded token URL from JS double atob: $tokenUrl');
+        } catch (e) {
+          print('  Failed to decode double base64 token URL: $e');
+        }
+      }
+      
+      // Try single atob
+      if (tokenUrl == null) {
+        final atobUrlRegExp = RegExp(r'''url\s*=\s*atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)''', caseSensitive: false);
+        final atobUrlMatch = atobUrlRegExp.firstMatch(html);
+        if (atobUrlMatch != null) {
+          try {
+            final decodedBytes = base64.decode(atobUrlMatch.group(1)!);
+            tokenUrl = utf8.decode(decodedBytes);
+            print('  Found decoded token URL from JS single atob: $tokenUrl');
+          } catch (e) {
+            print('  Failed to decode base64 token URL: $e');
+          }
+        }
+      }
+    }
+
+    if (tokenUrl == null) {
       // Fallback: search for anchor button with id="download"
-      final aTagRegExp = RegExp(r'<button\s+([^>]+)>(.*?)</button>', caseSensitive: false, dotAll: true);
+      final aTagRegExp = RegExp(r'<a\s+([^>]+)>(.*?)</a>', caseSensitive: false, dotAll: true);
       final hrefAttrRegExp = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
       final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
       
       final matches = aTagRegExp.allMatches(html);
       for (var match in matches) {
         final attributes = match.group(1)!;
+        final innerHtml = match.group(2) ?? '';
         final idMatch = idAttrRegExp.firstMatch(attributes);
         final id = idMatch?.group(1) ?? '';
-        if (id == 'download') {
-          // Check if there is a link
+        if (id == 'download' || innerHtml.toLowerCase().contains('generate download') || innerHtml.toLowerCase().contains('generate direct download')) {
           final hrefMatch = hrefAttrRegExp.firstMatch(attributes);
           if (hrefMatch != null) {
             tokenUrl = hrefMatch.group(1);
-            print('  Found token URL on button: $tokenUrl');
+            print('  Found token URL on link/button: $tokenUrl');
             break;
           }
         }

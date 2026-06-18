@@ -556,15 +556,32 @@ class VcloudExtractorService {
         }
       }
 
-      // Try 3c: Extract and decode Base64 token URL from JS atob(...) variable
+      // Try 3c: Extract and decode double Base64 token URL from JS atob(atob(...))
       if (tokenUrl == null) {
-        final atobUrlRegExp = RegExp(r'''url\s*=\s*atob\(['"]([A-Za-z0-9+/=]+)['"]\)''', caseSensitive: false);
+        final atob2UrlRegExp = RegExp(r'''atob\(atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)\)''', caseSensitive: false);
+        final atob2UrlMatch = atob2UrlRegExp.firstMatch(html);
+        if (atob2UrlMatch != null) {
+          try {
+            final decodedBytes1 = base64.decode(atob2UrlMatch.group(1)!);
+            final decodedStr1 = utf8.decode(decodedBytes1);
+            final decodedBytes2 = base64.decode(decodedStr1);
+            tokenUrl = utf8.decode(decodedBytes2);
+            debugPrint('[VcloudExtractor] Extracted decoded double-atob token URL from JS variable: $tokenUrl');
+          } catch (e) {
+            debugPrint('[VcloudExtractor] Failed to decode double-base64 token URL: $e');
+          }
+        }
+      }
+
+      // Try 3d: Extract and decode single Base64 token URL from JS atob(...)
+      if (tokenUrl == null) {
+        final atobUrlRegExp = RegExp(r'''url\s*=\s*atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)''', caseSensitive: false);
         final atobUrlMatch = atobUrlRegExp.firstMatch(html);
         if (atobUrlMatch != null) {
           try {
             final decodedBytes = base64.decode(atobUrlMatch.group(1)!);
             tokenUrl = utf8.decode(decodedBytes);
-            debugPrint('[VcloudExtractor] Extracted decoded token URL from JS variable: $tokenUrl');
+            debugPrint('[VcloudExtractor] Extracted decoded single-atob token URL from JS variable: $tokenUrl');
           } catch (e) {
             debugPrint('[VcloudExtractor] Failed to decode base64 token URL: $e');
           }

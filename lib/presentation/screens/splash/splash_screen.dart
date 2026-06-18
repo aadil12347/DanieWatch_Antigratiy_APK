@@ -256,6 +256,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     // Release the lock here — NOT _hasNavigated — because the user still needs
     // to log in, and when they do, _evaluateTransition must run again (Case 2).
     _isTransitioning = false;
+
+    // Re-check: if auth resolved during the min-duration delay above,
+    // the listener callback was blocked by _isTransitioning and the change
+    // was silently dropped. Detect that case and re-run immediately.
+    final latestUser = ref.read(authStateProvider).valueOrNull ?? ref.read(currentUserProvider);
+    if (latestUser != null) {
+      _evaluateTransition();
+    }
   }
 
   /// Force-navigate to home when timeout or retries are exhausted.
