@@ -190,12 +190,16 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     final info = _getUpdateInfo();
     if (info == null) return;
 
-    debugPrint('🔄 AppUpdateProvider: Starting download for ${info.version}');
+    // Detect device architecture and resolve the correct APK download URL
+    final deviceAbi = await _service.getDeviceAbi();
+    final downloadUrl = info.getDownloadUrlForAbi(deviceAbi);
+    debugPrint('🔄 AppUpdateProvider: Device ABI: $deviceAbi → downloading $downloadUrl');
+
     state = AppUpdateDownloading(info, 0.0, 0, 0);
 
     try {
       final apkPath = await _service.downloadApk(
-        downloadUrl: info.downloadUrl,
+        downloadUrl: downloadUrl,
         targetVersion: info.version,
         onProgress: (received, total) {
           final progress = total > 0 ? received / total : 0.0;

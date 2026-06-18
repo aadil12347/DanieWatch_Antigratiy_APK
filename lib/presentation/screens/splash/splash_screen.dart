@@ -175,8 +175,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       // After every await: check mounted and _hasNavigated before continuing.
       if (!mounted || _hasNavigated) return;
 
-      // Play the exit animation
-      await _fadeController.forward();
+      // Play the exit animation — wrapped in try-catch because the controller
+      // can be in a bad state after Google Sign-In returns from a different Activity
+      try {
+        await _fadeController.forward();
+      } catch (e) {
+        debugPrint('SplashScreen: Fade animation failed (non-fatal): $e');
+      }
 
       // Check again after animation completes
       if (!mounted || _hasNavigated) return;

@@ -36,6 +36,24 @@ class AppUpdateService {
 
   CancelToken? _downloadCancelToken;
 
+  /// Cached device ABI string (e.g., "arm64-v8a", "armeabi-v7a", "x86_64")
+  String? _deviceAbi;
+
+  /// Detect the device's primary CPU ABI using Android system property.
+  /// Cached after first call for performance.
+  Future<String> getDeviceAbi() async {
+    if (_deviceAbi != null) return _deviceAbi!;
+    try {
+      final result = await Process.run('getprop', ['ro.product.cpu.abi']);
+      final abi = result.stdout.toString().trim();
+      _deviceAbi = abi.isNotEmpty ? abi : 'arm64-v8a';
+    } catch (_) {
+      _deviceAbi = 'arm64-v8a'; // Safe fallback for most modern devices
+    }
+    debugPrint('🔄 AppUpdate: Device ABI: $_deviceAbi');
+    return _deviceAbi!;
+  }
+
   // ─────────────────────────────────────────────────────────
   // A. CHECK FOR UPDATES
   // ─────────────────────────────────────────────────────────
@@ -62,8 +80,8 @@ class AppUpdateService {
       final json = response['value'] as Map<String, dynamic>;
       final info = AppUpdateInfo.fromJson(json);
 
-      if (info.version.isEmpty || info.downloadUrl.isEmpty) {
-        debugPrint('🔄 AppUpdate: Invalid update data (missing version or URL)');
+      if (info.version.isEmpty || info.downloadUrls.isEmpty) {
+        debugPrint('🔄 AppUpdate: Invalid update data (missing version or URLs)');
         return null;
       }
 

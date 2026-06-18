@@ -79,7 +79,6 @@ dependencies:
 
 
 
-  youtube_player_iframe: ^5.2.2
   share_plus: ^12.0.2
   app_links: ^6.4.0
   volume_controller: ^3.4.4
@@ -91,7 +90,6 @@ dependencies:
   device_info_plus: ^12.4.0
   palette_generator: ^0.3.3+7
   ffmpeg_kit_flutter_new_min: ^3.1.0
-  csv: ^8.0.0
   encrypt: ^5.0.3
 
 dev_dependencies:
