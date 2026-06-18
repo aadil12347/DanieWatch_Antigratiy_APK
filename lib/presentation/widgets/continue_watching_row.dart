@@ -426,6 +426,11 @@ class _ContinueWatchingCardState extends State<_ContinueWatchingCard>
     return CachedNetworkImage(
       imageUrl: imageUrl,
       fit: BoxFit.cover,
+      // PERF: Decode at thumbnail size, not full resolution
+      memCacheWidth: 300,
+      memCacheHeight: 170,
+      fadeOutDuration: Duration.zero,
+      fadeInDuration: const Duration(milliseconds: 120),
       placeholder: (_, __) => Container(color: const Color(0xFF1A1A1A)),
       errorWidget: (_, __, ___) => Container(
         color: const Color(0xFF1A1A1A),

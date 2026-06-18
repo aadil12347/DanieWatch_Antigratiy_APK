@@ -313,7 +313,8 @@ class _AppShellState extends ConsumerState<AppShell>
                       _closeAllModals();
                     }
                   },
-                  child: Container(color: Colors.black.withValues(alpha: 0.4)),
+                  // PERF: ColoredBox is lighter than Container (no layout overhead)
+                  child: const ColoredBox(color: Color(0x66000000)),
                 ),
               ),
             // Floating support FAB
@@ -339,8 +340,9 @@ class _AppShellState extends ConsumerState<AppShell>
                   right: 0,
                   child: Center(
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 350),
-                      curve: Curves.easeOutExpo,
+                      // PERF: 350ms → 200ms — snappier modal open/close
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
                       constraints: BoxConstraints(maxWidth: navMaxWidth),
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: navHPad),
@@ -351,15 +353,17 @@ class _AppShellState extends ConsumerState<AppShell>
                           enableTouchRipple: false,
                           edgeGlow: anyModalOpen ? 0.10 : 0.18,
                           child: AnimatedSize(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutExpo,
+                            // PERF: 300ms → 200ms, Clip.hardEdge → Clip.none (GPU savings)
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
                             alignment: Alignment.bottomCenter,
-                            clipBehavior: Clip.hardEdge,
+                            clipBehavior: Clip.none,
                             child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 300),
-                              // Outgoing: fade out FAST in first 40% so buttons
+                              // PERF: 300ms → 200ms
+                              duration: const Duration(milliseconds: 200),
+                              // Outgoing: fade out FAST in first 50% so buttons
                               // vanish before container size changes squish them
-                              switchOutCurve: const Interval(0.6, 1.0),
+                              switchOutCurve: const Interval(0.5, 1.0),
                               // Incoming: fade in from 30% mark onward
                               switchInCurve: const Interval(0.3, 1.0, curve: Curves.easeOut),
                               // CRITICAL: Use bottomCenter alignment so old navbar
@@ -367,7 +371,8 @@ class _AppShellState extends ConsumerState<AppShell>
                               layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
                                 return Stack(
                                   alignment: Alignment.bottomCenter,
-                                  clipBehavior: Clip.hardEdge,
+                                  // PERF: Clip.none — avoids expensive GPU clip layer
+                                  clipBehavior: Clip.none,
                                   children: <Widget>[
                                     ...previousChildren,
                                     if (currentChild != null) currentChild,

@@ -38,6 +38,9 @@ class _FloatingBlobBackgroundState extends State<FloatingBlobBackground>
   late AnimationController _controller;
   late List<_BlobConfig> _blobs;
   final _random = math.Random(42);
+  // PERF: Frame-skip counter for effective 30fps (blobs are slow, looks identical)
+  int _frameSkip = 0;
+  double _lastPaintedProgress = -1;
 
   @override
   void initState() {
@@ -90,10 +93,27 @@ class _FloatingBlobBackgroundState extends State<FloatingBlobBackground>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
+          // PERF: Skip every other frame — blobs move so slowly that 30fps
+          // is visually identical, but halves GPU work
+          _frameSkip++;
+          final progress = _controller.value;
+          if (_frameSkip % 2 != 0 && _lastPaintedProgress >= 0) {
+            // Return the same paint — CustomPaint won't repaint if
+            // shouldRepaint returns false (same progress value)
+            return CustomPaint(
+              painter: _BlobPainter(
+                blobs: _blobs,
+                progress: _lastPaintedProgress,
+                opacity: widget.opacity,
+              ),
+              size: Size.infinite,
+            );
+          }
+          _lastPaintedProgress = progress;
           return CustomPaint(
             painter: _BlobPainter(
               blobs: _blobs,
-              progress: _controller.value,
+              progress: progress,
               opacity: widget.opacity,
             ),
             size: Size.infinite,

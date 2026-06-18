@@ -29,6 +29,9 @@ class ContentRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
         physics: const AlwaysScrollableScrollPhysics(),
+        // PERF: Pre-build cards 500px offscreen so fast swipes don't cause jank
+        cacheExtent: 500,
+        addRepaintBoundaries: true,
         padding: EdgeInsets.only(
           left: leftPad,
           right: rightPad,
@@ -36,11 +39,15 @@ class ContentRow extends StatelessWidget {
         itemCount: items.length,
         separatorBuilder: (_, __) => SizedBox(width: spacing),
         itemBuilder: (context, index) {
-          return MovieCard(
-            item: items[index],
-            width: cardWidth,
-            height: rowHeight,
-            rank: isRanked ? index + 1 : null,
+          // PERF: RepaintBoundary isolates each card's paint — one card
+          // updating (e.g. image loading) won't repaint the entire row
+          return RepaintBoundary(
+            child: MovieCard(
+              item: items[index],
+              width: cardWidth,
+              height: rowHeight,
+              rank: isRanked ? index + 1 : null,
+            ),
           );
         },
       ),

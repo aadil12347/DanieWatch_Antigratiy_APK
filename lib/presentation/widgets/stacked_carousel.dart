@@ -330,6 +330,11 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
                         return CachedNetworkImage(
                           imageUrl: posterUrl,
                           fit: BoxFit.cover,
+                          // PERF: Decode at carousel size, not full resolution
+                          memCacheWidth: 400,
+                          memCacheHeight: 600,
+                          fadeOutDuration: Duration.zero,
+                          fadeInDuration: const Duration(milliseconds: 150),
                           placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
                           errorWidget: (_, __, ___) => Container(
                             color: AppColors.surfaceElevated,

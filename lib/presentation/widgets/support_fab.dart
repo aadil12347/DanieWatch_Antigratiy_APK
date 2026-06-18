@@ -31,7 +31,9 @@ class _SupportFABState extends ConsumerState<SupportFAB>
   Animation<double>? _xAnim;
   Animation<double>? _yAnim;
 
-  Offset _position = Offset.zero;
+  // PERF: Use ValueNotifier instead of setState — spring physics was calling
+  // setState 60x/sec, rebuilding GoRouter + MediaQuery + providers every frame
+  final ValueNotifier<Offset> _position = ValueNotifier(Offset.zero);
   bool _initialized = false;
   bool _isDragging = false;
 
@@ -47,12 +49,11 @@ class _SupportFABState extends ConsumerState<SupportFAB>
 
   void _onAnimUpdate() {
     if (!mounted) return;
-    setState(() {
-      _position = Offset(
-        _xAnim?.value ?? _xController.value,
-        _yAnim?.value ?? _yController.value,
-      );
-    });
+    // PERF: Update ValueNotifier instead of setState — only repaints the Positioned
+    _position.value = Offset(
+      _xAnim?.value ?? _xController.value,
+      _yAnim?.value ?? _yController.value,
+    );
   }
 
   Future<void> _loadPosition() async {
@@ -60,20 +61,20 @@ class _SupportFABState extends ConsumerState<SupportFAB>
     final x = prefs.getDouble(_prefsKeyX);
     final y = prefs.getDouble(_prefsKeyY);
     if (x != null && y != null) {
-      _position = Offset(x, y);
+      _position.value = Offset(x, y);
     }
     if (mounted) setState(() => _initialized = true);
   }
 
   Future<void> _savePosition() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_prefsKeyX, _position.dx);
-    await prefs.setDouble(_prefsKeyY, _position.dy);
+    await prefs.setDouble(_prefsKeyX, _position.value.dx);
+    await prefs.setDouble(_prefsKeyY, _position.value.dy);
   }
 
   void _initDefaultPosition(Size screenSize, EdgeInsets padding) {
-    if (_position == Offset.zero) {
-      _position = Offset(
+    if (_position.value == Offset.zero) {
+      _position.value = Offset(
         screenSize.width - _fabSize - _edgePadding,
         screenSize.height - padding.bottom - 160,
       );
@@ -87,9 +88,8 @@ class _SupportFABState extends ConsumerState<SupportFAB>
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    setState(() {
-      _position += details.delta;
-    });
+    // PERF: Direct ValueNotifier update, no setState needed
+    _position.value = _position.value + details.delta;
   }
 
   void _onPanEnd(DragEndDetails details, Size screenSize, EdgeInsets padding) {
@@ -98,7 +98,7 @@ class _SupportFABState extends ConsumerState<SupportFAB>
     final velocity = details.velocity.pixelsPerSecond;
 
     // Determine snap edge based on position + velocity direction
-    final centerX = _position.dx + _fabSize / 2;
+    final centerX = _position.value.dx + _fabSize / 2;
     final halfScreen = screenSize.width / 2;
     // If velocity is strong enough, use its direction; otherwise use position
     double targetX;
@@ -116,18 +116,18 @@ class _SupportFABState extends ConsumerState<SupportFAB>
     final minY = padding.top + _edgePadding;
     final maxY = screenSize.height - padding.bottom - _fabSize - 120;
     // Project position forward based on velocity (momentum)
-    final projectedY = _position.dy + velocity.dy * 0.15;
+    final projectedY = _position.value.dy + velocity.dy * 0.15;
     final targetY = projectedY.clamp(minY, maxY);
 
     // Spring physics for X (horizontal snap)
     const xSpring = SpringDescription(mass: 1.0, stiffness: 200, damping: 22);
-    final xSim = SpringSimulation(xSpring, _position.dx, targetX, velocity.dx);
+    final xSim = SpringSimulation(xSpring, _position.value.dx, targetX, velocity.dx);
     _xAnim = null;
     _xController.animateWith(xSim);
 
     // Spring physics for Y (vertical momentum settle)
     const ySpring = SpringDescription(mass: 1.0, stiffness: 150, damping: 20);
-    final ySim = SpringSimulation(ySpring, _position.dy, targetY, velocity.dy);
+    final ySim = SpringSimulation(ySpring, _position.value.dy, targetY, velocity.dy);
     _yAnim = null;
     _yController.animateWith(ySim);
 
@@ -156,6 +156,7 @@ class _SupportFABState extends ConsumerState<SupportFAB>
 
   @override
   void dispose() {
+    _position.dispose();
     _xController.dispose();
     _yController.dispose();
     super.dispose();
@@ -176,11 +177,7 @@ class _SupportFABState extends ConsumerState<SupportFAB>
     if (!_initialized) return const SizedBox.shrink();
     _initDefaultPosition(screenSize, padding);
 
-    // Clamp display position
-    final minY = padding.top + _edgePadding;
-    final maxY = screenSize.height - padding.bottom - _fabSize - 120;
-    final clampedY = _position.dy.clamp(minY, maxY);
-    final clampedX = _position.dx.clamp(_edgePadding, screenSize.width - _fabSize - _edgePadding);
+    // Clamping is now done inside ValueListenableBuilder below
 
     // Get unread count
     final isAdmin = ref.watch(isAdminProvider).valueOrNull ?? false;
@@ -188,71 +185,83 @@ class _SupportFABState extends ConsumerState<SupportFAB>
         ? ref.watch(adminUnreadCountProvider)
         : ref.watch(userUnreadCountProvider);
 
-    return Positioned(
-      left: clampedX,
-      top: clampedY,
-      child: GestureDetector(
-        onPanStart: _onPanStart,
-        onPanUpdate: _onPanUpdate,
-        onPanEnd: (d) => _onPanEnd(d, screenSize, padding),
-        onTap: () => ref.read(supportModalProvider.notifier).state = true,
-        child: AnimatedScale(
-          scale: _isDragging ? 1.12 : 1.0,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
-          child: Container(
-            width: _fabSize,
-            height: _fabSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF059669), Color(0xFF047857)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF059669).withValues(alpha: _isDragging ? 0.5 : 0.35),
-                  blurRadius: _isDragging ? 20 : 14,
-                  offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+    return ValueListenableBuilder<Offset>(
+      valueListenable: _position,
+      builder: (context, pos, child) {
+        // Clamp display position
+        final minY = padding.top + _edgePadding;
+        final maxY = screenSize.height - padding.bottom - _fabSize - 120;
+        final clampedY = pos.dy.clamp(minY, maxY);
+        final clampedX = pos.dx.clamp(_edgePadding, screenSize.width - _fabSize - _edgePadding);
+
+        return Positioned(
+          left: clampedX,
+          top: clampedY,
+          child: GestureDetector(
+            onPanStart: _onPanStart,
+            onPanUpdate: _onPanUpdate,
+            onPanEnd: (d) => _onPanEnd(d, screenSize, padding),
+            onTap: () => ref.read(supportModalProvider.notifier).state = true,
+            child: child!,
+          ),
+        );
+      },
+      child: AnimatedScale(
+        scale: _isDragging ? 1.12 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          width: _fabSize,
+          height: _fabSize,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF059669), Color(0xFF047857)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Center(
-                  child: Icon(Icons.support_agent_rounded, color: Colors.white, size: 24),
-                ),
-                if (unreadCount > 0)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.background, width: 1.5),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 18, minHeight: 16),
-                      child: Center(
-                        child: Text(
-                          unreadCount > 9 ? '9+' : '$unreadCount',
-                          style: GoogleFonts.inter(
-                            color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800,
-                          ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF059669).withValues(alpha: _isDragging ? 0.5 : 0.35),
+                blurRadius: _isDragging ? 20 : 14,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Center(
+                child: Icon(Icons.support_agent_rounded, color: Colors.white, size: 24),
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.background, width: 1.5),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 16),
+                    child: Center(
+                      child: Text(
+                        unreadCount > 9 ? '9+' : '$unreadCount',
+                        style: GoogleFonts.inter(
+                          color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),

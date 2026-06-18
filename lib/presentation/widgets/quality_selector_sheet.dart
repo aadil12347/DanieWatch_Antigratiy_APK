@@ -550,110 +550,116 @@ class _QualitySelectorContentState
     final modalState = ref.watch(downloadModalProvider);
     final isLoading = modalState.isLoading || _internalLoading;
     final streams = modalState.streams ?? [];
+    final screenHeight = MediaQuery.of(context).size.height;
 
     return Container(
       padding: const EdgeInsets.only(bottom: 20),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Header ───────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Row(
-                children: [
-                  if (_selectedStream != null) ...[
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
-                      onPressed: () {
-                        HapticFeedback.lightImpact();
-                        setState(() {
-                          _selectedStream = null;
-                          _playlist = null;
-                          _selectedVariant = null;
-                          _selectedAudio = null;
-                          _selectedSubtitle = null;
-                        });
-                      },
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: screenHeight * 0.85,
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Header ───────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                child: Row(
+                  children: [
+                    if (_selectedStream != null) ...[
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          setState(() {
+                            _selectedStream = null;
+                            _playlist = null;
+                            _selectedVariant = null;
+                            _selectedAudio = null;
+                            _selectedSubtitle = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.download_rounded,
+                          color: Colors.white, size: 22),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.title,
+                            style: GoogleFonts.lora(
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          // Season/Episode label below the title
+                          if (!modalState.isMovie && 
+                              modalState.season != null && 
+                              modalState.episode != null &&
+                              modalState.season! > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                'Season ${modalState.season} · Episode ${modalState.episode}',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          // Accurate file size using actual runtime
+                          if (_selectedVariant != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                'Size: ${_fetchedSizeText ?? _selectedVariant!.estimatedSizeForDuration(modalState.runtime)}',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    _TactileCloseButton(onTap: widget.onCancel),
                   ],
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.download_rounded,
-                        color: Colors.white, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title,
-                          style: GoogleFonts.lora(
-                            color: AppColors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        // Season/Episode label below the title
-                        if (!modalState.isMovie && 
-                            modalState.season != null && 
-                            modalState.episode != null &&
-                            modalState.season! > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              'Season ${modalState.season} · Episode ${modalState.episode}',
-                              style: GoogleFonts.inter(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        // Accurate file size using actual runtime
-                        if (_selectedVariant != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              'Size: ${_fetchedSizeText ?? _selectedVariant!.estimatedSizeForDuration(modalState.runtime)}',
-                              style: GoogleFonts.inter(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  _TactileCloseButton(onTap: widget.onCancel),
-                ],
+                ),
               ),
-            ),
 
-            const Divider(color: Colors.white10, height: 32),
+              const Divider(color: Colors.white10, height: 32),
 
-            if (isLoading)
-              _buildSkeleton()
-            else if (_error != null)
-              _buildError()
-            else if (_selectedStream == null)
-              _buildStreamsList(streams)
-            else ...[
-              _buildSelectors(),
-              const SizedBox(height: 16),
-              _buildDownloadButton(),
+              if (isLoading)
+                _buildSkeleton()
+              else if (_error != null)
+                _buildError()
+              else if (_selectedStream == null)
+                _buildStreamsList(streams)
+              else ...[
+                _buildSelectors(),
+                const SizedBox(height: 16),
+                _buildDownloadButton(),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

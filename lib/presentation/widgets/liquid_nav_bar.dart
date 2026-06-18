@@ -37,6 +37,8 @@ class _LiquidNavBarContentState extends State<LiquidNavBarContent>
   final List<AnimationController> _glowCtrls = [];
   // Per-tab water-tap bounce controllers
   final List<AnimationController> _bounceCtrls = [];
+  // PERF: Cache merged listenable — was creating new merge of 8 controllers every build
+  late Listenable _mergedListenable;
 
   static const _icons = [
     Icons.home_outlined,
@@ -68,6 +70,8 @@ class _LiquidNavBarContentState extends State<LiquidNavBarContent>
         duration: const Duration(milliseconds: 600),
       ));
     }
+    // PERF: Cache merged listenable once
+    _mergedListenable = Listenable.merge([..._glowCtrls, ..._bounceCtrls]);
   }
 
   @override
@@ -102,7 +106,8 @@ class _LiquidNavBarContentState extends State<LiquidNavBarContent>
       child: SizedBox(
       height: widget.navHeight,
       child: AnimatedBuilder(
-        animation: Listenable.merge([..._glowCtrls, ..._bounceCtrls]),
+        // PERF: Use cached listenable instead of creating new merge every build
+        animation: _mergedListenable,
         builder: (context, _) {
           return Padding(
             padding: EdgeInsets.symmetric(horizontal: widget.horizontalPad),

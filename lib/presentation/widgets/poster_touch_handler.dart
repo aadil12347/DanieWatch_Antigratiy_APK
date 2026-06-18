@@ -56,6 +56,9 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
   // Single glow animation — one smooth fade in/out
   late AnimationController _glowController;
 
+  // PERF: Cache merged listenable — was creating new one every build
+  late Listenable _mergedAnimation;
+
   // The scale values for each state
   static const double _pressScale = 0.97;
   static const double _normalScale = 1.0;
@@ -89,6 +92,9 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
       duration: const Duration(milliseconds: 180), // fade-in
       reverseDuration: const Duration(milliseconds: 600), // fade-out — slow smooth vanish
     );
+
+    // PERF: Cache merged listenable once
+    _mergedAnimation = Listenable.merge([_scaleAnimation, _glowController]);
   }
 
   @override
@@ -235,12 +241,14 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerCancel,
         child: AnimatedBuilder(
-          animation: Listenable.merge([_scaleAnimation, _glowController]),
+          // PERF: Use cached listenable instead of creating new merge every build
+          animation: _mergedAnimation,
           builder: (context, child) {
             final glowOpacity = _glowController.value;
             return Transform.scale(
               scale: _scaleAnimation.value,
-              child: Container(
+              // PERF: Use DecoratedBox instead of Container — lighter widget
+              child: DecoratedBox(
                 decoration: glowOpacity > 0.01
                     ? BoxDecoration(
                         borderRadius: widget.borderRadius,
@@ -257,7 +265,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
                           ),
                         ],
                       )
-                    : null,
+                    : const BoxDecoration(),
                 child: RepaintBoundary(child: child),
               ),
             );

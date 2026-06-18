@@ -474,6 +474,8 @@ class _PosterImage extends ConsumerWidget {
           imageUrl: url,
           fit: BoxFit.cover,
           memCacheWidth: 300,
+          // PERF: Decode images at poster size, not full resolution
+          memCacheHeight: 450,
           placeholder: (_, __) => Container(
             color: AppColors.surfaceElevated,
             child: const Center(
@@ -486,8 +488,10 @@ class _PosterImage extends ConsumerWidget {
               child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
             ),
           ),
-          fadeOutDuration: const Duration(milliseconds: 200),
-          fadeInDuration: const Duration(milliseconds: 200),
+          // PERF: Zero fade = no animation overhead per card during fast scroll
+          // With 50+ cards, 200ms fades cause significant GPU work
+          fadeOutDuration: Duration.zero,
+          fadeInDuration: const Duration(milliseconds: 120),
         );
       },
       loading: () => Container(

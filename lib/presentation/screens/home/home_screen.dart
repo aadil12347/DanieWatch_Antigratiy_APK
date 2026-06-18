@@ -94,6 +94,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
+          // PERF: Pre-build sections 800px before they scroll into view
+          cacheExtent: 800,
           slivers: [
             // Hero section: Header + Carousel with gradient emitting from active card
             SliverToBoxAdapter(
