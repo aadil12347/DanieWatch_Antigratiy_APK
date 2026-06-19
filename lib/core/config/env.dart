@@ -1,3 +1,5 @@
+import 'package:package_info_plus/package_info_plus.dart';
+
 /// Environment configuration injected via --dart-define at build time.
 /// NEVER hardcode secrets here — they come from build arguments.
 ///
@@ -61,10 +63,16 @@ class Env {
   );
 
   // ── App version for cache invalidation ────────────────────
-  static const appVersion = String.fromEnvironment(
-    'APP_VERSION',
-    defaultValue: '1.0.0',
-  );
+  static String appVersion = '1.0.0';
+
+  static Future<void> loadAppVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      appVersion = packageInfo.version;
+    } catch (_) {
+      appVersion = const String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0');
+    }
+  }
 
   // ── Google Sign-In ────────────────────────────────────────
   static const googleWebClientId = String.fromEnvironment(

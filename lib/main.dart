@@ -24,6 +24,9 @@ Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
+  // Load the app version dynamically from platform package info
+  await Env.loadAppVersion();
+
   // Validate required environment variables are configured via --dart-define
   Env.validate();
 
