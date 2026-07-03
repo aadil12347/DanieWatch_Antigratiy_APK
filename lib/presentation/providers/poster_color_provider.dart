@@ -13,9 +13,3 @@ final posterColorProvider =
 final activeGradientProvider = StateProvider<PosterColorPalette>((ref) {
   return PosterColorPalette.fallback;
 });
-
-/// Holds the gradient palette for the poster the user is currently touching.
-/// Reset to null when the user lifts their finger.
-final touchedPosterGradientProvider = StateProvider<PosterColorPalette?>((ref) {
-  return null;
-});

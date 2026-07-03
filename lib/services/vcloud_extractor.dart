@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../data/services/database_sync_service.dart';
 import '../domain/models/manifest_item.dart';
+import 'extraction/extraction_utils.dart' as eu;
 
 class VcloudExtractorService {
   static final VcloudExtractorService _instance = VcloudExtractorService._internal();
@@ -487,6 +488,12 @@ class VcloudExtractorService {
   }
 
   /// Resolves the page (vcloud/hubcloud/etc.) and extracts Server 1, Server 2, and Server 3 direct URLs.
+  ///
+  /// Enhanced with CSX's extraction patterns:
+  /// 1. var pxl = '...' (extractPxlUrl)
+  /// 2. var url = atob(atob('...')) (extractDoubleAtob)
+  /// 3. Download buttons and JS variables
+  /// 4. Redirect chain following
   Future<Map<String, String>> extractVcloud(String vcloudUrl) async {
     final Map<String, String> resolved = {};
     final client = HttpClient()
@@ -494,7 +501,7 @@ class VcloudExtractorService {
       ..badCertificateCallback = (cert, host, port) => true;
 
     final headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': eu.kUserAgent,
     };
 
     try {
@@ -508,10 +515,35 @@ class VcloudExtractorService {
       }
       final html = await resp.transform(utf8.decoder).join();
 
-      // Step 2: Try to parse server links directly from the first page (in case it is already pre-generated)
+      // === CSX Strategy 1: var pxl = '...' (direct download URL) ===
+      final pxlUrl = eu.extractPxlUrl(html);
+      if (pxlUrl != null && pxlUrl.isNotEmpty && pxlUrl.startsWith('http')) {
+        debugPrint('[VcloudExtractor] Found pxl direct URL: $pxlUrl');
+        resolved['Server 1'] = pxlUrl;
+        client.close();
+        return resolved;
+      }
+
+      // === CSX Strategy 2: var url = atob(atob('...')) (double base64) ===
+      final doubleAtobUrl = eu.extractDoubleAtob(html);
+      if (doubleAtobUrl != null && doubleAtobUrl.isNotEmpty && doubleAtobUrl.startsWith('http')) {
+        debugPrint('[VcloudExtractor] Found double-atob URL: $doubleAtobUrl');
+        // Resolve the decoded URL through redirects
+        final finalUrl = await eu.resolveFinalUrl(doubleAtobUrl);
+        if (finalUrl != null && finalUrl.isNotEmpty) {
+          resolved['Server 1'] = finalUrl;
+        } else {
+          resolved['Server 1'] = doubleAtobUrl;
+        }
+        client.close();
+        return resolved;
+      }
+
+      // Step 2: Try to parse server links directly from the first page
       final directServers = _parseServerLinks(html);
       if (directServers.containsKey('Server 1') || directServers.containsKey('Server 2') || directServers.containsKey('Server 3')) {
         debugPrint('[VcloudExtractor] Found server links directly on the initial page.');
+        client.close();
         return directServers;
       }
 
@@ -519,44 +551,20 @@ class VcloudExtractorService {
       String? tokenUrl;
 
       // Try 3a: Extract from JS variable var url = '...' or var url = "..."
-      final varUrlRegExp = RegExp(r'''var\s+url\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false);
-      final varUrlMatch = varUrlRegExp.firstMatch(html);
-      if (varUrlMatch != null) {
-        tokenUrl = varUrlMatch.group(1);
+      tokenUrl = eu.extractVarUrl(html);
+      if (tokenUrl != null) {
         debugPrint('[VcloudExtractor] Extracted token URL from JS variable: $tokenUrl');
       }
 
       // Try 3b: Extract from anchor tag with id="download" or containing text "generate"
       if (tokenUrl == null) {
-        final aTagRegExp = RegExp(r'<a\s+([^>]+)>(.*?)</a>', caseSensitive: false, dotAll: true);
-        final hrefAttrRegExp = RegExp(r'''href=["']([^"']+)["']''', caseSensitive: false);
-        final idAttrRegExp = RegExp(r'''id=["']([^"']+)["']''', caseSensitive: false);
-        
-        final matches = aTagRegExp.allMatches(html);
-        for (var match in matches) {
-          final attributes = match.group(1)!;
-          final innerHtml = match.group(2) ?? '';
-          
-          final idMatch = idAttrRegExp.firstMatch(attributes);
-          final id = idMatch?.group(1) ?? '';
-          
-          if (id == 'download' || 
-              innerHtml.toLowerCase().contains('generate direct download') || 
-              innerHtml.toLowerCase().contains('generate download')) {
-            final hrefMatch = hrefAttrRegExp.firstMatch(attributes);
-            if (hrefMatch != null) {
-              final href = hrefMatch.group(1)!;
-              if (href.isNotEmpty && href.startsWith('http')) {
-                tokenUrl = href;
-                debugPrint('[VcloudExtractor] Extracted token URL from download button: $tokenUrl');
-                break;
-              }
-            }
-          }
+        tokenUrl = eu.extractDownloadButton(html);
+        if (tokenUrl != null) {
+          debugPrint('[VcloudExtractor] Extracted token URL from download button: $tokenUrl');
         }
       }
 
-      // Try 3c: Extract and decode double Base64 token URL from JS atob(atob(...))
+      // Try 3c: Extract and decode double Base64 from atob(atob(...))
       if (tokenUrl == null) {
         final atob2UrlRegExp = RegExp(r'''atob\(atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)\)''', caseSensitive: false);
         final atob2UrlMatch = atob2UrlRegExp.firstMatch(html);
@@ -566,25 +574,34 @@ class VcloudExtractorService {
             final decodedStr1 = utf8.decode(decodedBytes1);
             final decodedBytes2 = base64.decode(decodedStr1);
             tokenUrl = utf8.decode(decodedBytes2);
-            debugPrint('[VcloudExtractor] Extracted decoded double-atob token URL from JS variable: $tokenUrl');
+            debugPrint('[VcloudExtractor] Extracted decoded double-atob token URL: $tokenUrl');
           } catch (e) {
             debugPrint('[VcloudExtractor] Failed to decode double-base64 token URL: $e');
           }
         }
       }
 
-      // Try 3d: Extract and decode single Base64 token URL from JS atob(...)
+      // Try 3d: Extract single Base64 from atob(...)
       if (tokenUrl == null) {
-        final atobUrlRegExp = RegExp(r'''url\s*=\s*atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)''', caseSensitive: false);
-        final atobUrlMatch = atobUrlRegExp.firstMatch(html);
-        if (atobUrlMatch != null) {
-          try {
-            final decodedBytes = base64.decode(atobUrlMatch.group(1)!);
-            tokenUrl = utf8.decode(decodedBytes);
-            debugPrint('[VcloudExtractor] Extracted decoded single-atob token URL from JS variable: $tokenUrl');
-          } catch (e) {
-            debugPrint('[VcloudExtractor] Failed to decode base64 token URL: $e');
-          }
+        tokenUrl = eu.extractSingleAtob(html);
+        if (tokenUrl != null) {
+          debugPrint('[VcloudExtractor] Extracted single-atob token URL: $tokenUrl');
+        }
+      }
+
+      // Try 3e: Check for JS redirect in the HTML body
+      if (tokenUrl == null) {
+        tokenUrl = eu.extractJsRedirect(html);
+        if (tokenUrl != null) {
+          debugPrint('[VcloudExtractor] Extracted JS redirect URL: $tokenUrl');
+        }
+      }
+
+      // Try 3f: Check for meta refresh redirect
+      if (tokenUrl == null) {
+        tokenUrl = eu.extractMetaRefresh(html);
+        if (tokenUrl != null) {
+          debugPrint('[VcloudExtractor] Extracted meta refresh URL: $tokenUrl');
         }
       }
 
@@ -610,8 +627,28 @@ class VcloudExtractorService {
       }
       final html2 = await resp2.transform(utf8.decoder).join();
 
+      // === CSX Strategy on token page: check pxl and double-atob again ===
+      final pxlUrl2 = eu.extractPxlUrl(html2);
+      if (pxlUrl2 != null && pxlUrl2.isNotEmpty && pxlUrl2.startsWith('http')) {
+        debugPrint('[VcloudExtractor] Found pxl direct URL on token page: $pxlUrl2');
+        resolved['Server 1'] = pxlUrl2;
+        client.close();
+        return resolved;
+      }
+
+      final doubleAtobUrl2 = eu.extractDoubleAtob(html2);
+      if (doubleAtobUrl2 != null && doubleAtobUrl2.isNotEmpty && doubleAtobUrl2.startsWith('http')) {
+        debugPrint('[VcloudExtractor] Found double-atob URL on token page: $doubleAtobUrl2');
+        final finalUrl2 = await eu.resolveFinalUrl(doubleAtobUrl2);
+        resolved['Server 1'] = finalUrl2 ?? doubleAtobUrl2;
+        client.close();
+        return resolved;
+      }
+
       // Step 5: Parse server links from token page HTML
-      return _parseServerLinks(html2);
+      final tokenServers = _parseServerLinks(html2);
+      client.close();
+      return tokenServers;
 
     } catch (e) {
       debugPrint('[VcloudExtractor] Error during vcloud extraction: $e');
@@ -622,17 +659,47 @@ class VcloudExtractorService {
     return resolved;
   }
 
-  /// Resolves GPDL / HubCloud redirect URL dynamically checking for 'link=' at each hop.
+  /// Resolves GPDL / HubCloud redirect URL dynamically.
+  ///
+  /// Enhanced with CSX patterns: checks pxl, double-atob, and ?link= at each hop.
   Future<String?> resolveHubCloudRedirect(String url) async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 20)
       ..badCertificateCallback = (cert, host, port) => true;
 
     final headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': eu.kUserAgent,
     };
 
     try {
+      // === CSX Strategy: Fetch page first and check for pxl/atob ===
+      final pageReq = await client.getUrl(Uri.parse(url));
+      headers.forEach((k, v) => pageReq.headers.set(k, v));
+      final pageResp = await pageReq.close();
+      if (pageResp.statusCode == 200) {
+        final pageHtml = await pageResp.transform(utf8.decoder).join();
+
+        // Try pxl extraction (CSX's primary method)
+        final pxlUrl = eu.extractPxlUrl(pageHtml);
+        if (pxlUrl != null && pxlUrl.isNotEmpty) {
+          debugPrint('[VcloudExtractor] HubCloud: Found pxl URL: $pxlUrl');
+          client.close();
+          return pxlUrl;
+        }
+
+        // Try double atob
+        final atobUrl = eu.extractDoubleAtob(pageHtml);
+        if (atobUrl != null && atobUrl.isNotEmpty) {
+          debugPrint('[VcloudExtractor] HubCloud: Found double-atob URL: $atobUrl');
+          final resolved = await eu.resolveFinalUrl(atobUrl);
+          client.close();
+          return resolved ?? atobUrl;
+        }
+      } else {
+        await pageResp.drain<void>();
+      }
+
+      // === Redirect chain following (original + enhanced) ===
       var currentUrl = url;
       var redirectCount = 0;
 
@@ -640,7 +707,8 @@ class VcloudExtractorService {
         final uri = Uri.parse(currentUrl);
         if (uri.queryParameters.containsKey('link')) {
           final directLink = uri.queryParameters['link']!;
-          debugPrint('[VcloudExtractor] Captured direct link dynamically at hop $redirectCount: $directLink');
+          debugPrint('[VcloudExtractor] Captured direct link at hop $redirectCount: $directLink');
+          client.close();
           return directLink;
         }
 
@@ -651,6 +719,7 @@ class VcloudExtractorService {
 
         final loc = resp.headers.value('location');
         if (loc != null) {
+          await resp.drain<void>();
           if (loc.startsWith('http')) {
             currentUrl = loc;
           } else {
@@ -658,36 +727,44 @@ class VcloudExtractorService {
           }
           redirectCount++;
         } else {
-          // Read body to check for JS redirects or meta refresh
+          // Read body to check for JS redirects, pxl, or meta refresh
           final body = await resp.transform(utf8.decoder).join();
-          
-          final jsLocMatch = RegExp(r'''window\.location\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false).firstMatch(body);
-          final jsLocHrefMatch = RegExp(r'''window\.location\.href\s*=\s*['"](https?://[^'"]+)['"]''', caseSensitive: false).firstMatch(body);
-          final metaRefreshMatch = RegExp(r'''<meta\s+http-equiv=["']refresh["']\s+content=["']\d+;\s*url=([^"']+)["']''', caseSensitive: false).firstMatch(body);
-          
-          // Exclude blocker/ad redirects in window.location
-          if (jsLocMatch != null && !jsLocMatch.group(1)!.contains('bonuscaf.com') && !jsLocMatch.group(1)!.contains('go/')) {
-            currentUrl = jsLocMatch.group(1)!;
+
+          // Check pxl in redirect body
+          final bodyPxl = eu.extractPxlUrl(body);
+          if (bodyPxl != null && bodyPxl.isNotEmpty) {
+            debugPrint('[VcloudExtractor] Found pxl in redirect body: $bodyPxl');
+            client.close();
+            return bodyPxl;
+          }
+
+          // Check JS redirects using shared utils
+          final jsRedirect = eu.extractJsRedirect(body);
+          if (jsRedirect != null) {
+            currentUrl = jsRedirect;
             redirectCount++;
-            debugPrint('[VcloudExtractor] Followed window.location JS redirect to: $currentUrl');
-          } else if (jsLocHrefMatch != null && !jsLocHrefMatch.group(1)!.contains('bonuscaf.com') && !jsLocHrefMatch.group(1)!.contains('go/')) {
-            currentUrl = jsLocHrefMatch.group(1)!;
-            redirectCount++;
-            debugPrint('[VcloudExtractor] Followed window.location.href JS redirect to: $currentUrl');
-          } else if (metaRefreshMatch != null) {
-            currentUrl = metaRefreshMatch.group(1)!;
+            debugPrint('[VcloudExtractor] Followed JS redirect to: $currentUrl');
+            continue;
+          }
+
+          // Check meta refresh
+          final metaRefresh = eu.extractMetaRefresh(body);
+          if (metaRefresh != null) {
+            currentUrl = metaRefresh;
             redirectCount++;
             debugPrint('[VcloudExtractor] Followed Meta Refresh to: $currentUrl');
-          } else {
-            break;
+            continue;
           }
+
+          break;
         }
       }
 
       final uri = Uri.parse(currentUrl);
       if (uri.queryParameters.containsKey('link')) {
         final directLink = uri.queryParameters['link']!;
-        debugPrint('[VcloudExtractor] Captured direct link from final redirect URL: $directLink');
+        debugPrint('[VcloudExtractor] Captured direct link from final URL: $directLink');
+        client.close();
         return directLink;
       }
     } catch (e) {

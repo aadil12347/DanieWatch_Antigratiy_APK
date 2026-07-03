@@ -8,11 +8,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
-import '../../data/clients/tmdb_client.dart';
 import '../../domain/models/manifest_item.dart';
 import '../providers/watchlist_provider.dart';
 import '../providers/active_card_provider.dart';
-import '../providers/poster_color_provider.dart';
 import '../providers/manifest_provider.dart';
 
 import '../../core/utils/toast_utils.dart';
@@ -96,42 +94,17 @@ class _MovieCardState extends ConsumerState<MovieCard>
       _hoverController.reverse();
     }
 
-    // Get extracted glow color for the touch handler
-    final colorAsync = posterUrl.isNotEmpty
-        ? ref.watch(posterColorProvider(posterUrl))
-        : null;
-    final glowColor = colorAsync?.valueOrNull?.primary;
-
     return SizedBox(
       width: widget.width,
       height: widget.height,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Ambient glow layer — spans entire card (poster + text)
-          if (glowColor != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: glowColor.withValues(alpha: 0.18),
-                        blurRadius: 14,
-                        spreadRadius: -3,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           // Main card with touch handler
           Positioned.fill(
             child: PosterTouchHandler(
               onTap: _navigate,
               onLongHold: _onLongHoldChanged,
-              glowColor: glowColor,
               child: _buildCardContent(
                 item: item,
                 posterUrl: posterUrl,
@@ -139,17 +112,23 @@ class _MovieCardState extends ConsumerState<MovieCard>
                 isInWatchlist: false,
                 isHovering: isActive,
                 hoverAnimation: _hoverController,
-                glowColor: glowColor,
               ),
             ),
           ),
           // Save button: positioned OUTSIDE PosterTouchHandler
-          // so tapping it doesn't trigger navigation
+          // so tapping it doesn't trigger navigation — moved to bottom-right
           Positioned(
-            top: 6,
+            bottom: 6,
             right: 6,
             child: _SaveButton(item: item),
           ),
+          // Season badge: top-right overlay for TV series
+          if (item.seasonDetail != null)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: _SeasonBadge(text: item.seasonDetail!),
+            ),
         ],
       ),
     );
@@ -162,7 +141,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
     required bool isInWatchlist,
     required bool isHovering,
     AnimationController? hoverAnimation,
-    Color? glowColor,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,7 +210,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                item.title,
+                item.cleanTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
@@ -425,6 +403,45 @@ class _LanguageBadge extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: AppColors.primary.withValues(alpha: 0.4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.8,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _SeasonBadge extends StatelessWidget {
+  final String text;
+  const _SeasonBadge({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF6D00),
+            const Color(0xFFFF6D00).withValues(alpha: 0.85),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFF6D00).withValues(alpha: 0.4),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),

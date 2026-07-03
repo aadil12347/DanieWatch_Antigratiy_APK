@@ -308,6 +308,27 @@ class ContentDetail {
       mediaType.toLowerCase() == 'series';
   bool get isMovie => mediaType.toLowerCase() == 'movie';
 
+  // ─── Clean Title & Season Parsing ─────────────────────────────────────────
+  static final RegExp _seasonPattern =
+      RegExp(r'\(S\d+(?:-S?\d+)?\)|\(Season\s*\d+(?:\s*-\s*\d+)?\)', caseSensitive: false);
+  static final RegExp _yearPattern = RegExp(r'\(\d{4}\)');
+
+  /// Display-ready title with year and season info stripped.
+  String get cleanTitle {
+    String cleaned = title;
+    cleaned = cleaned.replaceAll(_yearPattern, '');
+    cleaned = cleaned.replaceAll(_seasonPattern, '');
+    return cleaned.trim();
+  }
+
+  /// Extracted season detail for badge display, or null if not present.
+  String? get seasonDetail {
+    final match = _seasonPattern.firstMatch(title);
+    if (match == null) return null;
+    final raw = match.group(0)!;
+    return raw.substring(1, raw.length - 1).trim();
+  }
+
   String get displayYear =>
       releaseYear?.toString() ?? (releaseDate?.substring(0, 4) ?? '');
 

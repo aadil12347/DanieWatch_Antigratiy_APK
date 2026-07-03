@@ -61,12 +61,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   DetailParams get _detailParams =>
       DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType);
 
-  EpisodeParams _getEpisodeParams(ContentDetail? content) =>
+  EpisodeParams _getEpisodeParams(ContentDetail? content, {List<int>? availableEpisodeNumbers}) =>
       EpisodeParams(
         tmdbId: widget.tmdbId,
         seasonNumber: _selectedSeason,
         seasonsData: content?.seasonsData,
         isAdmin: content?.isAdmin ?? false,
+        availableEpisodeNumbers: availableEpisodeNumbers,
       );
 
   @override
@@ -123,7 +124,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       _buildLogo(content.displayLogoUrl!)
                     else
                       Text(
-                        content.title,
+                        content.cleanTitle,
                         style: GoogleFonts.plusJakartaSans(
                           color: AppColors.textPrimary,
                           fontSize: 32,
@@ -676,14 +677,33 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   // ─── Episodes Tab ─────────────────────────────────────────────────────────
   Widget _buildEpisodesTab(ContentDetail content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSeasonSearchRow(content),
-        const SizedBox(height: 16),
-        Consumer(builder: (context, ref, _) {
-          final episodesAsync = ref.watch(episodesProvider(_getEpisodeParams(content)));
-          return episodesAsync.when(
+    return Consumer(builder: (context, ref, _) {
+      // Fetch available seasons/episodes from the streaming JSON
+      final streamingMapAsync = ref.watch(streamingSeasonMapProvider(
+        StreamingSeasonParams(
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          title: content.title,
+        ),
+      ));
+
+      final streamingMap = streamingMapAsync.valueOrNull ?? <int, List<int>>{};
+
+      // Determine which episode numbers are available for the selected season
+      final List<int>? availableEpNums = streamingMap.isNotEmpty
+          ? streamingMap[_selectedSeason]
+          : null;
+
+      final episodesAsync = ref.watch(episodesProvider(
+        _getEpisodeParams(content, availableEpisodeNumbers: availableEpNums),
+      ));
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSeasonSearchRow(content, streamingSeasonMap: streamingMap),
+          const SizedBox(height: 16),
+          episodesAsync.when(
             loading: () => const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
@@ -700,10 +720,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 children: filtered.map((ep) => _buildEpisodeCard(ep, content)).toList(),
               );
             },
-          );
-        }),
-      ],
-    );
+          ),
+        ],
+      );
+    });
   }
 
   // ─── Similars Tab ─────────────────────────────────────────────────────────
@@ -1049,8 +1069,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
 
 
-  Widget _buildSeasonSearchRow(ContentDetail content) {
-    final seasonNums = content.seasonNumbers;
+  Widget _buildSeasonSearchRow(ContentDetail content, {Map<int, List<int>>? streamingSeasonMap}) {
+    // Use streaming JSON seasons if available, otherwise fall back to content model
+    final seasonNums = (streamingSeasonMap != null && streamingSeasonMap.isNotEmpty)
+        ? (streamingSeasonMap.keys.toList()..sort())
+        : content.seasonNumbers;
 
     // Ensure _selectedSeason is valid
     final currentSeason = seasonNums.contains(_selectedSeason)
@@ -1192,11 +1215,23 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                                           color: AppColors.textMuted),
                                     ),
                                   )
-                                : Container(
-                                    color: AppColors.surfaceElevated,
-                                    child: const Icon(Icons.play_circle_fill,
-                                        color: AppColors.textMuted, size: 32),
-                                  ),
+                                : (content.posterUrl != null && content.posterUrl!.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: content.posterUrl!,
+                                        fit: BoxFit.cover,
+                                        placeholder: (_, __) =>
+                                            Container(color: AppColors.surfaceElevated),
+                                        errorWidget: (_, __, ___) => Container(
+                                          color: AppColors.surfaceElevated,
+                                          child: const Icon(Icons.play_circle_fill,
+                                              color: AppColors.textMuted, size: 32),
+                                        ),
+                                      )
+                                    : Container(
+                                        color: AppColors.surfaceElevated,
+                                        child: const Icon(Icons.play_circle_fill,
+                                            color: AppColors.textMuted, size: 32),
+                                      )),
                           ),
                         ),
                         Positioned(

@@ -66,7 +66,38 @@ class ManifestItem {
     this.releaseDate,
   });
 
-  /// Safe int parser — handles both int and String values from JSON
+  // ─── Title Parsing (Clean Title + Season Detail) ──────────────────────────
+  // Matches patterns like (S01), (S1-S2), (S1-S3), (Season 1), (Season 1 - 4)
+  static final RegExp _seasonPattern =
+      RegExp(r'\(S\d+(?:-S?\d+)?\)|\(Season\s*\d+(?:\s*-\s*\d+)?\)', caseSensitive: false);
+  // Matches year in parentheses like (2023), (2026)
+  static final RegExp _yearPattern = RegExp(r'\(\d{4}\)');
+
+  /// Display-ready title with year and season info stripped.
+  /// e.g. "Sapne vs Everyone (2023) (S1-S2)" → "Sapne vs Everyone"
+  String get cleanTitle {
+    String cleaned = title;
+    cleaned = cleaned.replaceAll(_yearPattern, '');
+    cleaned = cleaned.replaceAll(_seasonPattern, '');
+    return cleaned.trim();
+  }
+
+  /// Extracted season detail for badge display, or null if not present.
+  /// e.g. "Sapne vs Everyone (2023) (S1-S2)" → "S1-S2"
+  /// e.g. "Kaptaan (2026) (S01)" → "S01"
+  String? get seasonDetail {
+    final match = _seasonPattern.firstMatch(title);
+    if (match == null) return null;
+    // Strip the outer parentheses
+    final raw = match.group(0)!;
+    return raw.substring(1, raw.length - 1).trim();
+  }
+
+  /// Deduplication key used when merging multiple site indices.
+  /// Key = tmdbId + mediaType + seasonDetail (so different seasons are kept).
+  String get deduplicationKey => '${id}_${mediaType}_${seasonDetail ?? ""}';
+
+
   static int? _safeInt(dynamic value) {
     if (value == null) return null;
     if (value is int) return value;
@@ -387,6 +418,7 @@ class ManifestItem {
     List<int>? genreIds,
     List<String>? genres,
     String? overview,
+    List<String>? language,
     bool? isTrending,
     bool? isPopular,
     bool? is3rdPartyHosted,
@@ -417,7 +449,7 @@ class ManifestItem {
       numberOfEpisodes: numberOfEpisodes,
       status: status,
       imdbId: imdbId,
-      language: language,
+      language: language ?? this.language,
       result: result,
       isTrending: isTrending ?? this.isTrending,
       isPopular: isPopular ?? this.isPopular,

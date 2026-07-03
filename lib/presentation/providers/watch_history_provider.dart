@@ -69,6 +69,18 @@ class WatchHistoryItem {
     return title;
   }
 
+  /// Display-ready title with year and season info stripped.
+  static final RegExp _seasonPattern =
+      RegExp(r'\(S\d+(?:-S?\d+)?\)|\(Season\s*\d+(?:\s*-\s*\d+)?\)', caseSensitive: false);
+  static final RegExp _yearPattern = RegExp(r'\(\d{4}\)');
+
+  String get cleanTitle {
+    String cleaned = title;
+    cleaned = cleaned.replaceAll(_yearPattern, '');
+    cleaned = cleaned.replaceAll(_seasonPattern, '');
+    return cleaned.trim();
+  }
+
   /// Whether this item is basically finished (>95% watched)
   bool get isFinished => progress > 0.95;
 

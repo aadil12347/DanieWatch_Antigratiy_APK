@@ -358,7 +358,8 @@ class ContentRepository {
   Future<List<EpisodeData>> fetchEpisodes(
       String entryId, int seasonNumber,
       {Map<String, List<String>>? seasonsData,
-      bool isAdmin = false}) async {
+      bool isAdmin = false,
+      List<int>? availableEpisodeNumbers}) async {
     try {
       final tmdbId = int.tryParse(entryId) ?? 0;
       final tmdbSeasonDetails = await TmdbClient.instance.getSeasonDetails(tmdbId, seasonNumber);
@@ -384,9 +385,52 @@ class ContentRepository {
         }
       }
 
+      // If availableEpisodeNumbers is provided and non-empty, filter/enrich
+      if (availableEpisodeNumbers != null && availableEpisodeNumbers.isNotEmpty) {
+        final Map<int, EpisodeData> tmdbMap = {};
+        for (final ep in episodes) {
+          if (ep.episodeNumber != null) {
+            tmdbMap[ep.episodeNumber!] = ep;
+          }
+        }
+
+        // Build filtered list: only episodes in availableEpisodeNumbers
+        // Use TMDB data if available, otherwise create stub
+        final List<EpisodeData> filtered = [];
+        for (final epNum in availableEpisodeNumbers) {
+          if (tmdbMap.containsKey(epNum)) {
+            filtered.add(tmdbMap[epNum]!);
+          } else {
+            // Stub episode — UI will show "Episode X" and series poster
+            filtered.add(EpisodeData(
+              episodeNumber: epNum,
+              title: null,
+              description: null,
+              thumbnailUrl: null,
+              playLink: '',
+              downloadLink: '',
+            ));
+          }
+        }
+        return filtered;
+      }
+
+      // Fallback: return all TMDB episodes (no streaming JSON data)
       return episodes;
     } catch (e, stack) {
       dev.log('[ContentRepo] fetchEpisodes error: $e', stackTrace: stack);
+
+      // If we have availableEpisodeNumbers, return stubs even on error
+      if (availableEpisodeNumbers != null && availableEpisodeNumbers.isNotEmpty) {
+        return availableEpisodeNumbers.map((epNum) => EpisodeData(
+          episodeNumber: epNum,
+          title: null,
+          description: null,
+          thumbnailUrl: null,
+          playLink: '',
+          downloadLink: '',
+        )).toList();
+      }
       return [];
     }
   }

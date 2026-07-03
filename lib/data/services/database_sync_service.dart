@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/manifest_item.dart';
 
 /// Service responsible for syncing, caching, and parsing the positional index.json
-/// database file from the GitHub repository.
+/// database files from the GitHub repository (Rogmovies + Vegamovies).
 class DatabaseSyncService {
   DatabaseSyncService._();
   static final DatabaseSyncService instance = DatabaseSyncService._();
@@ -22,39 +22,41 @@ class DatabaseSyncService {
   /// the existing future instead of starting a new HTTP request.
   Future<bool>? _activeSyncFuture;
 
-  static const String _remoteIndexUrl =
-      'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/index.json';
-  static const String _indexFileName = 'index_positional.json';
-  static const String _tempFileName = 'index_positional_temp.json';
+  // ─── Remote URLs for site-specific indices ────────────────────────────────
+  static const String _remoteRogIndexUrl =
+      'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/streaming_links_sites/Rogmovies_Index/index.json';
+  static const String _remoteVegaIndexUrl =
+      'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/streaming_links_sites/Vegamovies_Index/index.json';
 
-  // ─── 3rd Party Hosted Index ──────────────────────────────────────────────
+  // Local cache filenames
+  static const String _rogFileName = 'rog_index.json';
+  static const String _vegaFileName = 'vega_index.json';
+  static const String _rogTempFileName = 'rog_index_temp.json';
+  static const String _vegaTempFileName = 'vega_index_temp.json';
+
+  // ─── 3rd Party Hosted Index (DEACTIVATED) ─────────────────────────────────
   static const String _remote3rdPartyUrl =
       'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/3rd%20party%20hosted/3rd_party_hosted_index.json';
   static const String _3rdPartyFileName = '3rd_party_hosted_index.json';
   static const String _3rdPartyTempFileName = '3rd_party_hosted_temp.json';
   Future<bool>? _active3rdPartySyncFuture;
 
-  /// Returns the file path for the active local index.json database.
-  Future<File> get _indexFile async {
+  /// Returns the file path for a named file in the app documents directory.
+  Future<File> _localFile(String name) async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_indexFileName');
+    return File('${dir.path}/$name');
   }
 
-  /// Returns the file path for the temporary download file.
-  Future<File> get _tempFile async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_tempFileName');
-  }
-
-  /// Check if a local database file already exists in cache.
+  /// Check if both local database files already exist in cache.
   Future<bool> hasLocalIndex() async {
-    final file = await _indexFile;
-    return await file.exists();
+    final rogFile = await _localFile(_rogFileName);
+    final vegaFile = await _localFile(_vegaFileName);
+    return await rogFile.exists() || await vegaFile.exists();
   }
 
   /// Sync the index database from GitHub.
-  /// Downloads to a temp file, validates it, and only overwrites the primary
-  /// file on success. Returns true if sync succeeded.
+  /// Downloads both Rogmovies and Vegamovies indices in parallel.
+  /// Returns true if sync succeeded (at least one index downloaded).
   /// Deduplicates: if a sync is already in progress, returns the same Future.
   Future<bool> syncIndex() {
     if (_activeSyncFuture != null) {
@@ -67,15 +69,68 @@ class DatabaseSyncService {
 
   Future<bool> _doSync() async {
     try {
-      dev.log('[DatabaseSync] Starting sync from $_remoteIndexUrl');
-      
-      final fileExists = await hasLocalIndex();
+      dev.log('[DatabaseSync] Starting dual-index sync (Rogmovies + Vegamovies)');
+
+      // Download both indices in parallel
+      final results = await Future.wait([
+        _syncSingleIndex(
+          remoteUrl: _remoteRogIndexUrl,
+          localFileName: _rogFileName,
+          tempFileName: _rogTempFileName,
+          etagKey: 'rog_index_etag',
+          lastModifiedKey: 'rog_index_last_modified',
+          label: 'Rogmovies',
+        ),
+        _syncSingleIndex(
+          remoteUrl: _remoteVegaIndexUrl,
+          localFileName: _vegaFileName,
+          tempFileName: _vegaTempFileName,
+          etagKey: 'vega_index_etag',
+          lastModifiedKey: 'vega_index_last_modified',
+          label: 'Vegamovies',
+        ),
+      ]);
+
+      final rogSuccess = results[0];
+      final vegaSuccess = results[1];
+
+      dev.log('[DatabaseSync] Sync results — Rog: $rogSuccess, Vega: $vegaSuccess');
+
+      // Trigger top picks sync
+      // ignore: unawaited_futures
+      syncTopPicks();
+
+      return rogSuccess || vegaSuccess;
+    } catch (e, stack) {
+      dev.log('[DatabaseSync] Sync failed with error: $e', stackTrace: stack);
+
+      // ignore: unawaited_futures
+      syncTopPicks();
+
+      return false;
+    }
+  }
+
+  /// Download, validate, and cache a single index file.
+  Future<bool> _syncSingleIndex({
+    required String remoteUrl,
+    required String localFileName,
+    required String tempFileName,
+    required String etagKey,
+    required String lastModifiedKey,
+    required String label,
+  }) async {
+    try {
+      dev.log('[DatabaseSync] Syncing $label from $remoteUrl');
+
+      final localFile = await _localFile(localFileName);
+      final fileExists = await localFile.exists();
       final prefs = await SharedPreferences.getInstance();
-      
+
       final headers = <String, String>{};
       if (fileExists) {
-        final savedEtag = prefs.getString('index_etag');
-        final savedLastModified = prefs.getString('index_last_modified');
+        final savedEtag = prefs.getString(etagKey);
+        final savedLastModified = prefs.getString(lastModifiedKey);
         if (savedEtag != null) {
           headers['If-None-Match'] = savedEtag;
         }
@@ -84,117 +139,127 @@ class DatabaseSyncService {
         }
       }
 
-      final response = await http.get(Uri.parse(_remoteIndexUrl), headers: headers)
+      final response = await http.get(Uri.parse(remoteUrl), headers: headers)
           .timeout(const Duration(seconds: 30));
-      
+
       if (response.statusCode == 304) {
-        dev.log('[DatabaseSync] 304 Not Modified. Using cached local index.');
+        dev.log('[DatabaseSync] $label: 304 Not Modified. Using cached local index.');
         return true;
       }
 
       if (response.statusCode != 200) {
-        dev.log('[DatabaseSync] HTTP Error: ${response.statusCode}');
+        dev.log('[DatabaseSync] $label HTTP Error: ${response.statusCode}');
         return false;
       }
 
       final rawData = response.body;
       if (rawData.isEmpty) {
-        dev.log('[DatabaseSync] Error: Downloaded data is empty.');
+        dev.log('[DatabaseSync] $label: Downloaded data is empty.');
         return false;
       }
 
       // 1. Write to temporary file first
-      final tempFile = await _tempFile;
+      final tempFile = await _localFile(tempFileName);
       await tempFile.writeAsString(rawData, flush: true);
-      dev.log('[DatabaseSync] Temp file written. Initiating validation...');
+      dev.log('[DatabaseSync] $label: Temp file written. Validating...');
 
       // 2. Validate the downloaded data in a background isolate
       final isValid = await compute(_validateIndexIsolate, rawData);
       if (!isValid) {
-        dev.log('[DatabaseSync] Validation failed. Deleting temp file. Primary file preserved.');
+        dev.log('[DatabaseSync] $label: Validation failed. Deleting temp file.');
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
         return false;
       }
 
-      // 3. Validation passed! Overwrite the active index file (Safe Transaction)
-      final primaryFile = await _indexFile;
-      await tempFile.copy(primaryFile.path);
-      
+      // 3. Validation passed! Overwrite the active index file
+      await tempFile.copy(localFile.path);
+
       // Clean up temp file
       if (await tempFile.exists()) {
         await tempFile.delete();
       }
-      
+
       // 4. Save ETag / Last-Modified headers for conditional requests
       final etag = response.headers['etag'];
       final lastModified = response.headers['last-modified'];
       if (etag != null) {
-        await prefs.setString('index_etag', etag);
+        await prefs.setString(etagKey, etag);
       } else {
-        await prefs.remove('index_etag');
+        await prefs.remove(etagKey);
       }
       if (lastModified != null) {
-        await prefs.setString('index_last_modified', lastModified);
+        await prefs.setString(lastModifiedKey, lastModified);
       } else {
-        await prefs.remove('index_last_modified');
+        await prefs.remove(lastModifiedKey);
       }
 
-      dev.log('[DatabaseSync] Database successfully synchronized & cached.');
-
-      // 3rd party index DEACTIVATED — only main index is used
-      // ignore: unawaited_futures
-      // sync3rdPartyIndex();
-      // ignore: unawaited_futures
-      syncTopPicks();
-
+      dev.log('[DatabaseSync] $label: Database successfully synchronized & cached.');
       return true;
     } catch (e, stack) {
-      dev.log('[DatabaseSync] Sync failed with error: $e', stackTrace: stack);
+      dev.log('[DatabaseSync] $label sync failed: $e', stackTrace: stack);
       // Clean up temp file if needed
       try {
-        final tempFile = await _tempFile;
+        final tempFile = await _localFile(tempFileName);
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
       } catch (_) {}
-
-      // 3rd party index DEACTIVATED — only main index is used
-      // ignore: unawaited_futures
-      // sync3rdPartyIndex();
-      // ignore: unawaited_futures
-      syncTopPicks();
-
       return false;
     }
   }
 
-  /// Load and parse the positional index from the local file in a background isolate.
-  /// Returns an empty list if no cached index exists yet (e.g. first launch before sync).
+  /// Load and parse both site indices from local files, merge and deduplicate.
+  /// Returns the combined list of ManifestItems.
+  /// On first launch (no cached files), falls back to bundled asset seed files.
   Future<List<ManifestItem>> loadLocalIndex() async {
     try {
-      final file = await _indexFile;
-      
-      if (!await file.exists()) {
-        // First launch: load bundled seed index from app assets
-        dev.log('[DatabaseSync] Local index not found — loading bundled seed index.');
+      final rogFile = await _localFile(_rogFileName);
+      final vegaFile = await _localFile(_vegaFileName);
+
+      final rogExists = await rogFile.exists();
+      final vegaExists = await vegaFile.exists();
+
+      String? rogData;
+      String? vegaData;
+
+      // Load Rogmovies index
+      if (rogExists) {
+        rogData = await rogFile.readAsString();
+      } else {
+        dev.log('[DatabaseSync] Rog local index not found — loading bundled seed.');
         try {
-          final seedData = await rootBundle.loadString('assets/index_seed.json');
-          final seedItems = await compute(_parseDictIndexIsolate, seedData);
-          dev.log('[DatabaseSync] Loaded ${seedItems.length} items from bundled seed index.');
-          return seedItems;
-        } catch (seedErr) {
-          dev.log('[DatabaseSync] Failed to load seed index: $seedErr');
-          return [];
+          rogData = await rootBundle.loadString('assets/rog_index.json');
+        } catch (e) {
+          dev.log('[DatabaseSync] Failed to load rog seed: $e');
         }
       }
 
-      final rawData = await file.readAsString();
-      
-      // Parse JSON in a background thread to prevent UI thread blocking
-      final items = await compute(_parseIndexIsolate, rawData);
-      dev.log('[DatabaseSync] Loaded ${items.length} items from local database file.');
+      // Load Vegamovies index
+      if (vegaExists) {
+        vegaData = await vegaFile.readAsString();
+      } else {
+        dev.log('[DatabaseSync] Vega local index not found — loading bundled seed.');
+        try {
+          vegaData = await rootBundle.loadString('assets/vega_index.json');
+        } catch (e) {
+          dev.log('[DatabaseSync] Failed to load vega seed: $e');
+        }
+      }
+
+      if (rogData == null && vegaData == null) {
+        dev.log('[DatabaseSync] No index data available at all.');
+        return [];
+      }
+
+      // Parse and merge in a background isolate
+      final items = await compute(_parseMergeIndicesIsolate, _DualIndexPayload(
+        rogJson: rogData,
+        vegaJson: vegaData,
+      ));
+
+      dev.log('[DatabaseSync] Loaded ${items.length} items (merged & deduplicated).');
       return items;
     } catch (e, stack) {
       dev.log('[DatabaseSync] Failed to load local database: $e', stackTrace: stack);
@@ -203,7 +268,7 @@ class DatabaseSyncService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 3rd Party Hosted Index — Download, Cache, Load
+  // 3rd Party Hosted Index — Download, Cache, Load (DEACTIVATED)
   // ═══════════════════════════════════════════════════════════════════════════
 
   Future<File> get _3rdPartyFile async {
@@ -226,14 +291,6 @@ class DatabaseSyncService {
   Future<bool> sync3rdPartyIndex() {
     dev.log('[DatabaseSync] 3rd party sync DEACTIVATED — skipping.');
     return Future.value(true);
-    // --- Original code below (kept for reactivation) ---
-    // if (_active3rdPartySyncFuture != null) {
-    //   dev.log('[DatabaseSync] 3rd party sync already in progress — joining.');
-    //   return _active3rdPartySyncFuture!;
-    // }
-    // _active3rdPartySyncFuture = _do3rdPartySync()
-    //     .whenComplete(() => _active3rdPartySyncFuture = null);
-    // return _active3rdPartySyncFuture!;
   }
 
   Future<bool> _do3rdPartySync() async {
@@ -442,6 +499,17 @@ class DatabaseSyncService {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Isolate helpers — run in background threads to avoid blocking UI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Payload for sending both index JSONs to the merge isolate.
+class _DualIndexPayload {
+  final String? rogJson;
+  final String? vegaJson;
+  _DualIndexPayload({this.rogJson, this.vegaJson});
+}
+
 /// Helper function running in a separate Isolate to validate the index JSON.
 bool _validateIndexIsolate(String rawJson) {
   try {
@@ -462,7 +530,7 @@ bool _validateIndexIsolate(String rawJson) {
   }
 }
 
-/// Helper function running in a separate Isolate to parse index positional arrays to ManifestItems.
+/// Helper function running in a separate Isolate to parse positional arrays to ManifestItems.
 List<ManifestItem> _parseIndexIsolate(String rawJson) {
   try {
     final List<dynamic> parsedList = jsonDecode(rawJson);
@@ -478,6 +546,56 @@ List<ManifestItem> _parseIndexIsolate(String rawJson) {
     }).toList();
   } catch (e) {
     dev.log('[DatabaseSync Isolate] Parsing error: $e');
+    return [];
+  }
+}
+
+/// Parse, merge, and deduplicate both Rog and Vega indices in a background isolate.
+/// Deduplication key = tmdbId + mediaType + seasonDetail.
+/// Same show with different seasons → kept as separate entries.
+/// Same show + same season across both indices → merged (union languages/genres).
+List<ManifestItem> _parseMergeIndicesIsolate(_DualIndexPayload payload) {
+  try {
+    final List<ManifestItem> rogItems = payload.rogJson != null
+        ? _parseIndexIsolate(payload.rogJson!)
+        : [];
+    final List<ManifestItem> vegaItems = payload.vegaJson != null
+        ? _parseIndexIsolate(payload.vegaJson!)
+        : [];
+
+    dev.log('[DatabaseSync Isolate] Parsed Rog: ${rogItems.length}, Vega: ${vegaItems.length}');
+
+    // Merge with deduplication by tmdbId + mediaType + seasonDetail
+    final Map<String, ManifestItem> merged = {};
+
+    for (final item in rogItems) {
+      final key = item.deduplicationKey;
+      merged[key] = item;
+    }
+
+    for (final item in vegaItems) {
+      final key = item.deduplicationKey;
+      if (merged.containsKey(key)) {
+        // Duplicate — merge languages and genres
+        final existing = merged[key]!;
+        final mergedLanguages = {...existing.language, ...item.language}.toList();
+        final mergedGenres = {...existing.genres, ...item.genres}.toList();
+        merged[key] = existing.copyWith(
+          language: mergedLanguages,
+          genres: mergedGenres,
+        );
+      } else {
+        merged[key] = item;
+      }
+    }
+
+    final result = merged.values.toList();
+    dev.log('[DatabaseSync Isolate] Merged result: ${result.length} items '
+        '(${rogItems.length + vegaItems.length - result.length} duplicates removed)');
+
+    return result;
+  } catch (e) {
+    dev.log('[DatabaseSync Isolate] Merge error: $e');
     return [];
   }
 }

@@ -2,8 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/clients/tmdb_client.dart';
 import '../../data/repositories/content_repository.dart';
 import '../../domain/models/content_detail.dart';
-import '../../domain/models/manifest_item.dart';
-import 'manifest_provider.dart';
+import '../../services/streaming_links_season_service.dart';
 
 // ─── Param Classes ───────────────────────────────────────────────────────────
 
@@ -30,12 +29,14 @@ class EpisodeParams {
   final int seasonNumber;
   final Map<String, List<String>>? seasonsData;
   final bool isAdmin;
+  final List<int>? availableEpisodeNumbers;
 
   const EpisodeParams({
     required this.tmdbId,
     required this.seasonNumber,
     this.seasonsData,
     this.isAdmin = false,
+    this.availableEpisodeNumbers,
   });
 
   @override
@@ -44,10 +45,21 @@ class EpisodeParams {
       other is EpisodeParams &&
           runtimeType == other.runtimeType &&
           tmdbId == other.tmdbId &&
-          seasonNumber == other.seasonNumber;
+          seasonNumber == other.seasonNumber &&
+          _listEquals(availableEpisodeNumbers, other.availableEpisodeNumbers);
+
+  static bool _listEquals(List<int>? a, List<int>? b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
-  int get hashCode => tmdbId.hashCode ^ seasonNumber.hashCode;
+  int get hashCode => tmdbId.hashCode ^ seasonNumber.hashCode ^ (availableEpisodeNumbers?.length ?? 0).hashCode;
 }
 
 // ─── Providers ───────────────────────────────────────────────────────────────
@@ -71,6 +83,45 @@ final episodesProvider =
       params.seasonNumber,
       seasonsData: params.seasonsData,
       isAdmin: params.isAdmin,
+      availableEpisodeNumbers: params.availableEpisodeNumbers,
+    );
+  },
+);
+
+// ─── Streaming Season Map Provider ───────────────────────────────────────────
+
+class StreamingSeasonParams {
+  final int tmdbId;
+  final String mediaType;
+  final String title;
+
+  const StreamingSeasonParams({
+    required this.tmdbId,
+    required this.mediaType,
+    required this.title,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StreamingSeasonParams &&
+          runtimeType == other.runtimeType &&
+          tmdbId == other.tmdbId;
+
+  @override
+  int get hashCode => tmdbId.hashCode;
+}
+
+/// Fetches available seasons & episodes from the streaming links JSON.
+/// Returns Map<int, List<int>> — seasonNumber → sorted episode numbers.
+/// Returns empty map if no streaming JSON or no seasons in it.
+final streamingSeasonMapProvider =
+    FutureProvider.family<Map<int, List<int>>, StreamingSeasonParams>(
+  (ref, params) async {
+    return StreamingLinksSeasonService().fetchAvailableSeasons(
+      tmdbId: params.tmdbId,
+      mediaType: params.mediaType,
+      title: params.title,
     );
   },
 );

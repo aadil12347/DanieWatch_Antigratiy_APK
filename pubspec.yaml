@@ -124,6 +124,8 @@ flutter:
     - assets/logo.svg
     - assets/html/
     - assets/index_seed.json
+    - assets/rog_index.json
+    - assets/vega_index.json
     - poster/
 
 dependency_overrides:

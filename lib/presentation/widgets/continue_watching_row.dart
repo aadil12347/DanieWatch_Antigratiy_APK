@@ -287,7 +287,7 @@ class _ContinueWatchingCardState extends State<_ContinueWatchingCard>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      item.title,
+                      item.cleanTitle,
                       style: GoogleFonts.outfit(
                         color: Colors.white,
                         fontSize: 14,

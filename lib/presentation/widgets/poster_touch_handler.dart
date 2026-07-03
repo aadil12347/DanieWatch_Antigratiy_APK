@@ -42,7 +42,7 @@ class PosterTouchHandler extends StatefulWidget {
 }
 
 class PosterTouchHandlerState extends State<PosterTouchHandler>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   PosterTouchState _state = PosterTouchState.idle;
 
   Offset? _startPosition;
@@ -52,12 +52,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
   // Scale animation
   late AnimationController _scaleController;
   late Animation<double> _scaleAnimation;
-
-  // Single glow animation — one smooth fade in/out
-  late AnimationController _glowController;
-
-  // PERF: Cache merged listenable — was creating new one every build
-  late Listenable _mergedAnimation;
 
   // The scale values for each state
   static const double _pressScale = 0.97;
@@ -85,23 +79,12 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
       parent: _scaleController,
       curve: Curves.easeOutCubic,
     ));
-
-    // Single glow controller: fades in fast, fades out smoothly
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 180), // fade-in
-      reverseDuration: const Duration(milliseconds: 600), // fade-out — slow smooth vanish
-    );
-
-    // PERF: Cache merged listenable once
-    _mergedAnimation = Listenable.merge([_scaleAnimation, _glowController]);
   }
 
   @override
   void dispose() {
     _longPressTimer?.cancel();
     _scaleController.dispose();
-    _glowController.dispose();
     super.dispose();
   }
 
@@ -119,13 +102,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     _scaleController.forward(from: 0.0);
   }
 
-  void _showGlow() {
-    _glowController.forward();
-  }
 
-  void _hideGlow() {
-    _glowController.reverse();
-  }
 
   void _onPointerDown(PointerDownEvent event) {
     if (_isScrolling) return;
@@ -136,7 +113,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
     // Subtle press-down — NO haptic
     _animateScale(_pressScale);
-    _showGlow();
 
     // Start long-press timer
     _longPressTimer?.cancel();
@@ -173,7 +149,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
     setState(() => _state = PosterTouchState.idle);
     _animateScale(_normalScale);
-    _hideGlow();
 
     switch (previousState) {
       case PosterTouchState.pressing:
@@ -202,7 +177,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     }
     setState(() => _state = PosterTouchState.idle);
     _animateScale(_normalScale);
-    _hideGlow();
   }
 
   /// Called by parent scroll containers to cancel active touch states.
@@ -214,7 +188,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     if (_state != PosterTouchState.idle) {
       setState(() => _state = PosterTouchState.idle);
       _animateScale(_normalScale);
-      _hideGlow();
     }
   }
 
@@ -231,8 +204,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
 
   @override
   Widget build(BuildContext context) {
-    final glowColor = widget.glowColor ?? Colors.white;
-
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScrollNotification,
       child: Listener(
@@ -241,33 +212,11 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerCancel,
         child: AnimatedBuilder(
-          // PERF: Use cached listenable instead of creating new merge every build
-          animation: _mergedAnimation,
+          animation: _scaleAnimation,
           builder: (context, child) {
-            final glowOpacity = _glowController.value;
             return Transform.scale(
               scale: _scaleAnimation.value,
-              // PERF: Use DecoratedBox instead of Container — lighter widget
-              child: DecoratedBox(
-                decoration: glowOpacity > 0.01
-                    ? BoxDecoration(
-                        borderRadius: widget.borderRadius,
-                        boxShadow: [
-                          BoxShadow(
-                            color: glowColor.withValues(alpha: 0.70 * glowOpacity),
-                            blurRadius: 28,
-                            spreadRadius: 4,
-                          ),
-                          BoxShadow(
-                            color: glowColor.withValues(alpha: 0.35 * glowOpacity),
-                            blurRadius: 32,
-                            spreadRadius: 6,
-                          ),
-                        ],
-                      )
-                    : const BoxDecoration(),
-                child: RepaintBoundary(child: child),
-              ),
+              child: RepaintBoundary(child: child),
             );
           },
           child: widget.child,

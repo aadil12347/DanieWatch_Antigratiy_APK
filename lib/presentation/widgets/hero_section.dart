@@ -215,7 +215,7 @@ class _HeroSectionState extends State<HeroSection> {
 
   Widget _buildTextTitle(ManifestItem item) {
     return Text(
-      item.title,
+      item.cleanTitle,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
