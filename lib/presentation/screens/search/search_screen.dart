@@ -78,6 +78,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       if (cat == 'K-Drama') cat = 'Korean';
       final idx = TopNavbar.items.indexOf(cat);
       if (idx >= 0) targetIndex = idx;
+    } else if (searchState.filters.genres.isNotEmpty) {
+      final g = searchState.filters.genres.first;
+      final idx = TopNavbar.items.indexOf(g);
+      if (idx >= 0) targetIndex = idx;
     }
 
     if (_tabController.index != targetIndex) {
@@ -135,6 +139,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Listen for external filter updates (e.g. from Home See All)
+    ref.listen(searchProvider('explore'), (previous, next) {
+      if (previous?.filters != next.filters) {
+        _syncTabToFiltersOnce();
+      }
+    });
+
     final searchState = ref.watch(searchProvider('explore'));
     final activeCategories = searchState.filters.categories;
 

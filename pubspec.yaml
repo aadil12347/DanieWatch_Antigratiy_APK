@@ -91,6 +91,7 @@ dependencies:
   palette_generator: ^0.3.3+7
   # ffmpeg_kit_flutter_new_min: ^3.1.0  # REMOVED — using native_muxer instead (~15-30MB APK savings)
   encrypt: ^5.0.3
+  html: ^0.15.7
 
 dev_dependencies:
   flutter_driver:

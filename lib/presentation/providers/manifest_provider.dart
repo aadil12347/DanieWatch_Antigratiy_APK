@@ -7,6 +7,7 @@ import '../../data/clients/tmdb_client.dart';
 import '../../data/clients/omdb_client.dart';
 import '../../data/services/database_sync_service.dart';
 import '../../data/repositories/posting_record_repository.dart';
+import '../../services/extraction/movie_site_scraper_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Local Database Synchronizer & Loader Providers
@@ -90,6 +91,17 @@ final posterUrlProvider = FutureProvider.family<String?, String>((ref, idAndType
   final parts = idAndType.split('_');
   final id = parts[0];
   final type = parts.length > 1 ? parts[1] : 'movie';
+
+  // 0. Check live scraped service itemMap first for instant poster rendering
+  final scrapedItem = MovieSiteScraperService.instance.itemMap[id];
+  if (scrapedItem != null) {
+    if (scrapedItem.posterUrl != null && scrapedItem.posterUrl!.isNotEmpty) {
+      return scrapedItem.posterUrl;
+    }
+    if (scrapedItem.tmdbPosterPath != null && scrapedItem.tmdbPosterPath!.isNotEmpty) {
+      return TmdbClient.posterUrl(scrapedItem.tmdbPosterPath);
+    }
+  }
 
   // 1. If ID starts with 'tt' (IMDb ID in place of TMDB ID)
   if (id.startsWith('tt')) {
@@ -258,13 +270,24 @@ final topPicksSyncProvider = FutureProvider<bool>((ref) async {
   return result;
 });
 
-/// Trending content for the Carousel (Top 5: database curated + TMDB trending cross-check + manifest fallback)
+/// Trending content for the Carousel (Top 5: 3 from VegaMovies, 2 from RogMovies)
 final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
+  try {
+    final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
+    final top5 = topLists['top5'];
+    if (top5 != null && top5.isNotEmpty) {
+      dev.log('[mergedCarouselProvider] Built ${top5.length} live Vega/Rog carousel items');
+      return top5;
+    }
+  } catch (e) {
+    dev.log('[mergedCarouselProvider] Live fetch error: $e, falling back to local hybrid');
+  }
+
+  // Fallback to local hybrid if offline
   final trending = await ref.watch(_tmdbDailyTrendingProvider.future);
   final sorted = await ref.watch(sortedManifestItemsProvider.future);
-
-  final top5 = await _buildHybridTopList(
+  return await _buildHybridTopList(
     folder: 'Top 5',
     maxSlots: 5,
     localMap: localMap,
@@ -272,22 +295,29 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
     excludeIds: {},
     sortedItems: sorted,
   );
-
-  dev.log('[mergedCarouselProvider] Built ${top5.length} carousel items');
-  return top5;
 });
 
-/// Top 10 Today list (database curated + TMDB trending cross-check + manifest fallback, excluding Top 5 items)
+/// Top 10 Today list (5 from RogMovies, 5 from VegaMovies, strictly distinct from Top 5)
 final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
+  try {
+    final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
+    final top10 = topLists['top10'];
+    if (top10 != null && top10.isNotEmpty) {
+      dev.log('[mergedTop10Provider] Built ${top10.length} live Vega/Rog top 10 items (distinct from Top 5)');
+      return top10;
+    }
+  } catch (e) {
+    dev.log('[mergedTop10Provider] Live fetch error: $e, falling back to local hybrid');
+  }
+
+  // Fallback to local hybrid if offline
   final trending = await ref.watch(_tmdbDailyTrendingProvider.future);
   final sorted = await ref.watch(sortedManifestItemsProvider.future);
-
-  // Get Top 5 ids to exclude from Top 10
   final top5Items = await ref.watch(mergedCarouselProvider.future);
   final top5Ids = top5Items.map((item) => item.id).toSet();
 
-  final top10 = await _buildHybridTopList(
+  return await _buildHybridTopList(
     folder: 'Top 10',
     maxSlots: 10,
     localMap: localMap,
@@ -295,66 +325,90 @@ final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
     excludeIds: top5Ids,
     sortedItems: sorted,
   );
-
-  dev.log('[mergedTop10Provider] Built ${top10.length} top 10 items');
-  return top10;
 });
 
-/// Home screen sections compiled locally from the cached database
+/// Home screen sections compiled live from VegaMovies and RogMovies
 final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
-  final sorted = await ref.watch(sortedManifestItemsProvider.future);
+  final localMap = ref.watch(localManifestMapProvider);
   final sections = <ContentSection>[];
-  
-  // Also trigger top picks sync in background
-  ref.watch(topPicksSyncProvider);
-  
-  // 1. Top 10 Today
+
+  // 1. Top 10 Today (isRanked: true)
   final top10 = await ref.watch(mergedTop10Provider.future);
   if (top10.isNotEmpty) {
     sections.add(ContentSection(title: 'Top 10 Today', items: top10, isRanked: true));
   }
-  
-  // 2. Bollywood / Indian
-  final bollywood = _filterCategory(sorted, 'bollywood').take(15).toList();
-  if (bollywood.isNotEmpty) {
-    sections.add(ContentSection(title: 'Bollywood', items: bollywood));
-  }
-  
-  // 3. Korean
-  final korean = _filterCategory(sorted, 'korean').take(15).toList();
-  if (korean.isNotEmpty) {
-    sections.add(ContentSection(title: 'Korean', items: korean));
-  }
-  
-  // 4. Anime
-  final anime = _filterCategory(sorted, 'anime').take(15).toList();
-  if (anime.isNotEmpty) {
-    sections.add(ContentSection(title: 'Anime', items: anime));
-  }
-  
-  // 5. Hollywood
-  final hollywood = _filterCategory(sorted, 'hollywood').take(15).toList();
-  if (hollywood.isNotEmpty) {
-    sections.add(ContentSection(title: 'Hollywood', items: hollywood));
+
+  // 2. K-Drama Section (https://vegamovies.gallery/korean-series/)
+  try {
+    final kdramaItems = await MovieSiteScraperService.instance.fetchCategoryItems('korean', localMap: localMap);
+    if (kdramaItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'K-Drama', items: kdramaItems));
+    }
+  } catch (e) {
+    dev.log('[homeSectionsProvider] KDrama error: $e');
   }
 
-  // 6. Chinese
-  final chinese = _filterCategory(sorted, 'chinese').take(15).toList();
-  if (chinese.isNotEmpty) {
-    sections.add(ContentSection(title: 'Chinese', items: chinese));
+  // 3. Chinese Section (https://vegamovies.gallery/search.html?q=Chinese)
+  try {
+    final chineseItems = await MovieSiteScraperService.instance.fetchCategoryItems('chinese', localMap: localMap);
+    if (chineseItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Chinese', items: chineseItems));
+    }
+  } catch (e) {
+    dev.log('[homeSectionsProvider] Chinese error: $e');
   }
 
-  // 7. Punjabi
-  final punjabi = _filterCategory(sorted, 'punjabi').take(15).toList();
-  if (punjabi.isNotEmpty) {
-    sections.add(ContentSection(title: 'Punjabi', items: punjabi));
+  // 4. Anime Section (https://vegamovies.gallery/anime-series/)
+  try {
+    final animeItems = await MovieSiteScraperService.instance.fetchCategoryItems('anime', localMap: localMap);
+    if (animeItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Anime', items: animeItems));
+    }
+  } catch (e) {
+    dev.log('[homeSectionsProvider] Anime error: $e');
   }
 
-  // 8. Pakistani
-  final pakistani = _filterCategory(sorted, 'pakistani').take(15).toList();
-  if (pakistani.isNotEmpty) {
-    sections.add(ContentSection(title: 'Pakistani', items: pakistani));
+  // 5. Action Section (VegaMovies Action + RogMovies Action mixed)
+  try {
+    final actionItems = await MovieSiteScraperService.instance.fetchCategoryItems('action', localMap: localMap);
+    if (actionItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Action', items: actionItems));
+    }
+  } catch (e) {
+    dev.log('[homeSectionsProvider] Action error: $e');
   }
+
+  // 6. Comedy (mixed VegaMovies + RogMovies)
+  try {
+    final comedyItems = await MovieSiteScraperService.instance.fetchCategoryItems('comedy', localMap: localMap);
+    if (comedyItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Comedy', items: comedyItems));
+    }
+  } catch (e) {}
+
+  // 7. Thriller (mixed VegaMovies + RogMovies)
+  try {
+    final thrillerItems = await MovieSiteScraperService.instance.fetchCategoryItems('thriller', localMap: localMap);
+    if (thrillerItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Thriller', items: thrillerItems));
+    }
+  } catch (e) {}
+
+  // 8. Horror (mixed VegaMovies + RogMovies)
+  try {
+    final horrorItems = await MovieSiteScraperService.instance.fetchCategoryItems('horror', localMap: localMap);
+    if (horrorItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Horror', items: horrorItems));
+    }
+  } catch (e) {}
+
+  // 9. Sci-Fi (mixed VegaMovies + RogMovies)
+  try {
+    final scifiItems = await MovieSiteScraperService.instance.fetchCategoryItems('sci-fi', localMap: localMap);
+    if (scifiItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Sci-Fi', items: scifiItems));
+    }
+  } catch (e) {}
 
   return sections;
 });
@@ -448,6 +502,21 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
   }
 
   Future<List<ManifestItem>> _fetchLocalPage(int page) async {
+    final cat = category.toLowerCase().trim();
+    if (cat == 'action' || cat == 'korean' || cat == 'chinese' || cat == 'anime' || cat == 'comedy' || cat == 'thriller' || cat == 'horror' || cat == 'sci-fi') {
+      try {
+        final liveItems = await MovieSiteScraperService.instance.fetchCategoryItems(cat);
+        if (liveItems.isNotEmpty) {
+          final int limit = 30;
+          final int offset = (page - 1) * limit;
+          if (offset >= liveItems.length) return [];
+          return liveItems.skip(offset).take(limit).toList();
+        }
+      } catch (e) {
+        dev.log('[_fetchLocalPage] Error fetching live $cat: $e');
+      }
+    }
+
     final sorted = await ref.read(sortedManifestItemsProvider.future);
     final filtered = _filterCategory(sorted, category);
     
@@ -477,16 +546,23 @@ final paginatedCategoryProvider = StateNotifierProvider.family<
 String categoryLabelToSlug(String label) {
   const map = {
     'Explore': 'all',
+    'Action': 'action',
     'Indian': 'indian',
     'Bollywood': 'bollywood',
     'Hollywood': 'hollywood',
     'Anime': 'anime',
     'Korean': 'korean',
+    'K-Drama': 'korean',
     'Chinese': 'chinese',
     'Punjabi': 'punjabi',
     'Pakistani': 'pakistani',
+    'Comedy': 'comedy',
+    'Thriller': 'thriller',
+    'Horror': 'horror',
+    'Sci-Fi': 'sci-fi',
+    'Romance': 'romance',
   };
-  return map[label] ?? 'all';
+  return map[label] ?? label.toLowerCase();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

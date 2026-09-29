@@ -84,6 +84,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     // Set up callbacks
     _controller.onProgressUpdate = _onProgressUpdate;
     _controller.onPlaybackComplete = _onPlaybackComplete;
+    _controller.onNextEpisode = (season, episode) {
+      _switchToEpisode(season, episode);
+    };
+    _controller.onPreviousEpisode = (season, episode) {
+      _switchToEpisode(season, episode);
+    };
 
     // Initialize player
     _initializePlayer();
@@ -93,6 +99,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final content = ref.read(detailProvider(
       DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
     )).valueOrNull;
+
+    // Get total episodes for current season (for next/prev navigation)
+    int totalEpisodes = 0;
+    if (content != null && content.isTv && content.tmdbSeasons != null) {
+      final currentSeasonData = content.tmdbSeasons!
+          .where((s) => s.seasonNumber == (_currentSeason ?? 1))
+          .firstOrNull;
+      totalEpisodes = currentSeasonData?.episodeCount ?? 0;
+    }
 
     await _controller.initialize(
       title: _buildTitle(),
@@ -104,6 +119,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       episode: _currentEpisode,
       directUrl: widget.isDirectLink ? widget.url : null,
       startPosition: widget.startPosition,
+      seasonNumbers: content?.seasonNumbers,
+      totalEpisodes: totalEpisodes,
     );
 
     // Start periodic history saving
@@ -140,12 +157,35 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _playNextEpisode() {
     if (_currentEpisode == null || _currentSeason == null) return;
+    _switchToEpisode(_currentSeason!, _currentEpisode! + 1);
+  }
+
+  void _playPreviousEpisode() {
+    if (_currentEpisode == null || _currentSeason == null) return;
+    if (_currentEpisode! <= 1) return;
+    _switchToEpisode(_currentSeason!, _currentEpisode! - 1);
+  }
+
+  /// Switch to a specific episode — creates a fresh controller to avoid lifecycle issues.
+  void _switchToEpisode(int season, int episode) {
+    _saveWatchProgress();
+    _historyTimer?.cancel();
+
+    // Dispose old controller
+    _controller.dispose();
 
     setState(() {
-      _currentEpisode = _currentEpisode! + 1;
+      _currentSeason = season;
+      _currentEpisode = episode;
     });
 
-    _controller.dispose();
+    // Create fresh controller
+    _controller = PlayerController();
+    _controller.onProgressUpdate = _onProgressUpdate;
+    _controller.onPlaybackComplete = _onPlaybackComplete;
+    _controller.onNextEpisode = (s, e) => _switchToEpisode(s, e);
+    _controller.onPreviousEpisode = (s, e) => _switchToEpisode(s, e);
+
     _initializePlayer();
   }
 
@@ -293,12 +333,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         currentEpisode: _currentEpisode ?? 1,
         onEpisodeSelected: (season, episode) {
           Navigator.of(context).pop(); // Close panel
-          setState(() {
-            _currentSeason = season;
-            _currentEpisode = episode;
-          });
-          _controller.dispose();
-          _initializePlayer();
+          _switchToEpisode(season, episode);
         },
       ),
     );

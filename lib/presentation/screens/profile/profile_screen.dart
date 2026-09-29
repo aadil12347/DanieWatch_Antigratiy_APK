@@ -343,6 +343,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             accentColor: const Color(0xFF7C3AED),
             onTap: () => context.push('/notification-settings'),
           ),
+          SettingsTile(
+            icon: Icons.school_outlined,
+            title: 'GIP Course & Resources',
+            infoText: 'TikTok Gaming Incentive Program Guide',
+            accentColor: const Color(0xFFA855F7),
+            onTap: () => context.push('/gip-course'),
+          ),
 
           const SizedBox(height: 20),
 

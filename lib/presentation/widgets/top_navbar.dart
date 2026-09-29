@@ -15,11 +15,16 @@ class TopNavbar extends StatefulWidget {
 
   static const List<String> items = [
     'Explore',
-    'Indian',
-    'Hollywood',
-    'Anime',
+    'Action',
     'Korean',
     'Chinese',
+    'Anime',
+    'Comedy',
+    'Thriller',
+    'Horror',
+    'Sci-Fi',
+    'Indian',
+    'Hollywood',
     'Punjabi',
   ];
 

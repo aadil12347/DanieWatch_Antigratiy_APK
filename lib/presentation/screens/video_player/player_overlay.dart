@@ -1,15 +1,12 @@
-/// Player controls overlay — Cloudstream-style player UI.
-///
-/// Includes:
-/// - Top bar: back button, title, settings, lock, PiP
-/// - Bottom bar: play/pause, seek bar with buffer, time, source, fullscreen
-/// - Center: large play/pause, loading spinner, error with retry
+/// Player controls overlay - Cloudstream-style player UI.
+/// - Top bar: back button, title + episode badge, episodes, settings, lock, PiP
+/// - Bottom bar: seek bar with buffer progress, time, source, speed, next ep
+/// - Center: skip backward | play/pause | skip forward (CloudStream style)
 /// - Lock button (when locked)
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'player_controller.dart';
-import '../../../services/extraction/models.dart';
 import '../../../services/extraction/provider_registry.dart';
 
 class PlayerOverlay extends StatelessWidget {
@@ -139,21 +136,45 @@ class PlayerOverlay extends StatelessWidget {
 
             const SizedBox(width: 8),
 
-            // Title
+            // Title + episode badge
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    controller.title,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      // Episode badge (CloudStream style)
+                      if (controller.isTvShow && controller.season != null && controller.episode != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'S${controller.season.toString().padLeft(2, '0')}E${controller.episode.toString().padLeft(2, '0')}',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      Expanded(
+                        child: Text(
+                          controller.title,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                   if (controller.currentSource != null)
                     Text(
@@ -207,55 +228,128 @@ class PlayerOverlay extends StatelessWidget {
     );
   }
 
-  // ─── Center Controls ────────────────────────────────────────────────────
+  // ─── Center Controls (CloudStream 3-button style) ──────────────────────
 
   Widget _buildCenterControls() {
     switch (controller.state) {
       case PlaybackState.extracting:
         return _buildExtractionView();
       case PlaybackState.buffering:
-        return const SizedBox(
-          width: 48,
-          height: 48,
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            color: Colors.white,
-          ),
-        );
+        return _buildPlaybackButtons(showLoading: true);
       case PlaybackState.error:
         return _buildErrorView();
       case PlaybackState.playing:
       case PlaybackState.paused:
-        return GestureDetector(
-          onTap: controller.togglePlayPause,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(40),
-            ),
-            child: Icon(
-              controller.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.white,
-              size: 42,
-            ),
-          ),
-        );
+        return _buildPlaybackButtons();
       case PlaybackState.completed:
-        return GestureDetector(
-          onTap: () => controller.seekTo(Duration.zero),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(40),
-            ),
-            child: const Icon(Icons.replay, color: Colors.white, size: 42),
-          ),
-        );
+        return _buildPlaybackButtons(isCompleted: true);
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  /// CloudStream-style 3-button center controls: skip back | play/pause | skip forward
+  Widget _buildPlaybackButtons({bool showLoading = false, bool isCompleted = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Previous episode / Skip backward button
+        if (controller.isTvShow && controller.hasPreviousEpisode)
+          GestureDetector(
+            onTap: controller.previousEpisode,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 32),
+            ),
+          )
+        else
+          const SizedBox(width: 52),
+
+        const SizedBox(width: 24),
+
+        // Skip backward 10s
+        GestureDetector(
+          onTap: controller.skipBackward,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: const Icon(Icons.replay_10, color: Colors.white, size: 32),
+          ),
+        ),
+
+        const SizedBox(width: 20),
+
+        // Play/Pause center button (large)
+        GestureDetector(
+          onTap: isCompleted
+              ? () => controller.seekTo(Duration.zero)
+              : controller.togglePlayPause,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black38,
+              borderRadius: BorderRadius.circular(40),
+            ),
+            child: showLoading
+                ? const SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(
+                    isCompleted
+                        ? Icons.replay
+                        : (controller.isPlaying ? Icons.pause : Icons.play_arrow),
+                    color: Colors.white,
+                    size: 42,
+                  ),
+          ),
+        ),
+
+        const SizedBox(width: 20),
+
+        // Skip forward 10s
+        GestureDetector(
+          onTap: controller.skipForward,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: const Icon(Icons.forward_10, color: Colors.white, size: 32),
+          ),
+        ),
+
+        const SizedBox(width: 24),
+
+        // Next episode button
+        if (controller.isTvShow && controller.hasNextEpisode)
+          GestureDetector(
+            onTap: controller.nextEpisode,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 32),
+            ),
+          )
+        else
+          const SizedBox(width: 52),
+      ],
+    );
   }
 
   Widget _buildExtractionView() {
@@ -356,8 +450,12 @@ class PlayerOverlay extends StatelessWidget {
   Widget _buildBottomBar(BuildContext context) {
     final position = controller.position;
     final duration = controller.duration;
+    final buffered = controller.buffered;
     final progress = duration.inMilliseconds > 0
         ? position.inMilliseconds / duration.inMilliseconds
+        : 0.0;
+    final bufferProgress = duration.inMilliseconds > 0
+        ? buffered.inMilliseconds / duration.inMilliseconds
         : 0.0;
 
     return Padding(
@@ -365,24 +463,48 @@ class PlayerOverlay extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Seek bar
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-              activeTrackColor: Colors.red,
-              inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.red,
-              overlayColor: Colors.red.withOpacity(0.2),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Slider(
-              value: progress.clamp(0.0, 1.0),
-              onChanged: (value) {
-                final seekPos = Duration(
-                    milliseconds: (value * duration.inMilliseconds).toInt());
-                controller.seekTo(seekPos);
-              },
+          // Seek bar with buffer progress (CloudStream style)
+          SizedBox(
+            height: 24,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Buffer progress track (secondary)
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
+                    activeTrackColor: Colors.white38,
+                    inactiveTrackColor: Colors.white12,
+                    thumbColor: Colors.transparent,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: bufferProgress.clamp(0.0, 1.0),
+                    onChanged: (_) {},
+                  ),
+                ),
+                // Active seek slider (primary)
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    activeTrackColor: Colors.red,
+                    inactiveTrackColor: Colors.transparent,
+                    thumbColor: Colors.red,
+                    overlayColor: Colors.red.withOpacity(0.2),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: progress.clamp(0.0, 1.0),
+                    onChanged: (value) {
+                      final seekPos = Duration(
+                          milliseconds: (value * duration.inMilliseconds).toInt());
+                      controller.seekTo(seekPos);
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -401,8 +523,42 @@ class PlayerOverlay extends StatelessWidget {
 
               const Spacer(),
 
+              // Resize mode toggle (CloudStream style)
+              GestureDetector(
+                onTap: controller.cycleResizeMode,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        controller.resizeMode == VideoResizeMode.fit
+                            ? Icons.fit_screen
+                            : controller.resizeMode == VideoResizeMode.fill
+                                ? Icons.crop_free
+                                : Icons.aspect_ratio,
+                        color: Colors.white, size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        controller.resizeModeLabel,
+                        style: GoogleFonts.inter(
+                            color: Colors.white, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
               // Source selector button
-              if (controller.sources.length > 1)
+              if (controller.sources.isNotEmpty)
                 GestureDetector(
                   onTap: onSourceTap,
                   child: Container(
@@ -415,10 +571,12 @@ class PlayerOverlay extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.layers, color: Colors.white, size: 14),
+                        const Icon(Icons.dns_outlined, color: Colors.white, size: 14),
                         const SizedBox(width: 4),
                         Text(
-                          'Sources (${controller.sources.length})',
+                          controller.sources.length > 1
+                              ? 'Sources (${controller.sources.length})'
+                              : 'Source',
                           style: GoogleFonts.inter(
                               color: Colors.white, fontSize: 11),
                         ),
@@ -429,13 +587,22 @@ class PlayerOverlay extends StatelessWidget {
 
               const SizedBox(width: 8),
 
-              // Speed indicator
-              if (controller.playbackSpeed != 1.0)
-                Container(
+              // Speed indicator (tap to cycle)
+              GestureDetector(
+                onTap: () {
+                  // Cycle speeds: 1.0 → 1.25 → 1.5 → 2.0 → 0.5 → 0.75 → 1.0
+                  const speeds = [1.0, 1.25, 1.5, 2.0, 0.5, 0.75];
+                  final currentIdx = speeds.indexOf(controller.playbackSpeed);
+                  final nextIdx = (currentIdx + 1) % speeds.length;
+                  controller.setPlaybackSpeed(speeds[nextIdx]);
+                },
+                child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white12,
+                    color: controller.playbackSpeed != 1.0
+                        ? Colors.red.withValues(alpha: 0.6)
+                        : Colors.white12,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -444,6 +611,35 @@ class PlayerOverlay extends StatelessWidget {
                         color: Colors.white, fontSize: 11),
                   ),
                 ),
+              ),
+
+              // Next episode button in bottom bar
+              if (controller.isTvShow && controller.hasNextEpisode) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: controller.nextEpisode,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white12,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.skip_next, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Next',
+                          style: GoogleFonts.inter(
+                              color: Colors.white, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ],

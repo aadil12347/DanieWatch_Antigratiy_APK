@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import '../data/services/database_sync_service.dart';
 import '../domain/models/manifest_item.dart';
 import 'extraction/extraction_utils.dart' as eu;
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 class VcloudExtractorService {
   static final VcloudExtractorService _instance = VcloudExtractorService._internal();
@@ -205,29 +207,49 @@ class VcloudExtractorService {
     } else {
       final sNum = season ?? 1;
       if (releaseYear != null) {
+        // Try both season patterns to match different index file layouts
+        guessedNames.add('${sanitizedTitle} (${releaseYear}) (Season $sNum)_series_$tmdbId.json');
         guessedNames.add('${sanitizedTitle} (Season $sNum) (${releaseYear})_series_$tmdbId.json');
       }
       guessedNames.add('${sanitizedTitle} (Season $sNum)_series_$tmdbId.json');
       guessedNames.add('${sanitizedTitle}_series_$tmdbId.json');
     }
 
-    for (final name in guessedNames) {
-      final encodedName = Uri.encodeComponent(name);
-      final guessedUrl = '$_rawBaseUrl/$encodedName';
-      debugPrint('[VcloudExtractor] Checking guessed URL fallback: $guessedUrl');
-      try {
-        final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-        final req = await client.headUrl(Uri.parse(guessedUrl));
-        final resp = await req.close();
-        client.close();
-        if (resp.statusCode == 200) {
-          debugPrint('[VcloudExtractor] Guessed URL fallback exists: $guessedUrl');
-          return guessedUrl;
+    // Determine subfolder dynamically
+    final determinedFolder = await _determineSubFolder(tmdbId);
+    final List<String> repoFolders = [
+      determinedFolder,
+      'streaming_links_sites/Vegamovies',
+      'streaming_links_sites/Rogmovies',
+      'streaming_links',
+    ].toSet().toList(); // Unique check paths
+
+    for (final folder in repoFolders) {
+      for (final name in guessedNames) {
+        final encodedName = Uri.encodeComponent(name);
+        final guessedUrl = 'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main/$folder/$encodedName';
+        debugPrint('[VcloudExtractor] Checking guessed URL fallback: $guessedUrl');
+        try {
+          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+          final req = await client.headUrl(Uri.parse(guessedUrl));
+          final resp = await req.close();
+          client.close();
+          if (resp.statusCode == 200) {
+            debugPrint('[VcloudExtractor] Guessed URL fallback exists: $guessedUrl');
+            return guessedUrl;
+          }
+        } catch (_) {
+          // Ignored
         }
-      } catch (_) {
-        // Ignored
       }
     }
+
+    // 4. Rogmovies folder listing lookup (last-ditch API search, might fail if rate-limited)
+    final rogResult = await _searchRogmoviesFolder(
+      tmdbId: tmdbId,
+      mediaType: mediaType,
+    );
+    if (rogResult != null) return rogResult;
 
     debugPrint('[VcloudExtractor] Could not resolve stream JSON URL for ID: $tmdbId');
     return null;
@@ -306,23 +328,51 @@ class VcloudExtractorService {
           debugPrint('[VcloudExtractor] seasonData is null? ${seasonData == null}');
           if (seasonData != null) {
             final epNum = episode ?? 1;
-            final targetTitlePadded = 'Episode ${epNum.toString().padLeft(2, '0')}';
-            final targetTitleUnpadded = 'Episode $epNum';
-            debugPrint('[VcloudExtractor] Looking for episode matching: "$targetTitlePadded" or "$targetTitleUnpadded"');
+            // Build all possible episode title variations for matching
+            final targetVariations = [
+              'episode ${epNum.toString().padLeft(2, '0')}',
+              'episode $epNum',
+              'episode${epNum.toString().padLeft(2, '0')}',
+              'episode$epNum',
+              'ep ${epNum.toString().padLeft(2, '0')}',
+              'ep $epNum',
+              'ep${epNum.toString().padLeft(2, '0')}',
+              'ep$epNum',
+              'e${epNum.toString().padLeft(2, '0')}',
+              'e$epNum',
+            ];
+            debugPrint('[VcloudExtractor] Looking for episode matching any of: $targetVariations');
             for (var res in seasonData.keys) {
               final itemsList = seasonData[res] as List<dynamic>?;
-              debugPrint('[VcloudExtractor] Resolution $res has items: $itemsList');
+              debugPrint('[VcloudExtractor] Resolution $res has ${itemsList?.length ?? 0} items');
               if (itemsList != null) {
-                final epMatch = itemsList.firstWhere(
+                // Strategy 1: Match by episode title variations
+                var epMatch = itemsList.firstWhere(
                   (item) {
-                    final title = item['episode_title']?.toString().toLowerCase() ?? '';
-                    final match = title == targetTitlePadded.toLowerCase() ||
-                           title == targetTitleUnpadded.toLowerCase();
-                    debugPrint('[VcloudExtractor]   Comparing item episode_title: "$title" -> Match? $match');
-                    return match;
+                    final epTitle = (item['episode_title']?.toString() ?? '').toLowerCase().trim();
+                    final titleMatch = targetVariations.any((v) => epTitle == v);
+                    if (!titleMatch) {
+                      // Also try: title contains "episode" and the number matches
+                      final numMatch = RegExp(r'(?:episode|ep)\s*0*(\d+)', caseSensitive: false).firstMatch(epTitle);
+                      if (numMatch != null) {
+                        final parsedNum = int.tryParse(numMatch.group(1)!);
+                        return parsedNum == epNum;
+                      }
+                    }
+                    return titleMatch;
                   },
                   orElse: () => null,
                 );
+
+                // Strategy 2: Positional fallback - if no title match, use index
+                if (epMatch == null && itemsList.isNotEmpty) {
+                  final epIndex = epNum - 1;
+                  if (epIndex >= 0 && epIndex < itemsList.length) {
+                    epMatch = itemsList[epIndex];
+                    debugPrint('[VcloudExtractor]   Using positional fallback: index $epIndex for episode $epNum');
+                  }
+                }
+
                 if (epMatch != null) {
                   final link = epMatch['link']?.toString() ?? '';
                   debugPrint('[VcloudExtractor]   Found link for resolution $res: $link');
@@ -846,6 +896,155 @@ class VcloudExtractorService {
       client.close();
       return false;
     }
+  }
+
+  // ─── Rogmovies Folder Lookup ──────────────────────────────────────────────
+
+  /// GitHub API URLs for streaming link folders.
+  static const List<String> _streamingFolderApis = [
+    'https://api.github.com/repos/aadil12347/DanieWatch_Apk_Database/contents/streaming_links',
+    'https://api.github.com/repos/aadil12347/DanieWatch_Apk_Database/contents/streaming_links_sites/Rogmovies_Index',
+  ];
+
+  /// Cached folder listings: filename → download_url
+  static final Map<String, String> _rogFolderCache = {};
+  static DateTime? _rogFolderCacheTime;
+  static const Duration _rogFolderCacheDuration = Duration(hours: 6);
+
+  /// Search rogmovies and streaming folders by `_type_tmdbId` suffix.
+  /// E.g., for tmdbId=1202033 and mediaType=movie, searches for files
+  /// ending in `_movie_1202033.json`.
+  Future<String?> _searchRogmoviesFolder({
+    required int tmdbId,
+    required String mediaType,
+  }) async {
+    try {
+      // Build the suffix pattern to match
+      final typeKey = mediaType == 'movie' ? 'movie' : 'series';
+      final suffix = '_${typeKey}_$tmdbId.json';
+
+      debugPrint('[VcloudExtractor] Rogmovies folder search for suffix: $suffix');
+
+      // Load folder cache if empty or expired
+      if (_rogFolderCache.isEmpty ||
+          _rogFolderCacheTime == null ||
+          DateTime.now().difference(_rogFolderCacheTime!) > _rogFolderCacheDuration) {
+        await _loadRogFolderCache();
+      }
+
+      // Search for all matching files
+      final matches = <String, String>{};
+      for (final entry in _rogFolderCache.entries) {
+        if (entry.key.toLowerCase().endsWith(suffix.toLowerCase())) {
+          matches[entry.key] = entry.value;
+        }
+      }
+
+      if (matches.isEmpty) {
+        debugPrint('[VcloudExtractor] No rogmovies folder matches for $suffix');
+        return null;
+      }
+
+      debugPrint('[VcloudExtractor] Found ${matches.length} rogmovies matches: ${matches.keys.join(", ")}');
+      // Return the first match's download URL
+      return matches.values.first;
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Rogmovies folder search error: $e');
+      return null;
+    }
+  }
+
+  /// Load all filenames from streaming link folders into the cache.
+  Future<void> _loadRogFolderCache() async {
+    debugPrint('[VcloudExtractor] Loading rogmovies folder cache...');
+    final Map<String, String> newCache = {};
+
+    for (final apiUrl in _streamingFolderApis) {
+      try {
+        int page = 1;
+        bool hasMore = true;
+        while (hasMore) {
+          final url = '$apiUrl?per_page=100&page=$page';
+          final response = await http.get(
+            Uri.parse(url),
+            headers: {'Accept': 'application/vnd.github.v3+json'},
+          ).timeout(const Duration(seconds: 15));
+
+          if (response.statusCode != 200) {
+            debugPrint('[VcloudExtractor] Folder listing failed for $apiUrl: ${response.statusCode}');
+            break;
+          }
+
+          final List<dynamic> files = jsonDecode(response.body);
+          if (files.isEmpty) break;
+
+          for (final file in files) {
+            final name = file['name']?.toString() ?? '';
+            final downloadUrl = file['download_url']?.toString();
+            if (name.endsWith('.json') && downloadUrl != null) {
+              newCache[name] = downloadUrl;
+            }
+          }
+
+          // GitHub API returns max 100 per page
+          hasMore = files.length >= 100;
+          page++;
+        }
+      } catch (e) {
+        debugPrint('[VcloudExtractor] Error listing folder $apiUrl: $e');
+      }
+    }
+
+    if (newCache.isNotEmpty) {
+      _rogFolderCache.clear();
+      _rogFolderCache.addAll(newCache);
+      _rogFolderCacheTime = DateTime.now();
+      debugPrint('[VcloudExtractor] Rogmovies folder cache loaded: ${newCache.length} files');
+    }
+  }
+
+  /// Check both local caches and asset files to determine if the TMDB ID belongs to Rogmovies or Vegamovies index.
+  Future<String> _determineSubFolder(int tmdbId) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      
+      // 1. Check cached Rogmovies index
+      final rogFile = File('${dir.path}/rog_index.json');
+      if (await rogFile.exists()) {
+        final content = await rogFile.readAsString();
+        if (content.contains('[$tmdbId,') || content.contains(' $tmdbId,')) {
+          return 'streaming_links_sites/Rogmovies';
+        }
+      }
+      
+      // 2. Check cached Vegamovies index
+      final vegaFile = File('${dir.path}/vega_index.json');
+      if (await vegaFile.exists()) {
+        final content = await vegaFile.readAsString();
+        if (content.contains('[$tmdbId,') || content.contains(' $tmdbId,')) {
+          return 'streaming_links_sites/Vegamovies';
+        }
+      }
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Error determining folder from local files: $e');
+    }
+
+    try {
+      // 3. Fallback to asset files
+      final rogAsset = await rootBundle.loadString('assets/rog_index.json');
+      if (rogAsset.contains('[$tmdbId,') || rogAsset.contains(' $tmdbId,')) {
+        return 'streaming_links_sites/Rogmovies';
+      }
+      
+      final vegaAsset = await rootBundle.loadString('assets/vega_index.json');
+      if (vegaAsset.contains('[$tmdbId,') || vegaAsset.contains(' $tmdbId,')) {
+        return 'streaming_links_sites/Vegamovies';
+      }
+    } catch (e) {
+      debugPrint('[VcloudExtractor] Error determining folder from assets: $e');
+    }
+
+    return 'streaming_links_sites/Vegamovies'; // Default fallback
   }
 }
 

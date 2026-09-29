@@ -365,4 +365,35 @@ class TmdbClient {
       return [];
     }
   }
+
+  /// Find movie or TV show by external IMDb ID
+  Future<Map<String, dynamic>?> findByImdbId(String imdbId) async {
+    final cacheKey = 'find_imdb_$imdbId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/find/$imdbId', queryParameters: {
+          'external_source': 'imdb_id',
+        });
+        final data = res.data as Map<String, dynamic>;
+        final movieResults = data['movie_results'] as List?;
+        if (movieResults != null && movieResults.isNotEmpty) {
+          final m = Map<String, dynamic>.from(movieResults.first as Map);
+          m['media_type'] = 'movie';
+          return m;
+        }
+        final tvResults = data['tv_results'] as List?;
+        if (tvResults != null && tvResults.isNotEmpty) {
+          final t = Map<String, dynamic>.from(tvResults.first as Map);
+          t['media_type'] = 'tv';
+          return t;
+        }
+        return null;
+      } on DioException catch (e) {
+        dev.log('[TMDB] Find by IMDb $imdbId error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
+  }
+
 }

@@ -16,6 +16,7 @@ import 'driveleech_extractor.dart';
 import 'vegamovies_scraper.dart';
 import 'extraction_utils.dart';
 import 'quality_tags.dart';
+import 'manifest_stream_provider.dart';
 
 // ─── Source Provider Base ──────────────────────────────────────────────────
 
@@ -333,6 +334,45 @@ class VegaMoviesProvider extends SourceProvider {
   }
 }
 
+// ─── Manifest Iframe Provider ─────────────────────────────────────────────
+
+class ManifestIframeProvider extends SourceProvider {
+  @override
+  String get name => 'Manifest';
+  @override
+  String get key => 'manifest_iframe';
+
+  @override
+  Future<List<ExtractorLink>> extractMovie({
+    required String tmdbId,
+    String? imdbId,
+    required String title,
+    int? year,
+  }) async {
+    return ManifestStreamProvider.extractMovie(
+      tmdbId: int.tryParse(tmdbId) ?? 0,
+      title: title,
+    );
+  }
+
+  @override
+  Future<List<ExtractorLink>> extractEpisode({
+    required String tmdbId,
+    String? imdbId,
+    required String title,
+    int? year,
+    required int season,
+    required int episode,
+  }) async {
+    return ManifestStreamProvider.extractEpisode(
+      tmdbId: int.tryParse(tmdbId) ?? 0,
+      title: title,
+      season: season,
+      episode: episode,
+    );
+  }
+}
+
 // ─── GDFlix Provider ──────────────────────────────────────────────────────
 
 class GDFlixProvider extends SourceProvider {
@@ -381,11 +421,13 @@ class ProviderRegistry {
 
   /// All registered providers in priority order.
   /// GitHub database (VCloud DB) is PRIMARY and runs first.
+  /// VidNest and Peachify are disabled for now — kept as fallback code.
   final List<SourceProvider> _providers = [
-    VCloudDBProvider(),    // PRIMARY — GitHub database
-    VidNestProvider(),     // VidNest API
-    PeachifyProvider(),    // Peachify API
-    VegaMoviesProvider(),  // Live scraper
+    VCloudDBProvider(),       // PRIMARY — GitHub database JSON
+    ManifestIframeProvider(), // Manifest iframe WebView extraction
+    VegaMoviesProvider(),     // Live scraper
+    // VidNestProvider(),     // DISABLED — fallback for later
+    // PeachifyProvider(),    // DISABLED — fallback for later
   ];
 
   List<SourceProvider> get providers => List.unmodifiable(_providers);

@@ -162,10 +162,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       filters = filters.copyWith(sortBy: 'Latest Release');
     } else if (title == 'Popular') {
       filters = filters.copyWith(sortBy: 'Popularity');
+    } else if (title == 'Action') {
+      filters = filters.copyWith(categories: {'Action'}, genres: {'Action'});
     } else if (title == 'Anime') {
       filters = filters.copyWith(categories: {'Anime'});
-    } else if (title == 'Korean') {
-      filters = filters.copyWith(categories: {'K-Drama'});
+    } else if (title == 'Korean' || title == 'K-Drama') {
+      filters = filters.copyWith(categories: {'Korean'});
     } else if (title == 'Indian') {
       filters = filters.copyWith(categories: {'Indian'});
     } else if (title == 'Hollywood') {
@@ -174,11 +176,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       filters = filters.copyWith(categories: {'Punjabi'});
     } else if (title == 'Chinese') {
       filters = filters.copyWith(categories: {'Chinese'});
-    } else if (title == 'Action' || title == 'Thriller' || title == 'Romance' || title == 'Comedy') {
-      filters = filters.copyWith(genres: {title});
+    } else if (title == 'Comedy' || title == 'Thriller' || title == 'Horror' || title == 'Sci-Fi' || title == 'Romance') {
+      filters = filters.copyWith(categories: {title}, genres: {title});
     } else {
-      // Fallback: treat as genre
-      filters = filters.copyWith(genres: {title});
+      // Fallback: treat as genre and category
+      filters = filters.copyWith(categories: {title}, genres: {title});
     }
 
     ref.read(searchProvider('explore').notifier).updateFilters(filters);

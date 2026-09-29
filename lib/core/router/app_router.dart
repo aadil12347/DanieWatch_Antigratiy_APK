@@ -13,6 +13,7 @@ import '../../presentation/screens/splash/splash_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
 import '../../presentation/screens/profile/account_settings_screen.dart';
 import '../../presentation/screens/profile/placeholder_screen.dart';
+import '../../presentation/screens/profile/gip_course_screen.dart';
 import '../../presentation/screens/admin/admin_console_screen.dart';
 import '../../presentation/screens/admin/manage_entries_screen.dart';
 import '../../presentation/screens/admin/admin_message_screen.dart';
@@ -228,6 +229,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(
       path: '/profile',
       pageBuilder: (context, state) => _quickPage(const ProfileScreen(), state),
+    ),
+    GoRoute(
+      path: '/gip-course',
+      pageBuilder: (context, state) => _quickPage(const GipCourseScreen(), state),
     ),
     GoRoute(
       path: '/account-settings',

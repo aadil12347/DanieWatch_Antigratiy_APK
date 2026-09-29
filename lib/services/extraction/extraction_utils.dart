@@ -106,7 +106,7 @@ String? extractDownloadButton(String html) {
 Future<String?> resolveFinalUrl(
   String startUrl, {
   int maxRedirects = 7,
-  Duration timeout = const Duration(milliseconds: 2500),
+  Duration timeout = const Duration(seconds: 8),
 }) async {
   final client = HttpClient()
     ..connectionTimeout = timeout

@@ -32,35 +32,50 @@ class StreamingLinksSeasonService {
       return {};
     }
 
+    final Map<int, List<int>> mergedSeasonsMap = {};
+
     try {
-      final jsonUrl = await VcloudExtractorService().getStreamJsonUrl(
-        tmdbId: tmdbId,
-        mediaType: mediaType,
-        title: title,
-      );
+      // Fetch seasons 1 to 10 in parallel
+      final List<Future<void>> tasks = [];
+      for (int s = 1; s <= 10; s++) {
+        tasks.add(() async {
+          try {
+            final jsonUrl = await VcloudExtractorService().getStreamJsonUrl(
+              tmdbId: tmdbId,
+              mediaType: mediaType,
+              title: title,
+              season: s,
+            );
 
-      if (jsonUrl == null) {
-        debugPrint('[StreamingSeasons] No streaming JSON found for tmdbId: $tmdbId');
-        _cache[tmdbId] = {};
-        return {};
+            if (jsonUrl != null) {
+              final response = await http
+                  .get(Uri.parse(jsonUrl))
+                  .timeout(const Duration(seconds: 8));
+
+              if (response.statusCode == 200) {
+                final data = jsonDecode(response.body) as Map<String, dynamic>;
+                final parsed = _parseSeasons(data);
+                mergedSeasonsMap.addAll(parsed);
+              }
+            }
+          } catch (e) {
+            debugPrint('[StreamingSeasons] Error fetching season $s: $e');
+          }
+        }());
       }
 
-      final response = await http
-          .get(Uri.parse(jsonUrl))
-          .timeout(const Duration(seconds: 10));
+      await Future.wait(tasks);
 
-      if (response.statusCode != 200) {
-        debugPrint('[StreamingSeasons] Failed to fetch JSON: ${response.statusCode}');
-        _cache[tmdbId] = {};
-        return {};
+      // Sort episodes inside each season
+      final sortedMap = <int, List<int>>{};
+      final sortedKeys = mergedSeasonsMap.keys.toList()..sort();
+      for (final k in sortedKeys) {
+        sortedMap[k] = mergedSeasonsMap[k]!..sort();
       }
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final result = _parseSeasons(data);
-
-      _cache[tmdbId] = result;
-      debugPrint('[StreamingSeasons] Parsed seasons for tmdbId $tmdbId: ${result.keys.map((k) => 'S$k(${result[k]!.length} eps)').join(', ')}');
-      return result;
+      _cache[tmdbId] = sortedMap;
+      debugPrint('[StreamingSeasons] Parsed seasons for tmdbId $tmdbId: ${sortedMap.keys.map((k) => 'S$k(${sortedMap[k]!.length} eps)').join(', ')}');
+      return sortedMap;
     } catch (e) {
       debugPrint('[StreamingSeasons] Error fetching seasons: $e');
       _cache[tmdbId] = {};

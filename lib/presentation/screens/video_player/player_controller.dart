@@ -31,6 +31,14 @@ enum VideoResizeMode {
 }
 
 class PlayerController extends ChangeNotifier {
+  // ─── Lifecycle Guard ───────────────────────────────────────────────────
+  bool _isDisposed = false;
+
+  /// Safe notifyListeners — no-op if disposed.
+  void _safeNotify() {
+    if (!_isDisposed) notifyListeners();
+  }
+
   // ─── BetterPlayer ──────────────────────────────────────────────────────
   BetterPlayerController? _betterPlayerController;
   BetterPlayerController? get betterPlayerController => _betterPlayerController;
@@ -93,9 +101,24 @@ class PlayerController extends ChangeNotifier {
   Timer? _controlsTimer;
   Timer? _positionTimer;
 
+  // ─── Episode Navigation ────────────────────────────────────────────────
+  int? get season => _season;
+  int? get episode => _episode;
+  String get mediaType => _mediaType;
+  int get tmdbId => _tmdbId;
+  bool get isTvShow => _mediaType == 'tv' || _mediaType == 'series';
+  List<int> _seasonNumbers = [];
+  List<int> get seasonNumbers => _seasonNumbers;
+  int _totalEpisodes = 0;
+  int get totalEpisodes => _totalEpisodes;
+  bool get hasNextEpisode => isTvShow && _episode != null && _episode! < _totalEpisodes;
+  bool get hasPreviousEpisode => isTvShow && _episode != null && _episode! > 1;
+
   // ─── Callbacks ─────────────────────────────────────────────────────────
   Function(Duration position, Duration duration)? onProgressUpdate;
   VoidCallback? onPlaybackComplete;
+  void Function(int season, int episode)? onNextEpisode;
+  void Function(int season, int episode)? onPreviousEpisode;
 
   // ─── Initialize ────────────────────────────────────────────────────────
 
@@ -110,6 +133,8 @@ class PlayerController extends ChangeNotifier {
     int? episode,
     String? directUrl,
     double? startPosition,
+    List<int>? seasonNumbers,
+    int? totalEpisodes,
   }) async {
     _title = title;
     _tmdbId = tmdbId;
@@ -118,6 +143,8 @@ class PlayerController extends ChangeNotifier {
     _year = year;
     _season = season;
     _episode = episode;
+    _seasonNumbers = seasonNumbers ?? [];
+    _totalEpisodes = totalEpisodes ?? 0;
 
     // Lock to landscape
     await SystemChrome.setPreferredOrientations([
@@ -137,7 +164,7 @@ class PlayerController extends ChangeNotifier {
     } else {
       // Start extraction from all providers
       _state = PlaybackState.extracting;
-      notifyListeners();
+      _safeNotify();
       await _startExtraction(startPosition: startPosition);
     }
   }
@@ -157,8 +184,9 @@ class PlayerController extends ChangeNotifier {
         season: _season,
         episode: _episode,
         onLinkFound: (link) {
+          if (_isDisposed) return;
           _sources.add(link);
-          notifyListeners();
+          _safeNotify();
 
           // Auto-play the first link found
           if (!firstLinkPlayed) {
@@ -167,22 +195,25 @@ class PlayerController extends ChangeNotifier {
           }
         },
         onProviderStatus: (providerName, status) {
+          if (_isDisposed) return;
           _providerStatuses[providerName] = status;
-          notifyListeners();
+          _safeNotify();
         },
       );
 
+      if (_isDisposed) return;
       if (_sources.isEmpty) {
         _state = PlaybackState.error;
         _errorMessage = 'No streaming sources found';
-        notifyListeners();
+        _safeNotify();
       }
     } catch (e) {
       debugPrint('[PlayerController] Extraction error: $e');
+      if (_isDisposed) return;
       if (_sources.isEmpty) {
         _state = PlaybackState.error;
         _errorMessage = 'Extraction failed: $e';
-        notifyListeners();
+        _safeNotify();
       }
     }
   }
@@ -191,36 +222,24 @@ class PlayerController extends ChangeNotifier {
 
   /// Play a specific source.
   Future<void> _playSource(ExtractorLink source, {double? startPosition}) async {
+    if (_isDisposed) return;
     _state = PlaybackState.buffering;
     _currentSource = source;
     _errorMessage = null;
-    notifyListeners();
+    _safeNotify();
 
     try {
       // Dispose previous controller if exists
+      _betterPlayerController?.removeEventsListener(_onPlayerEvent);
       _betterPlayerController?.dispose();
+      _betterPlayerController = null;
 
-      // Determine data source type
-      BetterPlayerDataSourceType dataSourceType;
-      switch (source.resolvedType) {
-        case LinkType.m3u8:
-          dataSourceType = BetterPlayerDataSourceType.network;
-          break;
-        case LinkType.dash:
-          dataSourceType = BetterPlayerDataSourceType.network;
-          break;
-        default:
-          dataSourceType = BetterPlayerDataSourceType.network;
-      }
-
-      // Create data source with headers
+      // Create data source — DO NOT use useAsmsSubtitles/useAsmsTracks
+      // as they cause IndexOutOfBoundsException in the native plugin
       final dataSource = BetterPlayerDataSource(
-        dataSourceType,
+        BetterPlayerDataSourceType.network,
         source.url,
         headers: source.headers.isNotEmpty ? source.headers : null,
-        useAsmsSubtitles: true,
-        useAsmsTracks: true,
-        useAsmsAudioTracks: true,
       );
 
       // Create player configuration
@@ -251,9 +270,22 @@ class PlayerController extends ChangeNotifier {
       debugPrint('[PlayerController] Playing: ${source.displayName}');
     } catch (e) {
       debugPrint('[PlayerController] Play error: $e');
+      // Auto-try next source on failure
+      _tryNextSource(source, startPosition: startPosition);
+    }
+  }
+
+  /// If the current source fails, automatically try the next available source.
+  void _tryNextSource(ExtractorLink failedSource, {double? startPosition}) {
+    if (_isDisposed) return;
+    final idx = _sources.indexOf(failedSource);
+    if (idx >= 0 && idx + 1 < _sources.length) {
+      debugPrint('[PlayerController] Auto-trying next source...');
+      _playSource(_sources[idx + 1], startPosition: startPosition);
+    } else {
       _state = PlaybackState.error;
-      _errorMessage = 'Playback failed: $e';
-      notifyListeners();
+      _errorMessage = 'Playback failed for all sources';
+      _safeNotify();
     }
   }
 
@@ -313,15 +345,23 @@ class PlayerController extends ChangeNotifier {
   void _startPositionTracking() {
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_isDisposed) return;
       final controller = _betterPlayerController?.videoPlayerController;
       if (controller != null && controller.value.initialized) {
         final newPosition = controller.value.position;
         final newDuration = controller.value.duration ?? Duration.zero;
-        if (newPosition != _position || newDuration != _duration) {
+        // Track buffered position
+        final bufferedRanges = controller.value.buffered;
+        Duration newBuffered = Duration.zero;
+        if (bufferedRanges.isNotEmpty) {
+          newBuffered = bufferedRanges.last.end;
+        }
+        if (newPosition != _position || newDuration != _duration || newBuffered != _buffered) {
           _position = newPosition;
           _duration = newDuration;
+          _buffered = newBuffered;
           onProgressUpdate?.call(_position, _duration);
-          notifyListeners();
+          _safeNotify();
         }
       }
     });
@@ -338,10 +378,14 @@ class PlayerController extends ChangeNotifier {
   }
 
   void seekTo(Duration position) {
+    final vp = _betterPlayerController?.videoPlayerController;
+    if (vp == null || !vp.value.initialized) return;
     _betterPlayerController?.seekTo(position);
   }
 
   void seekRelative(Duration offset) {
+    final vp = _betterPlayerController?.videoPlayerController;
+    if (vp == null || !vp.value.initialized) return;
     final newPos = _position + offset;
     final clamped = newPos < Duration.zero
         ? Duration.zero
@@ -349,16 +393,64 @@ class PlayerController extends ChangeNotifier {
     seekTo(clamped);
   }
 
+  /// Skip forward 10 seconds (CloudStream-style)
+  void skipForward() {
+    seekRelative(const Duration(seconds: 10));
+  }
+
+  /// Skip backward 10 seconds (CloudStream-style)
+  void skipBackward() {
+    seekRelative(const Duration(seconds: -10));
+  }
+
+  /// Navigate to next episode
+  void nextEpisode() {
+    if (!hasNextEpisode || _season == null || _episode == null) return;
+    onNextEpisode?.call(_season!, _episode! + 1);
+  }
+
+  /// Navigate to previous episode
+  void previousEpisode() {
+    if (!hasPreviousEpisode || _season == null || _episode == null) return;
+    onPreviousEpisode?.call(_season!, _episode! - 1);
+  }
+
   void setPlaybackSpeed(double speed) {
     _playbackSpeed = speed;
     _betterPlayerController?.setSpeed(speed);
-    notifyListeners();
+    _safeNotify();
   }
 
   void setResizeMode(VideoResizeMode mode) {
     _resizeMode = mode;
     _betterPlayerController?.setOverriddenFit(_getBetterPlayerFit());
-    notifyListeners();
+    _safeNotify();
+  }
+
+  /// Cycle through resize modes: fit → fill → zoom → fit
+  void cycleResizeMode() {
+    switch (_resizeMode) {
+      case VideoResizeMode.fit:
+        setResizeMode(VideoResizeMode.fill);
+        break;
+      case VideoResizeMode.fill:
+        setResizeMode(VideoResizeMode.zoom);
+        break;
+      case VideoResizeMode.zoom:
+        setResizeMode(VideoResizeMode.fit);
+        break;
+    }
+  }
+
+  String get resizeModeLabel {
+    switch (_resizeMode) {
+      case VideoResizeMode.fit:
+        return 'Fit';
+      case VideoResizeMode.fill:
+        return 'Fill';
+      case VideoResizeMode.zoom:
+        return 'Stretch';
+    }
   }
 
   BoxFit _getBetterPlayerFit() {
@@ -377,14 +469,14 @@ class PlayerController extends ChangeNotifier {
   void showControls() {
     if (_isLocked) return;
     _controlsVisible = true;
-    notifyListeners();
+    _safeNotify();
     _resetControlsTimer();
   }
 
   void hideControls() {
     _controlsVisible = false;
     _controlsTimer?.cancel();
-    notifyListeners();
+    _safeNotify();
   }
 
   void toggleControls() {
@@ -409,17 +501,18 @@ class PlayerController extends ChangeNotifier {
     if (_isLocked) {
       _controlsVisible = false;
     }
-    notifyListeners();
+    _safeNotify();
   }
 
   // ─── Retry ─────────────────────────────────────────────────────────────
 
   Future<void> retry() async {
+    if (_isDisposed) return;
     _state = PlaybackState.extracting;
     _errorMessage = null;
     _sources.clear();
     _providerStatuses.clear();
-    notifyListeners();
+    _safeNotify();
     await _startExtraction();
   }
 
@@ -427,10 +520,12 @@ class PlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _controlsTimer?.cancel();
     _positionTimer?.cancel();
     _betterPlayerController?.removeEventsListener(_onPlayerEvent);
     _betterPlayerController?.dispose();
+    _betterPlayerController = null;
 
     // Restore orientation
     SystemChrome.setPreferredOrientations([
