@@ -81,6 +81,8 @@ class ManifestItem {
     String cleaned = title;
     cleaned = cleaned.replaceAll(_yearPattern, '');
     cleaned = cleaned.replaceAll(_seasonPattern, '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*[:\-–]\s*(?:English|Hindi|Dual|Tamil|Telugu|Punjabi|Season|Substitle|Subtitle).*$', caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*(?:Full Movie|Complete Web Series|WEB-DL|HDTC|PreDVD|HDRip|x264|x265|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Tamil|Telugu|Punjabi|JioHotstar|SonyLiv|Netflix|AMZN|Zee5|–|\*No Ads\*|480p|720p|1080p|2160p|10Bit).*$', caseSensitive: false), '');
     return cleaned.trim();
   }
 
@@ -467,6 +469,20 @@ class ManifestItem {
       postUrl: postUrl ?? this.postUrl,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ManifestItem &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          mediaType == other.mediaType &&
+          title == other.title &&
+          logoUrl == other.logoUrl &&
+          postUrl == other.postUrl;
+
+  @override
+  int get hashCode => Object.hash(id, mediaType, title, logoUrl, postUrl);
 }
 
 /// Full manifest envelope — supports both GitHub (posts/total/last_updated)

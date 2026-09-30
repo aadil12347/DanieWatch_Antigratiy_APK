@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/config/env.dart';
@@ -18,14 +19,18 @@ import 'pip/pip_controller.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/app_update_service.dart';
+import 'services/extraction/movie_site_scraper_service.dart';
 
+/// Global completer so splash/router can await Supabase readiness.
+final Completer<void> supabaseReady = Completer<void>();
+
+/// Synchronous session heuristic read during startup (before Supabase init).
+/// Set to true after first successful login, cleared on logout.
+bool hasPersistedSession = false;
 
 Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-
-  // Load the app version dynamically from platform package info
-  await Env.loadAppVersion();
 
   // Validate required environment variables are configured via --dart-define
   Env.validate();
@@ -66,18 +71,17 @@ Future<void> main() async {
       );
     };
 
-    // Force portrait orientation and hide status/nav bars globally
-    await SystemChrome.setPreferredOrientations([
+    // System styling (synchronous / non-blocking)
+    SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
 
-    await SystemChrome.setEnabledSystemUIMode(
+    SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
       overlays: [],
     );
 
-    // Immersive status bar
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -87,36 +91,18 @@ Future<void> main() async {
       ),
     );
 
-    // Initialize local SQLite database
-    await AppDatabase.instance.initialize();
+    // ── PHASE 1: ONLY instant local work before UI (<200ms) ──────────────
+    // Read session flag synchronously so we know whether to skip splash.
+    final prefs = await SharedPreferences.getInstance();
+    hasPersistedSession = prefs.getBool('has_session') ?? false;
 
-    // Initialize Download Manager
-    await DownloadManager.instance.initialize();
+    await Future.wait([
+      Env.loadAppVersion(),
+      AppDatabase.instance.initialize(),
+      MovieSiteScraperService.instance.loadDiskCache(),
+    ]);
 
-    // Initialize Supabase
-    await Supabase.initialize(
-      url: Env.supabaseUrl,
-      anonKey: Env.supabaseAnonKey,
-    );
-
-    // Cleanup old update APK if the install was successful
-    await AppUpdateService.instance.cleanupIfNeeded();
-
-    // Initialize PIP Controller for handling cold recovery
-    PipController.instance.init();
-
-    // Initialize Firebase and Notifications
-    await NotificationService.instance.initialize();
-
-    // Initialize Deep Link Service (catches cold-start links)
-    await DeepLinkService.instance.initialize();
-
-    // Start downloading the remote index.json immediately (fire-and-forget).
-    // This runs in the background so the index is likely ready by login time.
-    // ignore: unawaited_futures
-    DatabaseSyncService.instance.syncIndex();
-
-    // Remove splash screen just before running the app
+    // Remove native splash immediately — launch UI NOW!
     FlutterNativeSplash.remove();
 
     runApp(
@@ -126,6 +112,37 @@ Future<void> main() async {
         ),
       ),
     );
+
+    // ── PHASE 2: Background init — Supabase + services AFTER UI renders ──
+    Future.microtask(() async {
+      try {
+        // Supabase is the heaviest — network-bound 1-2.5s.
+        // UI is already visible, so this runs in parallel.
+        await Supabase.initialize(
+          url: Env.supabaseUrl,
+          anonKey: Env.supabaseAnonKey,
+        );
+        if (!supabaseReady.isCompleted) supabaseReady.complete();
+        debugPrint('[Startup] ✅ Supabase ready');
+
+        // Persist session flag for next cold start
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user != null) {
+          prefs.setBool('has_session', true);
+        }
+
+        // Non-critical services — fire & forget
+        PipController.instance.init();
+        DownloadManager.instance.initialize();
+        NotificationService.instance.initialize();
+        DeepLinkService.instance.initialize();
+        AppUpdateService.instance.cleanupIfNeeded();
+        DatabaseSyncService.instance.syncIndex();
+      } catch (e) {
+        debugPrint('[Startup] Background service init warning: $e');
+        if (!supabaseReady.isCompleted) supabaseReady.completeError(e);
+      }
+    });
   } catch (e, stackTrace) {
     // Ensure splash is removed even on failure to show error UI
     FlutterNativeSplash.remove();

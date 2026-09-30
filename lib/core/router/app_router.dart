@@ -27,6 +27,8 @@ import '../../presentation/screens/requests/request_chat_screen.dart';
 import '../../presentation/providers/auth_provider.dart';
 import '../../presentation/providers/manifest_provider.dart';
 
+import '../../main.dart' show hasPersistedSession;
+
 class AppRouter {
   static GlobalKey<NavigatorState> rootNavKey = GlobalKey<NavigatorState>();
 }
@@ -76,7 +78,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: AppRouter.rootNavKey,
-    initialLocation: '/splash',
+    // Skip splash entirely for returning logged-in users — instant home!
+    initialLocation: hasPersistedSession ? '/home' : '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
       final location = state.uri.toString();
@@ -130,11 +133,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authStateProvider);
       // Use synchronous Supabase session check as fallback when the
       // StreamProvider hasn't emitted yet (still AsyncLoading).
-      // Without this, returning users get stuck on splash because the
-      // redirect thinks they're not logged in.
-      final user = authState.valueOrNull ?? Supabase.instance.client.auth.currentUser;
+      // Guard with try-catch: Supabase may not be initialized yet if
+      // we skipped splash for a returning user.
+      User? supabaseUser;
+      try {
+        supabaseUser = Supabase.instance.client.auth.currentUser;
+      } catch (_) {
+        // Supabase not ready yet — trust the persisted session flag
+      }
+      final user = authState.valueOrNull ?? supabaseUser;
       
-      final bool isLoggedIn = user != null;
+      final bool isLoggedIn = user != null || hasPersistedSession;
       final bool onSplash = state.matchedLocation == '/splash';
       final bool onCallback = state.matchedLocation == '/login-callback';
 

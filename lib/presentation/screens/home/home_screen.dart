@@ -1,7 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
@@ -45,7 +49,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Register the controller with the global manager
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollManager.register(0, _scrollController);
+      // Deferred from splash — request permissions after home is visible
+      _requestPermissionsIfNeeded();
     });
+  }
+
+  /// Request Android permissions in background — deferred from splash for instant startup.
+  Future<void> _requestPermissionsIfNeeded() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final deviceInfo = DeviceInfoPlugin();
+        final androidInfo = await deviceInfo.androidInfo;
+        final sdkInt = androidInfo.version.sdkInt;
+        if (sdkInt >= 33) {
+          await [Permission.notification, Permission.videos, Permission.photos].request();
+        } else {
+          await [Permission.notification, Permission.storage].request();
+        }
+      } catch (e) {
+        debugPrint('[Home] Permission request error: $e');
+      }
+    }
   }
 
   @override

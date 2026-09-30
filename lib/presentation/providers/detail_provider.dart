@@ -236,7 +236,10 @@ final heroItemLogoProvider = FutureProvider.family<String?, ManifestItem>(
 
       // 6. Fallback: Search TMDB by clean title
       if (tmdbId == null) {
-        final searchResults = await TmdbClient.instance.searchMulti(item.cleanTitle);
+        final pureTitle = MovieSiteScraperService.extractPureTitle(item.title);
+        final searchResults = await TmdbClient.instance.searchMulti(
+          pureTitle.isNotEmpty ? pureTitle : item.cleanTitle,
+        );
         if (searchResults.isNotEmpty) {
           final firstMatch = searchResults.first;
           tmdbId = firstMatch['id'] as int?;

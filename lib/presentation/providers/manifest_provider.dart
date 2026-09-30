@@ -573,15 +573,29 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
   Future<List<ManifestItem>> _fetchLocalPage(int page) async {
     final cat = category.toLowerCase().trim();
     const liveCategories = {
+      'all',
+      'explore',
       'action',
-      'korean',
-      'chinese',
+      'indian',
+      'bollywood',
+      'hollywood',
       'anime',
+      'korean',
+      'k-drama',
+      'chinese',
+      'punjabi',
+      'pakistani',
       'comedy',
       'thriller',
       'horror',
       'sci-fi',
       'romance',
+      'adventure',
+      'crime',
+      'drama',
+      'fantasy',
+      'mystery',
+      'animation',
     };
     if (liveCategories.contains(cat)) {
       try {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,24 +10,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/env.dart';
 import '../../domain/models/user_profile.dart';
 import '../../data/local/database.dart';
+import '../../main.dart' show supabaseReady;
 
-final supabaseClient = Supabase.instance.client;
+/// Lazy getter — safe to call before or after Supabase.initialize().
+SupabaseClient get supabaseClient => Supabase.instance.client;
 
-/// Provides the current Supabase User
-final authStateProvider = StreamProvider<User?>((ref) {
-  return supabaseClient.auth.onAuthStateChange.map((event) => event.session?.user);
+/// Provides the current Supabase User.
+/// Waits for Supabase to be ready before subscribing to the auth stream.
+final authStateProvider = StreamProvider<User?>((ref) async* {
+  // Wait until Supabase is initialized (runs in background in main.dart)
+  await supabaseReady.future;
+  yield* supabaseClient.auth.onAuthStateChange.map((event) => event.session?.user);
 });
 
 /// Provides the current session
 final sessionProvider = Provider<Session?>((ref) {
+  if (!supabaseReady.isCompleted) return null;
   return supabaseClient.auth.currentSession;
 });
 
 /// Synchronous fallback: checks Supabase's in-memory current user.
 /// Used by splash screen when the auth stream hasn't emitted yet.
 final currentUserProvider = Provider<User?>((ref) {
-  // Also watch authStateProvider so this updates when auth changes
   ref.watch(authStateProvider);
+  if (!supabaseReady.isCompleted) return null;
   return supabaseClient.auth.currentUser;
 });
 
@@ -109,6 +116,9 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
         email: email,
         password: password,
       );
+      // Persist session flag for instant startup next launch
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_session', true);
       ref.invalidateSelf();
     } catch (e) {
       print('Sign In Error: $e');
@@ -142,7 +152,9 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
         idToken: idToken,
         accessToken: accessToken,
       );
-      
+      // Persist session flag for instant startup next launch
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_session', true);
       ref.invalidateSelf();
     } catch (e) {
       rethrow;

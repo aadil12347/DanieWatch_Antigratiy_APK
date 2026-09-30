@@ -6,18 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../providers/manifest_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/splash_provider.dart';
-import '../../providers/search_provider.dart';
 import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/deep_link_service.dart';
-import '../../../services/extraction/movie_site_scraper_service.dart';
-import 'dart:io';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
 
@@ -61,12 +55,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     );
 
     _startTime = DateTime.now();
-    _checkFirstRun();
+    _loadFirstRunFlag();
 
-    // Safety timeout: if splash hasn't resolved after 8 seconds, force a decision.
-    _safetyTimer = Timer(const Duration(seconds: 8), () {
+    // Safety timeout: if splash hasn't resolved after 4 seconds, force a decision.
+    _safetyTimer = Timer(const Duration(seconds: 4), () {
       if (!_hasNavigated && mounted) {
-        debugPrint('SplashScreen: ⚠️ SAFETY TIMEOUT (8s) — forcing navigation');
+        debugPrint('SplashScreen: ⚠️ SAFETY TIMEOUT (4s) — forcing navigation');
         _forceNavigateHome();
       }
     });
@@ -80,8 +74,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         return;
       }
       
-      // Stop periodic check after 6 seconds
-      if (DateTime.now().difference(_startTime).inSeconds >= 6) {
+      // Stop periodic check after 3 seconds
+      if (DateTime.now().difference(_startTime).inSeconds >= 3) {
         timer.cancel();
         return;
       }
@@ -98,11 +92,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      // Kick off database sync in background — don't block navigation
-      ref.read(databaseSyncProvider);
-      MovieSiteScraperService.instance.loadDiskCache();
-
-      // Evaluate immediately on first frame
+      // Evaluate immediately on first frame — no sync/cache work here
       _evaluateTransition();
 
       _authSub = ref.listenManual(authStateProvider, (previous, next) {
@@ -115,9 +105,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
           _initializePosters(next.value!);
         }
       });
-
-      // Trigger search provider initialization immediately
-      ref.read(searchProvider('global'));
     });
   }
 
@@ -134,33 +121,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     }
   }
 
-  Future<void> _checkFirstRun() async {
+  /// Lightweight flag check — no permission requests on splash (deferred to home).
+  Future<void> _loadFirstRunFlag() async {
     final prefs = await SharedPreferences.getInstance();
     final isFirstRun = prefs.getBool('is_first_run') ?? true;
     if (mounted) {
       setState(() => _isLogin = !isFirstRun);
     }
-    
-    // Request permissions on startup
-    if (!kIsWeb && Platform.isAndroid) {
-      final deviceInfo = DeviceInfoPlugin();
-      final androidInfo = await deviceInfo.androidInfo;
-      final sdkInt = androidInfo.version.sdkInt;
-      
-      if (sdkInt >= 33) {
-        await [
-          Permission.notification,
-          Permission.videos,
-          Permission.photos,
-        ].request();
-      } else {
-        await [
-          Permission.notification,
-          Permission.storage,
-        ].request();
-      }
-    }
-    
     if (isFirstRun) {
       await prefs.setBool('is_first_run', false);
     }
@@ -184,7 +151,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
         _isTransitioning = false;
 
         // Schedule a fallback check after 3s
-        Future.delayed(const Duration(seconds: 3), () {
+        Future.delayed(const Duration(milliseconds: 1500), () {
           if (_hasNavigated || !mounted) return;
           // Re-check synchronously
           final syncUser = ref.read(currentUserProvider);
@@ -262,11 +229,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       }
 
       // ── CASE 3: User is NOT logged in — show auth modal ──────────────────
-      final elapsed = DateTime.now().difference(_startTime);
-      const minDuration = Duration(milliseconds: 1500);
-      if (elapsed < minDuration) {
-        await Future.delayed(minDuration - elapsed);
-      }
+      // No artificial delay — show auth modal immediately
 
       if (!mounted) return;
 

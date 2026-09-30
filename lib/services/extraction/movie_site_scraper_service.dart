@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/manifest_item.dart';
+import '../../data/clients/tmdb_client.dart';
 
 class ScrapedSiteCard {
   final String site; // 'vegamovies' | 'rogmovies'
@@ -11,6 +12,7 @@ class ScrapedSiteCard {
   final String posterUrl;
   final String title;
   final double rating;
+  final DateTime? datePublished;
 
   ScrapedSiteCard({
     required this.site,
@@ -18,6 +20,7 @@ class ScrapedSiteCard {
     required this.posterUrl,
     required this.title,
     this.rating = 7.0,
+    this.datePublished,
   });
 }
 
@@ -124,14 +127,16 @@ class MovieSiteScraperService {
   List<ManifestItem>? getCachedCategory(String key) =>
       _categoryPageCache['${key.toLowerCase().trim()}_page_1'];
 
-  static final RegExp _excludedIndianShowPatterns = RegExp(
-    r'roadies|bigg?\s*boss|dance\s*master|hustle|top\s*1\s*%|top\s*1\s*percent|sa\s*re\s*ga\s*ma|sare\s*gama|best\s*dancer|beat\s*dancer|khatron\s*ke\s*khiladi|got\s*latent|kapil\s*show|reality|tv-show|rise\s*and\s*fall|family\s*full\s*house',
+  static final RegExp _excludedShowPatterns = RegExp(
+    r'roadies|bigg?\s*boss|dance\s*master|hustle|top\s*1\s*%|top\s*1\s*percent|sa\s*re\s*ga\s*ma|sare\s*gama|best\s*dancer|beat\s*dancer|khatron\s*ke\s*khiladi|got\s*latent|kapil\s*show|reality|tv-show|rise\s*and\s*fall|family\s*full\s*house|indian\s*idol|splitsvilla|super\s*singer|masterchef|voice\s*of\s*india|jhalak\s*dikhhla\s*jaa|nach\s*baliye|comedy\s*circus|laughter\s*challenge|fear\s*factor|lock\s*upp|temptation\s*island|talent\s*hunt|competition',
     caseSensitive: false,
   );
 
-  static bool isExcludedIndianShow(String title) {
-    return _excludedIndianShowPatterns.hasMatch(title);
+  static bool isExcludedShow(String title) {
+    return _excludedShowPatterns.hasMatch(title);
   }
+
+  static bool isExcludedIndianShow(String title) => isExcludedShow(title);
 
   /// Loads cached home sections from local disk into memory in <2ms.
   Future<void> loadDiskCache() async {
@@ -245,6 +250,33 @@ class MovieSiteScraperService {
         .trim();
   }
 
+  /// Extracts pure title stripped of clutter (e.g. "Slow Horses", "The Punisher").
+  static String extractPureTitle(String raw) {
+    var t = cleanTitle(raw);
+    if (t.toLowerCase().startsWith('download ')) {
+      t = t.substring(9).trim();
+    }
+    // Remove curly/square bracket tags like {S01E04 Added}, [Hindi DD5.1], [400MB]
+    t = t.replaceAll(RegExp(r'\s*[\{\[].*?[\}\]]'), ' ');
+    // Remove season in parentheses: (Season 1 - 6), (Season 1 – 6), (S01), (S1-S2)
+    t = t.replaceAll(RegExp(r'\s*\((?:Season|\d{4}|S\d+).*?\)', caseSensitive: false), ' ');
+    // Remove trailing specs starting with colon or dash, e.g. ": English with Substitle", ": Season 1"
+    t = t.replaceAll(
+      RegExp(r'\s*[:\-–]\s*(?:English|Hindi|Dual|Tamil|Telugu|Punjabi|Season|Substitle|Subtitle).*$', caseSensitive: false),
+      '',
+    );
+    // Remove common release words and quality tags
+    t = t.replaceAll(
+      RegExp(
+        r'\s*(?:Full Movie|Complete Web Series|WEB-DL|HDTC|PreDVD|HDRip|x264|x265|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Tamil|Telugu|Punjabi|JioHotstar|SonyLiv|Netflix|AMZN|Zee5|–|\*No Ads\*|480p|720p|1080p|2160p|10Bit).*$',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    t = t.replaceAll(RegExp(r'\s*\(\d{4}\)'), '');
+    return t.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
   /// Extract poster cards from VegaMovies / RogMovies HTML
   static List<ScrapedSiteCard> parseCards(String html, String site) {
     final cards = <ScrapedSiteCard>[];
@@ -260,6 +292,7 @@ class MovieSiteScraperService {
     final altRegex = RegExp(r'alt="([^"]+)"', caseSensitive: false);
     final titleRegex = RegExp(r'class="poster-title"[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>', caseSensitive: false);
     final rateRegex = RegExp(r'<meta itemprop="ratingValue" content="([^"]+)"', caseSensitive: false);
+    final timeRegex = RegExp(r'<time[^>]*datetime="([^"]+)"', caseSensitive: false);
 
     for (final match in cardRegex.allMatches(html)) {
       final block = match.group(1) ?? '';
@@ -271,11 +304,16 @@ class MovieSiteScraperService {
       final altM = altRegex.firstMatch(block);
       final titleM = titleRegex.firstMatch(block);
       final rateM = rateRegex.firstMatch(block);
+      final timeM = timeRegex.firstMatch(block);
 
       final rawTitle = altM?.group(1) ?? (titleM?.group(1) ?? '');
       final title = cleanTitle(rawTitle);
       final poster = imgM?.group(1) ?? '';
       final rating = rateM != null ? double.tryParse(rateM.group(1) ?? '') ?? 7.2 : 7.2;
+      DateTime? datePublished;
+      if (timeM != null) {
+        datePublished = DateTime.tryParse(timeM.group(1)!);
+      }
 
       if (title.length > 2) {
         seenUrls.add(postUrl);
@@ -285,6 +323,7 @@ class MovieSiteScraperService {
           posterUrl: poster,
           title: title,
           rating: rating,
+          datePublished: datePublished,
         ));
       }
     }
@@ -340,16 +379,8 @@ class MovieSiteScraperService {
       }
     }
 
-    // Clean clutter from raw scrape title (e.g. resolution, rip tags, audio tags)
-    var displayTitle = title.replaceAll(RegExp(r'\s*[\{\[].*?[\}\]]'), ' ');
-    displayTitle = displayTitle.replaceAll(
-      RegExp(
-        r'\s*(?:Full Movie|Complete Web Series|WEB-DL|HDTC|PreDVD|HDRip|x264|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Tamil|Telugu|Punjabi|JioHotstar|SonyLiv|Netflix|AMZN|Zee5|–|\*No Ads\*|480p|720p|1080p|2160p).*$',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    displayTitle = displayTitle.replaceAll(RegExp(r'\s+'), ' ').trim();
+    // Clean clutter from raw scrape title using pure title extractor
+    var displayTitle = extractPureTitle(title);
     if (displayTitle.length < 3) {
       displayTitle = title;
     }
@@ -376,7 +407,8 @@ class MovieSiteScraperService {
       title: displayTitle,
       posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
       postUrl: card.postUrl,
-      releaseYear: year ?? DateTime.now().year,
+      releaseYear: year ?? (card.datePublished?.year ?? DateTime.now().year),
+      releaseDate: card.datePublished?.toIso8601String(),
       voteAverage: card.rating,
       isTrending: isTrending,
       trendingRank: trendingRank,
@@ -602,67 +634,104 @@ class MovieSiteScraperService {
 
     // ─────────────────────────────────────────────────────────────────────────
     // 2. Carousel Items (Top 5 featured from VegaMovies homepage)
+    // Directly enrich with real TMDB IDs, pure titles, and logos in parallel
     // ─────────────────────────────────────────────────────────────────────────
     final carouselCards = <ScrapedSiteCard>[];
     for (final card in vegaCards) {
-      if (carouselCards.length >= 5) break;
+      if (isExcludedShow(card.title)) continue;
       carouselCards.add(card);
+      if (carouselCards.length >= 5) break;
     }
-    final carouselItems = <ManifestItem>[];
-    for (int i = 0; i < carouselCards.length; i++) {
-      final item = createFastManifestItem(
-        carouselCards[i],
+
+    final carouselItems = await Future.wait(carouselCards.map((card) async {
+      markUsed(card);
+      final pureTitle = extractPureTitle(card.title);
+      String? imdbId = await fetchImdbIdFromPostUrl(card.postUrl);
+      int? tmdbId;
+      String mediaType = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show', caseSensitive: false).hasMatch(card.title) ||
+              card.postUrl.contains('series') ||
+              card.postUrl.contains('season')
+          ? 'tv'
+          : 'movie';
+
+      if (imdbId != null && imdbId.isNotEmpty) {
+        final findData = await TmdbClient.instance.findByImdbId(imdbId);
+        if (findData != null) {
+          tmdbId = findData['id'] as int?;
+          final type = findData['media_type']?.toString();
+          if (type == 'tv' || type == 'movie') {
+            mediaType = type!;
+          }
+        }
+      }
+
+      if (tmdbId == null) {
+        final searchResults = await TmdbClient.instance.searchMulti(pureTitle);
+        if (searchResults.isNotEmpty) {
+          final firstMatch = searchResults.first;
+          tmdbId = firstMatch['id'] as int?;
+          final type = firstMatch['media_type']?.toString();
+          if (type == 'tv' || type == 'movie') {
+            mediaType = type!;
+          }
+        }
+      }
+
+      String? logoUrl;
+      if (tmdbId != null) {
+        registerResolvedTmdb(tmdbId, tmdbId, mediaType);
+        logoUrl = await TmdbClient.instance.fetchTmdbLogo(tmdbId, mediaType);
+      }
+
+      final fastId = tmdbId ?? ((card.postUrl.hashCode.abs() % 9000000) + 1000000);
+      registerResolvedTmdb(fastId, tmdbId ?? fastId, mediaType);
+
+      final item = ManifestItem(
+        id: fastId,
+        mediaType: mediaType,
+        title: pureTitle,
+        posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
+        postUrl: card.postUrl,
+        logoUrl: logoUrl,
+        imdbId: imdbId,
+        releaseYear: card.datePublished?.year ?? DateTime.now().year,
+        releaseDate: card.datePublished?.toIso8601String(),
+        voteAverage: card.rating,
         isTrending: true,
-        trendingRank: i + 1,
-        localMap: localMap,
       );
-      carouselItems.add(item);
-    }
+      _itemMap[item.id.toString()] = item;
+      _postUrlMap[item.id.toString()] = card.postUrl;
+      return item;
+    }));
     _cachedCarousel = carouselItems;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. Top 10 Hindi Dub Today
-    // 5 from RogMovies homepage + 5 from VegaMovies homepage, dynamically interleaved,
-    // strictly distinct from Top 10 Indian Today!
+    // 3. Top 10 Hindi Dub Today (VegaMovies only - strictly excluding reality/competition shows)
     // ─────────────────────────────────────────────────────────────────────────
     final top10HindiDubCards = <ScrapedSiteCard>[];
-    int rIdx = 0;
-    int vIdx = 0;
-
-    for (int i = 0; i < 5; i++) {
-      while (rIdx < rogCards.length && isUsed(rogCards[rIdx])) {
-        rIdx++;
-      }
-      if (rIdx < rogCards.length) {
-        top10HindiDubCards.add(rogCards[rIdx]);
-        markUsed(rogCards[rIdx]);
-        rIdx++;
-      }
-
-      while (vIdx < vegaCards.length && isUsed(vegaCards[vIdx])) {
-        vIdx++;
-      }
-      if (vIdx < vegaCards.length) {
-        top10HindiDubCards.add(vegaCards[vIdx]);
-        markUsed(vegaCards[vIdx]);
-        vIdx++;
+    for (final card in vegaCards) {
+      if (isExcludedShow(card.title)) continue;
+      if (!isUsed(card)) {
+        top10HindiDubCards.add(card);
+        markUsed(card);
+        if (top10HindiDubCards.length >= 10) break;
       }
     }
 
-    // Fill remaining if needed to guarantee 10
-    while (top10HindiDubCards.length < 10 && rIdx < rogCards.length) {
-      if (!isUsed(rogCards[rIdx])) {
-        top10HindiDubCards.add(rogCards[rIdx]);
-        markUsed(rogCards[rIdx]);
+    // If Vega page 1 has fewer than 10 valid non-reality cards, fetch Vega page 2
+    if (top10HindiDubCards.length < 10) {
+      final vegaPage2Html = await fetchHtml('$vegaBaseUrl/page/2/');
+      if (vegaPage2Html != null && vegaPage2Html.isNotEmpty) {
+        final vegaPage2Cards = parseCards(vegaPage2Html, 'vegamovies');
+        for (final card in vegaPage2Cards) {
+          if (isExcludedShow(card.title)) continue;
+          if (!isUsed(card)) {
+            top10HindiDubCards.add(card);
+            markUsed(card);
+            if (top10HindiDubCards.length >= 10) break;
+          }
+        }
       }
-      rIdx++;
-    }
-    while (top10HindiDubCards.length < 10 && vIdx < vegaCards.length) {
-      if (!isUsed(vegaCards[vIdx])) {
-        top10HindiDubCards.add(vegaCards[vIdx]);
-        markUsed(vegaCards[vIdx]);
-      }
-      vIdx++;
     }
 
     final top10HindiDubItems = <ManifestItem>[];
@@ -787,7 +856,16 @@ class MovieSiteScraperService {
 
     final cards = <ScrapedSiteCard>[];
 
-    if (key == 'korean' || key == 'k-drama' || key == 'kdrama') {
+    if (key == 'all' || key == 'explore') {
+      final vegaUrl = page == 1 ? vegaBaseUrl : '$vegaBaseUrl/page/$page/';
+      final rogUrl = page == 1 ? rogBaseUrl : '$rogBaseUrl/page/$page/';
+      final results = await Future.wait([
+        fetchHtml(vegaUrl),
+        fetchHtml(rogUrl),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+    } else if (key == 'korean' || key == 'k-drama' || key == 'kdrama') {
       final pageUrl = page == 1
           ? '$vegaBaseUrl/korean-series/'
           : '$vegaBaseUrl/korean-series/page/$page/';
@@ -801,6 +879,42 @@ class MovieSiteScraperService {
           : '$vegaBaseUrl/anime-series/page/$page/';
       final html = await fetchHtml(pageUrl);
       if (html != null) cards.addAll(parseCards(html, 'vegamovies'));
+    } else if (key == 'indian' || key == 'bollywood') {
+      final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Bollywood' : '$vegaBaseUrl/page/$page/?s=Bollywood';
+      final rogUrl = page == 1 ? '$rogBaseUrl/category/bollywood/' : '$rogBaseUrl/category/bollywood/page/$page/';
+      final results = await Future.wait([
+        fetchHtml(vegaUrl),
+        fetchHtml(rogUrl),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+    } else if (key == 'hollywood') {
+      final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Hollywood' : '$vegaBaseUrl/page/$page/?s=Hollywood';
+      final rogUrl = page == 1 ? '$rogBaseUrl/?s=Hollywood' : '$rogBaseUrl/page/$page/?s=Hollywood';
+      final results = await Future.wait([
+        fetchHtml(vegaUrl),
+        fetchHtml(rogUrl),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+    } else if (key == 'punjabi') {
+      final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Punjabi' : '$vegaBaseUrl/page/$page/?s=Punjabi';
+      final rogUrl = page == 1 ? '$rogBaseUrl/?s=Punjabi' : '$rogBaseUrl/page/$page/?s=Punjabi';
+      final results = await Future.wait([
+        fetchHtml(vegaUrl),
+        fetchHtml(rogUrl),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+    } else if (key == 'pakistani') {
+      final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Pakistani' : '$vegaBaseUrl/page/$page/?s=Pakistani';
+      final rogUrl = page == 1 ? '$rogBaseUrl/?s=Pakistani' : '$rogBaseUrl/page/$page/?s=Pakistani';
+      final results = await Future.wait([
+        fetchHtml(vegaUrl),
+        fetchHtml(rogUrl),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
     } else {
       final genreSlug = key;
       final vegaGenreUrl = page == 1
@@ -815,18 +929,20 @@ class MovieSiteScraperService {
         fetchHtml(rogGenreUrl),
       ]);
 
-      final vegaHtml = results[0] ?? '';
-      final rogHtml = results[1] ?? '';
-
-      final vegaG = parseCards(vegaHtml, 'vegamovies');
-      final rogG = parseCards(rogHtml, 'rogmovies');
-
-      final maxLen = vegaG.length > rogG.length ? vegaG.length : rogG.length;
-      for (int i = 0; i < maxLen; i++) {
-        if (i < vegaG.length) cards.add(vegaG[i]);
-        if (i < rogG.length) cards.add(rogG[i]);
-      }
+      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Dynamically sort posts chronologically descending by actual upload date
+    // (Latest uploaded posts at the top, seamless dynamic flow from both sites)
+    // ─────────────────────────────────────────────────────────────────────────
+    cards.sort((a, b) {
+      if (a.datePublished == null && b.datePublished == null) return 0;
+      if (a.datePublished == null) return 1;
+      if (b.datePublished == null) return -1;
+      return b.datePublished!.compareTo(a.datePublished!);
+    });
 
     final items = <ManifestItem>[];
     final seenUrls = <String>{};
