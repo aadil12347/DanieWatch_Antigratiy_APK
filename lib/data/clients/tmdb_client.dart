@@ -231,6 +231,62 @@ class TmdbClient {
     return result as Map<String, dynamic>?;
   }
 
+  /// Find TMDB item by IMDb ID (e.g. 'tt5675620')
+  Future<Map<String, dynamic>?> findByImdbId(String imdbId) async {
+    final cacheKey = 'find_imdb_$imdbId';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/find/$imdbId', queryParameters: {
+          'external_source': 'imdb_id',
+        });
+        return res.data as Map<String, dynamic>;
+      } on DioException catch (e) {
+        dev.log('[TMDB] Find IMDb $imdbId error: ${e.message}');
+        return null;
+      }
+    });
+    return result as Map<String, dynamic>?;
+  }
+
+  /// Search multi for fallback title matching
+  Future<List<Map<String, dynamic>>> searchMulti(String query) async {
+    final cleanQ = query.trim();
+    if (cleanQ.isEmpty) return [];
+    final cacheKey = 'search_multi_${cleanQ.toLowerCase()}';
+    final result = await _getCachedOrFetch(cacheKey, () async {
+      try {
+        final res = await _dio.get('/search/multi', queryParameters: {
+          'query': cleanQ,
+        });
+        final results = res.data['results'] as List?;
+        return results?.map((e) => e as Map<String, dynamic>).toList() ?? [];
+      } on DioException catch (e) {
+        dev.log('[TMDB] Search multi "$cleanQ" error: ${e.message}');
+        return null;
+      }
+    });
+    return (result as List?)?.cast<Map<String, dynamic>>() ?? [];
+  }
+
+  /// Helper: fetch the best English logo URL for a TMDB item
+  Future<String?> fetchTmdbLogo(int tmdbId, String mediaType) async {
+    try {
+      final images = await getImages(tmdbId, mediaType);
+      if (images == null) return null;
+      final logos = images['logos'] as List?;
+      if (logos == null || logos.isEmpty) return null;
+      final englishLogo = logos.firstWhere(
+        (l) => (l['iso_639_1'] ?? '') == 'en',
+        orElse: () => logos.first,
+      );
+      final path = englishLogo['file_path'] as String?;
+      return logoUrl(path);
+    } catch (e) {
+      dev.log('[TMDB] fetchTmdbLogo error for $tmdbId: $e');
+      return null;
+    }
+  }
+
   /// Lightweight: fetch only videos (trailers) for a given media item
   Future<List<Map<String, dynamic>>> getVideos(int id, String mediaType) async {
     final cacheKey = 'videos_${mediaType}_$id';

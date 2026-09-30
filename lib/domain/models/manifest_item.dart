@@ -32,6 +32,7 @@ class ManifestItem {
   final String? tmdbPosterPath;
   final String? tmdbBackdropPath;
   final String? releaseDate; // ISO format: "2026-05-15" from TMDB
+  final String? postUrl; // Detail page URL on source site (e.g. VegaMovies/RogMovies)
 
   ManifestItem({
     required this.id,
@@ -64,6 +65,7 @@ class ManifestItem {
     this.tmdbPosterPath,
     this.tmdbBackdropPath,
     this.releaseDate,
+    this.postUrl,
   });
 
   // ─── Title Parsing (Clean Title + Season Detail) ──────────────────────────
@@ -297,6 +299,7 @@ class ManifestItem {
       tmdbPosterPath: json['tmdb_poster_path']?.toString(),
       tmdbBackdropPath: json['tmdb_backdrop_path']?.toString(),
       releaseDate: json['release_date']?.toString(),
+      postUrl: json['post_url']?.toString(),
     );
   }
 
@@ -378,6 +381,7 @@ class ManifestItem {
       'tmdb_poster_path': tmdbPosterPath,
       'tmdb_backdrop_path': tmdbBackdropPath,
       'release_date': releaseDate,
+      if (postUrl != null) 'post_url': postUrl,
     };
   }
 
@@ -426,6 +430,8 @@ class ManifestItem {
     String? tmdbPosterPath,
     String? tmdbBackdropPath,
     String? releaseDate,
+    String? imdbId,
+    String? postUrl,
   }) {
     return ManifestItem(
       id: id ?? this.id,
@@ -448,7 +454,7 @@ class ManifestItem {
       numberOfSeasons: numberOfSeasons,
       numberOfEpisodes: numberOfEpisodes,
       status: status,
-      imdbId: imdbId,
+      imdbId: imdbId ?? this.imdbId,
       language: language ?? this.language,
       result: result,
       isTrending: isTrending ?? this.isTrending,
@@ -458,6 +464,7 @@ class ManifestItem {
       tmdbPosterPath: tmdbPosterPath ?? this.tmdbPosterPath,
       tmdbBackdropPath: tmdbBackdropPath ?? this.tmdbBackdropPath,
       releaseDate: releaseDate ?? this.releaseDate,
+      postUrl: postUrl ?? this.postUrl,
     );
   }
 }

@@ -57,6 +57,64 @@ class MovieSiteScraperService {
   final Map<String, Future<List<ManifestItem>>> _pendingCategoryPages = {};
   final Map<String, List<ManifestItem>> _categoryPageCache = {};
   final Map<String, ManifestItem> _itemMap = {};
+  final Map<String, String> _postUrlMap = {};
+  final Map<String, String> _postImdbCache = {};
+  final Map<int, int> _resolvedTmdbIds = {};
+  final Map<int, String> _resolvedMediaTypes = {};
+
+  void registerResolvedTmdb(int fastId, int tmdbId, String mediaType) {
+    _resolvedTmdbIds[fastId] = tmdbId;
+    _resolvedMediaTypes[fastId] = mediaType;
+  }
+
+  int getResolvedTmdbId(int fastId) => _resolvedTmdbIds[fastId] ?? fastId;
+  String getResolvedMediaType(int fastId, String fallback) =>
+      _resolvedMediaTypes[fastId] ?? fallback;
+
+  String? getPostUrl(int fastId) => _postUrlMap[fastId.toString()];
+
+  /// Fetches IMDb ID from a post's detail page (e.g., https://vegamovies.gallery/...)
+  Future<String?> fetchImdbIdFromPostUrl(String postUrl) async {
+    if (postUrl.isEmpty) return null;
+    if (_postImdbCache.containsKey(postUrl)) {
+      return _postImdbCache[postUrl];
+    }
+
+    try {
+      final html = await fetchHtml(postUrl);
+      if (html == null || html.isEmpty) return null;
+
+      // 1. Direct IMDb link: imdb.com/title/(tt\d+)
+      final imdbLinkRegex = RegExp(r'imdb\.com/title/(tt\d+)', caseSensitive: false);
+      final linkMatch = imdbLinkRegex.firstMatch(html);
+      if (linkMatch != null) {
+        final id = linkMatch.group(1)!;
+        _postImdbCache[postUrl] = id;
+        return id;
+      }
+
+      // 2. Look for tt ID near "imdb" or "rating"
+      final imdbBlockRegex = RegExp(r'imdb[\s\S]{1,100}?(tt\d{6,10})', caseSensitive: false);
+      final blockMatch = imdbBlockRegex.firstMatch(html);
+      if (blockMatch != null) {
+        final id = blockMatch.group(1)!;
+        _postImdbCache[postUrl] = id;
+        return id;
+      }
+
+      // 3. Fallback: Any tt\d{6,10} pattern in HTML
+      final ttRegex = RegExp(r'\b(tt\d{6,10})\b', caseSensitive: false);
+      final ttMatch = ttRegex.firstMatch(html);
+      if (ttMatch != null) {
+        final id = ttMatch.group(1)!;
+        _postImdbCache[postUrl] = id;
+        return id;
+      }
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Failed to extract IMDb from $postUrl: $e');
+    }
+    return null;
+  }
 
   Map<String, ManifestItem> get itemMap => _itemMap;
   bool get hasMemoryCache => _cachedTop10Indian != null && _cachedTop10HindiDub != null;
@@ -168,6 +226,10 @@ class MovieSiteScraperService {
     _pendingCategoryPages.clear();
     _categoryPageCache.clear();
     _itemMap.clear();
+    _postUrlMap.clear();
+    _postImdbCache.clear();
+    _resolvedTmdbIds.clear();
+    _resolvedMediaTypes.clear();
   }
 
   /// Clean post title
@@ -267,10 +329,12 @@ class MovieSiteScraperService {
         if (itemNorm.length > 4 && normTitle.contains(itemNorm)) {
           final enriched = item.copyWith(
             posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
+            postUrl: card.postUrl,
             isTrending: isTrending,
             trendingRank: trendingRank,
           );
           _itemMap[enriched.id.toString()] = enriched;
+          _postUrlMap[enriched.id.toString()] = card.postUrl;
           return enriched;
         }
       }
@@ -311,6 +375,7 @@ class MovieSiteScraperService {
       mediaType: mediaType,
       title: displayTitle,
       posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
+      postUrl: card.postUrl,
       releaseYear: year ?? DateTime.now().year,
       voteAverage: card.rating,
       isTrending: isTrending,
@@ -318,6 +383,7 @@ class MovieSiteScraperService {
     );
 
     _itemMap[item.id.toString()] = item;
+    _postUrlMap[item.id.toString()] = card.postUrl;
     return item;
   }
 

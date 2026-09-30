@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/clients/tmdb_client.dart';
 import '../../data/repositories/content_repository.dart';
 import '../../domain/models/content_detail.dart';
+import '../../domain/models/manifest_item.dart';
 import '../../services/streaming_links_season_service.dart';
+import '../../services/extraction/movie_site_scraper_service.dart';
 
 // ─── Param Classes ───────────────────────────────────────────────────────────
 
@@ -183,6 +185,79 @@ final tmdbLogoProvider = FutureProvider.family<String?, TmdbLogoParams>(
       );
       final path = englishLogo['file_path'] as String?;
       return TmdbClient.logoUrl(path);
+    } catch (_) {
+      return null;
+    }
+  },
+);
+
+/// Fetches and caches the TMDB logo for a carousel ManifestItem.
+/// Resolves via detail page -> IMDb code (tt...) -> TMDB ID -> TMDB logo.
+final heroItemLogoProvider = FutureProvider.family<String?, ManifestItem>(
+  (ref, item) async {
+    try {
+      // 1. If item already has a logoUrl, return it immediately
+      if (item.logoUrl != null && item.logoUrl!.isNotEmpty) {
+        return item.logoUrl;
+      }
+
+      // 2. Obtain postUrl (from item or from scraper service map)
+      String? postUrl = item.postUrl;
+      if (postUrl == null || postUrl.isEmpty) {
+        postUrl = MovieSiteScraperService.instance.getPostUrl(item.id);
+      }
+
+      String? imdbId = item.imdbId;
+
+      // 3. If no imdbId, fetch detail page from postUrl and extract IMDb code
+      if ((imdbId == null || imdbId.isEmpty) && postUrl != null && postUrl.isNotEmpty) {
+        imdbId = await MovieSiteScraperService.instance.fetchImdbIdFromPostUrl(postUrl);
+      }
+
+      int? tmdbId;
+      String mediaType = item.mediaType;
+
+      // 4. If we have an IMDb code (e.g. tt5675620), find TMDB details
+      if (imdbId != null && imdbId.isNotEmpty) {
+        final findData = await TmdbClient.instance.findByImdbId(imdbId);
+        if (findData != null) {
+          final tv = findData['tv_results'] as List?;
+          final movie = findData['movie_results'] as List?;
+          if (tv != null && tv.isNotEmpty) {
+            tmdbId = tv.first['id'] as int?;
+            mediaType = 'tv';
+          } else if (movie != null && movie.isNotEmpty) {
+            tmdbId = movie.first['id'] as int?;
+            mediaType = 'movie';
+          }
+        }
+      }
+
+      // 5. If still no tmdbId, check if item.id is already a real TMDB ID (< 1,000,000)
+      if (tmdbId == null && item.id > 0 && item.id < 1000000) {
+        tmdbId = item.id;
+      }
+
+      // 6. Fallback: Search TMDB by clean title
+      if (tmdbId == null) {
+        final searchResults = await TmdbClient.instance.searchMulti(item.cleanTitle);
+        if (searchResults.isNotEmpty) {
+          final firstMatch = searchResults.first;
+          tmdbId = firstMatch['id'] as int?;
+          final type = firstMatch['media_type']?.toString();
+          if (type == 'tv' || type == 'movie') {
+            mediaType = type!;
+          }
+        }
+      }
+
+      if (tmdbId == null) return null;
+
+      // Register the resolved real tmdbId & mediaType so taps open real detail screen
+      MovieSiteScraperService.instance.registerResolvedTmdb(item.id, tmdbId, mediaType);
+
+      // 7. Fetch the logo
+      return await TmdbClient.instance.fetchTmdbLogo(tmdbId, mediaType);
     } catch (_) {
       return null;
     }

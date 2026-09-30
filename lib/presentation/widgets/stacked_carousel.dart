@@ -8,6 +8,7 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../core/services/poster_color_service.dart';
 import '../../domain/models/manifest_item.dart';
+import '../../services/extraction/movie_site_scraper_service.dart';
 import '../providers/detail_provider.dart';
 import '../providers/poster_color_provider.dart';
 import '../providers/manifest_provider.dart';
@@ -35,8 +36,9 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     _positions = List.generate(_displayItems.length, (index) => index - maxDist);
     _updateActiveIndex();
     _startAutoPlay();
-    // Pre-warm poster colors for smooth gradient transitions
+    // Pre-warm poster colors and logos for smooth transitions
     _preWarmColors();
+    _preWarmLogos();
     // Set initial gradient
     _updateGradientForActiveItem();
   }
@@ -55,6 +57,8 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
           final maxDist = _displayItems.length ~/ 2;
           _positions = List.generate(_displayItems.length, (index) => index - maxDist);
           _updateActiveIndex();
+          _preWarmColors();
+          _preWarmLogos();
         });
       }
     }
@@ -102,6 +106,13 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
         PosterColorService.instance.preWarm(validUrls);
       }
     } catch (_) {}
+  }
+
+  /// Pre-warm logo resolution for all carousel items.
+  void _preWarmLogos() {
+    for (final item in _displayItems) {
+      ref.read(heroItemLogoProvider(item).future).catchError((_) => null);
+    }
   }
 
   /// Update the app-wide gradient to match the current active carousel item.
@@ -161,7 +172,9 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     final clickedPos = _positions[index];
     if (clickedPos == 0) {
       final item = _displayItems[index];
-      context.push('/details/${item.mediaType}/${item.id}');
+      final targetId = MovieSiteScraperService.instance.getResolvedTmdbId(item.id);
+      final targetMediaType = MovieSiteScraperService.instance.getResolvedMediaType(item.id, item.mediaType);
+      context.push('/details/$targetMediaType/$targetId');
     } else if (clickedPos > 0) {
       _step(-1); // Always move only one step towards the right
     } else if (clickedPos < 0) {
@@ -375,7 +388,7 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
 }
 
 /// Fetches and displays TMDB logo for the active carousel item.
-/// Falls back to text title if no logo is available.
+/// Falls back to single-lined text title with ellipsis if no logo is available.
 class _TmdbLogoInfo extends ConsumerWidget {
   final ManifestItem item;
 
@@ -384,27 +397,26 @@ class _TmdbLogoInfo extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final r = Responsive(context);
-    final logoAsync = ref.watch(tmdbLogoProvider(
-      TmdbLogoParams(tmdbId: item.id, mediaType: item.mediaType),
-    ));
+    final logoAsync = ref.watch(heroItemLogoProvider(item));
+    final displayTitle = item.cleanTitle.isNotEmpty ? item.cleanTitle : item.title;
 
     return Container(
-      width: r.w(250).clamp(180.0, 320.0),
-      alignment: Alignment.topCenter,
+      width: r.w(280).clamp(180.0, 360.0),
+      alignment: Alignment.center,
       child: logoAsync.when(
         data: (logoUrl) {
           if (logoUrl != null && logoUrl.isNotEmpty) {
             return CachedNetworkImage(
               imageUrl: logoUrl,
-              height: r.h(40).clamp(30.0, 52.0),
+              height: r.h(42).clamp(30.0, 52.0),
               fit: BoxFit.contain,
-              errorWidget: (_, __, ___) => _buildActiveTitle(context, item.title),
+              errorWidget: (_, __, ___) => _buildActiveTitle(context, displayTitle),
             );
           }
-          return _buildActiveTitle(context, item.title);
+          return _buildActiveTitle(context, displayTitle);
         },
-        loading: () => _buildActiveTitle(context, item.title),
-        error: (_, __) => _buildActiveTitle(context, item.title),
+        loading: () => _buildActiveTitle(context, displayTitle),
+        error: (_, __) => _buildActiveTitle(context, displayTitle),
       ),
     );
   }
@@ -414,11 +426,12 @@ class _TmdbLogoInfo extends ConsumerWidget {
     return Text(
       title,
       textAlign: TextAlign.center,
-      maxLines: 2,
+      maxLines: 1,
       overflow: TextOverflow.ellipsis,
+      softWrap: false,
       style: TextStyle(
         color: Colors.white,
-        fontSize: r.f(22).clamp(16.0, 28.0),
+        fontSize: r.f(20).clamp(15.0, 26.0),
         fontWeight: FontWeight.w900,
         height: 1.2,
       ),
