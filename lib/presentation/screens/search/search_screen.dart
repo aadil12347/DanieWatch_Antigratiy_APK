@@ -297,7 +297,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         f.genres.isNotEmpty ||
         f.years.isNotEmpty ||
         f.sortBy != 'Popularity' ||
-        f.categories.any((c) => c != searchState.navCategory);
+        f.categories.any((c) => c != searchState.navCategory && c != widget.categoryLabel);
     final showResults = hasSearch || hasUserFilters;
 
     return paginatedState.when(
@@ -315,21 +315,24 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         // Determine enforced category for FilterUtils
         String? enforceCategory;
         const categoryPages = {
-          'Anime', 'Korean', 'K-Drama', 'Indian', 'Bollywood',
-          'Hollywood', 'Chinese', 'Punjabi', 'Pakistani',
+          'Action', 'Korean', 'K-Drama', 'Chinese', 'Anime', 'Comedy',
+          'Thriller', 'Horror', 'Sci-Fi', 'Romance', 'Indian', 'Bollywood',
+          'Hollywood', 'Punjabi', 'Pakistani',
         };
         final filterCat = searchState.filters.categories;
         if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
           enforceCategory = filterCat.first;
         }
 
-        // Apply filters across the entire local category list if a search or filter is active
+        // Apply filters across category list if search or custom filter is active
         final List<ManifestItem> itemsToDisplay;
         if (showResults) {
           final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
           final categoryItems = _slug == 'all'
-              ? allSortedItems
-              : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
+              ? (allSortedItems.isNotEmpty ? allSortedItems : rawItems)
+              : (rawItems.isNotEmpty
+                  ? rawItems
+                  : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList());
           itemsToDisplay = FilterUtils.getFilteredItems(
             allItems: categoryItems,
             searchState: searchState,
@@ -338,6 +341,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         } else {
           itemsToDisplay = rawItems;
         }
+
 
         return NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,

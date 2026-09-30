@@ -332,7 +332,13 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
   final sections = <ContentSection>[];
 
-  // 1. Top 10 Today (isRanked: true)
+  // 0. Top 5 Movies (3 from VegaMovies, 2 from RogMovies)
+  final top5 = await ref.watch(mergedCarouselProvider.future);
+  if (top5.isNotEmpty) {
+    sections.add(ContentSection(title: 'Top 5 Movies', items: top5, isRanked: true));
+  }
+
+  // 1. Top 10 Today (5 from RogMovies, 5 from VegaMovies, strictly distinct from Top 5)
   final top10 = await ref.watch(mergedTop10Provider.future);
   if (top10.isNotEmpty) {
     sections.add(ContentSection(title: 'Top 10 Today', items: top10, isRanked: true));
@@ -340,7 +346,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 2. K-Drama Section (https://vegamovies.gallery/korean-series/)
   try {
-    final kdramaItems = await MovieSiteScraperService.instance.fetchCategoryItems('korean', localMap: localMap);
+    final kdramaItems = await MovieSiteScraperService.instance.fetchCategoryPage('korean', page: 1, localMap: localMap);
     if (kdramaItems.isNotEmpty) {
       sections.add(ContentSection(title: 'K-Drama', items: kdramaItems));
     }
@@ -350,7 +356,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 3. Chinese Section (https://vegamovies.gallery/search.html?q=Chinese)
   try {
-    final chineseItems = await MovieSiteScraperService.instance.fetchCategoryItems('chinese', localMap: localMap);
+    final chineseItems = await MovieSiteScraperService.instance.fetchCategoryPage('chinese', page: 1, localMap: localMap);
     if (chineseItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Chinese', items: chineseItems));
     }
@@ -360,7 +366,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 4. Anime Section (https://vegamovies.gallery/anime-series/)
   try {
-    final animeItems = await MovieSiteScraperService.instance.fetchCategoryItems('anime', localMap: localMap);
+    final animeItems = await MovieSiteScraperService.instance.fetchCategoryPage('anime', page: 1, localMap: localMap);
     if (animeItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Anime', items: animeItems));
     }
@@ -370,7 +376,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 5. Action Section (VegaMovies Action + RogMovies Action mixed)
   try {
-    final actionItems = await MovieSiteScraperService.instance.fetchCategoryItems('action', localMap: localMap);
+    final actionItems = await MovieSiteScraperService.instance.fetchCategoryPage('action', page: 1, localMap: localMap);
     if (actionItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Action', items: actionItems));
     }
@@ -380,7 +386,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 6. Comedy (mixed VegaMovies + RogMovies)
   try {
-    final comedyItems = await MovieSiteScraperService.instance.fetchCategoryItems('comedy', localMap: localMap);
+    final comedyItems = await MovieSiteScraperService.instance.fetchCategoryPage('comedy', page: 1, localMap: localMap);
     if (comedyItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Comedy', items: comedyItems));
     }
@@ -388,7 +394,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 7. Thriller (mixed VegaMovies + RogMovies)
   try {
-    final thrillerItems = await MovieSiteScraperService.instance.fetchCategoryItems('thriller', localMap: localMap);
+    final thrillerItems = await MovieSiteScraperService.instance.fetchCategoryPage('thriller', page: 1, localMap: localMap);
     if (thrillerItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Thriller', items: thrillerItems));
     }
@@ -396,7 +402,7 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 8. Horror (mixed VegaMovies + RogMovies)
   try {
-    final horrorItems = await MovieSiteScraperService.instance.fetchCategoryItems('horror', localMap: localMap);
+    final horrorItems = await MovieSiteScraperService.instance.fetchCategoryPage('horror', page: 1, localMap: localMap);
     if (horrorItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Horror', items: horrorItems));
     }
@@ -404,14 +410,23 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
 
   // 9. Sci-Fi (mixed VegaMovies + RogMovies)
   try {
-    final scifiItems = await MovieSiteScraperService.instance.fetchCategoryItems('sci-fi', localMap: localMap);
+    final scifiItems = await MovieSiteScraperService.instance.fetchCategoryPage('sci-fi', page: 1, localMap: localMap);
     if (scifiItems.isNotEmpty) {
       sections.add(ContentSection(title: 'Sci-Fi', items: scifiItems));
     }
   } catch (e) {}
 
+  // 10. Romance (mixed VegaMovies + RogMovies)
+  try {
+    final romanceItems = await MovieSiteScraperService.instance.fetchCategoryPage('romance', page: 1, localMap: localMap);
+    if (romanceItems.isNotEmpty) {
+      sections.add(ContentSection(title: 'Romance', items: romanceItems));
+    }
+  } catch (e) {}
+
   return sections;
 });
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Category Pagination via Local Database Cache
@@ -460,10 +475,16 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
   Future<void> _loadFirstPage() async {
     try {
       final results = await _fetchLocalPage(1);
+      final cat = category.toLowerCase().trim();
+      const liveCategories = {
+        'action', 'korean', 'chinese', 'anime', 'comedy', 'thriller', 'horror', 'sci-fi', 'romance'
+      };
+      final minPageSize = liveCategories.contains(cat) ? 10 : 30;
+
       state = AsyncValue.data(PaginatedCategoryState(
         items: results,
         currentPage: 1,
-        hasMore: results.length >= 30, // Page size is 30
+        hasMore: results.length >= minPageSize,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page 1 error: $e', stackTrace: stack);
@@ -484,11 +505,17 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
 
       if (!mounted) return;
 
+      final cat = category.toLowerCase().trim();
+      const liveCategories = {
+        'action', 'korean', 'chinese', 'anime', 'comedy', 'thriller', 'horror', 'sci-fi', 'romance'
+      };
+      final minPageSize = liveCategories.contains(cat) ? 10 : 30;
+
       state = AsyncValue.data(PaginatedCategoryState(
         items: [...current.items, ...results],
         currentPage: nextPage,
         isLoadingMore: false,
-        hasMore: results.length >= 30,
+        hasMore: results.length >= minPageSize,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page $nextPage error: $e', stackTrace: stack);
@@ -503,17 +530,26 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
 
   Future<List<ManifestItem>> _fetchLocalPage(int page) async {
     final cat = category.toLowerCase().trim();
-    if (cat == 'action' || cat == 'korean' || cat == 'chinese' || cat == 'anime' || cat == 'comedy' || cat == 'thriller' || cat == 'horror' || cat == 'sci-fi') {
+    const liveCategories = {
+      'action',
+      'korean',
+      'chinese',
+      'anime',
+      'comedy',
+      'thriller',
+      'horror',
+      'sci-fi',
+      'romance',
+    };
+    if (liveCategories.contains(cat)) {
       try {
-        final liveItems = await MovieSiteScraperService.instance.fetchCategoryItems(cat);
+        final liveItems = await MovieSiteScraperService.instance
+            .fetchCategoryPage(cat, page: page);
         if (liveItems.isNotEmpty) {
-          final int limit = 30;
-          final int offset = (page - 1) * limit;
-          if (offset >= liveItems.length) return [];
-          return liveItems.skip(offset).take(limit).toList();
+          return liveItems;
         }
       } catch (e) {
-        dev.log('[_fetchLocalPage] Error fetching live $cat: $e');
+        dev.log('[_fetchLocalPage] Error fetching live $cat page $page: $e');
       }
     }
 

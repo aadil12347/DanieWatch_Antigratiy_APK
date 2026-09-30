@@ -23,6 +23,7 @@ class TopNavbar extends StatefulWidget {
     'Thriller',
     'Horror',
     'Sci-Fi',
+    'Romance',
     'Indian',
     'Hollywood',
     'Punjabi',

@@ -40,6 +40,7 @@ class MovieSiteScraperService {
   List<ManifestItem>? _cachedTop5;
   List<ManifestItem>? _cachedTop10;
   final Map<String, List<ManifestItem>> _categoryCache = {};
+  final Map<String, List<ManifestItem>> _categoryPageCache = {};
   final Map<String, ManifestItem> _itemMap = {};
 
   Map<String, ManifestItem> get itemMap => _itemMap;
@@ -48,6 +49,7 @@ class MovieSiteScraperService {
     _cachedTop5 = null;
     _cachedTop10 = null;
     _categoryCache.clear();
+    _categoryPageCache.clear();
     _itemMap.clear();
   }
 
@@ -122,13 +124,23 @@ class MovieSiteScraperService {
     return cards;
   }
 
-  /// Fetch HTML with local reverse proxy fallback (127.0.0.1 & LAN IP) and public fallback
+  /// Fetch HTML with direct fetch first (fast, ~400ms), falling back to reverse proxy & public proxies
   static Future<String?> fetchHtml(String url) async {
-    // 1. Try local proxy (127.0.0.1 via adb reverse)
+    // 1. Direct fetch FIRST (fast, usually takes ~400ms)
+    try {
+      final res = await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200 && res.body.isNotEmpty) {
+        return res.body;
+      }
+    } catch (e) {
+      debugPrint('[MovieSiteScraperService] Direct fetch failed for $url: $e');
+    }
+
+    // 2. Try local proxy (127.0.0.1 via adb reverse)
     final proxyUrl = normalizeFetchUrl(url);
     if (proxyUrl != url) {
       try {
-        final res = await http.get(Uri.parse(proxyUrl), headers: _headers).timeout(const Duration(seconds: 15));
+        final res = await http.get(Uri.parse(proxyUrl), headers: _headers).timeout(const Duration(seconds: 4));
         if (res.statusCode == 200 && res.body.isNotEmpty) {
           return res.body;
         }
@@ -136,10 +148,10 @@ class MovieSiteScraperService {
         debugPrint('[MovieSiteScraperService] Local proxy failed for $proxyUrl: $e');
       }
 
-      // 1b. Try LAN IP proxy (when connected over Wi-Fi)
+      // 2b. Try LAN IP proxy (when connected over Wi-Fi)
       final lanProxyUrl = proxyUrl.replaceFirst('127.0.0.1', '192.168.100.125');
       try {
-        final res = await http.get(Uri.parse(lanProxyUrl), headers: _headers).timeout(const Duration(seconds: 15));
+        final res = await http.get(Uri.parse(lanProxyUrl), headers: _headers).timeout(const Duration(seconds: 4));
         if (res.statusCode == 200 && res.body.isNotEmpty) {
           return res.body;
         }
@@ -148,20 +160,10 @@ class MovieSiteScraperService {
       }
     }
 
-    // 2. Direct fetch fallback
-    try {
-      final res = await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200 && res.body.isNotEmpty) {
-        return res.body;
-      }
-    } catch (e) {
-      debugPrint('[MovieSiteScraperService] Direct fetch failed for $url: $e');
-    }
-
     // 3. Public CORS proxy fallback
     try {
       final allOrigins = 'https://api.allorigins.win/raw?url=${Uri.encodeComponent(url)}';
-      final res = await http.get(Uri.parse(allOrigins)).timeout(const Duration(seconds: 12));
+      final res = await http.get(Uri.parse(allOrigins)).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && res.body.isNotEmpty) {
         return res.body;
       }
@@ -171,6 +173,7 @@ class MovieSiteScraperService {
 
     return null;
   }
+
 
   /// Converts a ScrapedSiteCard into a full ManifestItem with TMDB enrichment
   Future<ManifestItem> convertToManifestItem(
@@ -282,8 +285,9 @@ class MovieSiteScraperService {
   /// Crucial: Top 5 and Top 10 must NOT contain any same posts.
   Future<Map<String, List<ManifestItem>>> fetchHomeTopLists({
     Map<String, ManifestItem>? localMap,
+    bool forceRefresh = false,
   }) async {
-    if (_cachedTop5 != null && _cachedTop10 != null) {
+    if (!forceRefresh && _cachedTop5 != null && _cachedTop10 != null) {
       return {'top5': _cachedTop5!, 'top10': _cachedTop10!};
     }
 
@@ -306,14 +310,24 @@ class MovieSiteScraperService {
     final usedUrls = <String>{};
     final usedTitles = <String>{};
 
+    String cleanKey(String t) {
+      return t.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    }
+
     void markUsed(ScrapedSiteCard card) {
       usedUrls.add(card.postUrl);
-      usedTitles.add(card.title.toLowerCase().trim());
+      final k = cleanKey(card.title);
+      if (k.length > 5) usedTitles.add(k);
     }
 
     bool isUsed(ScrapedSiteCard card) {
       if (usedUrls.contains(card.postUrl)) return true;
-      if (usedTitles.contains(card.title.toLowerCase().trim())) return true;
+      final k = cleanKey(card.title);
+      if (k.length > 5) {
+        for (final u in usedTitles) {
+          if (k.contains(u) || u.contains(k)) return true;
+        }
+      }
       return false;
     }
 
@@ -321,7 +335,7 @@ class MovieSiteScraperService {
     int rIdx = 0;
 
     // Top 5: 3 from VegaMovies, 2 from RogMovies
-    // Interleave: Vega[0], Rog[0], Vega[1], Rog[1], Vega[2]
+    // Dynamic Interleave: Vega[0], Rog[0], Vega[1], Rog[1], Vega[2]
     // 1. Vega
     while (vIdx < vegaCards.length && isUsed(vegaCards[vIdx])) {
       vIdx++;
@@ -384,8 +398,8 @@ class MovieSiteScraperService {
     }
     _cachedTop5 = top5Items;
 
-    // Top 10: 5 from RogMovies, 5 from VegaMovies, strictly excluding any used in Top 5!
-    // Interleave: Rog[0], Vega[0], Rog[1], Vega[1], Rog[2], Vega[2], Rog[3], Vega[3], Rog[4], Vega[4]
+    // Top 10: 5 from RogMovies, 5 from VegaMovies, strictly excluding ANY post used in Top 5!
+    // Dynamic Interleave: Rog[0], Vega[0], Rog[1], Vega[1], Rog[2], Vega[2], Rog[3], Vega[3], Rog[4], Vega[4]
     final top10Cards = <ScrapedSiteCard>[];
 
     for (int i = 0; i < 5; i++) {
@@ -420,16 +434,17 @@ class MovieSiteScraperService {
     }
     _cachedTop10 = top10Items;
 
-    dev.log('[MovieSiteScraperService] Top 5 (${top5Items.length}) & Top 10 (${top10Items.length}) ready.');
+    dev.log('[MovieSiteScraperService] Top 5 (${top5Items.length}) & Top 10 (${top10Items.length}) ready (distinct).');
     return {'top5': top5Items, 'top10': top10Items};
   }
 
   /// Fetch Chinese drama posts via ts-search.php or chinese-series
-  Future<List<ScrapedSiteCard>> _fetchChineseCards() async {
+  Future<List<ScrapedSiteCard>> _fetchChineseCards({int page = 1}) async {
     final cards = <ScrapedSiteCard>[];
+    // 1. Try ts-search.php
     try {
-      final url = '$vegaBaseUrl/ts-search.php?q=Chinese&page=1';
-      final res = await http.get(Uri.parse(normalizeFetchUrl(url)), headers: _headers).timeout(const Duration(seconds: 10));
+      final url = '$vegaBaseUrl/ts-search.php?q=Chinese&page=$page';
+      final res = await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final hits = data['hits'] as List?;
@@ -457,8 +472,10 @@ class MovieSiteScraperService {
       debugPrint('[MovieSiteScraperService] Chinese ts-search error: $e');
     }
 
+    // 2. Try /chinese-series/ (and page X)
     try {
-      final html = await fetchHtml('$vegaBaseUrl/chinese-series/');
+      final csUrl = page == 1 ? '$vegaBaseUrl/chinese-series/' : '$vegaBaseUrl/chinese-series/page/$page/';
+      final html = await fetchHtml(csUrl);
       if (html != null && html.isNotEmpty) {
         final htmlCards = parseCards(html, 'vegamovies');
         for (final c in htmlCards) {
@@ -474,31 +491,43 @@ class MovieSiteScraperService {
     return cards;
   }
 
-  /// Live fetch category/genre posts
-  Future<List<ManifestItem>> fetchCategoryItems(
+  /// Live fetch category/genre posts by page (supports infinite scrolling)
+  Future<List<ManifestItem>> fetchCategoryPage(
     String categoryOrGenre, {
+    int page = 1,
     Map<String, ManifestItem>? localMap,
   }) async {
     final key = categoryOrGenre.toLowerCase().trim();
-    if (_categoryCache.containsKey(key) && _categoryCache[key]!.isNotEmpty) {
-      return _categoryCache[key]!;
+    final cacheKey = '${key}_page_$page';
+    if (_categoryPageCache.containsKey(cacheKey) && _categoryPageCache[cacheKey]!.isNotEmpty) {
+      return _categoryPageCache[cacheKey]!;
     }
 
-    dev.log('[MovieSiteScraperService] Live fetching section: $categoryOrGenre');
+    dev.log('[MovieSiteScraperService] Live fetching section: $categoryOrGenre (page $page)');
     final cards = <ScrapedSiteCard>[];
 
     if (key == 'korean' || key == 'k-drama' || key == 'kdrama') {
-      final html = await fetchHtml('$vegaBaseUrl/korean-series/');
+      final pageUrl = page == 1
+          ? '$vegaBaseUrl/korean-series/'
+          : '$vegaBaseUrl/korean-series/page/$page/';
+      final html = await fetchHtml(pageUrl);
       if (html != null) cards.addAll(parseCards(html, 'vegamovies'));
     } else if (key == 'chinese') {
-      cards.addAll(await _fetchChineseCards());
+      cards.addAll(await _fetchChineseCards(page: page));
     } else if (key == 'anime') {
-      final html = await fetchHtml('$vegaBaseUrl/anime-series/');
+      final pageUrl = page == 1
+          ? '$vegaBaseUrl/anime-series/'
+          : '$vegaBaseUrl/anime-series/page/$page/';
+      final html = await fetchHtml(pageUrl);
       if (html != null) cards.addAll(parseCards(html, 'vegamovies'));
     } else {
       final genreSlug = key;
-      final vegaGenreUrl = '$vegaBaseUrl/movies-by-genres/$genreSlug/';
-      final rogGenreUrl = '$rogBaseUrl/movies-by-genres/$genreSlug/';
+      final vegaGenreUrl = page == 1
+          ? '$vegaBaseUrl/movies-by-genres/$genreSlug/'
+          : '$vegaBaseUrl/movies-by-genres/$genreSlug/page/$page/';
+      final rogGenreUrl = page == 1
+          ? '$rogBaseUrl/movies-by-genres/$genreSlug/'
+          : '$rogBaseUrl/movies-by-genres/$genreSlug/page/$page/';
 
       final results = await Future.wait([
         fetchHtml(vegaGenreUrl),
@@ -519,20 +548,27 @@ class MovieSiteScraperService {
     }
 
     final items = <ManifestItem>[];
-    final seenTitles = <String>{};
+    final seenUrls = <String>{};
 
     for (final card in cards) {
-      final norm = card.title.toLowerCase().trim();
-      if (seenTitles.contains(norm)) continue;
-      seenTitles.add(norm);
+      if (seenUrls.contains(card.postUrl)) continue;
+      seenUrls.add(card.postUrl);
 
       final item = await convertToManifestItem(card, localMap: localMap);
       items.add(item);
-      if (items.length >= 25) break;
     }
 
-    _categoryCache[key] = items;
-    dev.log('[MovieSiteScraperService] Section $categoryOrGenre ready with ${items.length} items.');
+    _categoryPageCache[cacheKey] = items;
+    dev.log('[MovieSiteScraperService] Section $categoryOrGenre page $page ready with ${items.length} items.');
     return items;
   }
+
+  /// Live fetch category/genre posts (page 1)
+  Future<List<ManifestItem>> fetchCategoryItems(
+    String categoryOrGenre, {
+    Map<String, ManifestItem>? localMap,
+  }) async {
+    return fetchCategoryPage(categoryOrGenre, page: 1, localMap: localMap);
+  }
 }
+

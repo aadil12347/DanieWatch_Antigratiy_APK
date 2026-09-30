@@ -163,12 +163,20 @@ class SearchNotifier extends StateNotifier<SearchState> {
     } else {
       const categoryMap = {
         'Korean': 'Korean',
+        'K-Drama': 'Korean',
+        'Chinese': 'Chinese',
         'Anime': 'Anime',
+        'Action': 'Action',
+        'Comedy': 'Comedy',
+        'Thriller': 'Thriller',
+        'Horror': 'Horror',
+        'Sci-Fi': 'Sci-Fi',
+        'Romance': 'Romance',
         'Indian': 'Indian',
         'Bollywood': 'Indian',
         'Hollywood': 'Hollywood',
-        'Chinese': 'Chinese',
         'Punjabi': 'Punjabi',
+        'Pakistani': 'Pakistani',
       };
       final filterCat = categoryMap[category] ?? category;
       state = state.copyWith(
@@ -181,6 +189,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       search(state.query);
     }
   }
+
 
   void clearFilters() {
     updateFilters(const SearchFilters());

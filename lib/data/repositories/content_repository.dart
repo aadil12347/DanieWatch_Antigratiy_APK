@@ -5,6 +5,7 @@ import '../../domain/models/content_detail.dart';
 import '../../domain/models/entry.dart';
 import '../../core/config/env.dart';
 import '../clients/tmdb_client.dart';
+import '../../services/extraction/movie_site_scraper_service.dart';
 
 class ContentRepository {
   ContentRepository._();
@@ -275,7 +276,26 @@ class ContentRepository {
           ? await TmdbClient.instance.getTvDetails(tmdbId)
           : await TmdbClient.instance.getMovieDetails(tmdbId);
 
-      if (tmdbDetails == null) return null;
+      if (tmdbDetails == null) {
+        final scraped = MovieSiteScraperService.instance.itemMap[tmdbId.toString()];
+        if (scraped != null) {
+          return ContentDetail(
+            id: tmdbId,
+            title: scraped.cleanTitle,
+            description: scraped.overview,
+            overview: scraped.overview,
+            mediaType: resolvedMediaType,
+            voteAverage: scraped.voteAverage,
+            posterUrl: scraped.posterUrl,
+            backdropUrl: scraped.backdropUrl ?? scraped.posterUrl,
+            releaseYear: scraped.releaseYear,
+            genres: null,
+            watchLink: '',
+            downloadLink: '',
+          );
+        }
+        return null;
+      }
 
       final title = tmdbDetails['title']?.toString() ??
           tmdbDetails['name']?.toString() ?? 'Unknown';

@@ -149,3 +149,87 @@ class TopTenTitle extends StatelessWidget {
     );
   }
 }
+
+class TopFiveTitle extends StatelessWidget {
+  const TopFiveTitle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const double fontSize = 72;
+    final baseStyle = GoogleFonts.inter(
+      fontSize: fontSize,
+      fontWeight: FontWeight.w900,
+    );
+
+    final outlinePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round
+      ..shader = const LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          Color(0xFFE50914), // Netflix-style red
+          Color(0x33B81D24), // Dimmer red
+        ],
+      ).createShader(const Rect.fromLTWH(0, 0, 300, 100));
+
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Outlined TOP 5 with manual overlapping
+          SizedBox(
+            height: fontSize + 15,
+            width: 205,
+            child: Stack(
+              children: [
+                _Letter('T', 0, baseStyle, outlinePaint),
+                _Letter('O', 40, baseStyle, outlinePaint),
+                _Letter('P', 96, baseStyle, outlinePaint),
+                _Letter('5', 145, baseStyle, outlinePaint),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // MOVIES TODAY Stack
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SubText('MOVIES'),
+              _SubText('TODAY'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _Letter(String char, double left, TextStyle style, Paint foreground) {
+    return Positioned(
+      left: left,
+      top: 0,
+      child: Text(
+        char,
+        style: style.copyWith(foreground: foreground),
+      ),
+    );
+  }
+
+  Widget _SubText(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.inter(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 8.0,
+        height: 1.2,
+        color: Colors.white,
+      ),
+    );
+  }
+}
+

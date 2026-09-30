@@ -24,6 +24,7 @@ import '../../providers/notification_inbox_provider.dart';
 import '../../providers/scroll_provider.dart';
 import '../../providers/poster_color_provider.dart';
 import '../../../core/services/poster_color_service.dart';
+import '../../../services/extraction/movie_site_scraper_service.dart';
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -91,102 +92,118 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
         },
         child: CustomAppBar(
-          child: CustomScrollView(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          // PERF: Pre-build sections 800px before they scroll into view
-          cacheExtent: 800,
-          slivers: [
-            // Hero section: Header + Carousel with gradient emitting from active card
-            SliverToBoxAdapter(
-              child: _HeroGradientSection(
-                carouselItems: carouselItems,
-              ),
-            ),
-
-            // Content sections with Continue Watching inserted ABOVE Top 10
-            ...sections.expand((section) {
-              final isTop10 = section.title == 'Top 10 Today';
-              
-              final sectionWidget = SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SectionHeader(
-                      title: section.title,
-                      titleWidget: isTop10 ? const TopTenTitle() : null,
-                      showSeeAll: !isTop10,
-                      onSeeAll: () => _handleSeeAll(section.title),
-                    ),
-                    ContentRow(
-                      items: section.items,
-                      isRanked: section.isRanked,
-                    ),
-                  ],
+          child: RefreshIndicator(
+            color: AppColors.primary,
+            backgroundColor: AppColors.surfaceElevated,
+            onRefresh: () async {
+              MovieSiteScraperService.instance.clearCache();
+              ref.invalidate(mergedCarouselProvider);
+              ref.invalidate(mergedTop10Provider);
+              ref.invalidate(homeSectionsProvider);
+              await ref.read(homeSectionsProvider.future);
+            },
+            child: CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              // PERF: Pre-build sections 800px before they scroll into view
+              cacheExtent: 800,
+              slivers: [
+                // Hero section: Header + Carousel with gradient emitting from active card
+                SliverToBoxAdapter(
+                  child: _HeroGradientSection(
+                    carouselItems: carouselItems,
+                  ),
                 ),
-              );
 
-              // Insert Continue Watching row right ABOVE Top 10
-              if (isTop10) {
-                final historyEnabled = ref.watch(continueWatchingSettingsProvider);
-                if (historyEnabled) {
-                  return [
-                    const SliverToBoxAdapter(
-                      child: ContinueWatchingRow(),
+                // Content sections with Continue Watching inserted ABOVE Top 5/Top 10
+                ...sections.expand((section) {
+                  final isTop10 = section.title == 'Top 10 Today';
+                  final isTop5 = section.title == 'Top 5 Movies';
+                  
+                  final sectionWidget = SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SectionHeader(
+                          title: section.title,
+                          titleWidget: isTop10
+                              ? const TopTenTitle()
+                              : (isTop5 ? const TopFiveTitle() : null),
+                          showSeeAll: !isTop10 && !isTop5,
+                          onSeeAll: () => _handleSeeAll(section.title),
+                        ),
+                        ContentRow(
+                          items: section.items,
+                          isRanked: section.isRanked,
+                        ),
+                      ],
                     ),
-                    sectionWidget,
-                  ];
-                } else {
-                  return [sectionWidget];
-                }
-              }
-              return [sectionWidget];
-            }),
+                  );
 
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 80),
+                  // Insert Continue Watching row right ABOVE first ranked section
+                  final isFirstRankedSection = isTop5 || (isTop10 && !sections.any((s) => s.title == 'Top 5 Movies'));
+                  if (isFirstRankedSection) {
+                    final historyEnabled = ref.watch(continueWatchingSettingsProvider);
+                    if (historyEnabled) {
+                      return [
+                        const SliverToBoxAdapter(
+                          child: ContinueWatchingRow(),
+                        ),
+                        sectionWidget,
+                      ];
+                    } else {
+                      return [sectionWidget];
+                    }
+                  }
+                  return [sectionWidget];
+                }),
+
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 80),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
         ),
       ),
     );
   }
 
   void _handleSeeAll(String title) {
-    SearchFilters filters = const SearchFilters();
-
-    if (title == 'Top 10 Today') {
-      filters = filters.copyWith(sortBy: 'Popularity');
-    } else if (title == 'Top Rated') {
-      filters = filters.copyWith(sortBy: 'Latest Release');
-    } else if (title == 'Popular') {
-      filters = filters.copyWith(sortBy: 'Popularity');
-    } else if (title == 'Action') {
-      filters = filters.copyWith(categories: {'Action'}, genres: {'Action'});
-    } else if (title == 'Anime') {
-      filters = filters.copyWith(categories: {'Anime'});
-    } else if (title == 'Korean' || title == 'K-Drama') {
-      filters = filters.copyWith(categories: {'Korean'});
-    } else if (title == 'Indian') {
-      filters = filters.copyWith(categories: {'Indian'});
-    } else if (title == 'Hollywood') {
-      filters = filters.copyWith(categories: {'Hollywood'});
-    } else if (title == 'Punjabi') {
-      filters = filters.copyWith(categories: {'Punjabi'});
+    String tabLabel = 'Explore';
+    if (title == 'Korean' || title == 'K-Drama') {
+      tabLabel = 'Korean';
     } else if (title == 'Chinese') {
-      filters = filters.copyWith(categories: {'Chinese'});
-    } else if (title == 'Comedy' || title == 'Thriller' || title == 'Horror' || title == 'Sci-Fi' || title == 'Romance') {
-      filters = filters.copyWith(categories: {title}, genres: {title});
-    } else {
-      // Fallback: treat as genre and category
-      filters = filters.copyWith(categories: {title}, genres: {title});
+      tabLabel = 'Chinese';
+    } else if (title == 'Anime') {
+      tabLabel = 'Anime';
+    } else if (title == 'Action') {
+      tabLabel = 'Action';
+    } else if (title == 'Comedy') {
+      tabLabel = 'Comedy';
+    } else if (title == 'Thriller') {
+      tabLabel = 'Thriller';
+    } else if (title == 'Horror') {
+      tabLabel = 'Horror';
+    } else if (title == 'Sci-Fi') {
+      tabLabel = 'Sci-Fi';
+    } else if (title == 'Romance') {
+      tabLabel = 'Romance';
+    } else if (title == 'Indian' || title == 'Bollywood') {
+      tabLabel = 'Indian';
+    } else if (title == 'Hollywood') {
+      tabLabel = 'Hollywood';
+    } else if (title == 'Punjabi') {
+      tabLabel = 'Punjabi';
+    } else if (title == 'Pakistani') {
+      tabLabel = 'Pakistani';
     }
 
-    ref.read(searchProvider('explore').notifier).updateFilters(filters);
+    ref.read(searchProvider('explore').notifier).setNavCategory(tabLabel);
     context.go('/search');
   }
 }
+
 
 class _LoadingHome extends StatelessWidget {
   const _LoadingHome();
