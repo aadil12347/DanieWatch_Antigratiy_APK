@@ -221,14 +221,10 @@ final heroItemLogoProvider = FutureProvider.family<String?, ManifestItem>(
       if (imdbId != null && imdbId.isNotEmpty) {
         final findData = await TmdbClient.instance.findByImdbId(imdbId);
         if (findData != null) {
-          final tv = findData['tv_results'] as List?;
-          final movie = findData['movie_results'] as List?;
-          if (tv != null && tv.isNotEmpty) {
-            tmdbId = tv.first['id'] as int?;
-            mediaType = 'tv';
-          } else if (movie != null && movie.isNotEmpty) {
-            tmdbId = movie.first['id'] as int?;
-            mediaType = 'movie';
+          tmdbId = findData['id'] as int?;
+          final type = findData['media_type']?.toString();
+          if (type == 'tv' || type == 'movie') {
+            mediaType = type!;
           }
         }
       }
