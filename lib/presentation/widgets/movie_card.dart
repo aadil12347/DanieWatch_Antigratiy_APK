@@ -183,6 +183,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
                       _PosterImage(
                         itemId: item.id.toString(),
                         mediaType: item.mediaType,
+                        initialPosterUrl: item.posterUrl,
                       ),
 
                       // Language Badge (top-left)
@@ -466,14 +467,39 @@ class _SeasonBadge extends StatelessWidget {
 class _PosterImage extends ConsumerWidget {
   final String itemId;
   final String mediaType;
+  final String? initialPosterUrl;
 
   const _PosterImage({
     required this.itemId,
     required this.mediaType,
+    this.initialPosterUrl,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (initialPosterUrl != null && initialPosterUrl!.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: initialPosterUrl!,
+        fit: BoxFit.cover,
+        memCacheWidth: 300,
+        memCacheHeight: 450,
+        placeholder: (_, __) => Container(
+          color: AppColors.surfaceElevated,
+          child: const Center(
+            child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+          ),
+        ),
+        errorWidget: (_, __, ___) => Container(
+          color: AppColors.surfaceElevated,
+          child: const Center(
+            child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
+          ),
+        ),
+        fadeOutDuration: Duration.zero,
+        fadeInDuration: const Duration(milliseconds: 150),
+      );
+    }
+
     final posterAsync = ref.watch(posterUrlProvider('${itemId}_$mediaType'));
 
     return posterAsync.when(
@@ -491,7 +517,6 @@ class _PosterImage extends ConsumerWidget {
           imageUrl: url,
           fit: BoxFit.cover,
           memCacheWidth: 300,
-          // PERF: Decode images at poster size, not full resolution
           memCacheHeight: 450,
           placeholder: (_, __) => Container(
             color: AppColors.surfaceElevated,
@@ -505,23 +530,14 @@ class _PosterImage extends ConsumerWidget {
               child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
             ),
           ),
-          // PERF: Zero fade = no animation overhead per card during fast scroll
-          // With 50+ cards, 200ms fades cause significant GPU work
           fadeOutDuration: Duration.zero,
-          fadeInDuration: const Duration(milliseconds: 120),
+          fadeInDuration: const Duration(milliseconds: 150),
         );
       },
       loading: () => Container(
         color: AppColors.surfaceElevated,
         child: const Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
-            ),
-          ),
+          child: Icon(Icons.movie_outlined, color: AppColors.textMuted, size: 24),
         ),
       ),
       error: (_, __) => Container(

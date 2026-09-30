@@ -65,7 +65,14 @@ class SectionHeader extends StatelessWidget {
 }
 
 class TopTenTitle extends StatelessWidget {
-  const TopTenTitle({super.key});
+  final String topText;
+  final String bottomText;
+
+  const TopTenTitle({
+    super.key,
+    this.topText = 'CONTENT',
+    this.bottomText = 'TODAY',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -111,13 +118,13 @@ class TopTenTitle extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // CONTENT TODAY Stack
+          // SubText Stack (e.g. INDIAN TODAY or HINDI DUB TODAY)
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _SubText('CONTENT'),
-              _SubText('TODAY'),
+              _SubText(topText),
+              _SubText(bottomText),
             ],
           ),
         ],
@@ -137,12 +144,13 @@ class TopTenTitle extends StatelessWidget {
   }
 
   Widget _SubText(String text) {
+    final double spacing = text.length > 7 ? 2.5 : 8.0;
     return Text(
       text,
       style: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w800,
-        letterSpacing: 8.0,
+        letterSpacing: spacing,
         height: 1.2,
         color: Colors.white,
       ),

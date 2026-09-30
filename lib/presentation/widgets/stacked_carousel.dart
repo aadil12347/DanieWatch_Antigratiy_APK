@@ -323,8 +323,13 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
                   clipBehavior: Clip.antiAlias,
                   child: Consumer(
                     builder: (context, ref, _) {
-                      final posterAsync = ref.watch(posterUrlProvider('${item.id}_${item.mediaType}'));
-                      final posterUrl = posterAsync.valueOrNull ?? '';
+                      final itemPoster = (item.posterUrl != null && item.posterUrl!.isNotEmpty)
+                          ? item.posterUrl!
+                          : null;
+                      final posterAsync = itemPoster == null
+                          ? ref.watch(posterUrlProvider('${item.id}_${item.mediaType}')).valueOrNull
+                          : null;
+                      final posterUrl = itemPoster ?? posterAsync ?? '';
                       
                       if (posterUrl.isNotEmpty) {
                         return CachedNetworkImage(

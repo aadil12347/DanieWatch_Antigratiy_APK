@@ -265,20 +265,21 @@ final topPicksSyncProvider = FutureProvider<bool>((ref) async {
   if (result) {
     // Refresh carousel and top10 providers after sync completes
     ref.invalidate(mergedCarouselProvider);
-    ref.invalidate(mergedTop10Provider);
+    ref.invalidate(top10IndianProvider);
+    ref.invalidate(top10HindiDubProvider);
   }
   return result;
 });
 
-/// Trending content for the Carousel (Top 5: 3 from VegaMovies, 2 from RogMovies)
+/// Featured content for the Carousel (Top 5 from VegaMovies homepage)
 final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
   try {
     final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
-    final top5 = topLists['top5'];
-    if (top5 != null && top5.isNotEmpty) {
-      dev.log('[mergedCarouselProvider] Built ${top5.length} live Vega/Rog carousel items');
-      return top5;
+    final carousel = topLists['carousel'] ?? topLists['top5'];
+    if (carousel != null && carousel.isNotEmpty) {
+      dev.log('[mergedCarouselProvider] Built ${carousel.length} live carousel items');
+      return carousel;
     }
   } catch (e) {
     dev.log('[mergedCarouselProvider] Live fetch error: $e, falling back to local hybrid');
@@ -297,132 +298,111 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
   );
 });
 
-/// Top 10 Today list (5 from RogMovies, 5 from VegaMovies, strictly distinct from Top 5)
-final mergedTop10Provider = FutureProvider<List<ManifestItem>>((ref) async {
+/// Top 10 Indian Today provider (2026 Indian releases from RogMovies)
+final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
   try {
     final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
-    final top10 = topLists['top10'];
+    final indian = topLists['top10Indian'];
+    if (indian != null && indian.isNotEmpty) {
+      dev.log('[top10IndianProvider] Built ${indian.length} live 2026 Indian items');
+      return indian;
+    }
+  } catch (e) {
+    dev.log('[top10IndianProvider] Live fetch error: $e, falling back to sorted items');
+  }
+
+  // Fallback to sorted manifest items if offline
+  final sorted = await ref.watch(sortedManifestItemsProvider.future);
+  return sorted.take(10).toList();
+});
+
+/// Top 10 Hindi Dub Today provider (5 from RogMovies + 5 from VegaMovies, distinct from Indian Today)
+final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  final localMap = ref.watch(localManifestMapProvider);
+  try {
+    final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
+    final top10 = topLists['top10HindiDub'] ?? topLists['top10'];
     if (top10 != null && top10.isNotEmpty) {
-      dev.log('[mergedTop10Provider] Built ${top10.length} live Vega/Rog top 10 items (distinct from Top 5)');
+      dev.log('[top10HindiDubProvider] Built ${top10.length} live Vega/Rog top 10 Hindi Dub items');
       return top10;
     }
   } catch (e) {
-    dev.log('[mergedTop10Provider] Live fetch error: $e, falling back to local hybrid');
+    dev.log('[top10HindiDubProvider] Live fetch error: $e, falling back to local hybrid');
   }
 
   // Fallback to local hybrid if offline
   final trending = await ref.watch(_tmdbDailyTrendingProvider.future);
   final sorted = await ref.watch(sortedManifestItemsProvider.future);
-  final top5Items = await ref.watch(mergedCarouselProvider.future);
-  final top5Ids = top5Items.map((item) => item.id).toSet();
+  final indianItems = await ref.watch(top10IndianProvider.future);
+  final indianIds = indianItems.map((item) => item.id).toSet();
 
   return await _buildHybridTopList(
     folder: 'Top 10',
     maxSlots: 10,
     localMap: localMap,
     trendingPool: trending,
-    excludeIds: top5Ids,
+    excludeIds: indianIds,
     sortedItems: sorted,
   );
 });
+
+/// Backward compatibility alias
+final mergedTop10Provider = top10HindiDubProvider;
 
 /// Home screen sections compiled live from VegaMovies and RogMovies
 final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
   final sections = <ContentSection>[];
 
-  // 0. Top 5 Movies (3 from VegaMovies, 2 from RogMovies)
-  final top5 = await ref.watch(mergedCarouselProvider.future);
-  if (top5.isNotEmpty) {
-    sections.add(ContentSection(title: 'Top 5 Movies', items: top5, isRanked: true));
+  // 1. Top 10 Indian Today (RogMovies 2026 posts)
+  final top10Indian = await ref.watch(top10IndianProvider.future);
+  if (top10Indian.isNotEmpty) {
+    sections.add(ContentSection(title: 'Top 10 Indian Today', items: top10Indian, isRanked: true));
   }
 
-  // 1. Top 10 Today (5 from RogMovies, 5 from VegaMovies, strictly distinct from Top 5)
-  final top10 = await ref.watch(mergedTop10Provider.future);
-  if (top10.isNotEmpty) {
-    sections.add(ContentSection(title: 'Top 10 Today', items: top10, isRanked: true));
+  // 2. Top 10 Hindi Dub Today (5 from RogMovies, 5 from VegaMovies, distinct from Indian Today)
+  final top10HindiDub = await ref.watch(top10HindiDubProvider.future);
+  if (top10HindiDub.isNotEmpty) {
+    sections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: top10HindiDub, isRanked: true));
   }
 
-  // 2. K-Drama Section (https://vegamovies.gallery/korean-series/)
-  try {
-    final kdramaItems = await MovieSiteScraperService.instance.fetchCategoryPage('korean', page: 1, localMap: localMap);
-    if (kdramaItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'K-Drama', items: kdramaItems));
+  // Categories in exact order:
+  // K-Drama: https://vegamovies.gallery/korean-series/
+  // Chinese: https://vegamovies.gallery/chinese-series/ or search
+  // Anime: https://vegamovies.gallery/anime-series/
+  // Action: VegaMovies Action + RogMovies Action mixed
+  // Other genres: Comedy, Thriller, Horror, Sci-Fi, Romance
+  final categoryDefs = [
+    ('korean', 'K-Drama'),
+    ('chinese', 'Chinese'),
+    ('anime', 'Anime'),
+    ('action', 'Action'),
+    ('comedy', 'Comedy'),
+    ('thriller', 'Thriller'),
+    ('horror', 'Horror'),
+    ('sci-fi', 'Sci-Fi'),
+    ('romance', 'Romance'),
+  ];
+
+  // Fetch all categories in parallel for fastest instant load
+  final categoryResults = await Future.wait(
+    categoryDefs.map((def) async {
+      try {
+        final items = await MovieSiteScraperService.instance.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
+        return (def.$2, items);
+      } catch (e) {
+        dev.log('[homeSectionsProvider] ${def.$2} error: $e');
+        return (def.$2, <ManifestItem>[]);
+      }
+    }),
+  );
+
+  for (final res in categoryResults) {
+    if (res.$2.isNotEmpty) {
+      sections.add(ContentSection(title: res.$1, items: res.$2));
     }
-  } catch (e) {
-    dev.log('[homeSectionsProvider] KDrama error: $e');
   }
-
-  // 3. Chinese Section (https://vegamovies.gallery/search.html?q=Chinese)
-  try {
-    final chineseItems = await MovieSiteScraperService.instance.fetchCategoryPage('chinese', page: 1, localMap: localMap);
-    if (chineseItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Chinese', items: chineseItems));
-    }
-  } catch (e) {
-    dev.log('[homeSectionsProvider] Chinese error: $e');
-  }
-
-  // 4. Anime Section (https://vegamovies.gallery/anime-series/)
-  try {
-    final animeItems = await MovieSiteScraperService.instance.fetchCategoryPage('anime', page: 1, localMap: localMap);
-    if (animeItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Anime', items: animeItems));
-    }
-  } catch (e) {
-    dev.log('[homeSectionsProvider] Anime error: $e');
-  }
-
-  // 5. Action Section (VegaMovies Action + RogMovies Action mixed)
-  try {
-    final actionItems = await MovieSiteScraperService.instance.fetchCategoryPage('action', page: 1, localMap: localMap);
-    if (actionItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Action', items: actionItems));
-    }
-  } catch (e) {
-    dev.log('[homeSectionsProvider] Action error: $e');
-  }
-
-  // 6. Comedy (mixed VegaMovies + RogMovies)
-  try {
-    final comedyItems = await MovieSiteScraperService.instance.fetchCategoryPage('comedy', page: 1, localMap: localMap);
-    if (comedyItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Comedy', items: comedyItems));
-    }
-  } catch (e) {}
-
-  // 7. Thriller (mixed VegaMovies + RogMovies)
-  try {
-    final thrillerItems = await MovieSiteScraperService.instance.fetchCategoryPage('thriller', page: 1, localMap: localMap);
-    if (thrillerItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Thriller', items: thrillerItems));
-    }
-  } catch (e) {}
-
-  // 8. Horror (mixed VegaMovies + RogMovies)
-  try {
-    final horrorItems = await MovieSiteScraperService.instance.fetchCategoryPage('horror', page: 1, localMap: localMap);
-    if (horrorItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Horror', items: horrorItems));
-    }
-  } catch (e) {}
-
-  // 9. Sci-Fi (mixed VegaMovies + RogMovies)
-  try {
-    final scifiItems = await MovieSiteScraperService.instance.fetchCategoryPage('sci-fi', page: 1, localMap: localMap);
-    if (scifiItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Sci-Fi', items: scifiItems));
-    }
-  } catch (e) {}
-
-  // 10. Romance (mixed VegaMovies + RogMovies)
-  try {
-    final romanceItems = await MovieSiteScraperService.instance.fetchCategoryPage('romance', page: 1, localMap: localMap);
-    if (romanceItems.isNotEmpty) {
-      sections.add(ContentSection(title: 'Romance', items: romanceItems));
-    }
-  } catch (e) {}
 
   return sections;
 });

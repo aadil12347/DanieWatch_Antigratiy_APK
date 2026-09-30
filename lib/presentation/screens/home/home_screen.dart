@@ -98,7 +98,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onRefresh: () async {
               MovieSiteScraperService.instance.clearCache();
               ref.invalidate(mergedCarouselProvider);
-              ref.invalidate(mergedTop10Provider);
+              ref.invalidate(top10IndianProvider);
+              ref.invalidate(top10HindiDubProvider);
               ref.invalidate(homeSectionsProvider);
               await ref.read(homeSectionsProvider.future);
             },
@@ -115,10 +116,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
 
-                // Content sections with Continue Watching inserted ABOVE Top 5/Top 10
+                // Content sections with Continue Watching inserted ABOVE Top 10
                 ...sections.expand((section) {
-                  final isTop10 = section.title == 'Top 10 Today';
-                  final isTop5 = section.title == 'Top 5 Movies';
+                  final isTop10Indian = section.title == 'Top 10 Indian Today';
+                  final isTop10HindiDub = section.title == 'Top 10 Hindi Dub Today';
+                  final isRankedSection = isTop10Indian || isTop10HindiDub;
+
+                  Widget? headerTitleWidget;
+                  if (isTop10Indian) {
+                    headerTitleWidget = const TopTenTitle(topText: 'INDIAN', bottomText: 'TODAY');
+                  } else if (isTop10HindiDub) {
+                    headerTitleWidget = const TopTenTitle(topText: 'HINDI DUB', bottomText: 'TODAY');
+                  }
                   
                   final sectionWidget = SliverToBoxAdapter(
                     child: Column(
@@ -126,10 +135,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         SectionHeader(
                           title: section.title,
-                          titleWidget: isTop10
-                              ? const TopTenTitle()
-                              : (isTop5 ? const TopFiveTitle() : null),
-                          showSeeAll: !isTop10 && !isTop5,
+                          titleWidget: headerTitleWidget,
+                          showSeeAll: !isRankedSection,
                           onSeeAll: () => _handleSeeAll(section.title),
                         ),
                         ContentRow(
@@ -141,7 +148,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   );
 
                   // Insert Continue Watching row right ABOVE first ranked section
-                  final isFirstRankedSection = isTop5 || (isTop10 && !sections.any((s) => s.title == 'Top 5 Movies'));
+                  final isFirstRankedSection = isTop10Indian || (isTop10HindiDub && !sections.any((s) => s.title == 'Top 10 Indian Today'));
                   if (isFirstRankedSection) {
                     final historyEnabled = ref.watch(continueWatchingSettingsProvider);
                     if (historyEnabled) {

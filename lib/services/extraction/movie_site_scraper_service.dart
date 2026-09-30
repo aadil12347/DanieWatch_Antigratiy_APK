@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../../domain/models/manifest_item.dart';
 import '../../data/clients/tmdb_client.dart';
 
@@ -28,40 +28,52 @@ class MovieSiteScraperService {
   static const String vegaBaseUrl = 'https://vegamovies.gallery';
   static const String rogBaseUrl = 'https://rogmovies.best';
 
-  static const Map<String, String> _headers = {
-    'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept':
-        'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-  };
+  static final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 12),
+    headers: {
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept':
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
+    followRedirects: true,
+    maxRedirects: 5,
+  ));
 
   // Cache in-memory for live session
+  List<ManifestItem>? _cachedCarousel;
+  List<ManifestItem>? _cachedTop10Indian;
+  List<ManifestItem>? _cachedTop10HindiDub;
   List<ManifestItem>? _cachedTop5;
   List<ManifestItem>? _cachedTop10;
-  final Map<String, List<ManifestItem>> _categoryCache = {};
+  Future<Map<String, List<ManifestItem>>>? _pendingTopLists;
+  final Map<String, Future<List<ManifestItem>>> _pendingCategoryPages = {};
   final Map<String, List<ManifestItem>> _categoryPageCache = {};
   final Map<String, ManifestItem> _itemMap = {};
 
   Map<String, ManifestItem> get itemMap => _itemMap;
 
-  void clearCache() {
-    _cachedTop5 = null;
-    _cachedTop10 = null;
-    _categoryCache.clear();
-    _categoryPageCache.clear();
-    _itemMap.clear();
+  static final RegExp _excludedIndianShowPatterns = RegExp(
+    r'roadies|bigg?\s*boss|dance\s*master|hustle|top\s*1\s*%|top\s*1\s*percent|sa\s*re\s*ga\s*ma|sare\s*gama|best\s*dancer|beat\s*dancer|khatron\s*ke\s*khiladi|got\s*latent|kapil\s*show|reality|tv-show|rise\s*and\s*fall|family\s*full\s*house',
+    caseSensitive: false,
+  );
+
+  static bool isExcludedIndianShow(String title) {
+    return _excludedIndianShowPatterns.hasMatch(title);
   }
 
-  /// Normalize URL to use local dev proxy when available to bypass ISP block
-  static String normalizeFetchUrl(String url) {
-    if (url.startsWith('https://vegamovies.gallery')) {
-      return url.replaceFirst('https://vegamovies.gallery', 'http://127.0.0.1:8080/api/vegamovies');
-    }
-    if (url.startsWith('https://rogmovies.best')) {
-      return url.replaceFirst('https://rogmovies.best', 'http://127.0.0.1:8080/api/rogmovies');
-    }
-    return url;
+  void clearCache() {
+    _cachedCarousel = null;
+    _cachedTop10Indian = null;
+    _cachedTop10HindiDub = null;
+    _cachedTop5 = null;
+    _cachedTop10 = null;
+    _pendingTopLists = null;
+    _pendingCategoryPages.clear();
+    _categoryPageCache.clear();
+    _itemMap.clear();
   }
 
   /// Clean post title
@@ -124,75 +136,41 @@ class MovieSiteScraperService {
     return cards;
   }
 
-  /// Fetch HTML with direct fetch first (fast, ~400ms), falling back to reverse proxy & public proxies
+  /// Fetch HTML with direct fetch first (fast, ~400-1200ms)
   static Future<String?> fetchHtml(String url) async {
-    // 1. Direct fetch FIRST (fast, usually takes ~400ms)
     try {
-      final res = await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200 && res.body.isNotEmpty) {
-        return res.body;
+      final res = await _dio.get<String>(
+        url,
+        options: Options(responseType: ResponseType.plain),
+      );
+      if (res.statusCode == 200 && res.data != null && res.data!.isNotEmpty) {
+        return res.data;
       }
     } catch (e) {
-      debugPrint('[MovieSiteScraperService] Direct fetch failed for $url: $e');
+      debugPrint('[MovieSiteScraperService] Fetch failed for $url: $e');
     }
-
-    // 2. Try local proxy (127.0.0.1 via adb reverse)
-    final proxyUrl = normalizeFetchUrl(url);
-    if (proxyUrl != url) {
-      try {
-        final res = await http.get(Uri.parse(proxyUrl), headers: _headers).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200 && res.body.isNotEmpty) {
-          return res.body;
-        }
-      } catch (e) {
-        debugPrint('[MovieSiteScraperService] Local proxy failed for $proxyUrl: $e');
-      }
-
-      // 2b. Try LAN IP proxy (when connected over Wi-Fi)
-      final lanProxyUrl = proxyUrl.replaceFirst('127.0.0.1', '192.168.100.125');
-      try {
-        final res = await http.get(Uri.parse(lanProxyUrl), headers: _headers).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200 && res.body.isNotEmpty) {
-          return res.body;
-        }
-      } catch (e) {
-        debugPrint('[MovieSiteScraperService] LAN proxy failed for $lanProxyUrl: $e');
-      }
-    }
-
-    // 3. Public CORS proxy fallback
-    try {
-      final allOrigins = 'https://api.allorigins.win/raw?url=${Uri.encodeComponent(url)}';
-      final res = await http.get(Uri.parse(allOrigins)).timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200 && res.body.isNotEmpty) {
-        return res.body;
-      }
-    } catch (e) {
-      debugPrint('[MovieSiteScraperService] Fallback proxy failed for $url: $e');
-    }
-
     return null;
   }
 
-
-  /// Converts a ScrapedSiteCard into a full ManifestItem with TMDB enrichment
-  Future<ManifestItem> convertToManifestItem(
+  /// Converts a ScrapedSiteCard instantly (0ms) into a ManifestItem using parsed HTML attributes.
+  /// Zero blocking network calls: displays titles and UI immediately, allowing images to load smoothly.
+  ManifestItem createFastManifestItem(
     ScrapedSiteCard card, {
     bool isTrending = false,
     int? trendingRank,
     Map<String, ManifestItem>? localMap,
-  }) async {
+  }) {
     String title = card.title;
     if (title.toLowerCase().startsWith('download ')) {
       title = title.substring(9).trim();
     }
 
-    // Try finding in localMap by title match first for instant hit
+    // 1. Instant match in local database index if available (0ms)
     if (localMap != null && localMap.isNotEmpty) {
       final normTitle = title.toLowerCase();
       for (final item in localMap.values) {
         final itemNorm = item.cleanTitle.toLowerCase();
-        if (normTitle.contains(itemNorm) && itemNorm.length > 4) {
+        if (itemNorm.length > 4 && normTitle.contains(itemNorm)) {
           final enriched = item.copyWith(
             posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
             isTrending: isTrending,
@@ -204,71 +182,41 @@ class MovieSiteScraperService {
       }
     }
 
+    // Clean clutter from raw scrape title (e.g. resolution, rip tags, audio tags)
+    var displayTitle = title.replaceAll(RegExp(r'\s*[\{\[].*?[\}\]]'), ' ');
+    displayTitle = displayTitle.replaceAll(
+      RegExp(
+        r'\s*(?:Full Movie|Complete Web Series|WEB-DL|HDTC|PreDVD|HDRip|x264|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Tamil|Telugu|Punjabi|JioHotstar|SonyLiv|Netflix|AMZN|Zee5|–|\*No Ads\*|480p|720p|1080p|2160p).*$',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    displayTitle = displayTitle.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (displayTitle.length < 3) {
+      displayTitle = title;
+    }
+
+    // 2. Parse year & mediaType locally (0ms)
     int? year;
     final yearMatch = RegExp(r'\((\d{4})\)').firstMatch(title);
     if (yearMatch != null) {
       year = int.tryParse(yearMatch.group(1)!);
+    } else if (card.postUrl.contains('2026')) {
+      year = 2026;
     }
 
-    final isTv = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show', caseSensitive: false).hasMatch(card.title) ||
+    final isTv = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show', caseSensitive: false).hasMatch(title) ||
         card.postUrl.contains('series') ||
         card.postUrl.contains('season');
     final mediaType = isTv ? 'tv' : 'movie';
 
-    final coreTitle = title
-        .replaceAll(RegExp(r'\{[^}]+\}'), '')
-        .replaceAll(RegExp(r'\[[^\]]+\]'), '')
-        .replaceAll(RegExp(r'\([^)]+\)'), '')
-        .split(RegExp(r'dual\s+audio|multi-audio|full\s+movie|hindi\s+dubbed', caseSensitive: false))[0]
-        .trim();
-
-    int tmdbId = 0;
-    String? backdropUrl;
-    String? tmdbPosterPath;
-    String? overview;
-
-    try {
-      final query = coreTitle.isNotEmpty ? coreTitle : title;
-      final results = await TmdbClient.instance.searchMulti(query);
-      if (results.isNotEmpty) {
-        final match = results.first;
-        final id = match['id'];
-        if (id is int) {
-          tmdbId = id;
-          final poster = match['poster_path'];
-          if (poster is String && poster.isNotEmpty) {
-            tmdbPosterPath = poster;
-          }
-          final backdrop = match['backdrop_path'];
-          if (backdrop is String && backdrop.isNotEmpty) {
-            backdropUrl = TmdbClient.backdropUrl(backdrop);
-          }
-          final over = match['overview'];
-          if (over is String && over.isNotEmpty) {
-            overview = over;
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[MovieSiteScraperService] TMDB search error for $coreTitle: $e');
-    }
-
-    if (tmdbId <= 0) {
-      tmdbId = (card.postUrl.hashCode.abs() % 900000) + 100000;
-    }
-
-    final finalPoster = card.posterUrl.isNotEmpty
-        ? card.posterUrl
-        : (tmdbPosterPath != null ? TmdbClient.posterUrl(tmdbPosterPath) : null);
+    final fastId = (card.postUrl.hashCode.abs() % 9000000) + 1000000;
 
     final item = ManifestItem(
-      id: tmdbId,
+      id: fastId,
       mediaType: mediaType,
-      title: title,
-      posterUrl: finalPoster,
-      tmdbPosterPath: tmdbPosterPath,
-      backdropUrl: backdropUrl,
-      overview: overview,
+      title: displayTitle,
+      posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
       releaseYear: year ?? DateTime.now().year,
       voteAverage: card.rating,
       isTrending: isTrending,
@@ -279,34 +227,57 @@ class MovieSiteScraperService {
     return item;
   }
 
-  /// Live fetch Top 5 and Top 10 from VegaMovies and RogMovies homepages.
-  /// Top 5: 3 from VegaMovies + 2 from RogMovies, arranged dynamically.
-  /// Top 10: 5 from RogMovies + 5 from VegaMovies, arranged dynamically.
-  /// Crucial: Top 5 and Top 10 must NOT contain any same posts.
+  /// Live fetch Top 10 Indian (2026 releases) and Top 10 Hindi Dub from RogMovies & VegaMovies.
   Future<Map<String, List<ManifestItem>>> fetchHomeTopLists({
     Map<String, ManifestItem>? localMap,
     bool forceRefresh = false,
   }) async {
-    if (!forceRefresh && _cachedTop5 != null && _cachedTop10 != null) {
-      return {'top5': _cachedTop5!, 'top10': _cachedTop10!};
+    if (!forceRefresh && _cachedTop10Indian != null && _cachedTop10HindiDub != null) {
+      return {
+        'carousel': _cachedCarousel ?? _cachedTop10Indian!,
+        'top10Indian': _cachedTop10Indian!,
+        'top10HindiDub': _cachedTop10HindiDub!,
+        'top5': _cachedCarousel ?? _cachedTop10Indian!,
+        'top10': _cachedTop10HindiDub!,
+      };
     }
 
-    dev.log('[MovieSiteScraperService] Live fetching homepages from VegaMovies & RogMovies...');
+    if (!forceRefresh && _pendingTopLists != null) {
+      return _pendingTopLists!;
+    }
 
+    final future = _doFetchHomeTopLists(localMap: localMap);
+    _pendingTopLists = future;
+    try {
+      final res = await future;
+      return res;
+    } finally {
+      _pendingTopLists = null;
+    }
+  }
+
+  Future<Map<String, List<ManifestItem>>> _doFetchHomeTopLists({
+    Map<String, ManifestItem>? localMap,
+  }) async {
+    dev.log('[MovieSiteScraperService] Live fetching Rog 2026, Vega & Rog homepages...');
+
+    // Fetch RogMovies 2026 (p1 & p2), VegaMovies homepage, and RogMovies homepage in parallel
     final results = await Future.wait([
+      fetchHtml('$rogBaseUrl/movies-by-year/2026/'),
+      fetchHtml('$rogBaseUrl/movies-by-year/2026/page/2/'),
       fetchHtml(vegaBaseUrl),
       fetchHtml(rogBaseUrl),
     ]);
 
-    final vegaHtml = results[0] ?? '';
-    final rogHtml = results[1] ?? '';
+    final rog2026Html1 = results[0] ?? '';
+    final rog2026Html2 = results[1] ?? '';
+    final vegaHtml = results[2] ?? '';
+    final rogHtml = results[3] ?? '';
 
+    final rog2026Cards1 = parseCards(rog2026Html1, 'rogmovies');
     final vegaCards = parseCards(vegaHtml, 'vegamovies');
     final rogCards = parseCards(rogHtml, 'rogmovies');
 
-    dev.log('[MovieSiteScraperService] Parsed ${vegaCards.length} Vega cards and ${rogCards.length} Rog cards.');
-
-    final top5Cards = <ScrapedSiteCard>[];
     final usedUrls = <String>{};
     final usedTitles = <String>{};
 
@@ -331,83 +302,80 @@ class MovieSiteScraperService {
       return false;
     }
 
-    int vIdx = 0;
-    int rIdx = 0;
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1. Top 10 Indian Today (RogMovies 2026 - page 1 + page 2 fallback)
+    // Exclude TV/reality shows (MTV Roadies, Big Boss, Dance Master, Hustle, etc.)
+    // ─────────────────────────────────────────────────────────────────────────
+    final top10IndianCards = <ScrapedSiteCard>[];
 
-    // Top 5: 3 from VegaMovies, 2 from RogMovies
-    // Dynamic Interleave: Vega[0], Rog[0], Vega[1], Rog[1], Vega[2]
-    // 1. Vega
-    while (vIdx < vegaCards.length && isUsed(vegaCards[vIdx])) {
-      vIdx++;
-    }
-    if (vIdx < vegaCards.length) {
-      top5Cards.add(vegaCards[vIdx]);
-      markUsed(vegaCards[vIdx]);
-      vIdx++;
-    }
-
-    // 2. Rog
-    while (rIdx < rogCards.length && isUsed(rogCards[rIdx])) {
-      rIdx++;
-    }
-    if (rIdx < rogCards.length) {
-      top5Cards.add(rogCards[rIdx]);
-      markUsed(rogCards[rIdx]);
-      rIdx++;
+    for (final card in rog2026Cards1) {
+      if (isExcludedIndianShow(card.title)) continue;
+      if (!isUsed(card)) {
+        top10IndianCards.add(card);
+        markUsed(card);
+        if (top10IndianCards.length >= 10) break;
+      }
     }
 
-    // 3. Vega
-    while (vIdx < vegaCards.length && isUsed(vegaCards[vIdx])) {
-      vIdx++;
-    }
-    if (vIdx < vegaCards.length) {
-      top5Cards.add(vegaCards[vIdx]);
-      markUsed(vegaCards[vIdx]);
-      vIdx++;
-    }
-
-    // 4. Rog
-    while (rIdx < rogCards.length && isUsed(rogCards[rIdx])) {
-      rIdx++;
-    }
-    if (rIdx < rogCards.length) {
-      top5Cards.add(rogCards[rIdx]);
-      markUsed(rogCards[rIdx]);
-      rIdx++;
+    if (top10IndianCards.length < 10 && rog2026Html2.isNotEmpty) {
+      final rog2026Cards2 = parseCards(rog2026Html2, 'rogmovies');
+      for (final card in rog2026Cards2) {
+        if (isExcludedIndianShow(card.title)) continue;
+        if (!isUsed(card)) {
+          top10IndianCards.add(card);
+          markUsed(card);
+          if (top10IndianCards.length >= 10) break;
+        }
+      }
     }
 
-    // 5. Vega
-    while (vIdx < vegaCards.length && isUsed(vegaCards[vIdx])) {
-      vIdx++;
-    }
-    if (vIdx < vegaCards.length) {
-      top5Cards.add(vegaCards[vIdx]);
-      markUsed(vegaCards[vIdx]);
-      vIdx++;
-    }
-
-    final top5Items = <ManifestItem>[];
-    for (int i = 0; i < top5Cards.length; i++) {
-      final item = await convertToManifestItem(
-        top5Cards[i],
+    final top10IndianItems = <ManifestItem>[];
+    for (int i = 0; i < top10IndianCards.length; i++) {
+      final item = createFastManifestItem(
+        top10IndianCards[i],
         isTrending: true,
         trendingRank: i + 1,
         localMap: localMap,
       );
-      top5Items.add(item);
+      top10IndianItems.add(item);
     }
-    _cachedTop5 = top5Items;
+    _cachedTop10Indian = top10IndianItems;
 
-    // Top 10: 5 from RogMovies, 5 from VegaMovies, strictly excluding ANY post used in Top 5!
-    // Dynamic Interleave: Rog[0], Vega[0], Rog[1], Vega[1], Rog[2], Vega[2], Rog[3], Vega[3], Rog[4], Vega[4]
-    final top10Cards = <ScrapedSiteCard>[];
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2. Carousel Items (Top 5 featured from VegaMovies homepage)
+    // ─────────────────────────────────────────────────────────────────────────
+    final carouselCards = <ScrapedSiteCard>[];
+    for (final card in vegaCards) {
+      if (carouselCards.length >= 5) break;
+      carouselCards.add(card);
+    }
+    final carouselItems = <ManifestItem>[];
+    for (int i = 0; i < carouselCards.length; i++) {
+      final item = createFastManifestItem(
+        carouselCards[i],
+        isTrending: true,
+        trendingRank: i + 1,
+        localMap: localMap,
+      );
+      carouselItems.add(item);
+    }
+    _cachedCarousel = carouselItems;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. Top 10 Hindi Dub Today
+    // 5 from RogMovies homepage + 5 from VegaMovies homepage, dynamically interleaved,
+    // strictly distinct from Top 10 Indian Today!
+    // ─────────────────────────────────────────────────────────────────────────
+    final top10HindiDubCards = <ScrapedSiteCard>[];
+    int rIdx = 0;
+    int vIdx = 0;
 
     for (int i = 0; i < 5; i++) {
       while (rIdx < rogCards.length && isUsed(rogCards[rIdx])) {
         rIdx++;
       }
       if (rIdx < rogCards.length) {
-        top10Cards.add(rogCards[rIdx]);
+        top10HindiDubCards.add(rogCards[rIdx]);
         markUsed(rogCards[rIdx]);
         rIdx++;
       }
@@ -416,76 +384,102 @@ class MovieSiteScraperService {
         vIdx++;
       }
       if (vIdx < vegaCards.length) {
-        top10Cards.add(vegaCards[vIdx]);
+        top10HindiDubCards.add(vegaCards[vIdx]);
         markUsed(vegaCards[vIdx]);
         vIdx++;
       }
     }
 
-    final top10Items = <ManifestItem>[];
-    for (int i = 0; i < top10Cards.length; i++) {
-      final item = await convertToManifestItem(
-        top10Cards[i],
+    // Fill remaining if needed to guarantee 10
+    while (top10HindiDubCards.length < 10 && rIdx < rogCards.length) {
+      if (!isUsed(rogCards[rIdx])) {
+        top10HindiDubCards.add(rogCards[rIdx]);
+        markUsed(rogCards[rIdx]);
+      }
+      rIdx++;
+    }
+    while (top10HindiDubCards.length < 10 && vIdx < vegaCards.length) {
+      if (!isUsed(vegaCards[vIdx])) {
+        top10HindiDubCards.add(vegaCards[vIdx]);
+        markUsed(vegaCards[vIdx]);
+      }
+      vIdx++;
+    }
+
+    final top10HindiDubItems = <ManifestItem>[];
+    for (int i = 0; i < top10HindiDubCards.length; i++) {
+      final item = createFastManifestItem(
+        top10HindiDubCards[i],
         isTrending: true,
         trendingRank: i + 1,
         localMap: localMap,
       );
-      top10Items.add(item);
+      top10HindiDubItems.add(item);
     }
-    _cachedTop10 = top10Items;
+    _cachedTop10HindiDub = top10HindiDubItems;
+    _cachedTop5 = carouselItems;
+    _cachedTop10 = top10HindiDubItems;
 
-    dev.log('[MovieSiteScraperService] Top 5 (${top5Items.length}) & Top 10 (${top10Items.length}) ready (distinct).');
-    return {'top5': top5Items, 'top10': top10Items};
+    dev.log(
+      '[MovieSiteScraperService] Ready: Top 10 Indian (${top10IndianItems.length}), '
+      'Top 10 Hindi Dub (${top10HindiDubItems.length}), Carousel (${carouselItems.length})',
+    );
+
+    return {
+      'carousel': carouselItems,
+      'top10Indian': top10IndianItems,
+      'top10HindiDub': top10HindiDubItems,
+      'top5': carouselItems,
+      'top10': top10HindiDubItems,
+    };
   }
 
-  /// Fetch Chinese drama posts via ts-search.php or chinese-series
+  /// Fetch Chinese drama posts via /chinese-series/ or ts-search.php
   Future<List<ScrapedSiteCard>> _fetchChineseCards({int page = 1}) async {
     final cards = <ScrapedSiteCard>[];
-    // 1. Try ts-search.php
-    try {
-      final url = '$vegaBaseUrl/ts-search.php?q=Chinese&page=$page';
-      final res = await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final hits = data['hits'] as List?;
-        if (hits != null) {
-          for (final hit in hits) {
-            final doc = hit['document'] as Map<String, dynamic>?;
-            if (doc != null) {
-              final title = doc['post_title']?.toString() ?? '';
-              final permalink = doc['permalink']?.toString() ?? '';
-              final thumb = doc['thumb']?.toString() ?? '';
-              final fullUrl = permalink.startsWith('http') ? permalink : '$vegaBaseUrl$permalink';
-              if (title.isNotEmpty && fullUrl.isNotEmpty) {
-                cards.add(ScrapedSiteCard(
-                  site: 'vegamovies',
-                  postUrl: fullUrl,
-                  posterUrl: thumb,
-                  title: cleanTitle(title),
-                ));
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[MovieSiteScraperService] Chinese ts-search error: $e');
-    }
-
-    // 2. Try /chinese-series/ (and page X)
+    // 1. Fetch /chinese-series/ directly
     try {
       final csUrl = page == 1 ? '$vegaBaseUrl/chinese-series/' : '$vegaBaseUrl/chinese-series/page/$page/';
       final html = await fetchHtml(csUrl);
       if (html != null && html.isNotEmpty) {
         final htmlCards = parseCards(html, 'vegamovies');
-        for (final c in htmlCards) {
-          if (!cards.any((existing) => existing.postUrl == c.postUrl)) {
-            cards.add(c);
-          }
-        }
+        cards.addAll(htmlCards);
       }
     } catch (e) {
       debugPrint('[MovieSiteScraperService] Chinese series HTML error: $e');
+    }
+
+    // 2. Fallback to ts-search.php if empty
+    if (cards.isEmpty) {
+      try {
+        final url = '$vegaBaseUrl/ts-search.php?q=Chinese&page=$page';
+        final res = await _dio.get<String>(url, options: Options(responseType: ResponseType.plain));
+        if (res.statusCode == 200 && res.data != null) {
+          final data = jsonDecode(res.data!) as Map<String, dynamic>;
+          final hits = data['hits'] as List?;
+          if (hits != null) {
+            for (final hit in hits) {
+              final doc = hit['document'] as Map<String, dynamic>?;
+              if (doc != null) {
+                final title = doc['post_title']?.toString() ?? '';
+                final permalink = doc['permalink']?.toString() ?? '';
+                final thumb = doc['thumb']?.toString() ?? '';
+                final fullUrl = permalink.startsWith('http') ? permalink : '$vegaBaseUrl$permalink';
+                if (title.isNotEmpty && fullUrl.isNotEmpty) {
+                  cards.add(ScrapedSiteCard(
+                    site: 'vegamovies',
+                    postUrl: fullUrl,
+                    posterUrl: thumb,
+                    title: cleanTitle(title),
+                  ));
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[MovieSiteScraperService] Chinese ts-search error: $e');
+      }
     }
 
     return cards;
@@ -502,6 +496,28 @@ class MovieSiteScraperService {
     if (_categoryPageCache.containsKey(cacheKey) && _categoryPageCache[cacheKey]!.isNotEmpty) {
       return _categoryPageCache[cacheKey]!;
     }
+
+    if (_pendingCategoryPages.containsKey(cacheKey)) {
+      return _pendingCategoryPages[cacheKey]!;
+    }
+
+    final future = _doFetchCategoryPage(categoryOrGenre, page: page, localMap: localMap);
+    _pendingCategoryPages[cacheKey] = future;
+    try {
+      final res = await future;
+      return res;
+    } finally {
+      _pendingCategoryPages.remove(cacheKey);
+    }
+  }
+
+  Future<List<ManifestItem>> _doFetchCategoryPage(
+    String categoryOrGenre, {
+    int page = 1,
+    Map<String, ManifestItem>? localMap,
+  }) async {
+    final key = categoryOrGenre.toLowerCase().trim();
+    final cacheKey = '${key}_page_$page';
 
     dev.log('[MovieSiteScraperService] Live fetching section: $categoryOrGenre (page $page)');
     final cards = <ScrapedSiteCard>[];
@@ -554,7 +570,7 @@ class MovieSiteScraperService {
       if (seenUrls.contains(card.postUrl)) continue;
       seenUrls.add(card.postUrl);
 
-      final item = await convertToManifestItem(card, localMap: localMap);
+      final item = createFastManifestItem(card, localMap: localMap);
       items.add(item);
     }
 
@@ -571,4 +587,5 @@ class MovieSiteScraperService {
     return fetchCategoryPage(categoryOrGenre, page: 1, localMap: localMap);
   }
 }
+
 
