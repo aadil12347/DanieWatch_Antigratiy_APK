@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/manifest_item.dart';
-import '../../data/clients/tmdb_client.dart';
 
 class ScrapedSiteCard {
   final String site; // 'vegamovies' | 'rogmovies'
@@ -54,14 +53,18 @@ class MovieSiteScraperService {
   List<ManifestItem>? _cachedCarousel;
   List<ManifestItem>? _cachedTop10Indian;
   List<ManifestItem>? _cachedTop10HindiDub;
-  List<ManifestItem>? _cachedTop5;
-  List<ManifestItem>? _cachedTop10;
   Future<Map<String, List<ManifestItem>>>? _pendingTopLists;
   final Map<String, Future<List<ManifestItem>>> _pendingCategoryPages = {};
   final Map<String, List<ManifestItem>> _categoryPageCache = {};
   final Map<String, ManifestItem> _itemMap = {};
 
   Map<String, ManifestItem> get itemMap => _itemMap;
+  bool get hasMemoryCache => _cachedTop10Indian != null && _cachedTop10HindiDub != null;
+  List<ManifestItem>? get cachedTop10Indian => _cachedTop10Indian;
+  List<ManifestItem>? get cachedTop10HindiDub => _cachedTop10HindiDub;
+  List<ManifestItem>? get cachedCarousel => _cachedCarousel;
+  List<ManifestItem>? getCachedCategory(String key) =>
+      _categoryPageCache['${key.toLowerCase().trim()}_page_1'];
 
   static final RegExp _excludedIndianShowPatterns = RegExp(
     r'roadies|bigg?\s*boss|dance\s*master|hustle|top\s*1\s*%|top\s*1\s*percent|sa\s*re\s*ga\s*ma|sare\s*gama|best\s*dancer|beat\s*dancer|khatron\s*ke\s*khiladi|got\s*latent|kapil\s*show|reality|tv-show|rise\s*and\s*fall|family\s*full\s*house',
@@ -104,8 +107,6 @@ class MovieSiteScraperService {
             _itemMap[item.id.toString()] = item;
           }
         }
-        _cachedTop5 = _cachedCarousel;
-        _cachedTop10 = _cachedTop10HindiDub;
       }
 
       final rawCats = prefs.getString(_diskCacheKeyCategories);
@@ -116,7 +117,7 @@ class MovieSiteScraperService {
             final items = (entry.value as List)
                 .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
                 .toList();
-            _categoryPageCache['${entry.key}_p1'] = items;
+            _categoryPageCache['${entry.key}_page_1'] = items;
             for (final item in items) {
               _itemMap[item.id.toString()] = item;
             }
@@ -147,8 +148,8 @@ class MovieSiteScraperService {
       if (_categoryPageCache.isNotEmpty) {
         final catData = <String, dynamic>{};
         for (final entry in _categoryPageCache.entries) {
-          if (entry.key.endsWith('_p1')) {
-            final catName = entry.key.replaceAll('_p1', '');
+          if (entry.key.endsWith('_page_1')) {
+            final catName = entry.key.replaceAll('_page_1', '');
             catData[catName] = entry.value.map((e) => e.toJson()).toList();
           }
         }
@@ -163,8 +164,6 @@ class MovieSiteScraperService {
     _cachedCarousel = null;
     _cachedTop10Indian = null;
     _cachedTop10HindiDub = null;
-    _cachedTop5 = null;
-    _cachedTop10 = null;
     _pendingTopLists = null;
     _pendingCategoryPages.clear();
     _categoryPageCache.clear();
@@ -388,8 +387,6 @@ class MovieSiteScraperService {
         _cachedCarousel = carousel;
         _cachedTop10Indian = indian;
         _cachedTop10HindiDub = hindiDub;
-        _cachedTop5 = carousel;
-        _cachedTop10 = hindiDub;
 
         for (final item in [...carousel, ...indian, ...hindiDub]) {
           _itemMap[item.id.toString()] = item;
@@ -406,6 +403,48 @@ class MovieSiteScraperService {
       }
     } catch (e) {
       dev.log('[MovieSiteScraperService] Worker home fetch error: $e');
+    }
+    return null;
+  }
+
+  /// Fetches pre-parsed category items from Cloudflare Edge Worker in ~50-80ms
+  Future<List<ManifestItem>?> _fetchCategoryFromWorker(
+    String categoryOrGenre, {
+    int page = 1,
+    Map<String, ManifestItem>? localMap,
+  }) async {
+    try {
+      final key = categoryOrGenre.toLowerCase().trim();
+      final res = await _dio.get<String>(
+        '$edgeWorkerUrl/api/category?name=$key&page=$page',
+        options: Options(responseType: ResponseType.plain),
+      );
+      if (res.statusCode == 200 && res.data != null && res.data!.isNotEmpty) {
+        final data = jsonDecode(res.data!) as Map<String, dynamic>;
+        final itemsRaw = data['items'] as List? ?? [];
+        final items = <ManifestItem>[];
+        for (final c in itemsRaw) {
+          final card = ScrapedSiteCard(
+            site: c['site'] as String? ?? 'vegamovies',
+            postUrl: c['postUrl'] as String? ?? '',
+            posterUrl: c['posterUrl'] as String? ?? '',
+            title: c['title'] as String? ?? '',
+            rating: (c['rating'] as num?)?.toDouble() ?? 7.2,
+          );
+          if (card.postUrl.isNotEmpty) {
+            final item = createFastManifestItem(card, localMap: localMap);
+            items.add(item);
+          }
+        }
+        if (items.isNotEmpty) {
+          final cacheKey = '${key}_page_$page';
+          _categoryPageCache[cacheKey] = items;
+          dev.log('[MovieSiteScraperService] Worker loaded category $key page $page (${items.length} items)');
+          return items;
+        }
+      }
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Worker category fetch error: $e');
     }
     return null;
   }
@@ -571,8 +610,6 @@ class MovieSiteScraperService {
       top10HindiDubItems.add(item);
     }
     _cachedTop10HindiDub = top10HindiDubItems;
-    _cachedTop5 = carouselItems;
-    _cachedTop10 = top10HindiDubItems;
 
     dev.log(
       '[MovieSiteScraperService] Ready: Top 10 Indian (${top10IndianItems.length}), '
@@ -674,6 +711,14 @@ class MovieSiteScraperService {
     final cacheKey = '${key}_page_$page';
 
     dev.log('[MovieSiteScraperService] Live fetching section: $categoryOrGenre (page $page)');
+
+    if (edgeWorkerUrl.isNotEmpty) {
+      final workerItems = await _fetchCategoryFromWorker(categoryOrGenre, page: page, localMap: localMap);
+      if (workerItems != null && workerItems.isNotEmpty) {
+        return workerItems;
+      }
+    }
+
     final cards = <ScrapedSiteCard>[];
 
     if (key == 'korean' || key == 'k-drama' || key == 'kdrama') {

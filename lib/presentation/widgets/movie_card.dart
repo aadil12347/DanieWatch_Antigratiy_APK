@@ -483,6 +483,8 @@ class _PosterImage extends ConsumerWidget {
         fit: BoxFit.cover,
         memCacheWidth: 300,
         memCacheHeight: 450,
+        maxWidthDiskCache: 450,
+        maxHeightDiskCache: 675,
         placeholder: (_, __) => Container(
           color: AppColors.surfaceElevated,
           child: const Center(
@@ -518,6 +520,8 @@ class _PosterImage extends ConsumerWidget {
           fit: BoxFit.cover,
           memCacheWidth: 300,
           memCacheHeight: 450,
+          maxWidthDiskCache: 450,
+          maxHeightDiskCache: 675,
           placeholder: (_, __) => Container(
             color: AppColors.surfaceElevated,
             child: const Center(

@@ -350,30 +350,23 @@ final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
 /// Backward compatibility alias
 final mergedTop10Provider = top10HindiDubProvider;
 
-/// Home screen sections compiled live from VegaMovies and RogMovies
-final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
+/// Home screen sections compiled live from VegaMovies and RogMovies with 0ms disk cache and batched streaming
+final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   final localMap = ref.watch(localManifestMapProvider);
-  final sections = <ContentSection>[];
+  final scraper = MovieSiteScraperService.instance;
 
-  // 1. Top 10 Indian Today (RogMovies 2026 posts)
-  final top10Indian = await ref.watch(top10IndianProvider.future);
-  if (top10Indian.isNotEmpty) {
-    sections.add(ContentSection(title: 'Top 10 Indian Today', items: top10Indian, isRanked: true));
+  // 1. FAST PATH (0ms startup): Ensure disk cache is loaded and yield immediately if available
+  await scraper.loadDiskCache();
+
+  final initialSections = <ContentSection>[];
+  if (scraper.cachedTop10Indian != null && scraper.cachedTop10Indian!.isNotEmpty) {
+    initialSections.add(ContentSection(title: 'Top 10 Indian Today', items: scraper.cachedTop10Indian!, isRanked: true));
+  }
+  if (scraper.cachedTop10HindiDub != null && scraper.cachedTop10HindiDub!.isNotEmpty) {
+    initialSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: scraper.cachedTop10HindiDub!, isRanked: true));
   }
 
-  // 2. Top 10 Hindi Dub Today (5 from RogMovies, 5 from VegaMovies, distinct from Indian Today)
-  final top10HindiDub = await ref.watch(top10HindiDubProvider.future);
-  if (top10HindiDub.isNotEmpty) {
-    sections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: top10HindiDub, isRanked: true));
-  }
-
-  // Categories in exact order:
-  // K-Drama: https://vegamovies.gallery/korean-series/
-  // Chinese: https://vegamovies.gallery/chinese-series/ or search
-  // Anime: https://vegamovies.gallery/anime-series/
-  // Action: VegaMovies Action + RogMovies Action mixed
-  // Other genres: Comedy, Thriller, Horror, Sci-Fi, Romance
-  final categoryDefs = [
+  const categoryDefs = [
     ('korean', 'K-Drama'),
     ('chinese', 'Chinese'),
     ('anime', 'Anime'),
@@ -385,26 +378,95 @@ final homeSectionsProvider = FutureProvider<List<ContentSection>>((ref) async {
     ('romance', 'Romance'),
   ];
 
-  // Fetch all categories in parallel for fastest instant load
-  final categoryResults = await Future.wait(
-    categoryDefs.map((def) async {
-      try {
-        final items = await MovieSiteScraperService.instance.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
-        return (def.$2, items);
-      } catch (e) {
-        dev.log('[homeSectionsProvider] ${def.$2} error: $e');
-        return (def.$2, <ManifestItem>[]);
-      }
-    }),
-  );
-
-  for (final res in categoryResults) {
-    if (res.$2.isNotEmpty) {
-      sections.add(ContentSection(title: res.$1, items: res.$2));
+  for (final def in categoryDefs) {
+    final cached = scraper.getCachedCategory(def.$1);
+    if (cached != null && cached.isNotEmpty) {
+      initialSections.add(ContentSection(title: def.$2, items: cached));
     }
   }
 
-  return sections;
+  if (initialSections.isNotEmpty) {
+    yield List<ContentSection>.unmodifiable(initialSections);
+  }
+
+  // 2. LIVE FETCH: Decoupled Row-by-Row Streaming
+  // Fetch Top 10 Indian and Hindi Dub first (~300-400ms)
+  List<ManifestItem> liveIndian = scraper.cachedTop10Indian ?? [];
+  List<ManifestItem> liveHindiDub = scraper.cachedTop10HindiDub ?? [];
+
+  try {
+    final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
+    liveIndian = topLists['top10Indian'] ?? liveIndian;
+    liveHindiDub = topLists['top10HindiDub'] ?? topLists['top10'] ?? liveHindiDub;
+  } catch (e) {
+    dev.log('[homeSectionsProvider] Top lists fetch error: $e');
+  }
+
+  // If we had no cache before, yield the top 10 immediately so user can start browsing!
+  if (initialSections.isEmpty && (liveIndian.isNotEmpty || liveHindiDub.isNotEmpty)) {
+    final immediateTop10 = <ContentSection>[];
+    if (liveIndian.isNotEmpty) {
+      immediateTop10.add(ContentSection(title: 'Top 10 Indian Today', items: liveIndian, isRanked: true));
+    }
+    if (liveHindiDub.isNotEmpty) {
+      immediateTop10.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: liveHindiDub, isRanked: true));
+    }
+    yield List<ContentSection>.unmodifiable(immediateTop10);
+  }
+
+  // Fetch categories in 3 small batches of 3 to avoid choking network sockets
+  // Batch 1: High-interest (K-Drama, Chinese, Anime)
+  // Batch 2: Popular genres (Action, Comedy, Thriller)
+  // Batch 3: Remaining (Horror, Sci-Fi, Romance)
+  final currentSectionsMap = <String, ContentSection>{};
+  for (final s in initialSections) {
+    currentSectionsMap[s.title] = s;
+  }
+
+  final batches = [
+    [categoryDefs[0], categoryDefs[1], categoryDefs[2]],
+    [categoryDefs[3], categoryDefs[4], categoryDefs[5]],
+    [categoryDefs[6], categoryDefs[7], categoryDefs[8]],
+  ];
+
+  for (final batch in batches) {
+    final batchResults = await Future.wait(
+      batch.map((def) async {
+        try {
+          final items = await scraper.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
+          return (def.$2, items);
+        } catch (e) {
+          dev.log('[homeSectionsProvider] Category ${def.$2} fetch error: $e');
+          return (def.$2, <ManifestItem>[]);
+        }
+      }),
+    );
+
+    for (final res in batchResults) {
+      if (res.$2.isNotEmpty) {
+        currentSectionsMap[res.$1] = ContentSection(title: res.$1, items: res.$2);
+      }
+    }
+
+    // Reconstruct list in canonical order
+    final emittedSections = <ContentSection>[];
+    if (liveIndian.isNotEmpty) {
+      emittedSections.add(ContentSection(title: 'Top 10 Indian Today', items: liveIndian, isRanked: true));
+    }
+    if (liveHindiDub.isNotEmpty) {
+      emittedSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: liveHindiDub, isRanked: true));
+    }
+    for (final def in categoryDefs) {
+      if (currentSectionsMap.containsKey(def.$2)) {
+        emittedSections.add(currentSectionsMap[def.$2]!);
+      }
+    }
+
+    yield List<ContentSection>.unmodifiable(emittedSections);
+  }
+
+  // Save full cache to disk for next instant startup
+  await scraper.saveDiskCache();
 });
 
 
@@ -536,7 +598,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     final sorted = await ref.read(sortedManifestItemsProvider.future);
     final filtered = _filterCategory(sorted, category);
     
-    final int limit = 30;
+    const int limit = 30;
     final int offset = (page - 1) * limit;
     
     if (offset >= filtered.length) {
