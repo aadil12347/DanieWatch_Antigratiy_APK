@@ -14,6 +14,7 @@ import '../auth/auth_screen.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/deep_link_service.dart';
+import '../../../services/extraction/movie_site_scraper_service.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -99,6 +100,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
       // Kick off database sync in background — don't block navigation
       ref.read(databaseSyncProvider);
+      MovieSiteScraperService.instance.loadDiskCache();
 
       // Evaluate immediately on first frame
       _evaluateTransition();
@@ -206,27 +208,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
           setState(() => _showAuthModal = false);
         }
 
-        // Enforce minimum splash display time for a smooth UX
-        final elapsed = DateTime.now().difference(_startTime);
-        const minDuration = Duration(milliseconds: 1500);
-        if (elapsed < minDuration) {
-          await Future.delayed(minDuration - elapsed);
-        }
-
-        // After every await: check mounted and _hasNavigated before continuing.
-        if (!mounted || _hasNavigated) return;
-
-        // Play the exit animation with a safety timeout so it never hangs indefinitely
-        try {
-          await _fadeController.forward().timeout(const Duration(milliseconds: 1500));
-        } catch (e) {
-          debugPrint('SplashScreen: Fade animation failed or timed out (non-fatal): $e');
-        }
-
-        // Check again after animation completes
-        if (!mounted || _hasNavigated) return;
-
-        // SET THE PERMANENT LATCH synchronously
+        // Instant navigation for returning logged-in users (0ms wait)
         _safetyTimer?.cancel();
         _hasNavigated = true;
         try {

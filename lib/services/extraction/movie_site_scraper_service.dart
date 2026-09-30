@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/clients/tmdb_client.dart';
 
@@ -42,6 +43,13 @@ class MovieSiteScraperService {
     maxRedirects: 5,
   ));
 
+  static const String edgeWorkerUrl = String.fromEnvironment('EDGE_WORKER_URL', defaultValue: '');
+  static const String _diskCacheKeyHome = 'daniewatch_scraped_home_v1';
+  static const String _diskCacheKeyCategories = 'daniewatch_scraped_cats_v1';
+
+  bool _isDiskCacheLoaded = false;
+  bool get isDiskCacheLoaded => _isDiskCacheLoaded;
+
   // Cache in-memory for live session
   List<ManifestItem>? _cachedCarousel;
   List<ManifestItem>? _cachedTop10Indian;
@@ -62,6 +70,93 @@ class MovieSiteScraperService {
 
   static bool isExcludedIndianShow(String title) {
     return _excludedIndianShowPatterns.hasMatch(title);
+  }
+
+  /// Loads cached home sections from local disk into memory in <2ms.
+  Future<void> loadDiskCache() async {
+    if (_isDiskCacheLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawHome = prefs.getString(_diskCacheKeyHome);
+      if (rawHome != null && rawHome.isNotEmpty) {
+        final data = jsonDecode(rawHome) as Map<String, dynamic>;
+        if (data['top10Indian'] is List) {
+          _cachedTop10Indian = (data['top10Indian'] as List)
+              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+          for (final item in _cachedTop10Indian!) {
+            _itemMap[item.id.toString()] = item;
+          }
+        }
+        if (data['top10HindiDub'] is List) {
+          _cachedTop10HindiDub = (data['top10HindiDub'] as List)
+              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+          for (final item in _cachedTop10HindiDub!) {
+            _itemMap[item.id.toString()] = item;
+          }
+        }
+        if (data['carousel'] is List) {
+          _cachedCarousel = (data['carousel'] as List)
+              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+          for (final item in _cachedCarousel!) {
+            _itemMap[item.id.toString()] = item;
+          }
+        }
+        _cachedTop5 = _cachedCarousel;
+        _cachedTop10 = _cachedTop10HindiDub;
+      }
+
+      final rawCats = prefs.getString(_diskCacheKeyCategories);
+      if (rawCats != null && rawCats.isNotEmpty) {
+        final data = jsonDecode(rawCats) as Map<String, dynamic>;
+        for (final entry in data.entries) {
+          if (entry.value is List) {
+            final items = (entry.value as List)
+                .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+                .toList();
+            _categoryPageCache['${entry.key}_p1'] = items;
+            for (final item in items) {
+              _itemMap[item.id.toString()] = item;
+            }
+          }
+        }
+      }
+      _isDiskCacheLoaded = true;
+      dev.log('[MovieSiteScraperService] Loaded disk cache (instant 0ms ready)');
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Error reading disk cache: $e');
+    }
+  }
+
+  /// Saves current scraped items to local disk for 0ms startup on next launch.
+  Future<void> saveDiskCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_cachedTop10Indian != null && _cachedTop10HindiDub != null) {
+        final homeData = {
+          'top10Indian': _cachedTop10Indian!.map((e) => e.toJson()).toList(),
+          'top10HindiDub': _cachedTop10HindiDub!.map((e) => e.toJson()).toList(),
+          'carousel': (_cachedCarousel ?? _cachedTop10Indian!).map((e) => e.toJson()).toList(),
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+        await prefs.setString(_diskCacheKeyHome, jsonEncode(homeData));
+      }
+
+      if (_categoryPageCache.isNotEmpty) {
+        final catData = <String, dynamic>{};
+        for (final entry in _categoryPageCache.entries) {
+          if (entry.key.endsWith('_p1')) {
+            final catName = entry.key.replaceAll('_p1', '');
+            catData[catName] = entry.value.map((e) => e.toJson()).toList();
+          }
+        }
+        await prefs.setString(_diskCacheKeyCategories, jsonEncode(catData));
+      }
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Error saving disk cache: $e');
+    }
   }
 
   void clearCache() {
@@ -232,6 +327,11 @@ class MovieSiteScraperService {
     Map<String, ManifestItem>? localMap,
     bool forceRefresh = false,
   }) async {
+    // 0. If in-memory is empty and not force-refreshing, check disk cache first (0ms load)
+    if (!forceRefresh && (_cachedTop10Indian == null || _cachedTop10HindiDub == null)) {
+      await loadDiskCache();
+    }
+
     if (!forceRefresh && _cachedTop10Indian != null && _cachedTop10HindiDub != null) {
       return {
         'carousel': _cachedCarousel ?? _cachedTop10Indian!,
@@ -246,14 +346,68 @@ class MovieSiteScraperService {
       return _pendingTopLists!;
     }
 
+    // 1. Try Cloudflare Edge Worker if configured
+    if (edgeWorkerUrl.isNotEmpty) {
+      final workerRes = await _fetchHomeFromWorker(localMap: localMap);
+      if (workerRes != null) {
+        saveDiskCache(); // Async save to disk
+        return workerRes;
+      }
+    }
+
     final future = _doFetchHomeTopLists(localMap: localMap);
     _pendingTopLists = future;
     try {
       final res = await future;
+      saveDiskCache(); // Async save to disk
       return res;
     } finally {
       _pendingTopLists = null;
     }
+  }
+
+  /// Fetches pre-parsed home JSON from Cloudflare Edge Worker in ~50-80ms
+  Future<Map<String, List<ManifestItem>>?> _fetchHomeFromWorker({
+    Map<String, ManifestItem>? localMap,
+  }) async {
+    try {
+      final res = await _dio.get<String>(
+        '$edgeWorkerUrl/api/home',
+        options: Options(responseType: ResponseType.plain),
+      );
+      if (res.statusCode == 200 && res.data != null && res.data!.isNotEmpty) {
+        final data = jsonDecode(res.data!) as Map<String, dynamic>;
+        final carouselRaw = data['carousel'] as List? ?? [];
+        final indianRaw = data['top10Indian'] as List? ?? [];
+        final hindiDubRaw = data['top10HindiDub'] as List? ?? [];
+
+        final carousel = carouselRaw.map((e) => ManifestItem.fromJson(e as Map<String, dynamic>)).toList();
+        final indian = indianRaw.map((e) => ManifestItem.fromJson(e as Map<String, dynamic>)).toList();
+        final hindiDub = hindiDubRaw.map((e) => ManifestItem.fromJson(e as Map<String, dynamic>)).toList();
+
+        _cachedCarousel = carousel;
+        _cachedTop10Indian = indian;
+        _cachedTop10HindiDub = hindiDub;
+        _cachedTop5 = carousel;
+        _cachedTop10 = hindiDub;
+
+        for (final item in [...carousel, ...indian, ...hindiDub]) {
+          _itemMap[item.id.toString()] = item;
+        }
+
+        dev.log('[MovieSiteScraperService] Loaded from Cloudflare Worker in <80ms');
+        return {
+          'carousel': carousel,
+          'top10Indian': indian,
+          'top10HindiDub': hindiDub,
+          'top5': carousel,
+          'top10': hindiDub,
+        };
+      }
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Worker home fetch error: $e');
+    }
+    return null;
   }
 
   Future<Map<String, List<ManifestItem>>> _doFetchHomeTopLists({

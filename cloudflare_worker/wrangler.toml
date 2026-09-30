@@ -1,0 +1,7 @@
+name = "daniewatch-edge-scraper"
+main = "worker.js"
+compatibility_date = "2024-04-01"
+
+# Workers free plan gives 100,000 requests per day for free!
+[placement]
+mode = "smart"
