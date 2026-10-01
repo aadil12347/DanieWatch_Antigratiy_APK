@@ -1,3 +1,5 @@
+library;
+
 /// Player controller — manages BetterPlayer lifecycle and state.
 ///
 /// Replaces the extraction and playback state management that was
@@ -86,6 +88,17 @@ class PlayerController extends ChangeNotifier {
   bool _isLocked = false;
   bool get isLocked => _isLocked;
 
+  // ─── Audio/Subtitle Tracks ─────────────────────────────────────────────
+  List<BetterPlayerAsmsAudioTrack> _audioTracks = [];
+  List<BetterPlayerAsmsAudioTrack> get audioTracks => _audioTracks;
+  BetterPlayerAsmsAudioTrack? _currentAudioTrack;
+  BetterPlayerAsmsAudioTrack? get currentAudioTrack => _currentAudioTrack;
+
+  List<BetterPlayerSubtitlesSource> _subtitleSources = [];
+  List<BetterPlayerSubtitlesSource> get subtitleSources => _subtitleSources;
+  BetterPlayerSubtitlesSource? _currentSubtitleSource;
+  BetterPlayerSubtitlesSource? get currentSubtitleSource => _currentSubtitleSource;
+
   // ─── Content Info ──────────────────────────────────────────────────────
   String _title = '';
   String get title => _title;
@@ -135,6 +148,7 @@ class PlayerController extends ChangeNotifier {
     double? startPosition,
     List<int>? seasonNumbers,
     int? totalEpisodes,
+    Future<String?> Function()? streamResolver,
   }) async {
     _title = title;
     _tmdbId = tmdbId;
@@ -161,6 +175,28 @@ class PlayerController extends ChangeNotifier {
         url: directUrl,
       ));
       await _playSource(_sources.first, startPosition: startPosition);
+    } else if (streamResolver != null) {
+      _state = PlaybackState.extracting;
+      _safeNotify();
+      try {
+        final resolvedUrl = await streamResolver();
+        if (_isDisposed) return;
+        if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+          _sources.add(ExtractorLink(
+            sourceName: 'FastStream',
+            displayName: 'Stream 1',
+            url: resolvedUrl,
+          ));
+          await _playSource(_sources.first, startPosition: startPosition);
+          return;
+        }
+      } catch (e) {
+        debugPrint('[PlayerController] streamResolver error: $e');
+      }
+      // Fallback to provider extraction if streamResolver did not yield a link
+      if (!_isDisposed) {
+        await _startExtraction(startPosition: startPosition);
+      }
     } else {
       // Start extraction from all providers
       _state = PlaybackState.extracting;
@@ -234,13 +270,18 @@ class PlayerController extends ChangeNotifier {
       _betterPlayerController?.dispose();
       _betterPlayerController = null;
 
-      // Create data source — DO NOT use useAsmsSubtitles/useAsmsTracks
-      // as they cause IndexOutOfBoundsException in the native plugin
-      final dataSource = BetterPlayerDataSource(
-        BetterPlayerDataSourceType.network,
-        source.url,
-        headers: source.headers.isNotEmpty ? source.headers : null,
-      );
+      final isLocalFile = source.url.startsWith('/') || !source.url.startsWith('http');
+      final dataSource = isLocalFile
+          ? BetterPlayerDataSource(
+              BetterPlayerDataSourceType.file,
+              source.url,
+            )
+          : BetterPlayerDataSource(
+              BetterPlayerDataSourceType.network,
+              source.url,
+              headers: source.headers.isNotEmpty ? source.headers : null,
+              useAsmsAudioTracks: source.url.toLowerCase().contains('.m3u8'),
+            );
 
       // Create player configuration
       final playerConfig = BetterPlayerConfiguration(
@@ -306,6 +347,11 @@ class PlayerController extends ChangeNotifier {
           _duration = _betterPlayerController!
               .videoPlayerController!.value.duration!;
         }
+        // Capture available audio tracks and subtitle sources
+        _audioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
+        _currentAudioTrack = _betterPlayerController?.betterPlayerAsmsAudioTrack;
+        _subtitleSources = _betterPlayerController?.betterPlayerSubtitlesSourceList ?? [];
+        debugPrint('[PlayerController] Audio tracks: ${_audioTracks.length}, Subtitle sources: ${_subtitleSources.length}');
         notifyListeners();
         break;
       case BetterPlayerEventType.play:
@@ -375,6 +421,14 @@ class PlayerController extends ChangeNotifier {
     } else {
       _betterPlayerController?.play();
     }
+  }
+
+  void play() {
+    _betterPlayerController?.play();
+  }
+
+  void pause() {
+    _betterPlayerController?.pause();
   }
 
   void seekTo(Duration position) {
@@ -463,6 +517,42 @@ class PlayerController extends ChangeNotifier {
         return BoxFit.fill;
     }
   }
+
+  // ─── Audio Track Switching ─────────────────────────────────────────────
+
+  /// Set audio track by index from the available audio tracks list.
+  void setAudioTrack(BetterPlayerAsmsAudioTrack track) {
+    if (_betterPlayerController == null) return;
+    _betterPlayerController!.setAudioTrack(track);
+    _currentAudioTrack = track;
+    debugPrint('[PlayerController] Switched audio to: ${track.label}');
+    _safeNotify();
+  }
+
+  // ─── Subtitle Track Switching ──────────────────────────────────────────
+
+  /// Set subtitle source from the available subtitle sources list.
+  void setSubtitleSource(BetterPlayerSubtitlesSource source) {
+    if (_betterPlayerController == null) return;
+    _betterPlayerController!.setupSubtitleSource(source);
+    _currentSubtitleSource = source;
+    debugPrint('[PlayerController] Switched subtitle to: ${source.name}');
+    _safeNotify();
+  }
+
+  /// Disable subtitles.
+  void disableSubtitles() {
+    final noneSource = BetterPlayerSubtitlesSource(
+      type: BetterPlayerSubtitlesSourceType.none,
+    );
+    setSubtitleSource(noneSource);
+  }
+
+  /// Check if audio tracks are available.
+  bool get hasAudioTracks => _audioTracks.length > 1;
+
+  /// Check if subtitle sources are available.
+  bool get hasSubtitles => _subtitleSources.isNotEmpty;
 
   // ─── Controls Visibility ───────────────────────────────────────────────
 

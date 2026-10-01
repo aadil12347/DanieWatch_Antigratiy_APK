@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/watch_history_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
-import '../widgets/play_loader_overlay.dart';
-import '../../services/video_extractor_service.dart';
 import '../screens/video_player/video_player_screen.dart';
 import '../providers/detail_provider.dart';
 import '../providers/delete_mode_provider.dart';
@@ -29,7 +26,61 @@ class _ContinueWatchingRowState extends ConsumerState<ContinueWatchingRow> {
           DetailParams(tmdbId: item.tmdbId, mediaType: item.mediaType),
         ),
       );
-      seasons = detailAsync.valueOrNull?.seasonNumbers;
+      final detail = detailAsync.valueOrNull;
+      seasons = detail?.seasonNumbers;
+      final backdrop = detail?.backdropUrl != null && detail!.backdropUrl!.isNotEmpty
+          ? (detail.backdropUrl!.startsWith('/')
+              ? 'https://image.tmdb.org/t/p/w1280${detail.backdropUrl}'
+              : detail.backdropUrl!)
+          : item.posterUrl;
+      final logo = detail?.logoUrl ?? detail?.tmdbLogoUrl;
+      final desc = detail?.overview;
+
+      if (item.mediaType == 'offline') {
+        Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute(
+            builder: (_) => VideoPlayerScreen(
+              title: item.title,
+              url: item.playUrl ?? '',
+              originalUrl: item.playUrl,
+              tmdbId: item.tmdbId,
+              mediaType: item.mediaType,
+              season: item.season,
+              episode: item.episode,
+              seasons: seasons,
+              startPosition: item.currentTime,
+              posterUrl: item.posterUrl,
+              backdropUrl: backdrop,
+              logoUrl: logo,
+              description: desc,
+              isOffline: true,
+              isDirectLink: true,
+            ),
+          ),
+        );
+      } else {
+        Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute(
+            builder: (_) => VideoPlayerScreen(
+              title: item.title,
+              url: '',
+              tmdbId: item.tmdbId,
+              mediaType: item.mediaType,
+              season: item.season,
+              episode: item.episode,
+              seasons: seasons,
+              startPosition: item.currentTime,
+              posterUrl: item.posterUrl,
+              backdropUrl: backdrop,
+              logoUrl: logo,
+              description: desc,
+              isOffline: false,
+              isDirectLink: false,
+            ),
+          ),
+        );
+      }
+      return;
     } catch (_) {}
 
     if (item.mediaType == 'offline') {

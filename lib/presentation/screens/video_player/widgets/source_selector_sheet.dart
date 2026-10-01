@@ -1,3 +1,5 @@
+library;
+
 /// Source selector bottom sheet — pick streaming source during playback.
 ///
 /// Shows all extracted sources grouped by provider with quality tags,
@@ -194,7 +196,7 @@ class _SourceItem extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        color: isActive ? Colors.white.withOpacity(0.08) : Colors.transparent,
+        color: isActive ? Colors.white.withValues(alpha: 0.08) : Colors.transparent,
         child: Row(
           children: [
             // Playing indicator

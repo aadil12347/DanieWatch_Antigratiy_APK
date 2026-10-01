@@ -1,17 +1,9 @@
-/// Player gesture handler — Cloudstream-style gestures.
-///
-/// Gestures implemented:
-/// - Double-tap left/right → seek backward/forward 10s with ripple
-/// - Long-press → 2x speed with pill indicator (release restores)
-/// - Horizontal swipe → seek forward/backward with time preview
-/// - Vertical swipe left → brightness control
-/// - Vertical swipe right → volume control
-/// - Single tap → toggle controls visibility
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:volume_controller/volume_controller.dart';
 import 'package:screen_brightness/screen_brightness.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import 'player_controller.dart';
 
 class PlayerGestures extends StatefulWidget {
@@ -31,12 +23,9 @@ class PlayerGestures extends StatefulWidget {
 class _PlayerGesturesState extends State<PlayerGestures>
     with TickerProviderStateMixin {
   // ─── Gesture state ──────────────────────────────────────────────────────
-  bool _isDragging = false;
   bool _isHorizontalDrag = false;
   bool _isVerticalDrag = false;
   bool _isLeftSide = false;
-  double _dragStartX = 0;
-  double _dragStartY = 0;
 
   // ─── Double-tap seek ────────────────────────────────────────────────────
   bool _showLeftSeek = false;
@@ -50,6 +39,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   // ─── Swipe seek ────────────────────────────────────────────────────────
   Duration _seekPreviewPosition = Duration.zero;
+  Duration _seekStartPosition = Duration.zero;
   bool _showSeekPreview = false;
 
   // ─── Volume/Brightness ─────────────────────────────────────────────────
@@ -67,9 +57,9 @@ class _PlayerGesturesState extends State<PlayerGestures>
   void initState() {
     super.initState();
     _leftSeekAnim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 500));
+        vsync: this, duration: const Duration(milliseconds: 400));
     _rightSeekAnim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 500));
+        vsync: this, duration: const Duration(milliseconds: 400));
     _speedPillAnim = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 200));
     _initVolumeAndBrightness();
@@ -79,7 +69,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
     try {
       _currentVolume = await VolumeController.instance.getVolume();
       _currentBrightness = await ScreenBrightness().current;
-    } catch (e) {
+    } catch (_) {
       _currentVolume = 0.5;
       _currentBrightness = 0.5;
     }
@@ -96,9 +86,11 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Stack(
       children: [
-        // Video + gesture detector
+        // Video layer + gesture detector
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _onTap,
@@ -115,13 +107,13 @@ class _PlayerGesturesState extends State<PlayerGestures>
           child: widget.child,
         ),
 
-        // Left seek ripple indicator
+        // Left double-tap seek ripple
         if (_showLeftSeek)
           Positioned(
             left: 0,
             top: 0,
             bottom: 0,
-            width: MediaQuery.of(context).size.width * 0.4,
+            width: screenWidth * 0.4,
             child: _SeekRipple(
               isForward: false,
               seconds: _seekSeconds,
@@ -129,13 +121,13 @@ class _PlayerGesturesState extends State<PlayerGestures>
             ),
           ),
 
-        // Right seek ripple indicator
+        // Right double-tap seek ripple
         if (_showRightSeek)
           Positioned(
             right: 0,
             top: 0,
             bottom: 0,
-            width: MediaQuery.of(context).size.width * 0.4,
+            width: screenWidth * 0.4,
             child: _SeekRipple(
               isForward: true,
               seconds: _seekSeconds,
@@ -143,7 +135,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
             ),
           ),
 
-        // 2x speed pill indicator
+        // 2X Speed pulsing pill indicator (top center)
         if (_isLongPressing)
           Positioned(
             top: 24,
@@ -153,20 +145,33 @@ class _PlayerGesturesState extends State<PlayerGestures>
               child: FadeTransition(
                 opacity: _speedPillAnim,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.black87,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white24),
+                    color: Colors.black.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.primary, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.fast_forward, color: Colors.white, size: 18),
-                      SizedBox(width: 6),
-                      Text('2x Speed',
-                          style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                      const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '2X SPEED',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -174,38 +179,26 @@ class _PlayerGesturesState extends State<PlayerGestures>
             ),
           ),
 
-        // Horizontal swipe seek preview
+        // Horizontal swipe seek preview overlay
         if (_showSeekPreview)
           Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _formatDuration(_seekPreviewPosition),
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold),
-              ),
-            ),
+            child: _buildSwipeSeekOverlay(),
           ),
 
         // Volume indicator (right side)
         if (_showVolumeIndicator)
           Positioned(
-            right: 24,
+            right: 28,
             top: 0,
             bottom: 0,
             child: Center(
               child: _VerticalIndicator(
                 value: _currentVolume,
                 icon: _currentVolume > 0.5
-                    ? Icons.volume_up
-                    : (_currentVolume > 0 ? Icons.volume_down : Icons.volume_off),
+                    ? Icons.volume_up_rounded
+                    : (_currentVolume > 0 ? Icons.volume_down_rounded : Icons.volume_mute_rounded),
                 label: '${(_currentVolume * 100).toInt()}%',
+                title: 'Volume',
               ),
             ),
           ),
@@ -213,20 +206,77 @@ class _PlayerGesturesState extends State<PlayerGestures>
         // Brightness indicator (left side)
         if (_showBrightnessIndicator)
           Positioned(
-            left: 24,
+            left: 28,
             top: 0,
             bottom: 0,
             child: Center(
               child: _VerticalIndicator(
                 value: _currentBrightness,
-                icon: _currentBrightness > 0.5
-                    ? Icons.brightness_high
-                    : Icons.brightness_low,
+                icon: _currentBrightness > 0.6
+                    ? Icons.brightness_7_rounded
+                    : (_currentBrightness > 0.3 ? Icons.brightness_6_rounded : Icons.brightness_5_rounded),
                 label: '${(_currentBrightness * 100).toInt()}%',
+                title: 'Brightness',
               ),
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildSwipeSeekOverlay() {
+    final diff = _seekPreviewPosition - _seekStartPosition;
+    final isForward = diff.inMilliseconds >= 0;
+    final diffSeconds = (diff.inMilliseconds.abs() / 1000).round();
+    final diffText = isForward ? '+$diffSeconds s' : '-$diffSeconds s';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 20,
+            spreadRadius: 4,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded,
+                color: isForward ? const Color(0xFF00E5FF) : AppColors.primary,
+                size: 26,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                diffText,
+                style: GoogleFonts.plusJakartaSans(
+                  color: isForward ? const Color(0xFF00E5FF) : AppColors.primary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_formatDuration(_seekPreviewPosition)} / ${_formatDuration(widget.controller.duration)}',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -246,16 +296,14 @@ class _PlayerGesturesState extends State<PlayerGestures>
     _seekSeconds = 10;
 
     if (isLeft) {
-      // Seek backward
-      widget.controller.seekRelative(const Duration(seconds: -10));
+      widget.controller.skipBackward();
       setState(() {
         _showLeftSeek = true;
         _showRightSeek = false;
       });
       _leftSeekAnim.forward(from: 0);
     } else {
-      // Seek forward
-      widget.controller.seekRelative(const Duration(seconds: 10));
+      widget.controller.skipForward();
       setState(() {
         _showRightSeek = true;
         _showLeftSeek = false;
@@ -277,6 +325,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Long-press 2x speed ───────────────────────────────────────────────
 
   void _onLongPressStart(LongPressStartDetails details) {
+    if (widget.controller.isLocked) return;
     _savedSpeed = widget.controller.playbackSpeed;
     widget.controller.setPlaybackSpeed(2.0);
     setState(() => _isLongPressing = true);
@@ -284,6 +333,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
+    if (widget.controller.isLocked) return;
     widget.controller.setPlaybackSpeed(_savedSpeed);
     setState(() => _isLongPressing = false);
     _speedPillAnim.reverse();
@@ -292,9 +342,9 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Vertical drag (volume/brightness) ──────────────────────────────────
 
   void _onVerticalDragStart(DragStartDetails details) {
+    if (widget.controller.isLocked) return;
     final screenWidth = MediaQuery.of(context).size.width;
     _isLeftSide = details.globalPosition.dx < screenWidth / 2;
-    _dragStartY = details.globalPosition.dy;
     _isVerticalDrag = true;
 
     setState(() {
@@ -307,19 +357,21 @@ class _PlayerGesturesState extends State<PlayerGestures>
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
-    if (!_isVerticalDrag) return;
+    if (!_isVerticalDrag || widget.controller.isLocked) return;
 
     final screenHeight = MediaQuery.of(context).size.height;
-    final delta = -details.delta.dy / (screenHeight * 0.6);
+    final delta = -details.delta.dy / (screenHeight * 0.55);
 
     if (_isLeftSide) {
-      // Brightness
       _currentBrightness = (_currentBrightness + delta).clamp(0.0, 1.0);
-      ScreenBrightness().setScreenBrightness(_currentBrightness);
+      try {
+        ScreenBrightness().setScreenBrightness(_currentBrightness);
+      } catch (_) {}
     } else {
-      // Volume
       _currentVolume = (_currentVolume + delta).clamp(0.0, 1.0);
-      VolumeController.instance.setVolume(_currentVolume);
+      try {
+        VolumeController.instance.setVolume(_currentVolume);
+      } catch (_) {}
     }
 
     setState(() {});
@@ -327,7 +379,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   void _onVerticalDragEnd(DragEndDetails details) {
     _isVerticalDrag = false;
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) {
         setState(() {
           _showVolumeIndicator = false;
@@ -337,26 +389,28 @@ class _PlayerGesturesState extends State<PlayerGestures>
     });
   }
 
-  // ─── Horizontal drag (seek) ─────────────────────────────────────────────
+  // ─── Horizontal drag (swipe seek) ───────────────────────────────────────
 
   void _onHorizontalDragStart(DragStartDetails details) {
-    _dragStartX = details.globalPosition.dx;
+    if (widget.controller.isLocked) return;
     _isHorizontalDrag = true;
+    _seekStartPosition = widget.controller.position;
     _seekPreviewPosition = widget.controller.position;
     setState(() => _showSeekPreview = true);
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!_isHorizontalDrag) return;
+    if (!_isHorizontalDrag || widget.controller.isLocked) return;
 
     final screenWidth = MediaQuery.of(context).size.width;
     final delta = details.delta.dx / screenWidth;
-    final seekDelta = Duration(
-        milliseconds: (delta * widget.controller.duration.inMilliseconds * 0.15).toInt());
+    final totalMs = widget.controller.duration.inMilliseconds;
+    // Scrub factor
+    final seekDeltaMs = (delta * (totalMs > 0 ? totalMs : 60000) * 0.20).toInt();
 
-    _seekPreviewPosition = (_seekPreviewPosition + seekDelta);
+    _seekPreviewPosition = (_seekPreviewPosition + Duration(milliseconds: seekDeltaMs));
     if (_seekPreviewPosition < Duration.zero) _seekPreviewPosition = Duration.zero;
-    if (_seekPreviewPosition > widget.controller.duration) {
+    if (_seekPreviewPosition > widget.controller.duration && widget.controller.duration > Duration.zero) {
       _seekPreviewPosition = widget.controller.duration;
     }
 
@@ -364,7 +418,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
-    if (_isHorizontalDrag) {
+    if (_isHorizontalDrag && !widget.controller.isLocked) {
       widget.controller.seekTo(_seekPreviewPosition);
     }
     _isHorizontalDrag = false;
@@ -398,7 +452,7 @@ class _SeekRipple extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: Tween<double>(begin: 0.8, end: 0.0).animate(
+      opacity: Tween<double>(begin: 0.85, end: 0.0).animate(
         CurvedAnimation(parent: animation, curve: Curves.easeOut),
       ),
       child: Container(
@@ -406,31 +460,34 @@ class _SeekRipple extends StatelessWidget {
           gradient: LinearGradient(
             begin: isForward ? Alignment.centerRight : Alignment.centerLeft,
             end: isForward ? Alignment.centerLeft : Alignment.centerRight,
-            colors: [Colors.white24, Colors.transparent],
+            colors: [
+              AppColors.primary.withValues(alpha: 0.25),
+              Colors.transparent,
+            ],
           ),
           borderRadius: isForward
               ? const BorderRadius.only(
-                  topLeft: Radius.circular(200),
-                  bottomLeft: Radius.circular(200))
+                  topLeft: Radius.circular(240),
+                  bottomLeft: Radius.circular(240))
               : const BorderRadius.only(
-                  topRight: Radius.circular(200),
-                  bottomRight: Radius.circular(200)),
+                  topRight: Radius.circular(240),
+                  bottomRight: Radius.circular(240)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              isForward ? Icons.fast_forward : Icons.fast_rewind,
+              isForward ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded,
               color: Colors.white,
-              size: 40,
+              size: 44,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               '${seconds}s',
-              style: const TextStyle(
+              style: GoogleFonts.plusJakartaSans(
                 color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],
@@ -446,53 +503,76 @@ class _VerticalIndicator extends StatelessWidget {
   final double value;
   final IconData icon;
   final String label;
+  final String title;
 
   const _VerticalIndicator({
     required this.value,
     required this.icon,
     required this.label,
+    required this.title,
   });
 
   @override
   Widget build(BuildContext context) {
+    final clampedValue = value.clamp(0.0, 1.0);
+
     return Container(
-      width: 40,
-      height: 180,
+      width: 48,
+      height: 190,
+      padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.black87,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white24),
+        color: Colors.black.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 18,
+            spreadRadius: 2,
+          ),
+        ],
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: Colors.white, size: 20),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 100,
-            child: RotatedBox(
-              quarterTurns: -1,
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 4,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  activeTrackColor: Colors.white,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: Colors.white,
-                  overlayShape: SliderComponentShape.noOverlay,
+          Icon(icon, color: Colors.white, size: 22),
+          // Vertical fill bar
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Container(
+                width: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(3),
                 ),
-                child: Slider(
-                  value: value,
-                  onChanged: (_) {},
+                alignment: Alignment.bottomCenter,
+                child: FractionallySizedBox(
+                  heightFactor: clampedValue,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          AppColors.primary,
+                          Color(0xFFFF5252),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

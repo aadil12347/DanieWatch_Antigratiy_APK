@@ -1,30 +1,24 @@
-/// Video Player Screen — Complete rewrite with Cloudstream-style architecture.
-///
-/// Replaces the old 5300+ line monolith with a clean, modular player:
-/// - PlayerController: manages BetterPlayer lifecycle + extraction
-/// - PlayerGestures: double-tap, long-press, swipe gestures
-/// - PlayerOverlay: top bar, bottom bar, center controls
-/// - SourceSelectorSheet: multi-source picker
-/// - PlayerSettingsSheet: speed, resize, etc.
-///
-/// No WebView — all playback through BetterPlayer (ExoPlayer).
+library;
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:better_player_plus/better_player_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:daniewatch_app/core/theme/app_theme.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:better_player_plus/better_player_plus.dart';
 
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../providers/watch_history_provider.dart';
 import '../../providers/detail_provider.dart';
 import '../../../pip/pip_controller.dart';
 import '../../../services/peachify_extractor.dart';
-
 import 'player_controller.dart';
 import 'player_gestures.dart';
 import 'player_overlay.dart';
+import 'widgets/audio_track_selector_sheet.dart';
+import 'widgets/subtitle_track_selector_sheet.dart';
+import 'widgets/speed_selector_sheet.dart';
 import 'widgets/source_selector_sheet.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -40,9 +34,13 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final bool isOffline;
   final bool isDirectLink;
   final String? posterUrl;
+  final String? backdropUrl;
+  final String? logoUrl;
+  final String? description;
   final double? startPosition;
   final Map<String, PeachifyStream>? extractedStreams;
   final bool is3rdPartyHosted;
+  final Future<String?> Function()? streamResolver;
 
   const VideoPlayerScreen({
     super.key,
@@ -57,9 +55,13 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.isOffline = false,
     this.isDirectLink = false,
     this.posterUrl,
+    this.backdropUrl,
+    this.logoUrl,
+    this.description,
     this.startPosition,
     this.extractedStreams,
     this.is3rdPartyHosted = false,
+    this.streamResolver,
   });
 
   @override
@@ -69,129 +71,112 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
 class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     with WidgetsBindingObserver {
   late final PlayerController _controller;
-  int? _currentSeason;
-  int? _currentEpisode;
-  Timer? _historyTimer;
+  String? _resolvedLogoUrl;
+  Timer? _progressSaveTimer;
+  bool _hasStartedPlaying = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _resolvedLogoUrl = widget.logoUrl;
+
+    // Immediately force landscape and immersive sticky UI
+    _lockLandscape();
+
+    // Resolve TMDB logo if not provided
+    _resolveLogoIfNeeded();
+
+    // Setup native ExoPlayer PlayerController
     _controller = PlayerController();
-    _currentSeason = widget.season;
-    _currentEpisode = widget.episode;
+    _controller.addListener(_onControllerUpdate);
 
-    // Set up callbacks
-    _controller.onProgressUpdate = _onProgressUpdate;
-    _controller.onPlaybackComplete = _onPlaybackComplete;
-    _controller.onNextEpisode = (season, episode) {
-      _switchToEpisode(season, episode);
-    };
-    _controller.onPreviousEpisode = (season, episode) {
-      _switchToEpisode(season, episode);
-    };
+    // Setup PiP listeners
+    _setupPipListeners();
 
-    // Initialize player
-    _initializePlayer();
-  }
+    // Periodic watch progress save
+    _progressSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _saveWatchProgress();
+    });
 
-  Future<void> _initializePlayer() async {
-    final content = ref.read(detailProvider(
-      DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
-    )).valueOrNull;
-
-    // Get total episodes for current season (for next/prev navigation)
-    int totalEpisodes = 0;
-    if (content != null && content.isTv && content.tmdbSeasons != null) {
-      final currentSeasonData = content.tmdbSeasons!
-          .where((s) => s.seasonNumber == (_currentSeason ?? 1))
-          .firstOrNull;
-      totalEpisodes = currentSeasonData?.episodeCount ?? 0;
-    }
-
-    await _controller.initialize(
-      title: _buildTitle(),
+    // Start playback flow with native ExoPlayer
+    _controller.initialize(
+      title: widget.title,
       tmdbId: widget.tmdbId,
       mediaType: widget.mediaType,
-      imdbId: content?.imdbId,
-      year: content?.releaseYear,
-      season: _currentSeason,
-      episode: _currentEpisode,
-      directUrl: widget.isDirectLink ? widget.url : null,
+      season: widget.season,
+      episode: widget.episode,
+      directUrl: widget.isDirectLink && widget.url.isNotEmpty ? widget.url : null,
       startPosition: widget.startPosition,
-      seasonNumbers: content?.seasonNumbers,
-      totalEpisodes: totalEpisodes,
+      seasonNumbers: widget.seasons,
+      streamResolver: widget.streamResolver,
     );
-
-    // Start periodic history saving
-    _historyTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _saveWatchProgress();
-    });
   }
 
-  String _buildTitle() {
-    if (_currentSeason != null && _currentEpisode != null) {
-      return '${widget.title} — S${_currentSeason.toString().padLeft(2, '0')}E${_currentEpisode.toString().padLeft(2, '0')}';
-    }
-    return widget.title;
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _saveWatchProgress();
+  void _onControllerUpdate() {
+    if (_controller.state == PlaybackState.playing && !_hasStartedPlaying) {
+      if (mounted) {
+        setState(() {
+          _hasStartedPlaying = true;
+        });
+      }
     }
   }
 
-  void _onProgressUpdate(Duration position, Duration duration) {
-    // Progress is tracked by the controller, just save periodically
+  Future<void> _lockLandscape() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  void _onPlaybackComplete() {
-    _saveWatchProgress();
-    // Auto-play next episode if available
-    if (widget.mediaType == 'tv' && _currentEpisode != null) {
-      _playNextEpisode();
+  Future<void> _restoreOrientations() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  void _resolveLogoIfNeeded() {
+    if (_resolvedLogoUrl == null || _resolvedLogoUrl!.isEmpty) {
+      ref.read(
+        tmdbLogoProvider(TmdbLogoParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType)).future,
+      ).then((logo) {
+        if (mounted && logo != null && logo.isNotEmpty) {
+          setState(() {
+            _resolvedLogoUrl = logo;
+          });
+        }
+      }).catchError((_) {});
     }
   }
 
-  void _playNextEpisode() {
-    if (_currentEpisode == null || _currentSeason == null) return;
-    _switchToEpisode(_currentSeason!, _currentEpisode! + 1);
-  }
-
-  void _playPreviousEpisode() {
-    if (_currentEpisode == null || _currentSeason == null) return;
-    if (_currentEpisode! <= 1) return;
-    _switchToEpisode(_currentSeason!, _currentEpisode! - 1);
-  }
-
-  /// Switch to a specific episode — creates a fresh controller to avoid lifecycle issues.
-  void _switchToEpisode(int season, int episode) {
-    _saveWatchProgress();
-    _historyTimer?.cancel();
-
-    // Dispose old controller
-    _controller.dispose();
-
-    setState(() {
-      _currentSeason = season;
-      _currentEpisode = episode;
-    });
-
-    // Create fresh controller
-    _controller = PlayerController();
-    _controller.onProgressUpdate = _onProgressUpdate;
-    _controller.onPlaybackComplete = _onPlaybackComplete;
-    _controller.onNextEpisode = (s, e) => _switchToEpisode(s, e);
-    _controller.onPreviousEpisode = (s, e) => _switchToEpisode(s, e);
-
-    _initializePlayer();
+  void _setupPipListeners() {
+    PipController.instance.onPipAction = (action) {
+      if (!mounted) return;
+      switch (action) {
+        case 'play':
+          _controller.play();
+          break;
+        case 'pause':
+          _controller.pause();
+          break;
+        case 'seekForward':
+          _controller.skipForward();
+          break;
+        case 'seekBackward':
+          _controller.skipBackward();
+          break;
+      }
+    };
   }
 
   void _saveWatchProgress() {
-    if (_controller.position == Duration.zero ||
-        _controller.duration == Duration.zero) return;
+    if (_controller.position == Duration.zero || _controller.duration == Duration.zero) return;
 
     try {
       ref.read(watchHistoryProvider.notifier).saveProgress(
@@ -200,8 +185,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               mediaType: widget.mediaType,
               title: widget.title,
               posterUrl: widget.posterUrl,
-              season: _currentSeason,
-              episode: _currentEpisode,
+              season: widget.season,
+              episode: widget.episode,
               currentTime: _controller.position.inSeconds.toDouble(),
               duration: _controller.duration.inSeconds.toDouble(),
               timestamp: DateTime.now().millisecondsSinceEpoch,
@@ -213,11 +198,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _saveWatchProgress();
+    }
+  }
+
+  @override
   void dispose() {
     _saveWatchProgress();
-    _historyTimer?.cancel();
+    _progressSaveTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    _controller.removeListener(_onControllerUpdate);
     _controller.dispose();
+    _restoreOrientations();
     super.dispose();
   }
 
@@ -228,28 +222,45 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       body: ListenableBuilder(
         listenable: _controller,
         builder: (context, _) {
+          final isReady = _hasStartedPlaying &&
+              _controller.betterPlayerController != null &&
+              _controller.state != PlaybackState.extracting &&
+              _controller.state != PlaybackState.idle;
+
           return Stack(
             fit: StackFit.expand,
             children: [
-              // ── Video layer ──
-              _buildVideoLayer(),
+              // 1. Native ExoPlayer Video Layer
+              if (_controller.betterPlayerController != null)
+                Positioned.fill(
+                  child: Center(
+                    child: BetterPlayer(
+                      controller: _controller.betterPlayerController!,
+                    ),
+                  ),
+                ),
 
-              // ── Gesture layer ──
-              PlayerGestures(
-                controller: _controller,
-                child: const SizedBox.expand(),
-              ),
+              // 2. Gesture Controls (VLC style) + Player Overlay
+              if (isReady)
+                Positioned.fill(
+                  child: PlayerGestures(
+                    controller: _controller,
+                    child: PlayerOverlay(
+                      controller: _controller,
+                      onBack: _handleBack,
+                      onPipTap: _handlePip,
+                      onSourceTap: _showSourceSelector,
+                      onSettingsTap: _showSettings,
+                      onAudioTap: _showAudioSelector,
+                      onSubtitleTap: _showSubtitleSelector,
+                      onSpeedTap: _showSpeedSelector,
+                    ),
+                  ),
+                ),
 
-              // ── Controls overlay ──
-              PlayerOverlay(
-                controller: _controller,
-                onBack: _handleBack,
-                onSourceTap: _showSourceSelector,
-                onSettingsTap: _showSettings,
-                onEpisodeTap: widget.mediaType == 'tv' ? _showEpisodePanel : null,
-                onPipTap: _handlePip,
-                showEpisodeButton: widget.mediaType == 'tv',
-              ),
+              // 3. Cinematic Landscape Loading Screen
+              if (!isReady)
+                _buildCinematicLoadingScreen(),
             ],
           );
         },
@@ -257,34 +268,202 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     );
   }
 
-  Widget _buildVideoLayer() {
-    if (_controller.betterPlayerController == null) {
-      return Container(
-        color: Colors.black,
-        child: widget.posterUrl != null
-            ? Opacity(
-                opacity: 0.3,
-                child: Image.network(
-                  widget.posterUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
-              )
-            : const SizedBox.expand(),
-      );
-    }
+  // ─── Cinematic Landscape Loading Screen ──────────────────────────────────
 
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: BetterPlayer(
-          controller: _controller.betterPlayerController!,
+  Widget _buildCinematicLoadingScreen() {
+    final backdrop = widget.backdropUrl ?? widget.posterUrl;
+    final logo = _resolvedLogoUrl;
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Fullscreen Backdrop
+            if (backdrop != null && backdrop.isNotEmpty)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.38,
+                  child: Image.network(
+                    backdrop,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.expand(),
+                  ),
+                ),
+              ),
+
+            // 2. Cinematic Gradient Scrim
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.35),
+                      Colors.black.withValues(alpha: 0.70),
+                      Colors.black.withValues(alpha: 0.95),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
+                ),
+              ),
+            ),
+
+            // 3. Back Button (Top Left)
+            Positioned(
+              top: 16,
+              left: 16,
+              child: SafeArea(
+                child: IconButton(
+                  onPressed: _handleBack,
+                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black54,
+                    padding: const EdgeInsets.all(10),
+                  ),
+                ),
+              ),
+            ),
+
+            // 4. Content Area (Logo, Title fallback, Description, Red Spinner)
+            Positioned(
+              left: 36,
+              right: 36,
+              bottom: 28,
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Logo or single-line title fallback
+                    if (logo != null && logo.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxHeight: 70,
+                          maxWidth: 280,
+                        ),
+                        child: CachedNetworkImage(
+                          imageUrl: logo,
+                          fit: BoxFit.contain,
+                          alignment: Alignment.centerLeft,
+                          errorWidget: (_, __, ___) => _buildTitleFallback(),
+                        ),
+                      )
+                    else
+                      _buildTitleFallback(),
+
+                    // Episode badge if TV show
+                    if (widget.mediaType == 'tv' && widget.episode != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Season ${widget.season ?? 1} • Episode ${widget.episode}',
+                          style: GoogleFonts.inter(
+                            color: AppColors.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+
+                    // Description below logo/title
+                    if (widget.description != null && widget.description!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.65,
+                          ),
+                          child: Text(
+                            widget.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Small Red Spinner Loader or Error
+                    Padding(
+                      padding: const EdgeInsets.only(top: 18),
+                      child: _controller.errorMessage != null
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _controller.errorMessage!,
+                                  style: GoogleFonts.inter(
+                                    color: Colors.redAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  _controller.state == PlaybackState.extracting
+                                      ? 'Resolving stream link...'
+                                      : 'Connecting to video...',
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  // ─── Actions ────────────────────────────────────────────────────────────
+  Widget _buildTitleFallback() {
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.70,
+      ),
+      child: Text(
+        widget.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.plusJakartaSans(
+          color: Colors.white,
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+        ),
+      ),
+    );
+  }
+
+  // ─── Actions & Modals ───────────────────────────────────────────────────
 
   void _handleBack() {
     _saveWatchProgress();
@@ -299,6 +478,32 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     }
   }
 
+  void _showAudioSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => AudioTrackSelectorSheet(controller: _controller),
+    );
+  }
+
+  void _showSubtitleSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => SubtitleTrackSelectorSheet(controller: _controller),
+    );
+  }
+
+  void _showSpeedSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SpeedSelectorSheet(controller: _controller),
+    );
+  }
+
   void _showSourceSelector() {
     showModalBottomSheet(
       context: context,
@@ -309,206 +514,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   void _showSettings() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => PlayerSettingsSheet(controller: _controller),
-    );
-  }
-
-  void _showEpisodePanel() {
-    final content = ref.read(detailProvider(
-      DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType),
-    )).valueOrNull;
-
-    if (content == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _EpisodeSelectorPanel(
-        content: content,
-        currentSeason: _currentSeason ?? 1,
-        currentEpisode: _currentEpisode ?? 1,
-        onEpisodeSelected: (season, episode) {
-          Navigator.of(context).pop(); // Close panel
-          _switchToEpisode(season, episode);
-        },
-      ),
-    );
-  }
-}
-
-// ─── Episode Selector Panel ────────────────────────────────────────────────
-
-class _EpisodeSelectorPanel extends StatefulWidget {
-  final dynamic content;
-  final int currentSeason;
-  final int currentEpisode;
-  final Function(int season, int episode) onEpisodeSelected;
-
-  const _EpisodeSelectorPanel({
-    required this.content,
-    required this.currentSeason,
-    required this.currentEpisode,
-    required this.onEpisodeSelected,
-  });
-
-  @override
-  State<_EpisodeSelectorPanel> createState() => _EpisodeSelectorPanelState();
-}
-
-class _EpisodeSelectorPanelState extends State<_EpisodeSelectorPanel> {
-  late int _selectedSeason;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedSeason = widget.currentSeason;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final content = widget.content;
-    final seasonNumbers = content.seasonNumbers as List<int>? ?? [1];
-    // Build a simple episode count per season (fallback to 20 episodes)
-    final int episodeCount = content.isTv
-        ? (content.tmdbSeasons
-                ?.where((s) => s.seasonNumber == _selectedSeason)
-                .firstOrNull
-                ?.episodeCount ??
-            20)
-        : 1;
-
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
-      ),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A2E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
-          // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                const Icon(Icons.playlist_play, color: Colors.white, size: 22),
-                const SizedBox(width: 8),
-                Text(
-                  'Episodes',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Season tabs
-          if (seasonNumbers.length > 1)
-            SizedBox(
-              height: 36,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemCount: seasonNumbers.length,
-                itemBuilder: (_, index) {
-                  final season = seasonNumbers[index];
-                  final isSelected = season == _selectedSeason;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedSeason = season),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.red : Colors.white12,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Text(
-                        'S$season',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-          const SizedBox(height: 12),
-          const Divider(color: Colors.white12, height: 1),
-
-          // Episode grid
-          Flexible(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16),
-              shrinkWrap: true,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 5,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.8,
-              ),
-              itemCount: episodeCount,
-              itemBuilder: (_, index) {
-                final ep = index + 1;
-                final isCurrent = _selectedSeason == widget.currentSeason &&
-                    ep == widget.currentEpisode;
-                return GestureDetector(
-                  onTap: () =>
-                      widget.onEpisodeSelected(_selectedSeason, ep),
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isCurrent ? Colors.red : Colors.white12,
-                      borderRadius: BorderRadius.circular(8),
-                      border: isCurrent
-                          ? Border.all(color: Colors.redAccent, width: 1.5)
-                          : null,
-                    ),
-                    child: Text(
-                      '$ep',
-                      style: GoogleFonts.inter(
-                        color: isCurrent ? Colors.white : Colors.white70,
-                        fontSize: 14,
-                        fontWeight:
-                            isCurrent ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
+    _showSpeedSelector();
   }
 }

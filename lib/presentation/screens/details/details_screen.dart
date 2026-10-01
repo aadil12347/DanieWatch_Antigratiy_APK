@@ -28,7 +28,6 @@ import '../../../core/services/deep_link_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../widgets/custom_app_bar.dart';
-import '../../widgets/play_loader_overlay.dart';
 import '../../widgets/sticky_dropdown_modal.dart';
 import '../../widgets/pressable_scale.dart';
 import '../../widgets/liquid_tap_effect.dart';
@@ -1804,53 +1803,31 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             : content.backdropUrl!)
         : content.posterUrl;
 
-    PlayLoaderOverlay.showCinematic(
-      context,
-      backdropUrl: backdropImageUrl,
-      posterUrl: content.posterUrl,
-      title: displayTitle,
-      description: content.overview,
-      message: 'Extracting stream link...',
+    await Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => VideoPlayerScreen(
+          url: '',
+          title: displayTitle,
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          season: _selectedSeason,
+          episode: episode.episodeNumber ?? episode.index,
+          posterUrl: episode.thumbnailUrl ?? content.posterUrl,
+          backdropUrl: backdropImageUrl,
+          logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
+          description: content.overview,
+          streamResolver: () async {
+            final res = await SitePostExtractor.instance.resolveVcloudStream(episode.vcloudUrl);
+            if (res.canStreamOnline && res.onlineStreamUrl != null) {
+              return res.onlineStreamUrl!;
+            }
+            return null;
+          },
+        ),
+      ),
     );
-
-    try {
-      final res =
-          await SitePostExtractor.instance.resolveVcloudStream(episode.vcloudUrl);
-      PlayLoaderOverlay.hide();
-
-      if (!mounted) return;
-
-      if (res.canStreamOnline) {
-        final streamUrl = res.onlineStreamUrl!;
-        await Navigator.of(context, rootNavigator: true).push(
-          PageRouteBuilder(
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, __, ___) => VideoPlayerScreen(
-              url: streamUrl,
-              title: '${content.title} - ${episode.title}',
-              tmdbId: widget.tmdbId,
-              mediaType: widget.mediaType,
-              season: _selectedSeason,
-              episode: episode.episodeNumber ?? episode.index,
-              posterUrl: episode.thumbnailUrl ?? content.posterUrl,
-              isDirectLink: true,
-            ),
-          ),
-        );
-      } else {
-        _showOnlinePlaybackUnavailableDialog(
-          content: content,
-          episodeTitle: episode.title,
-          onDownload: () => _handleNextdriveDownload(episode, content),
-        );
-      }
-    } catch (e) {
-      PlayLoaderOverlay.hide();
-      if (mounted) {
-        _showToastError('Stream resolution error: $e');
-      }
-    }
   }
 
   /// Handles download for Nextdrive episode.
@@ -2204,82 +2181,62 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               : content.backdropUrl!)
           : content.posterUrl;
 
-      PlayLoaderOverlay.showCinematic(
-        context,
-        backdropUrl: backdropImageUrl,
-        posterUrl: content.posterUrl,
-        title: content.title,
-        description: content.overview,
-        message: 'Resolving stream link...',
-      );
-      try {
-        var postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
-        if (postUrl == null || postUrl.isEmpty) {
-          postUrl = await SitePostExtractor.instance.findPostUrl(
+      await Navigator.of(context, rootNavigator: true).push(
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, __, ___) => VideoPlayerScreen(
+            url: '',
             title: content.title,
             tmdbId: widget.tmdbId,
-            year: content.releaseYear,
-          );
-        }
+            mediaType: widget.mediaType,
+            posterUrl: content.posterUrl,
+            backdropUrl: backdropImageUrl,
+            logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
+            description: content.overview,
+            isDirectLink: false,
+            is3rdPartyHosted: is3rdParty,
+            streamResolver: () async {
+              var postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
+              if (postUrl == null || postUrl.isEmpty) {
+                postUrl = await SitePostExtractor.instance.findPostUrl(
+                  title: content.title,
+                  tmdbId: widget.tmdbId,
+                  year: content.releaseYear,
+                );
+              }
 
-        if (postUrl != null && postUrl.isNotEmpty) {
-          final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
-          // Find best movie button (prefer 720p > 480p > 1080p)
-          SitePostButton? bestBtn;
-          final nonBatch = buttons.where((b) => !b.isBatchZip).toList();
-          if (nonBatch.isNotEmpty) {
-            bestBtn = nonBatch.firstWhere(
-              (b) => b.quality == '720p',
-              orElse: () => nonBatch.firstWhere(
-                (b) => b.quality == '480p',
-                orElse: () => nonBatch.firstWhere(
-                  (b) => b.quality == '1080p',
-                  orElse: () => nonBatch.first,
-                ),
-              ),
-            );
-          }
+              if (postUrl != null && postUrl.isNotEmpty) {
+                final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
+                // Find best movie button (prefer 720p > 480p > 1080p)
+                SitePostButton? bestBtn;
+                final nonBatch = buttons.where((b) => !b.isBatchZip).toList();
+                if (nonBatch.isNotEmpty) {
+                  bestBtn = nonBatch.firstWhere(
+                    (b) => b.quality == '720p',
+                    orElse: () => nonBatch.firstWhere(
+                      (b) => b.quality == '480p',
+                      orElse: () => nonBatch.firstWhere(
+                        (b) => b.quality == '1080p',
+                        orElse: () => nonBatch.first,
+                      ),
+                    ),
+                  );
+                }
 
-          if (bestBtn != null) {
-            final res = await SitePostExtractor.instance.resolveVcloudStream(bestBtn.href);
-            PlayLoaderOverlay.hide();
-
-            if (!mounted) return;
-
-            if (res.canStreamOnline) {
-              final streamUrl = res.onlineStreamUrl!; // Strictly FSLv2 > FSL (no 10Gbps)
-              await Navigator.of(context, rootNavigator: true).push(
-                PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  pageBuilder: (_, __, ___) => VideoPlayerScreen(
-                    url: streamUrl,
-                    title: content.title,
-                    tmdbId: widget.tmdbId,
-                    mediaType: widget.mediaType,
-                    posterUrl: content.posterUrl,
-                    isDirectLink: true,
-                    is3rdPartyHosted: is3rdParty,
-                  ),
-                ),
-              );
-              return;
-            } else if (res.bestDownloadUrl != null) {
-              // Online play unavailable (neither FSLv2 nor FSL)
-              _showOnlinePlaybackUnavailableDialog(
-                content: content,
-                episodeTitle: content.title,
-                onDownload: () => _handleDownload(res.bestDownloadUrl!),
-              );
-              return;
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('[DetailsScreen] Movie VCloud stream error: $e');
-      } finally {
-        PlayLoaderOverlay.hide();
-      }
+                if (bestBtn != null) {
+                  final res = await SitePostExtractor.instance.resolveVcloudStream(bestBtn.href);
+                  if (res.canStreamOnline && res.onlineStreamUrl != null) {
+                    return res.onlineStreamUrl!; // Strictly FSLv2 > FSL (no 10Gbps)
+                  }
+                }
+              }
+              return null;
+            },
+          ),
+        ),
+      );
+      return;
     }
 
     if (!mounted) return;
@@ -2291,6 +2248,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
           '';
       final targetSeason = season ?? _selectedSeason;
+      final targetEpNum = episode ?? 1;
       final epParams = NextdriveEpisodeParams(
         tmdbId: content.id,
         title: content.title,
@@ -2307,40 +2265,59 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               : content.backdropUrl!)
           : content.posterUrl;
 
-      PlayLoaderOverlay.showCinematic(
-        context,
-        backdropUrl: backdropImageUrl,
-        posterUrl: content.posterUrl,
-        title: '${content.title} — S${targetSeason.toString().padLeft(2, '0')}',
-        description: content.overview,
-        message: 'Resolving episode link...',
+      await Navigator.of(context, rootNavigator: true).push(
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, __, ___) => VideoPlayerScreen(
+            url: '',
+            title: '${content.title} — S${targetSeason.toString().padLeft(2, '0')}E${targetEpNum.toString().padLeft(2, '0')}',
+            tmdbId: widget.tmdbId,
+            mediaType: widget.mediaType,
+            seasons: content.seasonNumbers,
+            season: targetSeason,
+            episode: targetEpNum,
+            posterUrl: content.posterUrl,
+            backdropUrl: backdropImageUrl,
+            logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
+            description: content.overview,
+            isDirectLink: false,
+            is3rdPartyHosted: is3rdParty,
+            streamResolver: () async {
+              List<NextdriveEpisode> episodes =
+                  ref.read(nextdriveEpisodesProvider(epParams)).valueOrNull ?? [];
+              if (episodes.isEmpty) {
+                episodes = await ref.refresh(nextdriveEpisodesProvider(epParams).future);
+              }
+
+              if (episodes.isNotEmpty) {
+                final targetEp = (episode != null && episode > 0)
+                    ? episodes.firstWhere(
+                        (e) => (e.episodeNumber ?? e.index) == episode,
+                        orElse: () => episodes.first)
+                    : episodes.first;
+
+                final res = await SitePostExtractor.instance.resolveVcloudStream(targetEp.vcloudUrl);
+                if (res.canStreamOnline && res.onlineStreamUrl != null) {
+                  return res.onlineStreamUrl!;
+                }
+              }
+              return null;
+            },
+          ),
+        ),
       );
-      try {
-        List<NextdriveEpisode> episodes =
-            ref.read(nextdriveEpisodesProvider(epParams)).valueOrNull ?? [];
-        if (episodes.isEmpty) {
-          episodes = await ref.refresh(nextdriveEpisodesProvider(epParams).future);
-        }
-
-        if (episodes.isNotEmpty) {
-          final targetEp = (episode != null && episode > 0)
-              ? episodes.firstWhere(
-                  (e) => (e.episodeNumber ?? e.index) == episode,
-                  orElse: () => episodes.first)
-              : episodes.first;
-
-          PlayLoaderOverlay.hide();
-          await _handleNextdrivePlay(targetEp, content);
-          return;
-        }
-      } catch (e) {
-        debugPrint('[DetailsScreen] Series VCloud stream error: $e');
-      } finally {
-        PlayLoaderOverlay.hide();
-      }
+      return;
     }
 
     if (!mounted) return;
+
+    final backdropImageUrl = content.backdropUrl != null &&
+            content.backdropUrl!.isNotEmpty
+        ? (content.backdropUrl!.startsWith('/')
+            ? 'https://image.tmdb.org/t/p/w1280${content.backdropUrl}'
+            : content.backdropUrl!)
+        : content.posterUrl;
 
     await Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(
@@ -2355,6 +2332,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           season: season,
           episode: episode,
           posterUrl: content.posterUrl,
+          backdropUrl: backdropImageUrl,
+          logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
+          description: content.overview,
           isDirectLink: false,
           is3rdPartyHosted: is3rdParty,
         ),
