@@ -1812,6 +1812,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           title: displayTitle,
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
+          year: content.releaseYear,
+          imdbId: content.imdbId,
           season: _selectedSeason,
           episode: episode.episodeNumber ?? episode.index,
           posterUrl: episode.thumbnailUrl ?? content.posterUrl,
@@ -2190,6 +2192,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             title: content.title,
             tmdbId: widget.tmdbId,
             mediaType: widget.mediaType,
+            year: content.releaseYear,
+            imdbId: content.imdbId,
             posterUrl: content.posterUrl,
             backdropUrl: backdropImageUrl,
             logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
@@ -2197,7 +2201,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             isDirectLink: false,
             is3rdPartyHosted: is3rdParty,
             streamResolver: () async {
-              var postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
+              var postUrl = content.postUrl ??
+                  MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                  MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
               if (postUrl == null || postUrl.isEmpty) {
                 postUrl = await SitePostExtractor.instance.findPostUrl(
                   title: content.title,
@@ -2208,29 +2214,105 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
               if (postUrl != null && postUrl.isNotEmpty) {
                 final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
-                // Find best movie button (prefer 720p > 480p > 1080p)
-                SitePostButton? bestBtn;
+                // Filter non-batch buttons
                 final nonBatch = buttons.where((b) => !b.isBatchZip).toList();
                 if (nonBatch.isNotEmpty) {
-                  bestBtn = nonBatch.firstWhere(
+                  // Prefer buttons with V-Cloud / Vcloud / Resumable in text or href
+                  final vcloudButtons = nonBatch.where((b) {
+                    final t = b.text.toLowerCase();
+                    final h = b.href.toLowerCase();
+                    return t.contains('v-cloud') ||
+                        t.contains('vcloud') ||
+                        t.contains('resumable') ||
+                        h.contains('vcloud');
+                  }).toList();
+
+                  final candidateList = vcloudButtons.isNotEmpty ? vcloudButtons : nonBatch;
+
+                  // Prioritize 720p > 480p > 1080p > any
+                  final bestBtn = candidateList.firstWhere(
                     (b) => b.quality == '720p',
-                    orElse: () => nonBatch.firstWhere(
+                    orElse: () => candidateList.firstWhere(
                       (b) => b.quality == '480p',
-                      orElse: () => nonBatch.firstWhere(
+                      orElse: () => candidateList.firstWhere(
                         (b) => b.quality == '1080p',
-                        orElse: () => nonBatch.first,
+                        orElse: () => candidateList.first,
                       ),
                     ),
                   );
-                }
 
-                if (bestBtn != null) {
-                  final res = await SitePostExtractor.instance.resolveVcloudStream(bestBtn.href);
-                  if (res.canStreamOnline && res.onlineStreamUrl != null) {
-                    return res.onlineStreamUrl!; // Strictly FSLv2 > FSL (no 10Gbps)
+                  String targetVcloudUrl = bestBtn.href;
+
+                  // If it's a Nextdrive / VGMLink / FastDL landing page, extract the movie VCloud link from it!
+                  final lowerHref = bestBtn.href.toLowerCase();
+                  if (lowerHref.contains('nexdrive') ||
+                      lowerHref.contains('vgmlink') ||
+                      lowerHref.contains('fastdl')) {
+                    try {
+                      final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(bestBtn.href);
+                      if (episodes.isNotEmpty) {
+                        targetVcloudUrl = episodes.first.vcloudUrl;
+                      }
+                    } catch (e) {
+                      debugPrint('[DetailsScreen] Movie Nextdrive extract error: $e');
+                    }
+                  }
+
+                  // If it's HubCloud or GPDL redirect, resolve directly
+                  if (targetVcloudUrl.toLowerCase().contains('hubcloud') ||
+                      targetVcloudUrl.toLowerCase().contains('gpdl')) {
+                    try {
+                      final resolved = await VcloudExtractorService().resolveHubCloudRedirect(targetVcloudUrl);
+                      if (resolved != null && resolved.isNotEmpty) {
+                        return resolved;
+                      }
+                    } catch (e) {
+                      debugPrint('[DetailsScreen] Movie HubCloud resolve error: $e');
+                    }
+                  }
+
+                  // Resolve VCloud direct stream
+                  try {
+                    final res = await SitePostExtractor.instance.resolveVcloudStream(targetVcloudUrl);
+                    if (res.canStreamOnline && res.onlineStreamUrl != null) {
+                      return res.onlineStreamUrl!; // Strictly FSLv2 > FSL
+                    }
+                    if (res.bestDownloadUrl != null && res.bestDownloadUrl!.isNotEmpty) {
+                      return res.bestDownloadUrl!; // Fallback (10Gbps, Pixeldrain, Direct)
+                    }
+                  } catch (e) {
+                    debugPrint('[DetailsScreen] Movie resolveVcloudStream error: $e');
                   }
                 }
               }
+
+              // Fallback: Check GitHub streaming database for Movie
+              try {
+                final vcloudLinks = await VcloudExtractorService().fetchResolutionLinksMap(
+                  tmdbId: widget.tmdbId,
+                  mediaType: 'movie',
+                  title: content.title,
+                );
+                if (vcloudLinks.isNotEmpty) {
+                  final vUrl = vcloudLinks['720p'] ??
+                      vcloudLinks['480p'] ??
+                      vcloudLinks['1080p'] ??
+                      vcloudLinks.values.first;
+                  final servers = await VcloudExtractorService().extractVcloud(vUrl);
+                  for (final entry in servers.entries) {
+                    final key = entry.key.toLowerCase();
+                    if (key.contains('fslv2') || key.contains('fsl') || key.contains('direct')) {
+                      return entry.value;
+                    }
+                  }
+                  if (servers.isNotEmpty) {
+                    return servers.values.first;
+                  }
+                }
+              } catch (e) {
+                debugPrint('[DetailsScreen] Movie VCloud DB fallback error: $e');
+              }
+
               return null;
             },
           ),
@@ -2274,6 +2356,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             title: '${content.title} — S${targetSeason.toString().padLeft(2, '0')}E${targetEpNum.toString().padLeft(2, '0')}',
             tmdbId: widget.tmdbId,
             mediaType: widget.mediaType,
+            year: content.releaseYear,
+            imdbId: content.imdbId,
             seasons: content.seasonNumbers,
             season: targetSeason,
             episode: targetEpNum,
@@ -2328,6 +2412,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           title: content.title,
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
+          year: content.releaseYear,
+          imdbId: content.imdbId,
           seasons: content.seasonNumbers,
           season: season,
           episode: episode,

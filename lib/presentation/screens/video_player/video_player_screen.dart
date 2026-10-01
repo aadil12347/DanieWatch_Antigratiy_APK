@@ -38,6 +38,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String? logoUrl;
   final String? description;
   final double? startPosition;
+  final int? year;
+  final String? imdbId;
   final Map<String, PeachifyStream>? extractedStreams;
   final bool is3rdPartyHosted;
   final Future<String?> Function()? streamResolver;
@@ -52,6 +54,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.seasons,
     this.season,
     this.episode,
+    this.year,
+    this.imdbId,
     this.isOffline = false,
     this.isDirectLink = false,
     this.posterUrl,
@@ -104,6 +108,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       title: widget.title,
       tmdbId: widget.tmdbId,
       mediaType: widget.mediaType,
+      year: widget.year,
+      imdbId: widget.imdbId,
       season: widget.season,
       episode: widget.episode,
       directUrl: widget.isDirectLink && widget.url.isNotEmpty ? widget.url : null,

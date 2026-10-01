@@ -7,12 +7,12 @@ library;
 /// Uses BetterPlayer (ExoPlayer wrapper) for all playback — no WebView.
 
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/painting.dart';
+import 'package:flutter/material.dart';
 import 'package:better_player_plus/better_player_plus.dart';
 import '../../../services/extraction/models.dart';
 import '../../../services/extraction/provider_registry.dart';
+import '../../../services/vcloud_extractor.dart';
 
 /// Playback state for the UI to observe.
 enum PlaybackState {
@@ -271,6 +271,11 @@ class PlayerController extends ChangeNotifier {
       _betterPlayerController = null;
 
       final isLocalFile = source.url.startsWith('/') || !source.url.startsWith('http');
+      final isHls = source.resolvedType == LinkType.m3u8 ||
+          source.url.toLowerCase().contains('.m3u8') ||
+          source.url.toLowerCase().contains('hsl') ||
+          source.url.toLowerCase().contains('master');
+
       final dataSource = isLocalFile
           ? BetterPlayerDataSource(
               BetterPlayerDataSourceType.file,
@@ -279,8 +284,25 @@ class PlayerController extends ChangeNotifier {
           : BetterPlayerDataSource(
               BetterPlayerDataSourceType.network,
               source.url,
-              headers: source.headers.isNotEmpty ? source.headers : null,
-              useAsmsAudioTracks: source.url.toLowerCase().contains('.m3u8'),
+              headers: source.headers.isNotEmpty
+                  ? source.headers
+                  : {
+                      if (!source.url.contains('google') && !source.url.contains('storage')) ...{
+                        'User-Agent':
+                            'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                        'Accept': '*/*',
+                      },
+                    },
+              videoFormat: isHls ? BetterPlayerVideoFormat.hls : BetterPlayerVideoFormat.other,
+              useAsmsTracks: isHls,
+              useAsmsAudioTracks: isHls,
+              useAsmsSubtitles: isHls,
+              bufferingConfiguration: const BetterPlayerBufferingConfiguration(
+                minBufferMs: 5000,
+                maxBufferMs: 30000,
+                bufferForPlaybackMs: 2500,
+                bufferForPlaybackAfterRebufferMs: 5000,
+              ),
             );
 
       // Create player configuration
@@ -290,6 +312,14 @@ class PlayerController extends ChangeNotifier {
         fit: _getBetterPlayerFit(),
         controlsConfiguration: const BetterPlayerControlsConfiguration(
           showControls: false, // We use custom controls
+        ),
+        subtitlesConfiguration: const BetterPlayerSubtitlesConfiguration(
+          fontSize: 16,
+          fontColor: Colors.white,
+          outlineColor: Colors.black,
+          outlineSize: 2.0,
+          backgroundColor: Colors.transparent,
+          alignment: Alignment.bottomCenter,
         ),
         allowedScreenSleep: false,
         startAt: startPosition != null
@@ -347,16 +377,13 @@ class PlayerController extends ChangeNotifier {
           _duration = _betterPlayerController!
               .videoPlayerController!.value.duration!;
         }
-        // Capture available audio tracks and subtitle sources
-        _audioTracks = _betterPlayerController?.betterPlayerAsmsAudioTracks ?? [];
-        _currentAudioTrack = _betterPlayerController?.betterPlayerAsmsAudioTrack;
-        _subtitleSources = _betterPlayerController?.betterPlayerSubtitlesSourceList ?? [];
-        debugPrint('[PlayerController] Audio tracks: ${_audioTracks.length}, Subtitle sources: ${_subtitleSources.length}');
+        _updateTracksAndSubtitles();
         notifyListeners();
         break;
       case BetterPlayerEventType.play:
         _state = PlaybackState.playing;
         _isPlaying = true;
+        _updateTracksAndSubtitles();
         notifyListeners();
         break;
       case BetterPlayerEventType.pause:
@@ -370,6 +397,11 @@ class PlayerController extends ChangeNotifier {
         break;
       case BetterPlayerEventType.bufferingEnd:
         _state = _isPlaying ? PlaybackState.playing : PlaybackState.paused;
+        _updateTracksAndSubtitles();
+        notifyListeners();
+        break;
+      case BetterPlayerEventType.changedSubtitles:
+        _updateTracksAndSubtitles();
         notifyListeners();
         break;
       case BetterPlayerEventType.finished:
@@ -386,6 +418,36 @@ class PlayerController extends ChangeNotifier {
       default:
         break;
     }
+  }
+
+  void _updateTracksAndSubtitles() {
+    if (_betterPlayerController == null) return;
+
+    // 1. Audio tracks: ASMS tracks or fallback to languages
+    final asmsAudios = _betterPlayerController!.betterPlayerAsmsAudioTracks;
+    if (asmsAudios != null && asmsAudios.isNotEmpty) {
+      _audioTracks = asmsAudios;
+    } else {
+      final lastLangs = VcloudExtractorService().lastLanguages;
+      if (lastLangs.isNotEmpty) {
+        _audioTracks = [
+          for (int i = 0; i < lastLangs.length; i++)
+            BetterPlayerAsmsAudioTrack(
+              id: i,
+              label: lastLangs[i],
+              language: lastLangs[i],
+            ),
+        ];
+      }
+    }
+    _currentAudioTrack = _betterPlayerController!.betterPlayerAsmsAudioTrack;
+
+    // 2. Subtitles: ASMS subtitle source list
+    final subs = _betterPlayerController!.betterPlayerSubtitlesSourceList;
+    if (subs.isNotEmpty) {
+      _subtitleSources = subs;
+    }
+    _currentSubtitleSource = _betterPlayerController!.betterPlayerSubtitlesSource;
   }
 
   void _startPositionTracking() {
@@ -523,9 +585,27 @@ class PlayerController extends ChangeNotifier {
   /// Set audio track by index from the available audio tracks list.
   void setAudioTrack(BetterPlayerAsmsAudioTrack track) {
     if (_betterPlayerController == null) return;
-    _betterPlayerController!.setAudioTrack(track);
     _currentAudioTrack = track;
-    debugPrint('[PlayerController] Switched audio to: ${track.label}');
+    try {
+      final asmsTracks = _betterPlayerController!.betterPlayerAsmsAudioTracks ?? [];
+      if (asmsTracks.isNotEmpty) {
+        final trackToSet = BetterPlayerAsmsAudioTrack(
+          id: track.id,
+          label: track.label,
+          language: track.language ?? track.label ?? 'und',
+          url: track.url,
+        );
+        _betterPlayerController!.setAudioTrack(trackToSet);
+      } else {
+        // Fallback progressive audio track selection
+        if (track.id != null) {
+          _betterPlayerController!.videoPlayerController?.setAudioTrack(track.label, track.id);
+        }
+      }
+      debugPrint('[PlayerController] Switched audio to: ${track.label ?? track.language}');
+    } catch (e) {
+      debugPrint('[PlayerController] Error switching audio: $e');
+    }
     _safeNotify();
   }
 
@@ -542,17 +622,22 @@ class PlayerController extends ChangeNotifier {
 
   /// Disable subtitles.
   void disableSubtitles() {
-    final noneSource = BetterPlayerSubtitlesSource(
-      type: BetterPlayerSubtitlesSourceType.none,
+    if (_betterPlayerController == null) return;
+    final noneSource = _subtitleSources.firstWhere(
+      (s) => s.type == BetterPlayerSubtitlesSourceType.none,
+      orElse: () => BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none),
     );
-    setSubtitleSource(noneSource);
+    _betterPlayerController!.setupSubtitleSource(noneSource);
+    _currentSubtitleSource = noneSource;
+    debugPrint('[PlayerController] Disabled subtitles');
+    _safeNotify();
   }
 
   /// Check if audio tracks are available.
   bool get hasAudioTracks => _audioTracks.length > 1;
 
   /// Check if subtitle sources are available.
-  bool get hasSubtitles => _subtitleSources.isNotEmpty;
+  bool get hasSubtitles => _subtitleSources.any((s) => s.type != BetterPlayerSubtitlesSourceType.none);
 
   // ─── Controls Visibility ───────────────────────────────────────────────
 

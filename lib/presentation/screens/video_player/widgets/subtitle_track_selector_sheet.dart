@@ -132,6 +132,20 @@ class SubtitleTrackSelectorSheet extends StatelessWidget {
                     ),
 
                     // Subtitle Tracks
+                    if (subtitles.where((s) => s.type != BetterPlayerSubtitlesSourceType.none).isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                        child: Text(
+                          'No subtitle tracks available for this stream',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            color: Colors.white38,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+
                     ...subtitles
                         .where((s) => s.type != BetterPlayerSubtitlesSourceType.none)
                         .map((source) {

@@ -1125,13 +1125,13 @@ class BetterPlayerController {
       throw StateError('The data source has not been initialized');
     }
 
-    if (audioTrack.language == null) {
+    if (audioTrack.language == null && audioTrack.label == null && audioTrack.id == null) {
       _betterPlayerAsmsAudioTrack = null;
       return;
     }
 
     _betterPlayerAsmsAudioTrack = audioTrack;
-    videoPlayerController!.setAudioTrack(audioTrack.label, audioTrack.id);
+    videoPlayerController!.setAudioTrack(audioTrack.label ?? audioTrack.language, audioTrack.id);
   }
 
   ///Enable or disable audio mixing with other sound within device.
