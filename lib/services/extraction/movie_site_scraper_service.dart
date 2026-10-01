@@ -48,9 +48,16 @@ class MovieSiteScraperService {
   static const String edgeWorkerUrl = String.fromEnvironment('EDGE_WORKER_URL', defaultValue: '');
   static const String _diskCacheKeyHome = 'daniewatch_scraped_home_v1';
   static const String _diskCacheKeyCategories = 'daniewatch_scraped_cats_v1';
+  static const Duration _staleDuration = Duration(minutes: 5);
 
   bool _isDiskCacheLoaded = false;
   bool get isDiskCacheLoaded => _isDiskCacheLoaded;
+  DateTime? _lastHomeFetchTime;
+  DateTime? _lastCategoryFetchTime;
+  /// Callback invoked when background refresh completes with fresh data.
+  /// Set by the provider layer to trigger UI rebuilds.
+  void Function()? onHomeRefreshed;
+  void Function()? onCategoriesRefreshed;
 
   // Cache in-memory for live session
   List<ManifestItem>? _cachedCarousel;
@@ -239,6 +246,31 @@ class MovieSiteScraperService {
     _postImdbCache.clear();
     _resolvedTmdbIds.clear();
     _resolvedMediaTypes.clear();
+    _lastHomeFetchTime = null;
+    _lastCategoryFetchTime = null;
+  }
+
+  /// Clears both in-memory AND on-disk caches so next launch fetches fresh.
+  Future<void> clearDiskCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_diskCacheKeyHome);
+      await prefs.remove(_diskCacheKeyCategories);
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Error clearing disk cache: $e');
+    }
+  }
+
+  /// Whether the home cache is stale and needs a background refresh.
+  bool get isHomeCacheStale {
+    if (_lastHomeFetchTime == null) return true;
+    return DateTime.now().difference(_lastHomeFetchTime!) > _staleDuration;
+  }
+
+  /// Whether category caches are stale.
+  bool get isCategoryCacheStale {
+    if (_lastCategoryFetchTime == null) return true;
+    return DateTime.now().difference(_lastCategoryFetchTime!) > _staleDuration;
   }
 
   /// Clean post title
@@ -409,7 +441,13 @@ class MovieSiteScraperService {
       await loadDiskCache();
     }
 
+    // If we have cached data and this is NOT a forced refresh,
+    // return cache immediately but schedule background refresh if stale
     if (!forceRefresh && _cachedTop10Indian != null && _cachedTop10HindiDub != null) {
+      if (isHomeCacheStale) {
+        // Schedule a background refresh — does NOT block the caller
+        _backgroundRefreshHome(localMap: localMap);
+      }
       return {
         'carousel': _cachedCarousel ?? _cachedTop10Indian!,
         'top10Indian': _cachedTop10Indian!,
@@ -427,6 +465,7 @@ class MovieSiteScraperService {
     if (edgeWorkerUrl.isNotEmpty) {
       final workerRes = await _fetchHomeFromWorker(localMap: localMap);
       if (workerRes != null) {
+        _lastHomeFetchTime = DateTime.now();
         saveDiskCache(); // Async save to disk
         return workerRes;
       }
@@ -436,10 +475,49 @@ class MovieSiteScraperService {
     _pendingTopLists = future;
     try {
       final res = await future;
+      _lastHomeFetchTime = DateTime.now();
       saveDiskCache(); // Async save to disk
       return res;
     } finally {
       _pendingTopLists = null;
+    }
+  }
+
+  /// Non-blocking background refresh for home sections.
+  /// Fetches fresh data from sites, updates caches, saves to disk,
+  /// and notifies the UI to rebuild.
+  Future<void>? _backgroundRefreshFuture;
+  void _backgroundRefreshHome({Map<String, ManifestItem>? localMap}) {
+    // Prevent duplicate concurrent background refreshes
+    if (_backgroundRefreshFuture != null) return;
+    _backgroundRefreshFuture = _doBackgroundRefreshHome(localMap: localMap);
+    _backgroundRefreshFuture!.whenComplete(() {
+      _backgroundRefreshFuture = null;
+    });
+  }
+
+  Future<void> _doBackgroundRefreshHome({Map<String, ManifestItem>? localMap}) async {
+    try {
+      dev.log('[MovieSiteScraperService] Background refresh started...');
+
+      if (edgeWorkerUrl.isNotEmpty) {
+        final workerRes = await _fetchHomeFromWorker(localMap: localMap);
+        if (workerRes != null) {
+          _lastHomeFetchTime = DateTime.now();
+          await saveDiskCache();
+          onHomeRefreshed?.call();
+          dev.log('[MovieSiteScraperService] Background refresh (worker) done — UI notified');
+          return;
+        }
+      }
+
+      await _doFetchHomeTopLists(localMap: localMap);
+      _lastHomeFetchTime = DateTime.now();
+      await saveDiskCache();
+      onHomeRefreshed?.call();
+      dev.log('[MovieSiteScraperService] Background refresh (direct) done — UI notified');
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Background refresh error: $e');
     }
   }
 
@@ -801,7 +879,13 @@ class MovieSiteScraperService {
   }) async {
     final key = categoryOrGenre.toLowerCase().trim();
     final cacheKey = '${key}_page_$page';
+
+    // Return cache immediately if available, but schedule background refresh if stale
     if (_categoryPageCache.containsKey(cacheKey) && _categoryPageCache[cacheKey]!.isNotEmpty) {
+      if (isCategoryCacheStale && page == 1) {
+        // Background refresh for page 1 only
+        _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
+      }
       return _categoryPageCache[cacheKey]!;
     }
 
@@ -813,10 +897,36 @@ class MovieSiteScraperService {
     _pendingCategoryPages[cacheKey] = future;
     try {
       final res = await future;
+      if (page == 1) _lastCategoryFetchTime = DateTime.now();
       return res;
     } finally {
       _pendingCategoryPages.remove(cacheKey);
     }
+  }
+
+  /// Background refresh for a single category page 1
+  final Set<String> _pendingBgCategoryRefreshes = {};
+  void _backgroundRefreshCategory(String categoryOrGenre, {Map<String, ManifestItem>? localMap}) {
+    final key = categoryOrGenre.toLowerCase().trim();
+    if (_pendingBgCategoryRefreshes.contains(key)) return;
+    _pendingBgCategoryRefreshes.add(key);
+
+    () async {
+      try {
+        dev.log('[MovieSiteScraperService] Background category refresh: $key');
+        // Clear old cache for this key so _doFetchCategoryPage re-fetches
+        _categoryPageCache.remove('${key}_page_1');
+        await _doFetchCategoryPage(categoryOrGenre, page: 1, localMap: localMap);
+        _lastCategoryFetchTime = DateTime.now();
+        await saveDiskCache();
+        onCategoriesRefreshed?.call();
+        dev.log('[MovieSiteScraperService] Background category refresh done: $key');
+      } catch (e) {
+        dev.log('[MovieSiteScraperService] Background category refresh error ($key): $e');
+      } finally {
+        _pendingBgCategoryRefreshes.remove(key);
+      }
+    }();
   }
 
   Future<List<ManifestItem>> _doFetchCategoryPage(

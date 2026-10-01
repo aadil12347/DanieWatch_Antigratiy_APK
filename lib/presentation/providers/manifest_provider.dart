@@ -274,8 +274,9 @@ final topPicksSyncProvider = FutureProvider<bool>((ref) async {
 /// Featured content for the Carousel (Top 5 from VegaMovies homepage)
 final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
+  final scraper = MovieSiteScraperService.instance;
   try {
-    final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
+    final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
     final carousel = topLists['carousel'] ?? topLists['top5'];
     if (carousel != null && carousel.isNotEmpty) {
       dev.log('[mergedCarouselProvider] Built ${carousel.length} live carousel items');
@@ -301,8 +302,9 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
 /// Top 10 Indian Today provider (2026 Indian releases from RogMovies)
 final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
+  final scraper = MovieSiteScraperService.instance;
   try {
-    final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
+    final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
     final indian = topLists['top10Indian'];
     if (indian != null && indian.isNotEmpty) {
       dev.log('[top10IndianProvider] Built ${indian.length} live 2026 Indian items');
@@ -320,8 +322,9 @@ final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
 /// Top 10 Hindi Dub Today provider (5 from RogMovies + 5 from VegaMovies, distinct from Indian Today)
 final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
   final localMap = ref.watch(localManifestMapProvider);
+  final scraper = MovieSiteScraperService.instance;
   try {
-    final topLists = await MovieSiteScraperService.instance.fetchHomeTopLists(localMap: localMap);
+    final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
     final top10 = topLists['top10HindiDub'] ?? topLists['top10'];
     if (top10 != null && top10.isNotEmpty) {
       dev.log('[top10HindiDubProvider] Built ${top10.length} live Vega/Rog top 10 Hindi Dub items');
@@ -350,10 +353,33 @@ final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
 /// Backward compatibility alias
 final mergedTop10Provider = top10HindiDubProvider;
 
-/// Home screen sections compiled live from VegaMovies and RogMovies with 0ms disk cache and batched streaming
+/// Home screen sections compiled live from VegaMovies and RogMovies with 0ms disk cache and batched streaming.
+/// Always fetches fresh data on every app start — shows cached data instantly, then replaces with live data.
 final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   final localMap = ref.watch(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
+
+  // Register background-refresh callbacks so that when the scraper finishes
+  // a background refresh, it invalidates these providers → UI rebuilds.
+  // NOTE: We do NOT invalidate homeSectionsProvider itself (circular reference).
+  // Instead, invalidating the carousel/top10 providers is sufficient since
+  // the home screen watches those separately.
+  scraper.onHomeRefreshed = () {
+    ref.invalidate(mergedCarouselProvider);
+    ref.invalidate(top10IndianProvider);
+    ref.invalidate(top10HindiDubProvider);
+  };
+  scraper.onCategoriesRefreshed = () {
+    // Categories are fetched inline by homeSectionsProvider, so we just
+    // need to invalidate the carousel/top10 to trigger a rebuild cycle.
+    ref.invalidate(mergedCarouselProvider);
+  };
+
+  // Clean up callbacks when provider is disposed
+  ref.onDispose(() {
+    scraper.onHomeRefreshed = null;
+    scraper.onCategoriesRefreshed = null;
+  });
 
   // 1. FAST PATH (0ms startup): Ensure disk cache is loaded and yield immediately if available
   await scraper.loadDiskCache();
@@ -389,8 +415,9 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
     yield List<ContentSection>.unmodifiable(initialSections);
   }
 
-  // 2. LIVE FETCH: Decoupled Row-by-Row Streaming
-  // Fetch Top 10 Indian and Hindi Dub first (~300-400ms)
+  // 2. LIVE FETCH: fetchHomeTopLists returns cache instantly if available,
+  // and automatically kicks off a background refresh when stale.
+  // The bg refresh callback (onHomeRefreshed) will invalidate carousel/top10 providers.
   List<ManifestItem> liveIndian = scraper.cachedTop10Indian ?? [];
   List<ManifestItem> liveHindiDub = scraper.cachedTop10HindiDub ?? [];
 
@@ -414,14 +441,11 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
     yield List<ContentSection>.unmodifiable(immediateTop10);
   }
 
-  // Fetch categories in 3 small batches of 3 to avoid choking network sockets
+  // 3. Fetch categories in 3 small batches of 3 to avoid choking network sockets
   // Batch 1: High-interest (K-Drama, Chinese, Anime)
   // Batch 2: Popular genres (Action, Comedy, Thriller)
   // Batch 3: Remaining (Horror, Sci-Fi, Romance)
   final currentSectionsMap = <String, ContentSection>{};
-  for (final s in initialSections) {
-    currentSectionsMap[s.title] = s;
-  }
 
   final batches = [
     [categoryDefs[0], categoryDefs[1], categoryDefs[2]],
