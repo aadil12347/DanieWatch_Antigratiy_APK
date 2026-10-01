@@ -1787,10 +1787,31 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   /// Handles online streaming for Nextdrive episode with strict policy:
   /// Prioritize FSLv2 > FSL (STRICTLY NO 10Gbps link).
   /// If neither is available, show dialog asking user to download.
+  /// Shows a cinematic fullscreen loading overlay with backdrop, title and
+  /// description while resolving the VCloud stream link.
   Future<void> _handleNextdrivePlay(
       NextdriveEpisode episode, ContentDetail content) async {
     HapticFeedback.lightImpact();
-    PlayLoaderOverlay.show(context, message: 'Resolving stream link...');
+
+    // Build display title: "Content Title - Episode X" or "Content Title"
+    final displayTitle = '${content.title} — ${episode.title}';
+
+    // Use content backdrop or poster for the cinematic overlay
+    final backdropImageUrl = content.backdropUrl != null &&
+            content.backdropUrl!.isNotEmpty
+        ? (content.backdropUrl!.startsWith('/')
+            ? 'https://image.tmdb.org/t/p/w1280${content.backdropUrl}'
+            : content.backdropUrl!)
+        : content.posterUrl;
+
+    PlayLoaderOverlay.showCinematic(
+      context,
+      backdropUrl: backdropImageUrl,
+      posterUrl: content.posterUrl,
+      title: displayTitle,
+      description: content.overview,
+      message: 'Extracting stream link...',
+    );
 
     try {
       final res =
@@ -2175,7 +2196,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     // For movies: try to resolve VCloud link directly (FSLv2 > FSL)
     if (content.isMovie) {
-      PlayLoaderOverlay.show(context, message: 'Resolving stream link...');
+      // Build backdrop URL for cinematic overlay
+      final backdropImageUrl = content.backdropUrl != null &&
+              content.backdropUrl!.isNotEmpty
+          ? (content.backdropUrl!.startsWith('/')
+              ? 'https://image.tmdb.org/t/p/w1280${content.backdropUrl}'
+              : content.backdropUrl!)
+          : content.posterUrl;
+
+      PlayLoaderOverlay.showCinematic(
+        context,
+        backdropUrl: backdropImageUrl,
+        posterUrl: content.posterUrl,
+        title: content.title,
+        description: content.overview,
+        message: 'Resolving stream link...',
+      );
       try {
         var postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
         if (postUrl == null || postUrl.isEmpty) {
@@ -2246,6 +2282,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       }
     }
 
+    if (!mounted) return;
+
     // For TV series: resolve VCloud link for the target episode (or episode 1 of selected season)
     if (content.isTv) {
       final postUrl = content.postUrl ??
@@ -2261,7 +2299,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         posterUrl: content.posterUrl,
       );
 
-      PlayLoaderOverlay.show(context, message: 'Resolving episode link...');
+      // Build backdrop URL for cinematic overlay
+      final backdropImageUrl = content.backdropUrl != null &&
+              content.backdropUrl!.isNotEmpty
+          ? (content.backdropUrl!.startsWith('/')
+              ? 'https://image.tmdb.org/t/p/w1280${content.backdropUrl}'
+              : content.backdropUrl!)
+          : content.posterUrl;
+
+      PlayLoaderOverlay.showCinematic(
+        context,
+        backdropUrl: backdropImageUrl,
+        posterUrl: content.posterUrl,
+        title: '${content.title} — S${targetSeason.toString().padLeft(2, '0')}',
+        description: content.overview,
+        message: 'Resolving episode link...',
+      );
       try {
         List<NextdriveEpisode> episodes =
             ref.read(nextdriveEpisodesProvider(epParams)).valueOrNull ?? [];

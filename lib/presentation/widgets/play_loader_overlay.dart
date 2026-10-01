@@ -87,6 +87,128 @@ class PlayLoaderOverlay<T> extends StatefulWidget {
     overlayState.insert(_currentOverlay!);
   }
 
+  /// Shows a cinematic fullscreen loading overlay with backdrop, title, and description.
+  /// Used when the user taps play on an episode or movie — the overlay is shown while
+  /// the VCloud stream link is being resolved in the background.
+  static void showCinematic(
+    BuildContext context, {
+    String? backdropUrl,
+    String? posterUrl,
+    required String title,
+    String? description,
+    String message = 'Extracting stream link...',
+  }) {
+    hide();
+    final overlayState = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlayState == null) return;
+    final screenSize = MediaQuery.of(context).size;
+    final imageUrl = backdropUrl ?? posterUrl;
+
+    _currentOverlay = OverlayEntry(
+      builder: (ctx) => Material(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Backdrop image
+            if (imageUrl != null && imageUrl.isNotEmpty)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.35,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            // Gradient overlay
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.3),
+                      Colors.black.withValues(alpha: 0.85),
+                      Colors.black,
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
+                  ),
+                ),
+              ),
+            ),
+            // Content
+            Positioned(
+              bottom: screenSize.height * 0.18,
+              left: 24,
+              right: 24,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Title
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                      height: 1.2,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (description != null && description.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  // Loading indicator with message
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.primary.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        message,
+                        style: TextStyle(
+                          color: AppColors.primary.withValues(alpha: 0.9),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    overlayState.insert(_currentOverlay!);
+  }
+
   static void hide() {
     _currentOverlay?.remove();
     _currentOverlay = null;

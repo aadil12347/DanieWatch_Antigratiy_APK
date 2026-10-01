@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html_parser;
 import 'movie_site_scraper_service.dart';
+import 'dynamic_urls.dart';
 
 /// Represents a download or episode landing button extracted from a post page.
 class SitePostButton {
@@ -136,7 +137,9 @@ class SitePostExtractor {
     throw lastError ?? Exception('Failed to fetch $url');
   }
 
-  /// Find the site post URL for a title or TMDB ID
+  /// Find the site post URL for a title or TMDB ID.
+  /// Uses VegaMovies TypeSense search API (/ts-search.php) for reliable JSON results,
+  /// and falls back to RogMovies HTML search.
   Future<String?> findPostUrl({
     required String title,
     int? tmdbId,
@@ -151,33 +154,91 @@ class SitePostExtractor {
       }
     }
 
-    // 2. Search VegaMovies and RogMovies
+    // 2. Clean query
     final cleanQuery = title
         .replaceAll(RegExp(r'\(.*?\)|\[.*?\]|\{.*?\}'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    final searchUrls = [
-      'https://vegamovies.gallery/?s=${Uri.encodeComponent(cleanQuery)}',
-      'https://rogmovies.best/?s=${Uri.encodeComponent(cleanQuery)}',
-    ];
-
-    for (final sUrl in searchUrls) {
-      try {
-        final html = await fetchHtml(sUrl);
-        final doc = html_parser.parse(html);
-        final anchors = doc.querySelectorAll('article a[href], .poster-card a[href], .entry-title a[href], h2 a[href]');
-        for (final a in anchors) {
-          final href = a.attributes['href'] ?? '';
-          if (href.isNotEmpty && (href.contains('/download-') || href.contains('vegamovies.') || href.contains('rogmovies.'))) {
-            if (!href.contains('/category/') && !href.contains('/tag/') && !href.contains('/page/')) {
-              return href;
+    // 3. Search VegaMovies via TypeSense API (returns JSON, not JS-powered HTML)
+    final vegaBase = await DynamicUrls()
+        .getLatestBaseUrl('vegamovies', fallback: 'https://vegamovies.gallery');
+    try {
+      final tsUrl = '$vegaBase/ts-search.php?q=${Uri.encodeComponent(cleanQuery)}&page=1';
+      final tsRes = await http.get(Uri.parse(tsUrl), headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (tsRes.statusCode == 200 && tsRes.body.isNotEmpty) {
+        final data = jsonDecode(tsRes.body) as Map<String, dynamic>;
+        final hits = data['hits'] as List? ?? [];
+        for (final hit in hits) {
+          final doc = hit['document'] as Map<String, dynamic>?;
+          if (doc == null) continue;
+          final permalink = doc['permalink']?.toString() ?? '';
+          if (permalink.isNotEmpty) {
+            final fullUrl = permalink.startsWith('http')
+                ? permalink
+                : '$vegaBase$permalink';
+            // Validate it's a post, not a category/tag page
+            if (!fullUrl.contains('/category/') &&
+                !fullUrl.contains('/tag/') &&
+                !fullUrl.contains('/page/')) {
+              debugPrint('[SitePostExtractor] Found post via TypeSense: $fullUrl');
+              return fullUrl;
             }
           }
         }
-      } catch (e) {
-        debugPrint('[SitePostExtractor] Search error for $sUrl: $e');
       }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] TypeSense search error: $e');
+    }
+
+    // 4. Fallback: VegaMovies old ?s= search (may still work for some mirrors)
+    try {
+      final oldSearchUrl = '$vegaBase/?s=${Uri.encodeComponent(cleanQuery)}';
+      final html = await fetchHtml(oldSearchUrl);
+      final doc = html_parser.parse(html);
+      final anchors = doc.querySelectorAll(
+          'article a[href], .poster-card a[href], .entry-title a[href], h2 a[href]');
+      for (final a in anchors) {
+        final href = a.attributes['href'] ?? '';
+        if (href.isNotEmpty &&
+            (href.contains('/download-') ||
+                href.contains('vegamovies.') ||
+                href.contains('rogmovies.'))) {
+          if (!href.contains('/category/') &&
+              !href.contains('/tag/') &&
+              !href.contains('/page/')) {
+            return href;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] Old search fallback error: $e');
+    }
+
+    // 5. Fallback: RogMovies old ?s= search
+    try {
+      final rogSearchUrl =
+          'https://rogmovies.best/?s=${Uri.encodeComponent(cleanQuery)}';
+      final html = await fetchHtml(rogSearchUrl);
+      final doc = html_parser.parse(html);
+      final anchors = doc.querySelectorAll(
+          'article a[href], .poster-card a[href], .entry-title a[href], h2 a[href]');
+      for (final a in anchors) {
+        final href = a.attributes['href'] ?? '';
+        if (href.isNotEmpty &&
+            (href.contains('/download-') ||
+                href.contains('vegamovies.') ||
+                href.contains('rogmovies.'))) {
+          if (!href.contains('/category/') &&
+              !href.contains('/tag/') &&
+              !href.contains('/page/')) {
+            return href;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] RogMovies search error: $e');
     }
     return null;
   }
@@ -380,6 +441,9 @@ class SitePostExtractor {
 
   /// Extract episodes directly from a Nextdrive episode selector page.
   /// Strictly extracts the episode titles from the page itself (never TMDB).
+  /// Handles both old format and new format:
+  ///   Old: <h4>Episode 1</h4> <p><a href="vcloud...">...</a></p>
+  ///   New: <h4>-:Episode: 1:-</h4> <p><a href="vcloud...">...</a></p>
   Future<List<NextdriveEpisode>> extractNextdriveEpisodes(
       String nextdriveUrl) async {
     try {
@@ -389,7 +453,7 @@ class SitePostExtractor {
       final episodes = <NextdriveEpisode>[];
       final seenUrls = <String>{};
 
-      // Search all anchors pointing to vcloud.fit
+      // Search all anchors pointing to vcloud.fit or vegadrive
       final anchors = doc.querySelectorAll('a[href]');
       for (final a in anchors) {
         var href = a.attributes['href'] ?? '';
@@ -398,7 +462,17 @@ class SitePostExtractor {
           href = Uri.parse(nextdriveUrl).resolve(href).toString();
         } catch (_) {}
 
-        if (!href.contains('vcloud')) continue;
+        // Match vcloud or vegadrive links (skip non-download links)
+        final lhref = href.toLowerCase();
+        if (!lhref.contains('vcloud')) continue;
+        // Skip telegram, social media links
+        if (lhref.contains('telegram') ||
+            lhref.contains('t.me') ||
+            lhref.contains('facebook') ||
+            lhref.contains('twitter') ||
+            lhref.contains('.fans')) {
+          continue;
+        }
         if (seenUrls.contains(href)) continue;
         seenUrls.add(href);
 
@@ -451,17 +525,21 @@ class SitePostExtractor {
           }
         }
 
-        // Clean rawTitle
+        // Clean rawTitle — handle both old and new formats:
+        //   Old: "Episode 1", "Episode: 1"
+        //   New: "-:Episode: 1:-", "-:Episode: 3:-"
         var clean = rawTitle
             .replaceAll(RegExp(r'[-:~_*#]+'), ' ')
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
 
+        // Try range match: "Episode 1-5" or "Episode 1 to 5"
         final rangeMatch = RegExp(
-                r'episode[s]?\s*[:\s]\s*0*(\d+)\s*[\+\-–—to]+\s*0*(\d+)',
+                r'episode[s]?\s*[:\s]*0*(\d+)\s*[\+\-–—to]+\s*0*(\d+)',
                 caseSensitive: false)
             .firstMatch(clean);
-        final singleMatch = RegExp(r'episode[s]?\s*[:\s]\s*0*(\d+)',
+        // Try single match: "Episode 1" or "Episode: 1" or "Episode 1"
+        final singleMatch = RegExp(r'episode[s]?\s*[:\s]*0*(\d+)',
                 caseSensitive: false)
             .firstMatch(clean);
         final isComplete = clean.toLowerCase().contains('complete') ||
@@ -515,6 +593,7 @@ class SitePostExtractor {
         ));
       }
 
+      debugPrint('[SitePostExtractor] Extracted ${episodes.length} Nextdrive episodes from $nextdriveUrl');
       return episodes;
     } catch (e) {
       debugPrint('[SitePostExtractor] Error extracting Nextdrive episodes: $e');
