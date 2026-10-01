@@ -733,6 +733,28 @@ class BetterPlayerController {
     }
     if (currentVideoPlayerValue.initialized && !_hasCurrentDataSourceInitialized) {
       _hasCurrentDataSourceInitialized = true;
+      if (_betterPlayerAsmsAudioTracks == null || _betterPlayerAsmsAudioTracks!.isEmpty) {
+        if (currentVideoPlayerValue.audioTracks.isNotEmpty) {
+          _betterPlayerAsmsAudioTracks = currentVideoPlayerValue.audioTracks.map((m) {
+            return BetterPlayerAsmsAudioTrack(
+              id: m['index'] as int?,
+              label: m['label'] as String?,
+              language: m['language'] as String?,
+            );
+          }).toList();
+        }
+      }
+      if (_betterPlayerSubtitlesSourceList.isEmpty && currentVideoPlayerValue.textTracks.isNotEmpty) {
+        for (final m in currentVideoPlayerValue.textTracks) {
+          _betterPlayerSubtitlesSourceList.add(
+            BetterPlayerSubtitlesSource(
+              type: BetterPlayerSubtitlesSourceType.network,
+              name: m['label'] as String? ?? m['language'] as String? ?? 'Subtitle',
+              selectedByDefault: m['selected'] as bool? ?? false,
+            ),
+          );
+        }
+      }
       _postEvent(BetterPlayerEvent(BetterPlayerEventType.initialized));
     }
     if (currentVideoPlayerValue.isPip) {
@@ -1097,6 +1119,46 @@ class BetterPlayerController {
         );
       case VideoEventType.bufferingEnd:
         _postEvent(BetterPlayerEvent(BetterPlayerEventType.bufferingEnd));
+      case VideoEventType.tracksChanged:
+        if (event.audioTracks != null && event.audioTracks!.isNotEmpty) {
+          _betterPlayerAsmsAudioTracks = event.audioTracks!.map((m) {
+            return BetterPlayerAsmsAudioTrack(
+              id: m['index'] as int?,
+              label: m['label'] as String?,
+              language: m['language'] as String?,
+            );
+          }).toList();
+        }
+        if (event.textTracks != null && event.textTracks!.isNotEmpty) {
+          _betterPlayerSubtitlesSourceList.clear();
+          for (final m in event.textTracks!) {
+            _betterPlayerSubtitlesSourceList.add(
+              BetterPlayerSubtitlesSource(
+                type: BetterPlayerSubtitlesSourceType.network,
+                name: m['label'] as String? ?? m['language'] as String? ?? 'Subtitle',
+                selectedByDefault: m['selected'] as bool? ?? false,
+              ),
+            );
+          }
+        }
+        _postEvent(
+          BetterPlayerEvent(
+            BetterPlayerEventType.tracksChanged,
+            parameters: <String, dynamic>{
+              'audioTracks': event.audioTracks,
+              'textTracks': event.textTracks,
+            },
+          ),
+        );
+      case VideoEventType.cues:
+        _postEvent(
+          BetterPlayerEvent(
+            BetterPlayerEventType.cues,
+            parameters: <String, dynamic>{
+              'cues': event.cues,
+            },
+          ),
+        );
       default:
         break;
     }
@@ -1119,7 +1181,7 @@ class BetterPlayerController {
     }
   }
 
-  ///Set [audioTrack] in player. Works only for HLS or DASH streams.
+  ///Set [audioTrack] in player.
   void setAudioTrack(BetterPlayerAsmsAudioTrack audioTrack) {
     if (videoPlayerController == null) {
       throw StateError('The data source has not been initialized');
@@ -1132,6 +1194,16 @@ class BetterPlayerController {
 
     _betterPlayerAsmsAudioTrack = audioTrack;
     videoPlayerController!.setAudioTrack(audioTrack.label ?? audioTrack.language, audioTrack.id);
+  }
+
+  ///Set [textTrack] / subtitle in native player (for MKV, MP4, HLS).
+  ///Pass [index] < 0 to disable subtitles ("Off").
+  void setTextTrack(String? name, int? index) {
+    if (videoPlayerController == null) {
+      throw StateError('The data source has not been initialized');
+    }
+
+    videoPlayerController!.setTextTrack(name, index);
   }
 
   ///Enable or disable audio mixing with other sound within device.

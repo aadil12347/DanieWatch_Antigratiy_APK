@@ -33,6 +33,9 @@ class VideoPlayerValue {
     this.speed = 1.0,
     this.errorDescription,
     this.isPip = false,
+    this.audioTracks = const <Map<String, dynamic>>[],
+    this.textTracks = const <Map<String, dynamic>>[],
+    this.cues = const <String>[],
   });
 
   /// Returns an instance with a `null` [Duration].
@@ -86,6 +89,15 @@ class VideoPlayerValue {
   ///Is in Picture in Picture Mode
   final bool isPip;
 
+  /// Native audio tracks
+  final List<Map<String, dynamic>> audioTracks;
+
+  /// Native text tracks
+  final List<Map<String, dynamic>> textTracks;
+
+  /// Active subtitle cues
+  final List<String> cues;
+
   /// Indicates whether or not the video has been loaded and is ready to play.
   bool get initialized => duration != null;
 
@@ -121,6 +133,9 @@ class VideoPlayerValue {
     String? errorDescription,
     double? speed,
     bool? isPip,
+    List<Map<String, dynamic>>? audioTracks,
+    List<Map<String, dynamic>>? textTracks,
+    List<String>? cues,
   }) => VideoPlayerValue(
     duration: duration ?? this.duration,
     size: size ?? this.size,
@@ -134,6 +149,9 @@ class VideoPlayerValue {
     speed: speed ?? this.speed,
     errorDescription: errorDescription ?? this.errorDescription,
     isPip: isPip ?? this.isPip,
+    audioTracks: audioTracks ?? this.audioTracks,
+    textTracks: textTracks ?? this.textTracks,
+    cues: cues ?? this.cues,
   );
 
   @override
@@ -206,7 +224,12 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
       videoEventStreamController.add(event);
       switch (event.eventType) {
         case VideoEventType.initialized:
-          value = value.copyWith(duration: event.duration, size: event.size);
+          value = value.copyWith(
+            duration: event.duration,
+            size: event.size,
+            audioTracks: event.audioTracks,
+            textTracks: event.textTracks,
+          );
           _initializingCompleter.complete(null);
           _applyPlayPause();
         case VideoEventType.completed:
@@ -231,6 +254,15 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
           value = value.copyWith(isPip: true);
         case VideoEventType.pipStop:
           value = value.copyWith(isPip: false);
+        case VideoEventType.tracksChanged:
+          value = value.copyWith(
+            audioTracks: event.audioTracks,
+            textTracks: event.textTracks,
+          );
+        case VideoEventType.cues:
+          value = value.copyWith(
+            cues: event.cues,
+          );
         case VideoEventType.unknown:
           break;
       }
@@ -584,6 +616,16 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   void setAudioTrack(String? name, int? index) {
     _videoPlayerPlatform.setAudioTrack(_textureId, name, index);
   }
+
+  void setTextTrack(String? name, int? index) {
+    _videoPlayerPlatform.setTextTrack(_textureId, name, index);
+  }
+
+  Future<List<Map<String, dynamic>>?> getAudioTracks() =>
+      _videoPlayerPlatform.getAudioTracks(_textureId);
+
+  Future<List<Map<String, dynamic>>?> getTextTracks() =>
+      _videoPlayerPlatform.getTextTracks(_textureId);
 
   void setMixWithOthers(bool mixWithOthers) {
     _videoPlayerPlatform.setMixWithOthers(_textureId, mixWithOthers);

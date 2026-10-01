@@ -99,6 +99,9 @@ class PlayerController extends ChangeNotifier {
   BetterPlayerSubtitlesSource? _currentSubtitleSource;
   BetterPlayerSubtitlesSource? get currentSubtitleSource => _currentSubtitleSource;
 
+  List<String> _currentCues = [];
+  List<String> get currentCues => _currentCues;
+
   // ─── Content Info ──────────────────────────────────────────────────────
   String _title = '';
   String get title => _title;
@@ -404,6 +407,17 @@ class PlayerController extends ChangeNotifier {
         _updateTracksAndSubtitles();
         notifyListeners();
         break;
+      case BetterPlayerEventType.tracksChanged:
+        _updateTracksAndSubtitles();
+        notifyListeners();
+        break;
+      case BetterPlayerEventType.cues:
+        final cues = event.parameters?['cues'] as List<dynamic>?;
+        if (cues != null) {
+          _currentCues = cues.map((e) => e.toString()).toList();
+          notifyListeners();
+        }
+        break;
       case BetterPlayerEventType.finished:
         _state = PlaybackState.completed;
         _isPlaying = false;
@@ -422,32 +436,294 @@ class PlayerController extends ChangeNotifier {
 
   void _updateTracksAndSubtitles() {
     if (_betterPlayerController == null) return;
+    final vController = _betterPlayerController!.videoPlayerController;
+    final nativeAudio = vController?.value.audioTracks ?? [];
+    final nativeText = vController?.value.textTracks ?? [];
 
-    // 1. Audio tracks: ASMS tracks or fallback to languages
-    final asmsAudios = _betterPlayerController!.betterPlayerAsmsAudioTracks;
-    if (asmsAudios != null && asmsAudios.isNotEmpty) {
-      _audioTracks = asmsAudios;
-    } else {
-      final lastLangs = VcloudExtractorService().lastLanguages;
-      if (lastLangs.isNotEmpty) {
-        _audioTracks = [
-          for (int i = 0; i < lastLangs.length; i++)
-            BetterPlayerAsmsAudioTrack(
-              id: i,
-              label: lastLangs[i],
-              language: lastLangs[i],
+    // 1. Audio tracks
+    if (nativeAudio.isNotEmpty) {
+      _audioTracks = [
+        for (final a in nativeAudio)
+          BetterPlayerAsmsAudioTrack(
+            id: a['index'] as int?,
+            label: _cleanLanguageName(
+              a['language'] as String?,
+              a['label'] as String?,
+              channels: a['channels'] as int?,
             ),
+            language: a['language'] as String?,
+          ),
+      ];
+
+      final selectedMap = nativeAudio.firstWhere(
+        (a) => a['selected'] == true,
+        orElse: () => nativeAudio.first,
+      );
+      final selId = selectedMap['index'] as int?;
+      _currentAudioTrack = _audioTracks.firstWhere(
+        (t) => t.id == selId,
+        orElse: () => _audioTracks.first,
+      );
+    } else {
+      final asmsAudios = _betterPlayerController!.betterPlayerAsmsAudioTracks;
+      if (asmsAudios != null && asmsAudios.isNotEmpty) {
+        _audioTracks = asmsAudios;
+        _currentAudioTrack = _betterPlayerController!.betterPlayerAsmsAudioTrack ?? _audioTracks.first;
+      } else {
+        final lastLangs = VcloudExtractorService().lastLanguages;
+        if (lastLangs.isNotEmpty) {
+          _audioTracks = [
+            for (int i = 0; i < lastLangs.length; i++)
+              BetterPlayerAsmsAudioTrack(
+                id: i,
+                label: lastLangs[i],
+                language: lastLangs[i],
+              ),
+          ];
+          _currentAudioTrack = _audioTracks.first;
+        } else {
+          // Smart fallback: check source url / title
+          final urlOrTitle = '${_currentSource?.url ?? ''} $_title';
+          final List<String> extractedLangs = [];
+          if (urlOrTitle.toLowerCase().contains('hindi')) extractedLangs.add('Hindi (5.1)');
+          if (urlOrTitle.toLowerCase().contains('english')) extractedLangs.add('English (5.1)');
+          if (urlOrTitle.toLowerCase().contains('tamil')) extractedLangs.add('Tamil');
+          if (urlOrTitle.toLowerCase().contains('telugu')) extractedLangs.add('Telugu');
+
+          if (extractedLangs.isNotEmpty) {
+            _audioTracks = [
+              for (int i = 0; i < extractedLangs.length; i++)
+                BetterPlayerAsmsAudioTrack(
+                  id: i,
+                  label: extractedLangs[i],
+                  language: extractedLangs[i].toLowerCase().contains('hindi') ? 'hin' : 'eng',
+                ),
+            ];
+            _currentAudioTrack ??= _audioTracks.first;
+          }
+        }
+      }
+    }
+
+    // 2. Subtitles
+    if (nativeText.isNotEmpty) {
+      _subtitleSources = [
+        BetterPlayerSubtitlesSource(
+          type: BetterPlayerSubtitlesSourceType.none,
+          name: 'Off',
+        ),
+        for (final t in nativeText)
+          BetterPlayerSubtitlesSource(
+            type: BetterPlayerSubtitlesSourceType.network,
+            name: _cleanSubtitleName(t['language'] as String?, t['label'] as String?),
+            selectedByDefault: t['selected'] as bool? ?? false,
+          ),
+      ];
+
+      final selectedTextMap = nativeText.firstWhere(
+        (t) => t['selected'] == true,
+        orElse: () => <String, dynamic>{},
+      );
+      if (selectedTextMap.isNotEmpty) {
+        final selLabel = _cleanSubtitleName(selectedTextMap['language'] as String?, selectedTextMap['label'] as String?);
+        _currentSubtitleSource = _subtitleSources.firstWhere(
+          (s) => s.name == selLabel,
+          orElse: () => _subtitleSources.first,
+        );
+      }
+    } else {
+      final subs = _betterPlayerController!.betterPlayerSubtitlesSourceList;
+      if (subs.isNotEmpty) {
+        _subtitleSources = subs;
+        _currentSubtitleSource = _betterPlayerController!.betterPlayerSubtitlesSource;
+      } else if (_currentSource?.url.toLowerCase().contains('.mkv') == true) {
+        _subtitleSources = [
+          BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none, name: 'Off'),
+          BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.network, name: 'English'),
         ];
       }
     }
-    _currentAudioTrack = _betterPlayerController!.betterPlayerAsmsAudioTrack;
+  }
 
-    // 2. Subtitles: ASMS subtitle source list
-    final subs = _betterPlayerController!.betterPlayerSubtitlesSourceList;
-    if (subs.isNotEmpty) {
-      _subtitleSources = subs;
+  String _cleanLanguageName(String? code, String? label, {int? channels}) {
+    final c = (code ?? '').toLowerCase().trim();
+    final l = (label ?? '').trim();
+    final isWatermark = l.toLowerCase().contains('vegamovies') ||
+        l.toLowerCase().contains('hubcloud') ||
+        l.toLowerCase().contains('1vegamovies') ||
+        l.toLowerCase().contains('http') ||
+        l.toLowerCase().contains('.tw') ||
+        l.toLowerCase().contains('.com');
+
+    String langName = '';
+    switch (c) {
+      case 'hin':
+      case 'hi':
+        langName = 'Hindi';
+        break;
+      case 'eng':
+      case 'en':
+        langName = 'English';
+        break;
+      case 'tam':
+      case 'ta':
+        langName = 'Tamil';
+        break;
+      case 'tel':
+      case 'te':
+        langName = 'Telugu';
+        break;
+      case 'ben':
+      case 'bn':
+        langName = 'Bengali';
+        break;
+      case 'mal':
+      case 'ml':
+        langName = 'Malayalam';
+        break;
+      case 'kan':
+      case 'kn':
+        langName = 'Kannada';
+        break;
+      case 'mar':
+      case 'mr':
+        langName = 'Marathi';
+        break;
+      case 'guj':
+      case 'gu':
+        langName = 'Gujarati';
+        break;
+      case 'pan':
+      case 'pa':
+        langName = 'Punjabi';
+        break;
+      case 'spa':
+      case 'es':
+        langName = 'Spanish';
+        break;
+      case 'fre':
+      case 'fra':
+      case 'fr':
+        langName = 'French';
+        break;
+      case 'ger':
+      case 'deu':
+      case 'de':
+        langName = 'German';
+        break;
+      case 'ita':
+      case 'it':
+        langName = 'Italian';
+        break;
+      case 'por':
+      case 'pt':
+        langName = 'Portuguese';
+        break;
+      case 'rus':
+      case 'ru':
+        langName = 'Russian';
+        break;
+      case 'jpn':
+      case 'ja':
+        langName = 'Japanese';
+        break;
+      case 'kor':
+      case 'ko':
+        langName = 'Korean';
+        break;
+      case 'chi':
+      case 'zho':
+      case 'zh':
+        langName = 'Chinese';
+        break;
+      case 'ara':
+      case 'ar':
+        langName = 'Arabic';
+        break;
+      case 'tur':
+      case 'tr':
+        langName = 'Turkish';
+        break;
+      default:
+        if (!isWatermark && l.isNotEmpty) {
+          langName = l;
+        } else if (c.isNotEmpty) {
+          langName = c.toUpperCase();
+        } else {
+          langName = 'Audio Track';
+        }
+        break;
     }
-    _currentSubtitleSource = _betterPlayerController!.betterPlayerSubtitlesSource;
+
+    if (channels != null && channels > 0) {
+      if (channels == 6) {
+        langName = '$langName (5.1)';
+      } else if (channels == 8) {
+        langName = '$langName (7.1)';
+      } else if (channels == 2) {
+        langName = '$langName (Stereo)';
+      }
+    }
+
+    return langName;
+  }
+
+  String _cleanSubtitleName(String? code, String? label) {
+    final c = (code ?? '').toLowerCase().trim();
+    final l = (label ?? '').trim();
+    final isWatermark = l.toLowerCase().contains('vegamovies') ||
+        l.toLowerCase().contains('hubcloud') ||
+        l.toLowerCase().contains('1vegamovies') ||
+        l.toLowerCase().contains('.tw') ||
+        l.toLowerCase().contains('.com');
+
+    if (!isWatermark && l.isNotEmpty && !l.startsWith('http')) {
+      return l;
+    }
+
+    switch (c) {
+      case 'eng':
+      case 'en':
+        return 'English';
+      case 'hin':
+      case 'hi':
+        return 'Hindi';
+      case 'spa':
+      case 'es':
+        return 'Spanish';
+      case 'fre':
+      case 'fra':
+      case 'fr':
+        return 'French';
+      case 'ger':
+      case 'deu':
+      case 'de':
+        return 'German';
+      case 'ita':
+      case 'it':
+        return 'Italian';
+      case 'por':
+      case 'pt':
+        return 'Portuguese';
+      case 'rus':
+      case 'ru':
+        return 'Russian';
+      case 'jpn':
+      case 'ja':
+        return 'Japanese';
+      case 'kor':
+      case 'ko':
+        return 'Korean';
+      case 'chi':
+      case 'zho':
+      case 'zh':
+        return 'Chinese';
+      case 'ara':
+      case 'ar':
+        return 'Arabic';
+      default:
+        return c.isNotEmpty ? c.toUpperCase() : 'Subtitle Track';
+    }
   }
 
   void _startPositionTracking() {
@@ -587,22 +863,18 @@ class PlayerController extends ChangeNotifier {
     if (_betterPlayerController == null) return;
     _currentAudioTrack = track;
     try {
-      final asmsTracks = _betterPlayerController!.betterPlayerAsmsAudioTracks ?? [];
-      if (asmsTracks.isNotEmpty) {
-        final trackToSet = BetterPlayerAsmsAudioTrack(
-          id: track.id,
-          label: track.label,
-          language: track.language ?? track.label ?? 'und',
-          url: track.url,
-        );
-        _betterPlayerController!.setAudioTrack(trackToSet);
-      } else {
-        // Fallback progressive audio track selection
-        if (track.id != null) {
-          _betterPlayerController!.videoPlayerController?.setAudioTrack(track.label, track.id);
-        }
-      }
-      debugPrint('[PlayerController] Switched audio to: ${track.label ?? track.language}');
+      final trackToSet = BetterPlayerAsmsAudioTrack(
+        id: track.id,
+        label: track.label,
+        language: track.language ?? track.label ?? 'und',
+        url: track.url,
+      );
+      _betterPlayerController!.setAudioTrack(trackToSet);
+      _betterPlayerController!.videoPlayerController?.setAudioTrack(
+        track.label ?? track.language,
+        track.id,
+      );
+      debugPrint('[PlayerController] Switched audio to: ${track.label ?? track.language} (id: ${track.id})');
     } catch (e) {
       debugPrint('[PlayerController] Error switching audio: $e');
     }
@@ -614,21 +886,41 @@ class PlayerController extends ChangeNotifier {
   /// Set subtitle source from the available subtitle sources list.
   void setSubtitleSource(BetterPlayerSubtitlesSource source) {
     if (_betterPlayerController == null) return;
-    _betterPlayerController!.setupSubtitleSource(source);
+    if (source.type == BetterPlayerSubtitlesSourceType.none || source.name == 'Off') {
+      disableSubtitles();
+      return;
+    }
+
     _currentSubtitleSource = source;
-    debugPrint('[PlayerController] Switched subtitle to: ${source.name}');
+    final nonNone = _subtitleSources
+        .where((s) => s.type != BetterPlayerSubtitlesSourceType.none && s.name != 'Off')
+        .toList();
+    final idx = nonNone.indexOf(source);
+
+    // Call native text track selection on ExoPlayer
+    _betterPlayerController!.setTextTrack(source.name, idx >= 0 ? idx : 0);
+
+    // Also pass to BetterPlayer in case it has external parsed subtitles
+    if (source.urls != null && source.urls!.isNotEmpty) {
+      _betterPlayerController!.setupSubtitleSource(source);
+    }
+    debugPrint('[PlayerController] Switched subtitle to: ${source.name} (index: $idx)');
     _safeNotify();
   }
 
   /// Disable subtitles.
   void disableSubtitles() {
     if (_betterPlayerController == null) return;
+    // Tell native ExoPlayer to disable subtitles
+    _betterPlayerController!.setTextTrack(null, -1);
+
     final noneSource = _subtitleSources.firstWhere(
       (s) => s.type == BetterPlayerSubtitlesSourceType.none,
-      orElse: () => BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none),
+      orElse: () => BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none, name: 'Off'),
     );
     _betterPlayerController!.setupSubtitleSource(noneSource);
-    _currentSubtitleSource = noneSource;
+    _currentSubtitleSource = null;
+    _currentCues = [];
     debugPrint('[PlayerController] Disabled subtitles');
     _safeNotify();
   }

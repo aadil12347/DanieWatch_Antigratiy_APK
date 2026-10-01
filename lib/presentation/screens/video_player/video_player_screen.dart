@@ -246,7 +246,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   ),
                 ),
 
-              // 2. Gesture Controls (VLC style) + Player Overlay
+              // 2. Subtitle Cue Overlay (native decoded cues)
+              if (isReady)
+                _buildSubtitleOverlay(),
+
+              // 3. Gesture Controls (VLC style) + Player Overlay
               if (isReady)
                 Positioned.fill(
                   child: PlayerGestures(
@@ -264,7 +268,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   ),
                 ),
 
-              // 3. Cinematic Landscape Loading Screen
+              // 4. Cinematic Landscape Loading Screen
               if (!isReady)
                 _buildCinematicLoadingScreen(),
             ],
@@ -521,5 +525,66 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _showSettings() {
     _showSpeedSelector();
+  }
+
+  Widget _buildSubtitleOverlay() {
+    if (_controller.currentSubtitleSource == null ||
+        _controller.currentSubtitleSource?.type == BetterPlayerSubtitlesSourceType.none ||
+        _controller.currentCues.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final bottomPadding = _controller.controlsVisible ? 85.0 : 28.0;
+
+    return IgnorePointer(
+      child: AnimatedPositioned(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        left: 40,
+        right: 40,
+        bottom: bottomPadding,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.12),
+                width: 0.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _controller.currentCues.map((cue) {
+                return Text(
+                  cue,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black,
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

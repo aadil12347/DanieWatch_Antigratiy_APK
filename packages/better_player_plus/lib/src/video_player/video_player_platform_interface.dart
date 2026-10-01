@@ -153,6 +153,18 @@ abstract class VideoPlayerPlatform {
     throw UnimplementedError('setAudio() has not been implemented.');
   }
 
+  Future<void> setTextTrack(int? textureId, String? name, int? index) {
+    throw UnimplementedError('setTextTrack() has not been implemented.');
+  }
+
+  Future<List<Map<String, dynamic>>?> getAudioTracks(int? textureId) {
+    throw UnimplementedError('getAudioTracks() has not been implemented.');
+  }
+
+  Future<List<Map<String, dynamic>>?> getTextTracks(int? textureId) {
+    throw UnimplementedError('getTextTracks() has not been implemented.');
+  }
+
   Future<void> setMixWithOthers(int? textureId, bool mixWithOthers) {
     throw UnimplementedError('setMixWithOthers() has not been implemented.');
   }
@@ -373,6 +385,9 @@ class VideoEvent {
     this.size,
     this.buffered,
     this.position,
+    this.audioTracks,
+    this.textTracks,
+    this.cues,
   });
 
   /// The type of the event.
@@ -400,6 +415,15 @@ class VideoEvent {
 
   ///Seek position
   final Duration? position;
+
+  /// Discovered native audio tracks
+  final List<Map<String, dynamic>>? audioTracks;
+
+  /// Discovered native subtitle / text tracks
+  final List<Map<String, dynamic>>? textTracks;
+
+  /// Active subtitle cues from player
+  final List<String>? cues;
 
   @override
   bool operator ==(Object other) =>
@@ -450,6 +474,12 @@ enum VideoEventType {
 
   /// Picture in picture mode has been dismissed
   pipStop,
+
+  /// The audio or text tracks have changed
+  tracksChanged,
+
+  /// Subtitle text cues emitted from player
+  cues,
 
   /// An unknown event has been received.
   unknown,

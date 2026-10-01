@@ -177,6 +177,30 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
   );
 
   @override
+  Future<void> setTextTrack(int? textureId, String? name, int? index) => _channel.invokeMethod<void>(
+    'setTextTrack',
+    <String, dynamic>{'textureId': textureId, 'name': name, 'index': index},
+  );
+
+  @override
+  Future<List<Map<String, dynamic>>?> getAudioTracks(int? textureId) async {
+    final result = await _channel.invokeListMethod<dynamic>(
+      'getAudioTracks',
+      <String, dynamic>{'textureId': textureId},
+    );
+    return result?.map((m) => Map<String, dynamic>.from(m as Map)).toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>?> getTextTracks(int? textureId) async {
+    final result = await _channel.invokeListMethod<dynamic>(
+      'getTextTracks',
+      <String, dynamic>{'textureId': textureId},
+    );
+    return result?.map((m) => Map<String, dynamic>.from(m as Map)).toList();
+  }
+
+  @override
   Future<void> setMixWithOthers(int? textureId, bool mixWithOthers) => _channel.invokeMethod<void>(
     'setMixWithOthers',
     <String, dynamic>{'textureId': textureId, 'mixWithOthers': mixWithOthers},
@@ -234,11 +258,28 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
 
             final Size size = Size(width, height);
 
+            List<Map<String, dynamic>>? audioTracks;
+            if (map['audioTracks'] is List) {
+              audioTracks = (map['audioTracks'] as List)
+                  .whereType<Map>()
+                  .map((m) => Map<String, dynamic>.from(m))
+                  .toList();
+            }
+            List<Map<String, dynamic>>? textTracks;
+            if (map['textTracks'] is List) {
+              textTracks = (map['textTracks'] as List)
+                  .whereType<Map>()
+                  .map((m) => Map<String, dynamic>.from(m))
+                  .toList();
+            }
+
             return VideoEvent(
               eventType: VideoEventType.initialized,
               key: key,
               duration: Duration(milliseconds: map['duration'] as int),
               size: size,
+              audioTracks: audioTracks,
+              textTracks: textTracks,
             );
           case 'completed':
             return VideoEvent(eventType: VideoEventType.completed, key: key);
@@ -273,6 +314,38 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
 
           case 'pipStop':
             return VideoEvent(eventType: VideoEventType.pipStop, key: key);
+
+          case 'tracksChanged':
+            List<Map<String, dynamic>>? audioTracks;
+            if (map['audioTracks'] is List) {
+              audioTracks = (map['audioTracks'] as List)
+                  .whereType<Map>()
+                  .map((m) => Map<String, dynamic>.from(m))
+                  .toList();
+            }
+            List<Map<String, dynamic>>? textTracks;
+            if (map['textTracks'] is List) {
+              textTracks = (map['textTracks'] as List)
+                  .whereType<Map>()
+                  .map((m) => Map<String, dynamic>.from(m))
+                  .toList();
+            }
+            return VideoEvent(
+              eventType: VideoEventType.tracksChanged,
+              key: key,
+              audioTracks: audioTracks,
+              textTracks: textTracks,
+            );
+
+          case 'cues':
+            final List<String> cues = (map['cues'] as List? ?? [])
+                .map((e) => e.toString())
+                .toList();
+            return VideoEvent(
+              eventType: VideoEventType.cues,
+              key: key,
+              cues: cues,
+            );
 
           default:
             return VideoEvent(eventType: VideoEventType.unknown, key: key);
