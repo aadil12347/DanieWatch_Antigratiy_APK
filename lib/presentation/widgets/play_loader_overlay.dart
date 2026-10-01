@@ -38,6 +38,60 @@ class PlayLoaderOverlay<T> extends StatefulWidget {
     required this.onError,
   });
 
+  static OverlayEntry? _currentOverlay;
+
+  static void show(BuildContext context, {String message = 'Loading...'}) {
+    hide();
+    final overlayState = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlayState == null) return;
+    _currentOverlay = OverlayEntry(
+      builder: (ctx) => Material(
+        color: Colors.black54,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16161E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white12),
+              boxShadow: const [
+                BoxShadow(color: Colors.black54, blurRadius: 16, offset: Offset(0, 4)),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    overlayState.insert(_currentOverlay!);
+  }
+
+  static void hide() {
+    _currentOverlay?.remove();
+    _currentOverlay = null;
+  }
+
   @override
   State<PlayLoaderOverlay<T>> createState() => _PlayLoaderOverlayState<T>();
 }

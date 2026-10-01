@@ -122,13 +122,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
             right: 6,
             child: _SaveButton(item: item),
           ),
-          // Season badge: top-right overlay for TV series
-          if (item.seasonDetail != null)
-            Positioned(
-              top: 6,
-              right: 6,
-              child: _SeasonBadge(text: item.seasonDetail!),
-            ),
         ],
       ),
     );
@@ -194,6 +187,13 @@ class _MovieCardState extends ConsumerState<MovieCard>
                           child: _LanguageBadge(text: item.displayLanguage),
                         ),
 
+                      // Season & Episode Added Badge (bottom-left)
+                      if (item.seasonDetail != null && item.seasonDetail!.isNotEmpty)
+                        Positioned(
+                          bottom: 6,
+                          left: 6,
+                          child: _SeasonBadge(text: item.seasonDetail!),
+                        ),
                     ],
                   ),
                 ),
@@ -253,38 +253,6 @@ class _MovieCardState extends ConsumerState<MovieCard>
         ),
         const SizedBox(height: 6),
       ],
-    );
-  }
-
-  Widget _titleOverlayText(String title) {
-    return Text(
-      title,
-      textAlign: TextAlign.center,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: GoogleFonts.lora(
-        color: Colors.white,
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        height: 1.1,
-        letterSpacing: -0.5,
-        shadows: [
-          Shadow(color: Colors.black87, blurRadius: 12, offset: Offset(0, 4)),
-        ],
-      ),
-    );
-  }
-
-  Widget _placeholder({bool error = false}) {
-    return Container(
-      color: AppColors.surfaceElevated,
-      child: Center(
-        child: Icon(
-          error ? Icons.broken_image_outlined : Icons.movie_outlined,
-          color: AppColors.textMuted,
-          size: 24,
-        ),
-      ),
     );
   }
 }
@@ -384,15 +352,16 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
   }
 }
 
-class _LanguageBadge extends StatelessWidget {
+class LanguageBadge extends StatelessWidget {
   final String text;
-  const _LanguageBadge({required this.text});
+  const LanguageBadge({super.key, required this.text});
 
   @override
   Widget build(BuildContext context) {
     if (text.isEmpty) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      constraints: const BoxConstraints(maxWidth: 85),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -411,11 +380,13 @@ class _LanguageBadge extends StatelessWidget {
       ),
       child: Text(
         text.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 9,
+          fontSize: 8.5,
           fontWeight: FontWeight.w900,
-          letterSpacing: 0.8,
+          letterSpacing: 0.4,
           height: 1.2,
         ),
       ),
@@ -423,44 +394,50 @@ class _LanguageBadge extends StatelessWidget {
   }
 }
 
-class _SeasonBadge extends StatelessWidget {
+class SeasonBadge extends StatelessWidget {
   final String text;
-  const _SeasonBadge({required this.text});
+  const SeasonBadge({super.key, required this.text});
 
   @override
   Widget build(BuildContext context) {
     if (text.isEmpty) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      constraints: const BoxConstraints(maxWidth: 110),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           colors: [
-            const Color(0xFFFF6D00),
-            const Color(0xFFFF6D00).withValues(alpha: 0.85),
+            Color(0xFFFF6D00),
+            Color(0xFFE65100),
           ],
         ),
         borderRadius: BorderRadius.circular(4),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0xFFFF6D00).withValues(alpha: 0.4),
+            color: Color(0x66FF6D00),
             blurRadius: 6,
-            offset: const Offset(0, 2),
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Text(
-        text.toUpperCase(),
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 9,
+          fontSize: 8.5,
           fontWeight: FontWeight.w900,
-          letterSpacing: 0.8,
+          letterSpacing: 0.4,
           height: 1.2,
         ),
       ),
     );
   }
 }
+
+typedef _LanguageBadge = LanguageBadge;
+typedef _SeasonBadge = SeasonBadge;
 
 /// Poster image with automatic TMDB fallback for unsupported formats (.avif etc).
 /// Poster image with automatic TMDB/OMDb fallback and caching.

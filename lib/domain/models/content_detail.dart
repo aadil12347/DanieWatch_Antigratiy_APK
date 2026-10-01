@@ -60,6 +60,8 @@ class ContentDetail {
 
   // Admin flag — when true, all data comes from GitHub, not TMDB
   final bool isAdmin;
+  final String? postUrl;
+  final List<int>? siteSeasonNumbers;
 
   ContentDetail({
     required this.id,
@@ -96,6 +98,8 @@ class ContentDetail {
     this.similarItems,
     this.result,
     this.language,
+    this.postUrl,
+    this.siteSeasonNumbers,
     this.isAdmin = false,
   });
 
@@ -134,6 +138,9 @@ class ContentDetail {
     List<SimilarItem>? similarItems,
     String? result,
     String? language,
+    String? postUrl,
+    List<int>? siteSeasonNumbers,
+    bool? isAdmin,
   }) {
     return ContentDetail(
       id: id ?? this.id,
@@ -170,6 +177,9 @@ class ContentDetail {
       similarItems: similarItems ?? this.similarItems,
       result: result ?? this.result,
       language: language ?? this.language,
+      postUrl: postUrl ?? this.postUrl,
+      siteSeasonNumbers: siteSeasonNumbers ?? this.siteSeasonNumbers,
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 
@@ -346,6 +356,9 @@ class ContentDetail {
   String? get displayLogoUrl => tmdbLogoUrl ?? logoUrl;
 
   List<int> get seasonNumbers {
+    if (siteSeasonNumbers != null && siteSeasonNumbers!.isNotEmpty) {
+      return siteSeasonNumbers!;
+    }
     // Check content JSON for season_X keys
     final Set<int> seasons = {};
 

@@ -1,11 +1,10 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
-import 'package:http/http.dart' as http;
 import '../../domain/models/content_detail.dart';
 import '../../domain/models/entry.dart';
-import '../../core/config/env.dart';
 import '../clients/tmdb_client.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
+import '../../services/extraction/site_post_extractor.dart';
 
 class ContentRepository {
   ContentRepository._();
@@ -265,22 +264,104 @@ class ContentRepository {
   Future<ContentDetail?> fetchContentDetail(int tmdbId,
       {String mediaType = 'movie'}) async {
     try {
-      final isTv = mediaType.toLowerCase() == 'tv' ||
-          mediaType.toLowerCase() == 'series' ||
-          mediaType.toLowerCase() == 'tv series';
+      int effectiveTmdbId = tmdbId;
+      String effectiveMediaType = mediaType;
+
+      // 1. Determine postUrl (from scraper service, itemMap, or resolved cache)
+      String? postUrl = MovieSiteScraperService.instance.getPostUrl(tmdbId);
+      final scraped = MovieSiteScraperService.instance.itemMap[tmdbId.toString()];
+      postUrl ??= scraped?.postUrl;
+
+      final cachedTmdbId = MovieSiteScraperService.instance.getResolvedTmdbId(tmdbId);
+      if (cachedTmdbId != tmdbId && cachedTmdbId > 0 && cachedTmdbId < 1000000) {
+        effectiveTmdbId = cachedTmdbId;
+        effectiveMediaType = MovieSiteScraperService.instance.getResolvedMediaType(tmdbId, mediaType);
+      }
+
+      // If effectiveTmdbId is a fastId (>= 1,000,000) and no postUrl, attempt search
+      if ((postUrl == null || postUrl.isEmpty) && scraped != null) {
+        postUrl = await SitePostExtractor.instance.findPostUrl(
+          title: scraped.cleanTitle,
+          tmdbId: tmdbId,
+          year: scraped.releaseYear,
+        );
+      }
+
+      // 2. If we have a postUrl and effectiveTmdbId is still a fastId, extract IMDb ID & query TMDB /find
+      if (postUrl != null && postUrl.isNotEmpty && (effectiveTmdbId >= 1000000 || cachedTmdbId == tmdbId)) {
+        String? imdbId = await MovieSiteScraperService.instance.fetchImdbIdFromPostUrl(postUrl);
+        if (imdbId != null && imdbId.isNotEmpty) {
+          final findData = await TmdbClient.instance.findByImdbId(imdbId);
+          if (findData != null) {
+            final realId = findData['id'] as int?;
+            final realType = findData['media_type']?.toString();
+            if (realId != null) {
+              effectiveTmdbId = realId;
+              if (realType == 'tv' || realType == 'movie') {
+                effectiveMediaType = realType!;
+              }
+              MovieSiteScraperService.instance.registerResolvedTmdb(tmdbId, realId, effectiveMediaType);
+              MovieSiteScraperService.instance.registerResolvedTmdb(realId, realId, effectiveMediaType);
+            }
+          }
+        }
+      }
+
+      // 3. Fallback title search on TMDB if still >= 1,000,000
+      if (effectiveTmdbId >= 1000000 && scraped != null) {
+        final pureTitle = MovieSiteScraperService.extractPureTitle(scraped.cleanTitle);
+        final searchResults = await TmdbClient.instance.searchMulti(
+          pureTitle.isNotEmpty ? pureTitle : scraped.cleanTitle,
+        );
+        if (searchResults.isNotEmpty) {
+          final first = searchResults.first;
+          final realId = first['id'] as int?;
+          final realType = first['media_type']?.toString();
+          if (realId != null) {
+            effectiveTmdbId = realId;
+            if (realType == 'tv' || realType == 'movie') {
+              effectiveMediaType = realType!;
+            }
+            MovieSiteScraperService.instance.registerResolvedTmdb(tmdbId, realId, effectiveMediaType);
+          }
+        }
+      }
+
+      // Cache postUrl under both IDs
+      if (postUrl != null && postUrl.isNotEmpty) {
+        MovieSiteScraperService.instance.setPostUrl(tmdbId, postUrl);
+        MovieSiteScraperService.instance.setPostUrl(effectiveTmdbId, postUrl);
+      }
+
+      // 4. Extract site seasons from Vegamovies/Rogmovies post page download buttons
+      List<int>? siteSeasons;
+      if (postUrl != null && postUrl.isNotEmpty) {
+        try {
+          final postButtons = await SitePostExtractor.instance.extractPostButtons(postUrl);
+          final seasonsFromButtons = SitePostExtractor.instance.getAvailableSeasons(postButtons);
+          if (seasonsFromButtons.isNotEmpty) {
+            siteSeasons = seasonsFromButtons;
+          }
+        } catch (_) {}
+      }
+
+      final isTv = effectiveMediaType.toLowerCase() == 'tv' ||
+          effectiveMediaType.toLowerCase() == 'series' ||
+          effectiveMediaType.toLowerCase() == 'tv series';
       final resolvedMediaType = isTv ? 'tv' : 'movie';
 
-      // ALWAYS fetch TMDB for everything
+      // 5. Fetch full TMDB details for Trailer, Cast, Overview, Poster, Backdrop
       Map<String, dynamic>? tmdbDetails;
-      tmdbDetails = isTv
-          ? await TmdbClient.instance.getTvDetails(tmdbId)
-          : await TmdbClient.instance.getMovieDetails(tmdbId);
+      if (effectiveTmdbId > 0 && effectiveTmdbId < 1000000) {
+        tmdbDetails = isTv
+            ? await TmdbClient.instance.getTvDetails(effectiveTmdbId)
+            : await TmdbClient.instance.getMovieDetails(effectiveTmdbId);
+      }
 
       if (tmdbDetails == null) {
-        final scraped = MovieSiteScraperService.instance.itemMap[tmdbId.toString()];
         if (scraped != null) {
           return ContentDetail(
-            id: tmdbId,
+            id: effectiveTmdbId,
             title: scraped.cleanTitle,
             description: scraped.overview,
             overview: scraped.overview,
@@ -289,6 +370,8 @@ class ContentRepository {
             posterUrl: scraped.posterUrl,
             backdropUrl: scraped.backdropUrl ?? scraped.posterUrl,
             releaseYear: scraped.releaseYear,
+            postUrl: postUrl,
+            siteSeasonNumbers: siteSeasons ?? [1],
             genres: null,
             watchLink: '',
             downloadLink: '',
@@ -298,73 +381,58 @@ class ContentRepository {
       }
 
       final title = tmdbDetails['title']?.toString() ??
-          tmdbDetails['name']?.toString() ?? 'Unknown';
-      final overview = tmdbDetails['overview']?.toString();
+          tmdbDetails['name']?.toString() ?? (scraped?.cleanTitle ?? 'Unknown');
+      final overview = tmdbDetails['overview']?.toString() ?? scraped?.overview;
       final tmdbPosterUrl = TmdbClient.posterUrl(tmdbDetails['poster_path']?.toString());
       final tmdbBackdropUrl = TmdbClient.backdropUrl(tmdbDetails['backdrop_path']?.toString());
       final tmdbLogoUrl = _extractTmdbLogo(tmdbDetails);
       final trailerUrl = _extractTmdbTrailer(tmdbDetails);
       final tagline = tmdbDetails['tagline']?.toString();
-      final voteAverage = (tmdbDetails['vote_average'] as num?)?.toDouble() ?? 0.0;
+      final voteAverage = (tmdbDetails['vote_average'] as num?)?.toDouble() ?? (scraped?.voteAverage ?? 0.0);
       final voteCount = (tmdbDetails['vote_count'] as num?)?.toInt();
       final runtime = (tmdbDetails['runtime'] as num?)?.toInt();
-      final numberOfSeasons = (tmdbDetails['number_of_seasons'] as num?)?.toInt();
-      final numberOfEpisodes = (tmdbDetails['number_of_episodes'] as num?)?.toInt();
       final status = tmdbDetails['status']?.toString();
       final imdbId = tmdbDetails['imdb_id']?.toString();
       final genres = _parseGenres(tmdbDetails['genres']);
       final castMembers = _parseTmdbCredits(tmdbDetails);
 
-      int? releaseYear;
+      int? releaseYear = scraped?.releaseYear;
       final dateStr = tmdbDetails['release_date']?.toString() ??
           tmdbDetails['first_air_date']?.toString();
       if (dateStr != null && dateStr.length >= 4) {
-        releaseYear = int.tryParse(dateStr.substring(0, 4));
+        releaseYear = int.tryParse(dateStr.substring(0, 4)) ?? releaseYear;
       }
 
-      List<TmdbSeason>? tmdbSeasons;
-      if (isTv) {
-        final seasons = tmdbDetails['seasons'] as List?;
-        if (seasons != null) {
-          tmdbSeasons = seasons
-              .where((s) {
-                final sn = s['season_number'];
-                if (sn == null) return false;
-                final num = sn is int ? sn : int.tryParse(sn.toString());
-                return num != null && num > 0;
-              })
-              .map((s) => TmdbSeason.fromJson(s as Map<String, dynamic>))
-              .toList();
-        }
-      }
+      final finalPoster = tmdbPosterUrl.isNotEmpty ? tmdbPosterUrl : scraped?.posterUrl;
+      final finalBackdrop = tmdbBackdropUrl.isNotEmpty ? tmdbBackdropUrl : (scraped?.backdropUrl ?? finalPoster);
 
       return ContentDetail(
-        id: tmdbId,
+        id: effectiveTmdbId,
         title: title,
         description: overview,
         overview: overview,
         mediaType: resolvedMediaType,
         voteAverage: voteAverage,
         voteCount: voteCount,
-        posterUrl: tmdbPosterUrl.isNotEmpty ? tmdbPosterUrl : null,
-        backdropUrl: tmdbBackdropUrl.isNotEmpty ? tmdbBackdropUrl : null,
+        posterUrl: finalPoster,
+        backdropUrl: finalBackdrop,
         logoUrl: tmdbLogoUrl,
+        tmdbLogoUrl: tmdbLogoUrl,
         trailerUrl: trailerUrl,
+        releaseDate: dateStr,
         releaseYear: releaseYear,
+        genreIds: const [],
         genres: genres.isNotEmpty ? genres : null,
         castMembers: castMembers,
         tagline: tagline,
         runtime: runtime,
-        numberOfSeasons: numberOfSeasons,
-        numberOfEpisodes: numberOfEpisodes,
         status: status,
         imdbId: imdbId,
-        watchLink: '', // Extracted dynamically by Vcloud / Peachify / VidNest
+        postUrl: postUrl,
+        siteSeasonNumbers: siteSeasons ?? [1],
+        numberOfSeasons: siteSeasons?.length ?? 1,
+        watchLink: '',
         downloadLink: '',
-        tmdbSeasons: tmdbSeasons,
-        tmdbLogoUrl: tmdbLogoUrl,
-        isAdmin: false,
-        seasonsData: null,
       );
     } catch (e, stack) {
       dev.log('[ContentRepo] fetchContentDetail error: $e', stackTrace: stack);

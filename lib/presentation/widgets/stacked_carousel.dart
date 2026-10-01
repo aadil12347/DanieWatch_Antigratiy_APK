@@ -12,6 +12,7 @@ import '../../services/extraction/movie_site_scraper_service.dart';
 import '../providers/detail_provider.dart';
 import '../providers/poster_color_provider.dart';
 import '../providers/manifest_provider.dart';
+import 'movie_card.dart';
 
 class StackedCarousel extends ConsumerStatefulWidget {
   final List<ManifestItem> items;
@@ -229,7 +230,7 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
         SizedBox(height: r.h(12)),
         // Active Item Info Display — always fetch TMDB logo
         Container(
-          height: r.h(44),
+          height: r.h(64).clamp(52.0, 78.0),
           padding: EdgeInsets.symmetric(horizontal: r.w(32)),
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
@@ -334,49 +335,68 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
                     ],
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: Consumer(
-                    builder: (context, ref, _) {
-                      final itemPoster = (item.posterUrl != null && item.posterUrl!.isNotEmpty)
-                          ? item.posterUrl!
-                          : null;
-                      final posterAsync = itemPoster == null
-                          ? ref.watch(posterUrlProvider('${item.id}_${item.mediaType}')).valueOrNull
-                          : null;
-                      final posterUrl = itemPoster ?? posterAsync ?? '';
-                      
-                      if (posterUrl.isNotEmpty) {
-                        return CachedNetworkImage(
-                          imageUrl: posterUrl,
-                          fit: BoxFit.cover,
-                          // PERF: Decode at carousel size, not full resolution
-                          memCacheWidth: 400,
-                          memCacheHeight: 600,
-                          fadeOutDuration: Duration.zero,
-                          fadeInDuration: const Duration(milliseconds: 150),
-                          placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
-                          errorWidget: (_, __, ___) => Container(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final itemPoster = (item.posterUrl != null && item.posterUrl!.isNotEmpty)
+                              ? item.posterUrl!
+                              : null;
+                          final posterAsync = itemPoster == null
+                              ? ref.watch(posterUrlProvider('${item.id}_${item.mediaType}')).valueOrNull
+                              : null;
+                          final posterUrl = itemPoster ?? posterAsync ?? '';
+                          
+                          if (posterUrl.isNotEmpty) {
+                            return CachedNetworkImage(
+                              imageUrl: posterUrl,
+                              fit: BoxFit.cover,
+                              // PERF: Decode at carousel size, not full resolution
+                              memCacheWidth: 400,
+                              memCacheHeight: 600,
+                              fadeOutDuration: Duration.zero,
+                              fadeInDuration: const Duration(milliseconds: 150),
+                              placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
+                              errorWidget: (_, __, ___) => Container(
+                                color: AppColors.surfaceElevated,
+                                child: const Center(
+                                  child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted),
+                                ),
+                              ),
+                            );
+                          }
+                          
+                          return Container(
                             color: AppColors.surfaceElevated,
                             child: const Center(
-                              child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted),
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
+                                ),
+                              ),
                             ),
-                          ),
-                        );
-                      }
-                      
-                      return Container(
-                        color: AppColors.surfaceElevated,
-                        child: const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
-                            ),
-                          ),
+                          );
+                        },
+                      ),
+                      // Language Badge (top-left)
+                      if (item.displayLanguage.isNotEmpty)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: LanguageBadge(text: item.displayLanguage),
                         ),
-                      );
-                    },
+                      // Season & Episode Added Badge (bottom-left)
+                      if (item.seasonDetail != null && item.seasonDetail!.isNotEmpty)
+                        Positioned(
+                          bottom: 8,
+                          left: 8,
+                          child: SeasonBadge(text: item.seasonDetail!),
+                        ),
+                    ],
                   ),
               ),
             ),
@@ -403,20 +423,51 @@ class _TmdbLogoInfo extends ConsumerWidget {
     return Container(
       width: r.w(280).clamp(180.0, 360.0),
       alignment: Alignment.center,
-      child: logoAsync.when(
-        data: (logoUrl) {
-          if (logoUrl != null && logoUrl.isNotEmpty) {
-            return CachedNetworkImage(
-              imageUrl: logoUrl,
-              height: r.h(42).clamp(30.0, 52.0),
-              fit: BoxFit.contain,
-              errorWidget: (_, __, ___) => _buildActiveTitle(context, displayTitle),
-            );
-          }
-          return _buildActiveTitle(context, displayTitle);
-        },
-        loading: () => _buildActiveTitle(context, displayTitle),
-        error: (_, __) => _buildActiveTitle(context, displayTitle),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          logoAsync.when(
+            data: (logoUrl) {
+              if (logoUrl != null && logoUrl.isNotEmpty) {
+                return CachedNetworkImage(
+                  imageUrl: logoUrl,
+                  height: r.h(38).clamp(26.0, 48.0),
+                  fit: BoxFit.contain,
+                  errorWidget: (_, __, ___) => _buildActiveTitle(context, displayTitle),
+                );
+              }
+              return _buildActiveTitle(context, displayTitle);
+            },
+            loading: () => _buildActiveTitle(context, displayTitle),
+            error: (_, __) => _buildActiveTitle(context, displayTitle),
+          ),
+          const SizedBox(height: 3),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                item.releaseYear?.toString() ?? '2026',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Text('•', style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
+              ),
+              Text(
+                item.mediaType == 'tv' ? 'Series' : 'Movie',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -431,7 +482,7 @@ class _TmdbLogoInfo extends ConsumerWidget {
       softWrap: false,
       style: TextStyle(
         color: Colors.white,
-        fontSize: r.f(20).clamp(15.0, 26.0),
+        fontSize: r.f(19).clamp(15.0, 24.0),
         fontWeight: FontWeight.w900,
         height: 1.2,
       ),

@@ -22,11 +22,8 @@ import '../../../data/clients/tmdb_client.dart';
 import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
-import '../../../services/video_extractor_service.dart';
 import '../../../services/peachify_extractor.dart';
 import '../../../services/vcloud_extractor.dart';
-import '../../../services/vidnest_extractor.dart';
-import '../../../services/file_size_service.dart';
 import '../../../core/services/deep_link_service.dart';
 import '../../providers/detail_provider.dart';
 import '../../providers/watchlist_provider.dart';
@@ -38,6 +35,9 @@ import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
 import '../../providers/manifest_provider.dart';
+import '../../widgets/batch_zip_modal_content.dart';
+import '../../../services/extraction/site_post_extractor.dart';
+import '../../../services/extraction/movie_site_scraper_service.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -445,6 +445,97 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           const SizedBox(width: 12),
         ],
 
+        // Download Button for TV Series (Batch/Zip options)
+        if (content.isTv) ...[
+          StreamBuilder<DownloadItem>(
+            stream: DownloadManager.instance.updateStream,
+            builder: (context, _) {
+              final match = DownloadManager.instance.downloads.where(
+                (d) => d.tmdbId == widget.tmdbId && d.season == _selectedSeason && d.fileExtension == 'zip',
+              ).firstOrNull;
+              final isPaused = match != null && match.status == DownloadStatus.paused;
+              final isActiveDownload = match != null &&
+                  (match.status == DownloadStatus.downloading ||
+                   match.status == DownloadStatus.pending ||
+                   match.status == DownloadStatus.converting ||
+                   match.status == DownloadStatus.paused);
+              final isCompleted = match != null && match.status == DownloadStatus.completed;
+              final progress = match?.progress ?? 0.0;
+
+              if (isCompleted) {
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    CustomToast.show(context, 'Season $_selectedSeason Batch Zip Downloaded', type: ToastType.success);
+                  },
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4), width: 1.5),
+                    ),
+                    child: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 22),
+                  ),
+                );
+              }
+
+              if (isActiveDownload) {
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    if (isPaused) {
+                      DownloadManager.instance.resumeDownload(match.id);
+                    } else if (match.status == DownloadStatus.downloading) {
+                      DownloadManager.instance.pauseDownload(match.id);
+                    }
+                  },
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 38,
+                          height: 38,
+                          child: CircularProgressIndicator(
+                            value: (match.status == DownloadStatus.pending) ? null : progress,
+                            strokeWidth: 2.5,
+                            color: isPaused ? Colors.orangeAccent : AppColors.primary,
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        Icon(
+                          isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return _AnimatedActionButton(
+                icon: Icons.download_rounded,
+                onTap: () {
+                  final postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
+                  BatchZipModalContent.show(
+                    context,
+                    content: content,
+                    seasonNumber: _selectedSeason,
+                    postUrl: postUrl,
+                  );
+                },
+                isActive: false,
+              );
+            },
+          ),
+          const SizedBox(width: 12),
+        ],
+
         // Share Button
         _AnimatedActionButton(
           icon: Icons.share_rounded,
@@ -678,48 +769,52 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   // ─── Episodes Tab ─────────────────────────────────────────────────────────
   Widget _buildEpisodesTab(ContentDetail content) {
     return Consumer(builder: (context, ref, _) {
-      // Fetch available seasons/episodes from the streaming JSON
-      final streamingMapAsync = ref.watch(streamingSeasonMapProvider(
-        StreamingSeasonParams(
-          tmdbId: widget.tmdbId,
-          mediaType: widget.mediaType,
+      // 1. Fetch episodes directly from Nextdrive selector page
+      final postUrl = content.postUrl ??
+          MovieSiteScraperService.instance.getPostUrl(content.id) ??
+          MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+          '';
+
+      final nextdriveAsync = ref.watch(nextdriveEpisodesProvider(
+        NextdriveEpisodeParams(
+          tmdbId: content.id,
           title: content.title,
+          seasonNumber: _selectedSeason,
+          postUrl: postUrl,
+          posterUrl: content.posterUrl,
         ),
-      ));
-
-      final streamingMap = streamingMapAsync.valueOrNull ?? <int, List<int>>{};
-
-      // Determine which episode numbers are available for the selected season
-      final List<int>? availableEpNums = streamingMap.isNotEmpty
-          ? streamingMap[_selectedSeason]
-          : null;
-
-      final episodesAsync = ref.watch(episodesProvider(
-        _getEpisodeParams(content, availableEpisodeNumbers: availableEpNums),
       ));
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSeasonSearchRow(content, streamingSeasonMap: streamingMap),
+          _buildSeasonSearchRow(content),
           const SizedBox(height: 16),
-          episodesAsync.when(
+          nextdriveAsync.when(
+            data: (nextdriveEps) {
+              if (nextdriveEps.isNotEmpty) {
+                final filtered = _filterNextdriveEpisodes(nextdriveEps);
+                if (filtered.isEmpty) {
+                  return _buildEmptyTab(Icons.tv_off_rounded, 'No matching episodes');
+                }
+                return Column(
+                  children: filtered
+                      .map((ep) => _buildNextdriveEpisodeCard(ep, content))
+                      .toList(),
+                );
+              }
+              return _buildEmptyTab(Icons.tv_off_rounded,
+                  'No episodes available on Nextdrive for Season $_selectedSeason');
+            },
             loading: () => const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+                child: CircularProgressIndicator(
+                    color: AppColors.primary, strokeWidth: 2),
               ),
             ),
-            error: (e, _) => _buildEmptyTab(Icons.error_outline, 'Error loading episodes'),
-            data: (episodes) {
-              final filtered = _filterEpisodes(episodes);
-              if (filtered.isEmpty) {
-                return _buildEmptyTab(Icons.tv_off_rounded, 'No episodes available');
-              }
-              return Column(
-                children: filtered.map((ep) => _buildEpisodeCard(ep, content)).toList(),
-              );
-            },
+            error: (err, _) => _buildEmptyTab(Icons.error_outline,
+                'Could not load episodes for Season $_selectedSeason'),
           ),
         ],
       );
@@ -1415,7 +1510,428 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     );
   }
 
+  List<NextdriveEpisode> _filterNextdriveEpisodes(List<NextdriveEpisode> episodes) {
+    if (_episodeSearch.isEmpty) return episodes;
+    final q = _episodeSearch.toLowerCase();
+    return episodes.where((ep) => ep.title.toLowerCase().contains(q)).toList();
+  }
 
+  Widget _buildNextdriveEpisodeCard(NextdriveEpisode episode, ContentDetail content) {
+    final epNum = episode.episodeNumber ?? episode.index;
+    String badgeText;
+    if (episode.rangeStart != null) {
+      badgeText = 'E${episode.rangeStart}-${episode.rangeEnd}';
+    } else if (episode.isComplete) {
+      badgeText = 'Full';
+    } else {
+      badgeText = 'E$epNum';
+    }
+
+    return PressableScale(
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // ── Play area: thumbnail + Nextdrive episode title ──
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _handleNextdrivePlay(episode, content),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Thumbnail with episode badge
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: SizedBox(
+                            width: 140,
+                            height: 85,
+                            child: episode.thumbnailUrl != null &&
+                                    episode.thumbnailUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: episode.thumbnailUrl!,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) =>
+                                        Container(color: AppColors.surfaceElevated),
+                                    errorWidget: (_, __, ___) => Container(
+                                      color: AppColors.surfaceElevated,
+                                      child: const Icon(Icons.play_circle_outline,
+                                          color: AppColors.textMuted),
+                                    ),
+                                  )
+                                : (content.posterUrl != null &&
+                                        content.posterUrl!.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: content.posterUrl!,
+                                        fit: BoxFit.cover,
+                                        placeholder: (_, __) => Container(
+                                            color: AppColors.surfaceElevated),
+                                        errorWidget: (_, __, ___) => Container(
+                                          color: AppColors.surfaceElevated,
+                                          child: const Icon(
+                                              Icons.play_circle_fill,
+                                              color: AppColors.textMuted,
+                                              size: 32),
+                                        ),
+                                      )
+                                    : Container(
+                                        color: AppColors.surfaceElevated,
+                                        child: const Icon(
+                                            Icons.play_circle_fill,
+                                            color: AppColors.textMuted,
+                                            size: 32),
+                                      )),
+                          ),
+                        ),
+                        Positioned(
+                          left: 6,
+                          top: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(badgeText,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+
+                    // Episode info: STRICTLY NEXTDRIVE PAGE TITLE
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            episode.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Vertical Divider
+            Container(
+              height: 40,
+              width: 1,
+              color: Colors.white10,
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+
+            // Download button — state-aware
+            StreamBuilder<DownloadItem>(
+              stream: DownloadManager.instance.updateStream,
+              builder: (context, _) {
+                final match = DownloadManager.instance.downloads
+                    .cast<DownloadItem?>()
+                    .firstWhere(
+                      (d) =>
+                          d!.title.contains(content.title) &&
+                          d.season == _selectedSeason &&
+                          d.episode == epNum,
+                      orElse: () => null,
+                    );
+                final isPaused =
+                    match != null && match.status == DownloadStatus.paused;
+                final isActiveDownload = match != null &&
+                    (match.status == DownloadStatus.downloading ||
+                        match.status == DownloadStatus.pending ||
+                        match.status == DownloadStatus.converting ||
+                        match.status == DownloadStatus.paused);
+                final isCompleted =
+                    match != null && match.status == DownloadStatus.completed;
+                final progress = match?.progress ?? 0.0;
+
+                if (isCompleted) {
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      CustomToast.show(context, 'Already Downloaded',
+                          type: ToastType.success);
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.greenAccent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Colors.greenAccent.withValues(alpha: 0.4),
+                            width: 1.2),
+                      ),
+                      child: const Icon(Icons.check_circle_rounded,
+                          color: Colors.greenAccent, size: 22),
+                    ),
+                  );
+                }
+
+                if (isActiveDownload) {
+                  final pctText = (progress * 100).toStringAsFixed(2);
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      if (isPaused) {
+                        DownloadManager.instance.resumeDownload(match!.id);
+                      } else if (match!.status == DownloadStatus.downloading) {
+                        DownloadManager.instance.pauseDownload(match.id);
+                      }
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: CircularProgressIndicator(
+                                  value: (match?.status == DownloadStatus.pending)
+                                      ? null
+                                      : progress,
+                                  strokeWidth: 2.5,
+                                  color: isPaused
+                                      ? Colors.orangeAccent
+                                      : AppColors.primary,
+                                  backgroundColor:
+                                      Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              Icon(
+                                isPaused
+                                    ? Icons.play_arrow_rounded
+                                    : Icons.pause_rounded,
+                                color: (isPaused
+                                        ? Colors.orangeAccent
+                                        : AppColors.primary)
+                                    .withValues(alpha: 0.7),
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$pctText%',
+                          style: TextStyle(
+                            color: isPaused
+                                ? Colors.orangeAccent
+                                : AppColors.primary,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return GestureDetector(
+                  onTap: () => _handleNextdriveDownload(episode, content),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.5),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.download_rounded,
+                      color: AppColors.primary,
+                      size: 22,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Handles online streaming for Nextdrive episode with strict policy:
+  /// Prioritize FSLv2 > FSL (STRICTLY NO 10Gbps link).
+  /// If neither is available, show dialog asking user to download.
+  Future<void> _handleNextdrivePlay(
+      NextdriveEpisode episode, ContentDetail content) async {
+    HapticFeedback.lightImpact();
+    PlayLoaderOverlay.show(context, message: 'Resolving stream link...');
+
+    try {
+      final res =
+          await SitePostExtractor.instance.resolveVcloudStream(episode.vcloudUrl);
+      PlayLoaderOverlay.hide();
+
+      if (!mounted) return;
+
+      if (res.canStreamOnline) {
+        final streamUrl = res.onlineStreamUrl!;
+        await Navigator.of(context, rootNavigator: true).push(
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, __, ___) => VideoPlayerScreen(
+              url: streamUrl,
+              title: '${content.title} - ${episode.title}',
+              tmdbId: widget.tmdbId,
+              mediaType: widget.mediaType,
+              season: _selectedSeason,
+              episode: episode.episodeNumber ?? episode.index,
+              posterUrl: episode.thumbnailUrl ?? content.posterUrl,
+              isDirectLink: true,
+            ),
+          ),
+        );
+      } else {
+        _showOnlinePlaybackUnavailableDialog(
+          content: content,
+          episodeTitle: episode.title,
+          onDownload: () => _handleNextdriveDownload(episode, content),
+        );
+      }
+    } catch (e) {
+      PlayLoaderOverlay.hide();
+      if (mounted) {
+        _showToastError('Stream resolution error: $e');
+      }
+    }
+  }
+
+  /// Handles download for Nextdrive episode.
+  Future<void> _handleNextdriveDownload(
+      NextdriveEpisode episode, ContentDetail content) async {
+    HapticFeedback.mediumImpact();
+    CustomToast.show(context, 'Resolving download link...',
+        type: ToastType.info);
+
+    try {
+      final res =
+          await SitePostExtractor.instance.resolveVcloudStream(episode.vcloudUrl);
+      final downloadUrl = res.bestDownloadUrl;
+
+      if (!mounted) return;
+
+      if (downloadUrl != null && downloadUrl.isNotEmpty) {
+        final seasonStr = _selectedSeason.toString().padLeft(2, '0');
+        final item = await DownloadManager.instance.startDownload(
+          url: downloadUrl,
+          title: '${content.title} S$seasonStr ${episode.title}',
+          season: _selectedSeason,
+          episode: episode.episodeNumber ?? episode.index,
+          posterUrl: episode.thumbnailUrl ?? content.posterUrl,
+          context: context,
+          fileExtension: downloadUrl.contains('.zip') ? 'zip' : 'mkv',
+          tmdbId: widget.tmdbId,
+          mediaType: widget.mediaType,
+          providerName: 'V-Cloud',
+        );
+        if (item != null && mounted) {
+          _showDownloadStartedToast(item);
+        }
+      } else {
+        _showToastError('Could not resolve direct download link.');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showToastError('Download error: $e');
+      }
+    }
+  }
+
+  /// Displays dialog when online streaming is unavailable (no FSLv2 or FSL).
+  void _showOnlinePlaybackUnavailableDialog({
+    required ContentDetail content,
+    required String episodeTitle,
+    required VoidCallback onDownload,
+  }) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF16161E),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.info_outline_rounded,
+                  color: Colors.orangeAccent, size: 24),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Online Streaming Unavailable',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Online fast streaming (FSLv2 / FSL) is currently unavailable for $episodeTitle.\n\nDirect download is available for this title. Would you like to download it now?',
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                onDownload();
+              },
+              child: const Text('Download Now',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   void _toggleWatchlist(ContentDetail content, bool currentIsInWatchlist) {
     HapticFeedback.lightImpact();
@@ -1656,6 +2172,122 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final manifestItems = ref.read(localManifestItemsProvider).valueOrNull ?? [];
     final manifestItem = manifestItems.where((m) => m.id == widget.tmdbId).firstOrNull;
     final bool is3rdParty = manifestItem?.is3rdPartyHosted ?? false;
+
+    // For movies: try to resolve VCloud link directly (FSLv2 > FSL)
+    if (content.isMovie) {
+      PlayLoaderOverlay.show(context, message: 'Resolving stream link...');
+      try {
+        var postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
+        if (postUrl == null || postUrl.isEmpty) {
+          postUrl = await SitePostExtractor.instance.findPostUrl(
+            title: content.title,
+            tmdbId: widget.tmdbId,
+            year: content.releaseYear,
+          );
+        }
+
+        if (postUrl != null && postUrl.isNotEmpty) {
+          final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
+          // Find best movie button (prefer 720p > 480p > 1080p)
+          SitePostButton? bestBtn;
+          final nonBatch = buttons.where((b) => !b.isBatchZip).toList();
+          if (nonBatch.isNotEmpty) {
+            bestBtn = nonBatch.firstWhere(
+              (b) => b.quality == '720p',
+              orElse: () => nonBatch.firstWhere(
+                (b) => b.quality == '480p',
+                orElse: () => nonBatch.firstWhere(
+                  (b) => b.quality == '1080p',
+                  orElse: () => nonBatch.first,
+                ),
+              ),
+            );
+          }
+
+          if (bestBtn != null) {
+            final res = await SitePostExtractor.instance.resolveVcloudStream(bestBtn.href);
+            PlayLoaderOverlay.hide();
+
+            if (!mounted) return;
+
+            if (res.canStreamOnline) {
+              final streamUrl = res.onlineStreamUrl!; // Strictly FSLv2 > FSL (no 10Gbps)
+              await Navigator.of(context, rootNavigator: true).push(
+                PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  pageBuilder: (_, __, ___) => VideoPlayerScreen(
+                    url: streamUrl,
+                    title: content.title,
+                    tmdbId: widget.tmdbId,
+                    mediaType: widget.mediaType,
+                    posterUrl: content.posterUrl,
+                    isDirectLink: true,
+                    is3rdPartyHosted: is3rdParty,
+                  ),
+                ),
+              );
+              return;
+            } else if (res.bestDownloadUrl != null) {
+              // Online play unavailable (neither FSLv2 nor FSL)
+              _showOnlinePlaybackUnavailableDialog(
+                content: content,
+                episodeTitle: content.title,
+                onDownload: () => _handleDownload(res.bestDownloadUrl!),
+              );
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[DetailsScreen] Movie VCloud stream error: $e');
+      } finally {
+        PlayLoaderOverlay.hide();
+      }
+    }
+
+    // For TV series: resolve VCloud link for the target episode (or episode 1 of selected season)
+    if (content.isTv) {
+      final postUrl = content.postUrl ??
+          MovieSiteScraperService.instance.getPostUrl(content.id) ??
+          MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+          '';
+      final targetSeason = season ?? _selectedSeason;
+      final epParams = NextdriveEpisodeParams(
+        tmdbId: content.id,
+        title: content.title,
+        seasonNumber: targetSeason,
+        postUrl: postUrl,
+        posterUrl: content.posterUrl,
+      );
+
+      PlayLoaderOverlay.show(context, message: 'Resolving episode link...');
+      try {
+        List<NextdriveEpisode> episodes =
+            ref.read(nextdriveEpisodesProvider(epParams)).valueOrNull ?? [];
+        if (episodes.isEmpty) {
+          episodes = await ref.refresh(nextdriveEpisodesProvider(epParams).future);
+        }
+
+        if (episodes.isNotEmpty) {
+          final targetEp = (episode != null && episode > 0)
+              ? episodes.firstWhere(
+                  (e) => (e.episodeNumber ?? e.index) == episode,
+                  orElse: () => episodes.first)
+              : episodes.first;
+
+          PlayLoaderOverlay.hide();
+          await _handleNextdrivePlay(targetEp, content);
+          return;
+        }
+      } catch (e) {
+        debugPrint('[DetailsScreen] Series VCloud stream error: $e');
+      } finally {
+        PlayLoaderOverlay.hide();
+      }
+    }
+
+    if (!mounted) return;
 
     await Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(

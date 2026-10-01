@@ -76,6 +76,10 @@ class MovieSiteScraperService {
 
   String? getPostUrl(int fastId) => _postUrlMap[fastId.toString()];
 
+  void setPostUrl(int fastId, String postUrl) {
+    _postUrlMap[fastId.toString()] = postUrl;
+  }
+
   /// Fetches IMDb ID from a post's detail page (e.g., https://vegamovies.gallery/...)
   Future<String?> fetchImdbIdFromPostUrl(String postUrl) async {
     if (postUrl.isEmpty) return null;
@@ -252,29 +256,7 @@ class MovieSiteScraperService {
 
   /// Extracts pure title stripped of clutter (e.g. "Slow Horses", "The Punisher").
   static String extractPureTitle(String raw) {
-    var t = cleanTitle(raw);
-    if (t.toLowerCase().startsWith('download ')) {
-      t = t.substring(9).trim();
-    }
-    // Remove curly/square bracket tags like {S01E04 Added}, [Hindi DD5.1], [400MB]
-    t = t.replaceAll(RegExp(r'\s*[\{\[].*?[\}\]]'), ' ');
-    // Remove season in parentheses: (Season 1 - 6), (Season 1 – 6), (S01), (S1-S2)
-    t = t.replaceAll(RegExp(r'\s*\((?:Season|\d{4}|S\d+).*?\)', caseSensitive: false), ' ');
-    // Remove trailing specs starting with colon or dash, e.g. ": English with Substitle", ": Season 1"
-    t = t.replaceAll(
-      RegExp(r'\s*[:\-–]\s*(?:English|Hindi|Dual|Tamil|Telugu|Punjabi|Season|Substitle|Subtitle).*$', caseSensitive: false),
-      '',
-    );
-    // Remove common release words and quality tags
-    t = t.replaceAll(
-      RegExp(
-        r'\s*(?:Full Movie|Complete Web Series|WEB-DL|HDTC|PreDVD|HDRip|x264|x265|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Tamil|Telugu|Punjabi|JioHotstar|SonyLiv|Netflix|AMZN|Zee5|–|\*No Ads\*|480p|720p|1080p|2160p|10Bit).*$',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    t = t.replaceAll(RegExp(r'\s*\(\d{4}\)'), '');
-    return t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return ManifestItem.cleanPostTitle(raw);
   }
 
   /// Extract poster cards from VegaMovies / RogMovies HTML
@@ -367,6 +349,7 @@ class MovieSiteScraperService {
         final itemNorm = item.cleanTitle.toLowerCase();
         if (itemNorm.length > 4 && normTitle.contains(itemNorm)) {
           final enriched = item.copyWith(
+            rawTitle: card.title,
             posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
             postUrl: card.postUrl,
             isTrending: isTrending,
@@ -379,35 +362,32 @@ class MovieSiteScraperService {
       }
     }
 
-    // Clean clutter from raw scrape title using pure title extractor
-    var displayTitle = extractPureTitle(title);
-    if (displayTitle.length < 3) {
+    // Parse pure title, year, and mediaType
+    final meta = ManifestItem.parsePostTitle(card.title);
+    var displayTitle = meta.cleanTitle;
+    if (displayTitle.length < 2) {
       displayTitle = title;
     }
 
-    // 2. Parse year & mediaType locally (0ms)
-    int? year;
-    final yearMatch = RegExp(r'\((\d{4})\)').firstMatch(title);
-    if (yearMatch != null) {
-      year = int.tryParse(yearMatch.group(1)!);
-    } else if (card.postUrl.contains('2026')) {
-      year = 2026;
+    int? year = meta.year;
+    if (year == null) {
+      if (card.postUrl.contains('2026')) {
+        year = 2026;
+      } else {
+        year = card.datePublished?.year ?? DateTime.now().year;
+      }
     }
-
-    final isTv = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show', caseSensitive: false).hasMatch(title) ||
-        card.postUrl.contains('series') ||
-        card.postUrl.contains('season');
-    final mediaType = isTv ? 'tv' : 'movie';
 
     final fastId = (card.postUrl.hashCode.abs() % 9000000) + 1000000;
 
     final item = ManifestItem(
       id: fastId,
-      mediaType: mediaType,
+      mediaType: meta.mediaType,
       title: displayTitle,
+      rawTitle: card.title,
       posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
       postUrl: card.postUrl,
-      releaseYear: year ?? (card.datePublished?.year ?? DateTime.now().year),
+      releaseYear: year,
       releaseDate: card.datePublished?.toIso8601String(),
       voteAverage: card.rating,
       isTrending: isTrending,
@@ -686,15 +666,17 @@ class MovieSiteScraperService {
       final fastId = tmdbId ?? ((card.postUrl.hashCode.abs() % 9000000) + 1000000);
       registerResolvedTmdb(fastId, tmdbId ?? fastId, mediaType);
 
+      final meta = ManifestItem.parsePostTitle(card.title);
       final item = ManifestItem(
         id: fastId,
         mediaType: mediaType,
-        title: pureTitle,
+        title: meta.cleanTitle,
+        rawTitle: card.title,
         posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
         postUrl: card.postUrl,
         logoUrl: logoUrl,
         imdbId: imdbId,
-        releaseYear: card.datePublished?.year ?? DateTime.now().year,
+        releaseYear: meta.year ?? (card.datePublished?.year ?? DateTime.now().year),
         releaseDate: card.datePublished?.toIso8601String(),
         voteAverage: card.rating,
         isTrending: true,

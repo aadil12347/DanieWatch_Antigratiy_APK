@@ -33,11 +33,13 @@ class ManifestItem {
   final String? tmdbBackdropPath;
   final String? releaseDate; // ISO format: "2026-05-15" from TMDB
   final String? postUrl; // Detail page URL on source site (e.g. VegaMovies/RogMovies)
+  final String? rawTitle; // Original scraped title containing language, season, quality tags
 
   ManifestItem({
     required this.id,
     required this.mediaType,
     required this.title,
+    this.rawTitle,
     this.posterUrl,
     this.backdropUrl,
     this.logoUrl,
@@ -68,38 +70,170 @@ class ManifestItem {
     this.postUrl,
   });
 
-  // ─── Title Parsing (Clean Title + Season Detail) ──────────────────────────
-  // Matches patterns like (S01), (S1-S2), (S1-S3), (Season 1), (Season 1 - 4)
-  static final RegExp _seasonPattern =
-      RegExp(r'\(S\d+(?:-S?\d+)?\)|\(Season\s*\d+(?:\s*-\s*\d+)?\)', caseSensitive: false);
-  // Matches year in parentheses like (2023), (2026)
-  static final RegExp _yearPattern = RegExp(r'\(\d{4}\)');
+  // ─── Post Title Cleaning & Parsing ──────────────────────────────────────────
+  
+  /// Cleans raw VegaMovies / RogMovies post title into pure clean title.
+  static String cleanPostTitle(String raw) {
+    var t = raw
+        .replaceAll(RegExp(r'&#038;', caseSensitive: false), '&')
+        .replaceAll(RegExp(r'&amp;', caseSensitive: false), '&')
+        .replaceAll(RegExp(r'&#8211;', caseSensitive: false), '-')
+        .replaceAll(RegExp(r'&#8217;', caseSensitive: false), "'")
+        .replaceAll(RegExp(r'&#8216;', caseSensitive: false), "'")
+        .replaceAll(RegExp(r'&quot;', caseSensitive: false), '"')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
 
-  /// Display-ready title with year and season info stripped.
-  /// e.g. "Sapne vs Everyone (2023) (S1-S2)" → "Sapne vs Everyone"
-  String get cleanTitle {
-    String cleaned = title;
-    cleaned = cleaned.replaceAll(_yearPattern, '');
-    cleaned = cleaned.replaceAll(_seasonPattern, '');
-    cleaned = cleaned.replaceAll(RegExp(r'\s*[:\-–]\s*(?:English|Hindi|Dual|Tamil|Telugu|Punjabi|Season|Substitle|Subtitle).*$', caseSensitive: false), '');
-    cleaned = cleaned.replaceAll(RegExp(r'\s*(?:Full Movie|Complete Web Series|WEB-DL|HDTC|PreDVD|HDRip|x264|x265|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Tamil|Telugu|Punjabi|JioHotstar|SonyLiv|Netflix|AMZN|Zee5|–|\*No Ads\*|480p|720p|1080p|2160p|10Bit).*$', caseSensitive: false), '');
-    return cleaned.trim();
+    if (t.toLowerCase().startsWith('download ')) {
+      t = t.substring(9).trim();
+    }
+
+    // Remove curly and square brackets: {S01E04 Added}, [Hindi DD5.1], [400MB], etc.
+    t = t.replaceAll(RegExp(r'\s*[\{\[].*?[\}\]]'), ' ');
+    // Remove season or episode in parentheses: (Season 1 - 6), (Season 2), (Episode 1 - 5 Added), (S01), (S1-S2)
+    t = t.replaceAll(RegExp(r'\s*\((?:Season|\d{4}|S\d+|Episode).*?\)', caseSensitive: false), ' ');
+    // Remove standalone season tags: "- Season 5"
+    t = t.replaceAll(RegExp(r'\s*[-–]\s*Season\s*\d+', caseSensitive: false), ' ');
+    // Remove isolated year in parentheses: (2026)
+    t = t.replaceAll(RegExp(r'\s*\(\d{4}\)'), ' ');
+    // Remove trailing specs starting with colon or dash: ": English with Substitle", "- Episode 1 - 5 Added"
+    t = t.replaceAll(
+      RegExp(r'\s*[:\-–]\s*(?:English|Hindi|Dual|Multi|Tamil|Telugu|Punjabi|Season|Substitle|Subtitle|Episode).*$', caseSensitive: false),
+      '',
+    );
+    // Remove common release words and quality tags
+    t = t.replaceAll(
+      RegExp(
+        r'\s*(?:Full Movie|Complete Web Series|WEB-Series|Anime Series|TV-Show|Full Indian Show|Full WWE Show|WEB-DL|WeB-DL|HDTC|PreDVD|HDRip|BluRay|x264|x265|HEVC|H\.264|HQ|UnCut|ORG\.?|LiNE|Hindi|Dual Audio|Multi-Audio|Tamil|Telugu|Punjabi|JHS|Sony-Liv|SonyLiv|Netflix|AMZN|Zee5|JioHotstar|–|\*No Ads\*|480p|720p|1080p|2160p|10Bit).*$',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    t = t.replaceAll(RegExp(r'\s*\(\d{4}\)'), '');
+    t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return t;
   }
 
-  /// Extracted season detail for badge display, or null if not present.
-  /// e.g. "Sapne vs Everyone (2023) (S1-S2)" → "S1-S2"
-  /// e.g. "Kaptaan (2026) (S01)" → "S01"
+  /// Display-ready title with year, season, audio, and resolution info stripped.
+  /// e.g. "Download The Punisher {S01E04 Added} Dual Audio..." → "The Punisher"
+  String get cleanTitle {
+    final cleaned = cleanPostTitle(rawTitle ?? title);
+    return cleaned.isNotEmpty ? cleaned : title;
+  }
+
+  /// Season and episode added badge displayed over poster top-right.
+  /// e.g. "S04 Episode 6 Added", "S01 Episode 04 Added", "S01-S02", "S01".
   String? get seasonDetail {
-    final match = _seasonPattern.firstMatch(title);
-    if (match == null) return null;
-    // Strip the outer parentheses
-    final raw = match.group(0)!;
-    return raw.substring(1, raw.length - 1).trim();
+    final source = rawTitle ?? title;
+
+    // 1. Episode added pattern: e.g. {S01E04 Added}, [S01 E01 Added], [S20E24 Added], [E18 Added], (Episode 1 - 5 Added), {S06E01-3 Added}
+    final epAddedMatch = RegExp(
+      r'[\{\[\(]\s*(?:(S\d+)\s*)?(?:E|Ep|Episode)\s*(\d+(?:\s*[-–]\s*\d+)?)\s*(?:Added)?\s*[\}\]\)]',
+      caseSensitive: false,
+    ).firstMatch(source);
+
+    // 2. Base season pattern: e.g. (Season 1 - 6), (Season 1 – 2), (Season 20), (Season 1), (S01), (S1-S2), - Season 5
+    String? seasonText;
+    final seasonMatch = RegExp(
+      r'(?:\(|\b)(?:Season|S)\s*(\d+)(?:\s*[-–]\s*(?:Season|S)?\s*(\d+))?\s*(?:\)|\b)',
+      caseSensitive: false,
+    ).firstMatch(source);
+
+    if (seasonMatch != null) {
+      final s1 = int.tryParse(seasonMatch.group(1) ?? '');
+      final s2 = int.tryParse(seasonMatch.group(2) ?? '');
+      if (s1 != null && s2 != null) {
+        seasonText = 'S${s1.toString().padLeft(2, '0')}-S${s2.toString().padLeft(2, '0')}';
+      } else if (s1 != null) {
+        seasonText = 'S${s1.toString().padLeft(2, '0')}';
+      }
+    }
+
+    if (epAddedMatch != null) {
+      final sTag = epAddedMatch.group(1);
+      final rawEpNum = epAddedMatch.group(2)!.trim();
+      
+      // Format episode number nicely, e.g. "5" -> "E05", "04" -> "E04", "1 - 5" -> "E01-05"
+      String epFormatted;
+      if (rawEpNum.contains(RegExp(r'[-–]'))) {
+        final parts = rawEpNum.split(RegExp(r'\s*[-–]\s*'));
+        if (parts.length == 2) {
+          final p1 = int.tryParse(parts[0]);
+          final p2 = int.tryParse(parts[1]);
+          if (p1 != null && p2 != null) {
+            epFormatted = 'E${p1.toString().padLeft(2, '0')}-${p2.toString().padLeft(2, '0')}';
+          } else {
+            epFormatted = 'E$rawEpNum';
+          }
+        } else {
+          epFormatted = 'E$rawEpNum';
+        }
+      } else {
+        final epInt = int.tryParse(rawEpNum);
+        epFormatted = epInt != null ? 'E${epInt.toString().padLeft(2, '0')}' : 'E$rawEpNum';
+      }
+
+      String sPrefix = '';
+      // If seasonText has a range like S01-S06, prioritize the full range over single sTag like S06
+      if (seasonText != null && seasonText.contains('-')) {
+        sPrefix = seasonText;
+      } else if (sTag != null && sTag.isNotEmpty) {
+        final sInt = int.tryParse(sTag.replaceAll(RegExp(r'\D'), ''));
+        sPrefix = sInt != null ? 'S${sInt.toString().padLeft(2, '0')}' : sTag.toUpperCase();
+      } else if (seasonText != null) {
+        sPrefix = seasonText;
+      }
+
+      if (sPrefix.isNotEmpty) {
+        return '$sPrefix $epFormatted New!';
+      } else {
+        return '$epFormatted New!';
+      }
+    }
+
+    if (seasonText != null) {
+      return seasonText;
+    }
+
+    // Also check pattern like (S1-S2) or (S01) from manifest
+    final manifestSeasonMatch = RegExp(r'\((S\d+(?:-S?\d+)?)\)', caseSensitive: false).firstMatch(source);
+    if (manifestSeasonMatch != null) {
+      return manifestSeasonMatch.group(1)!.toUpperCase();
+    }
+
+    if (numberOfSeasons != null && numberOfSeasons! > 1) {
+      return 'S01-S${numberOfSeasons!.toString().padLeft(2, '0')}';
+    } else if (numberOfSeasons == 1) {
+      return 'S01';
+    }
+
+    return null;
   }
 
   /// Deduplication key used when merging multiple site indices.
   /// Key = tmdbId + mediaType + seasonDetail (so different seasons are kept).
   String get deduplicationKey => '${id}_${mediaType}_${seasonDetail ?? ""}';
+
+  /// Helper to extract clean title, year, and mediaType in one pass.
+  static ParsedPostMetadata parsePostTitle(String raw) {
+    final clean = cleanPostTitle(raw);
+    
+    int? year;
+    final yearMatch = RegExp(r'\((\d{4})\)|\b(19\d\d|20\d\d)\b').firstMatch(raw);
+    if (yearMatch != null) {
+      year = int.tryParse(yearMatch.group(1) ?? yearMatch.group(2) ?? '');
+    }
+
+    final isTv = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show|anime series', caseSensitive: false).hasMatch(raw);
+    final mediaType = isTv ? 'tv' : 'movie';
+
+    return ParsedPostMetadata(
+      cleanTitle: clean.isNotEmpty ? clean : raw,
+      year: year,
+      mediaType: mediaType,
+    );
+  }
 
 
   static int? _safeInt(dynamic value) {
@@ -164,28 +298,111 @@ class ManifestItem {
     'war & politics': 10768,
   };
 
-  /// Prioritized display language for card badges
+  /// Prioritized display language for card badges according to user rules:
+  /// - If Hindi only, or Hindi+English, or any other language with Hindi -> "Hindi"
+  /// - If English only -> "English"
+  /// - If neither Hindi nor English, but another language is present in title -> that language (e.g. "Punjabi", "Tamil", "Telugu", etc.)
+  /// - If English subtitles mentioned with no other language -> "English Subtitles"
+  /// - Falls back to manifest language / original language
   String get displayLanguage {
-    if (language.isEmpty) return '';
-    
-    // 1. Hindi priority (case-insensitive)
-    final String hindi = language.firstWhere(
-      (l) => l.toLowerCase() == 'hindi',
-      orElse: () => '',
-    );
-    if (hindi.isNotEmpty) return 'Hindi';
+    final sourceText = '${rawTitle ?? ""} $title';
+    final lower = sourceText.toLowerCase();
 
-    // 2. English priority
-    final String english = language.firstWhere(
-      (l) => l.toLowerCase() == 'english',
-      orElse: () => '',
-    );
-    if (english.isNotEmpty) return 'English';
+    // 1. Hindi priority (Hindi alone, Hindi+English, or any other language with Hindi)
+    if (lower.contains('hindi')) {
+      return 'Hindi';
+    }
 
-    // 3. Capitalized version of the first language
-    final String first = language.first;
-    if (first.isEmpty) return '';
-    return first[0].toUpperCase() + first.substring(1).toLowerCase();
+    // Known other languages to detect in title
+    const otherLanguages = [
+      'Punjabi', 'Tamil', 'Telugu', 'Malayalam', 'Kannada', 'Bengali', 'Marathi',
+      'Gujarati', 'Urdu', 'Korean', 'Japanese', 'Chinese', 'Spanish', 'French',
+      'German', 'Russian', 'Italian', 'Turkish', 'Thai', 'Indonesian', 'Vietnamese',
+      'Arabic', 'Portuguese'
+    ];
+
+    String? foundOtherLang;
+    for (final l in otherLanguages) {
+      if (lower.contains(l.toLowerCase())) {
+        foundOtherLang = l;
+        break;
+      }
+    }
+
+    final hasEnglish = lower.contains('english') || RegExp(r'\beng\b').hasMatch(lower);
+
+    final isSubtitlesOnly = (lower.contains('substitle') || lower.contains('subtitle') || lower.contains('esub')) &&
+        !lower.contains('dual audio') &&
+        !lower.contains('multi-audio') &&
+        !lower.contains('multi audio') &&
+        !lower.contains('english -') &&
+        !lower.contains('english audio') &&
+        !RegExp(r'[:\-–]\s*english with substitle', caseSensitive: false).hasMatch(lower) &&
+        !RegExp(r'\benglish\s*\+').hasMatch(lower) &&
+        !RegExp(r'\+\s*english').hasMatch(lower);
+
+    // If another language is present and English is only mentioned as subtitles
+    if (foundOtherLang != null && isSubtitlesOnly) {
+      return foundOtherLang;
+    }
+
+    // If English only (audio)
+    if (hasEnglish) {
+      return 'English';
+    }
+
+    // If another language is present
+    if (foundOtherLang != null) {
+      return foundOtherLang;
+    }
+
+    // If English subtitle is mentioned and no other language is written
+    if (lower.contains('subtitle') || lower.contains('substitle') || lower.contains('esub') || lower.contains('sub')) {
+      return 'English Subtitles';
+    }
+
+    // Fallback to item.language list
+    if (language.isNotEmpty) {
+      for (final l in language) {
+        if (l.toLowerCase() == 'hindi') return 'Hindi';
+      }
+      for (final l in language) {
+        if (l.toLowerCase() == 'english') return 'English';
+      }
+      final first = language.first;
+      if (first.isNotEmpty) {
+        return first[0].toUpperCase() + first.substring(1).toLowerCase();
+      }
+    }
+
+    // Fallback to originalLanguage code
+    if (originalLanguage != null && originalLanguage!.isNotEmpty) {
+      final code = originalLanguage!.toLowerCase();
+      const codeMap = {
+        'hi': 'Hindi',
+        'en': 'English',
+        'pa': 'Punjabi',
+        'ta': 'Tamil',
+        'te': 'Telugu',
+        'ml': 'Malayalam',
+        'kn': 'Kannada',
+        'bn': 'Bengali',
+        'mr': 'Marathi',
+        'ur': 'Urdu',
+        'ko': 'Korean',
+        'ja': 'Japanese',
+        'zh': 'Chinese',
+        'es': 'Spanish',
+        'fr': 'French',
+        'de': 'German',
+        'ru': 'Russian',
+      };
+      if (codeMap.containsKey(code)) {
+        return codeMap[code]!;
+      }
+    }
+
+    return '';
   }
 
   factory ManifestItem.fromArray(List<dynamic> arr) {
@@ -232,6 +449,7 @@ class ManifestItem {
       id: id,
       mediaType: mediaType,
       title: title,
+      rawTitle: title,
       voteAverage: 0.0,
       voteCount: 0,
       releaseYear: releaseYear,
@@ -263,6 +481,7 @@ class ManifestItem {
       id: id,
       mediaType: (json['media_type'] ?? json['type'] ?? 'movie').toString(),
       title: (json['title'] ?? '').toString(),
+      rawTitle: json['raw_title']?.toString(),
       posterUrl: _sanitizePosterUrl((json['poster_url'] ?? json['poster'])?.toString()),
       backdropUrl: _sanitizePosterUrl((json['backdrop_url'] ?? json['backdrop'])?.toString()),
       logoUrl: json['logo_url']?.toString(),
@@ -331,6 +550,7 @@ class ManifestItem {
       id: id,
       mediaType: mediaType,
       title: title,
+      rawTitle: title,
       posterUrl: posterPath != null ? 'https://image.tmdb.org/t/p/w342$posterPath' : null,
       backdropUrl: backdropPath != null ? 'https://image.tmdb.org/t/p/w780$backdropPath' : null,
       voteAverage: _safeDouble(json['vote_average']),
@@ -384,6 +604,7 @@ class ManifestItem {
       'tmdb_backdrop_path': tmdbBackdropPath,
       'release_date': releaseDate,
       if (postUrl != null) 'post_url': postUrl,
+      if (rawTitle != null) 'raw_title': rawTitle,
     };
   }
 
@@ -413,6 +634,7 @@ class ManifestItem {
     int? id,
     String? mediaType,
     String? title,
+    String? rawTitle,
     String? posterUrl,
     String? backdropUrl,
     String? logoUrl,
@@ -439,6 +661,7 @@ class ManifestItem {
       id: id ?? this.id,
       mediaType: mediaType ?? this.mediaType,
       title: title ?? this.title,
+      rawTitle: rawTitle ?? this.rawTitle,
       posterUrl: posterUrl ?? this.posterUrl,
       backdropUrl: backdropUrl ?? this.backdropUrl,
       logoUrl: logoUrl ?? this.logoUrl,
@@ -483,6 +706,18 @@ class ManifestItem {
 
   @override
   int get hashCode => Object.hash(id, mediaType, title, logoUrl, postUrl);
+}
+
+class ParsedPostMetadata {
+  final String cleanTitle;
+  final int? year;
+  final String mediaType;
+
+  const ParsedPostMetadata({
+    required this.cleanTitle,
+    this.year,
+    required this.mediaType,
+  });
 }
 
 /// Full manifest envelope — supports both GitHub (posts/total/last_updated)
