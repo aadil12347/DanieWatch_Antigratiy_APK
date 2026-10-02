@@ -144,9 +144,12 @@ class VidstackIcon extends StatelessWidget {
     return VidstackIcon._(
       color: color,
       size: size,
-      builder: (_, c, s) => CustomPaint(
-        size: Size(s, s),
-        painter: _SettingsGearPainter(color: c),
+      builder: (_, c, s) => Center(
+        child: Icon(
+          Icons.settings_rounded,
+          color: c,
+          size: s,
+        ),
       ),
     );
   }

@@ -118,20 +118,34 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
 
   double _getPopoverRightOffset(BuildContext context) {
     final safeRight = MediaQuery.of(context).padding.right;
-    final rightMargin = safeRight + 16.0;
 
     switch (_popoverSubmenu) {
       case VidstackSettingsSubmenu.subtitles:
-        return rightMargin + 49.0;
+        return safeRight + 65.0;
       case VidstackSettingsSubmenu.audio:
-        return rightMargin + 9.0;
+        return safeRight + 25.0;
       case VidstackSettingsSubmenu.root:
       case VidstackSettingsSubmenu.speed:
       case VidstackSettingsSubmenu.quality:
       case VidstackSettingsSubmenu.servers:
       case VidstackSettingsSubmenu.aspect:
       default:
-        return rightMargin;
+        return safeRight + 16.0;
+    }
+  }
+
+  Alignment _getPopoverAlignment() {
+    switch (_popoverSubmenu) {
+      case VidstackSettingsSubmenu.subtitles:
+      case VidstackSettingsSubmenu.audio:
+        return Alignment.bottomCenter;
+      case VidstackSettingsSubmenu.root:
+      case VidstackSettingsSubmenu.speed:
+      case VidstackSettingsSubmenu.quality:
+      case VidstackSettingsSubmenu.servers:
+      case VidstackSettingsSubmenu.aspect:
+      default:
+        return const Alignment(0.24, 1.0);
     }
   }
 
@@ -289,7 +303,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                   builder: (context, anim, child) {
                     return Transform.scale(
                       scale: 0.88 + (0.12 * anim),
-                      alignment: Alignment.bottomCenter,
+                      alignment: _getPopoverAlignment(),
                       child: Opacity(
                         opacity: anim.clamp(0.0, 1.0),
                         child: child,
@@ -548,6 +562,16 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
         ? buffered.inMilliseconds / duration.inMilliseconds
         : 0.0;
 
+    final isSubtitlesOpen = _showSettingsPopover && _popoverSubmenu == VidstackSettingsSubmenu.subtitles;
+    final isAudioOpen = _showSettingsPopover && _popoverSubmenu == VidstackSettingsSubmenu.audio;
+    final isSettingsOpen = _showSettingsPopover && (
+      _popoverSubmenu == VidstackSettingsSubmenu.root ||
+      _popoverSubmenu == VidstackSettingsSubmenu.speed ||
+      _popoverSubmenu == VidstackSettingsSubmenu.quality ||
+      _popoverSubmenu == VidstackSettingsSubmenu.servers ||
+      _popoverSubmenu == VidstackSettingsSubmenu.aspect
+    );
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -624,11 +648,11 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 // Subtitles / Captions Button (opens sleek popover directly to subtitles tab)
                 VidstackButton(
                   tooltip: 'Subtitles (c)',
-                  isActive: widget.controller.isSubtitleActive,
+                  isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
                   onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.subtitles),
                   child: VidstackIcon.captions(
                     size: 20,
-                    isActive: widget.controller.isSubtitleActive,
+                    isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
                   ),
                 ),
 
@@ -637,8 +661,12 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 // Audio Tracks Button (opens sleek popover directly to audio tab)
                 VidstackButton(
                   tooltip: 'Audio Track',
+                  isActive: isAudioOpen,
                   onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.audio),
-                  child: VidstackIcon.audio(size: 20),
+                  child: VidstackIcon.audio(
+                    size: 20,
+                    color: isAudioOpen ? VidstackTheme.brand : Colors.white,
+                  ),
                 ),
 
                 const SizedBox(width: 2),
@@ -646,9 +674,12 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 // Settings Gear Button (Opens Vidstack Popover)
                 VidstackButton(
                   tooltip: 'Settings',
-                  isActive: _showSettingsPopover,
+                  isActive: isSettingsOpen,
                   onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.root),
-                  child: VidstackIcon.settings(size: 20),
+                  child: VidstackIcon.settings(
+                    size: 20,
+                    color: isSettingsOpen ? VidstackTheme.brand : Colors.white,
+                  ),
                 ),
 
                 const SizedBox(width: 2),

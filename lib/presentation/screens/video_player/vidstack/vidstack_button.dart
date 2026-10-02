@@ -44,11 +44,15 @@ class _VidstackButtonState extends State<VidstackButton>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 90),
-      reverseDuration: const Duration(milliseconds: 140),
+      duration: const Duration(milliseconds: 100),
+      reverseDuration: const Duration(milliseconds: 160),
     );
-    _scale = Tween<double>(begin: 1.0, end: 0.88).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic),
+    _scale = Tween<double>(begin: 1.0, end: 1.14).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeOutCubic,
+      ),
     );
   }
 
@@ -65,7 +69,9 @@ class _VidstackButtonState extends State<VidstackButton>
 
   void _handleTapUp(TapUpDetails _) {
     if (widget.onTap == null) return;
-    _controller.reverse();
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) _controller.reverse();
+    });
     HapticFeedback.lightImpact();
     widget.onTap?.call();
   }
@@ -127,9 +133,14 @@ class _VidstackButtonState extends State<VidstackButton>
       onTapDown: _handleTapDown,
       onTapUp: _handleTapUp,
       onTapCancel: _handleTapCancel,
-      child: ScaleTransition(
-        scale: _scale,
-        child: content,
+      child: AnimatedScale(
+        scale: widget.isActive ? 1.08 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutBack,
+        child: ScaleTransition(
+          scale: _scale,
+          child: content,
+        ),
       ),
     );
   }
