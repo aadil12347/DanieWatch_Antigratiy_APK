@@ -246,7 +246,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   ),
                 ),
 
-              // 2. Gesture Controls (VLC style) + Vidstack Player Overlay
+              // 2. Subtitle Layer (Vidstack styled, subtle grey pill background, small text at center bottom)
+              if (isReady)
+                _buildSubtitleOverlay(context),
+
+              // 3. Gesture Controls (VLC style) + Vidstack Player Overlay
               if (isReady)
                 Positioned.fill(
                   child: PlayerGestures(
@@ -518,57 +522,72 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _showSpeedSelector();
   }
 
-  Widget _buildSubtitleOverlay() {
+  Widget _buildSubtitleOverlay(BuildContext context) {
     if (_controller.currentSubtitleSource == null ||
         _controller.currentSubtitleSource?.type == BetterPlayerSubtitlesSourceType.none ||
-        _controller.currentSubtitleSource?.name == 'Off' ||
-        _controller.currentCues.isEmpty) {
+        _controller.currentSubtitleSource?.name == 'Off') {
       return const SizedBox.shrink();
     }
 
-    final bottomPadding = _controller.controlsVisible ? 100.0 : 32.0;
+    final cues = _controller.currentCues.isNotEmpty
+        ? _controller.currentCues
+        : _controller.activeSubtitleTexts;
+    if (cues.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final cleanCues = <String>[];
+    for (final rawCue in cues) {
+      final clean = rawCue.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      if (clean.isNotEmpty) {
+        cleanCues.add(clean);
+      }
+    }
+
+    if (cleanCues.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    final bottomPadding = _controller.controlsVisible
+        ? safeBottom + 82.0
+        : safeBottom + 20.0;
 
     return AnimatedPositioned(
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
-      left: 40,
-      right: 40,
+      left: 24,
+      right: 24,
       bottom: bottomPadding,
       child: IgnorePointer(
         child: Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.82),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.15),
-                width: 0.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  blurRadius: 12,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              color: const Color(0x6614151F), // Grey background
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: _controller.currentCues.map((cue) {
+              children: cleanCues.map((cleanCue) {
                 return Text(
-                  cue,
+                  cleanCue,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    height: 1.3,
+                    fontSize: 14.0, // Small text
+                    fontWeight: FontWeight.bold, // Bold text
+                    height: 1.25,
+                    letterSpacing: 0.1,
                     shadows: const [
                       Shadow(
                         color: Colors.black,
-                        blurRadius: 6,
+                        blurRadius: 4,
                         offset: Offset(0, 1),
+                      ),
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 6,
                       ),
                     ],
                   ),

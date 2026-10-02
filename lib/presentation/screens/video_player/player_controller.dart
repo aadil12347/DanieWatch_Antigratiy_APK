@@ -908,6 +908,37 @@ class PlayerController extends ChangeNotifier {
     _safeNotify();
   }
 
+  /// Current active subtitle texts from either ExoPlayer cues or parsed subtitle files.
+  List<String> get activeSubtitleTexts {
+    if (!isSubtitleActive) return const [];
+    final validExoCues = _currentCues
+        .where((c) => c.trim().isNotEmpty)
+        .toList();
+    if (validExoCues.isNotEmpty) {
+      return validExoCues;
+    }
+    final bp = _betterPlayerController;
+    if (bp != null) {
+      final rendered = bp.renderedSubtitle;
+      if (rendered != null && rendered.texts != null) {
+        final validTexts = rendered.texts!.where((c) => c.trim().isNotEmpty).toList();
+        if (validTexts.isNotEmpty) return validTexts;
+      }
+      if (bp.subtitlesLines.isNotEmpty) {
+        final pos = _position;
+        for (final sub in bp.subtitlesLines) {
+          if (sub.start != null && sub.end != null && sub.start! <= pos && sub.end! >= pos) {
+            if (sub.texts != null) {
+              final validTexts = sub.texts!.where((c) => c.trim().isNotEmpty).toList();
+              if (validTexts.isNotEmpty) return validTexts;
+            }
+          }
+        }
+      }
+    }
+    return const [];
+  }
+
   /// Disable subtitles.
   void disableSubtitles() {
     if (_betterPlayerController == null) return;
