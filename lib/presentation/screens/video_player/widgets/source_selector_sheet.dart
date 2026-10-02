@@ -5,8 +5,10 @@ library;
 /// Shows all extracted sources grouped by provider with quality tags,
 /// loading status indicators, and one-tap switching.
 
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../player_controller.dart';
 import '../../../../services/extraction/models.dart';
 import '../../../../services/extraction/provider_registry.dart';
@@ -31,147 +33,193 @@ class SourceSelectorSheet extends StatelessWidget {
           grouped.putIfAbsent(source.sourceName, () => []).add(source);
         }
 
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.6,
-          ),
-          decoration: const BoxDecoration(
-            color: Color(0xFF1A1A2E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Handle bar
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 440,
+              maxHeight: 380,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
-                  width: 40,
-                  height: 4,
+                  margin: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-
-              // Title
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    const Icon(Icons.layers, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Sources',
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: const Color(0xF2101016),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      width: 0.8,
                     ),
-                    const Spacer(),
-                    Text(
-                      '${sources.length} available',
-                      style: GoogleFonts.inter(
-                          color: Colors.white54, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Provider status indicators
-              if (statuses.values.any((s) => s == ProviderStatus.loading))
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: Row(
-                    children: [
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.amber),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Still searching...',
-                        style: GoogleFonts.inter(
-                            color: Colors.amber, fontSize: 12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.85),
+                        blurRadius: 40,
+                        spreadRadius: 4,
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
-                ),
-
-              const Divider(color: Colors.white12, height: 1),
-
-              // Source list grouped by provider
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: grouped.entries.map((entry) {
-                    final providerName = entry.key;
-                    final providerSources = entry.value;
-                    final status = statuses[providerName];
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Provider header
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 6),
-                          child: Row(
-                            children: [
-                              Text(
-                                providerName,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 14, 12, 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.dns_rounded,
+                                color: AppColors.primary,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Servers',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${sources.length}',
                                 style: GoogleFonts.inter(
                                   color: Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.5,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              if (status == ProviderStatus.loading)
-                                const SizedBox(
-                                  width: 10,
-                                  height: 10,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 1.5,
-                                    color: Colors.amber,
-                                  ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, color: Colors.white60, size: 18),
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.white.withValues(alpha: 0.06),
+                                padding: const EdgeInsets.all(6),
+                                minimumSize: const Size(28, 28),
+                              ),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Provider status indicators
+                      if (statuses.values.any((s) => s == ProviderStatus.loading))
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.primary,
                                 ),
-                              if (status == ProviderStatus.done)
-                                const Icon(Icons.check_circle,
-                                    color: Colors.green, size: 12),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Searching other servers in background...',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                ),
+                              ),
                             ],
                           ),
                         ),
 
-                        // Source items
-                        ...providerSources.map((source) {
-                          final isActive = currentSource?.url == source.url;
-                          return _SourceItem(
-                            source: source,
-                            isActive: isActive,
-                            onTap: () {
-                              controller.switchSource(source);
-                              Navigator.of(context).pop();
-                            },
-                          );
-                        }),
+                      Divider(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        height: 1,
+                      ),
 
-                        const SizedBox(height: 4),
-                      ],
-                    );
-                  }).toList(),
+                      // Source list grouped by provider
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          children: grouped.entries.map((entry) {
+                            final providerName = entry.key;
+                            final providerSources = entry.value;
+                            final status = statuses[providerName];
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Provider header
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        providerName.toUpperCase(),
+                                        style: GoogleFonts.inter(
+                                          color: Colors.white54,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      if (status == ProviderStatus.loading)
+                                        const SizedBox(
+                                          width: 10,
+                                          height: 10,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      if (status == ProviderStatus.done)
+                                        const Icon(Icons.check_circle_rounded,
+                                            color: Colors.green, size: 12),
+                                    ],
+                                  ),
+                                ),
+
+                                // Source items
+                                ...providerSources.map((source) {
+                                  final isActive = currentSource?.url == source.url;
+                                  return _SourceItem(
+                                    source: source,
+                                    isActive: isActive,
+                                    onTap: () {
+                                      controller.switchSource(source);
+                                      Navigator.of(context).pop();
+                                    },
+                                  );
+                                }),
+
+                                const SizedBox(height: 4),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
         );
       },
@@ -192,20 +240,32 @@ class _SourceItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        color: isActive ? Colors.white.withValues(alpha: 0.08) : Colors.transparent,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isActive
+              ? AppColors.primary.withValues(alpha: 0.14)
+              : Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive
+                ? AppColors.primary.withValues(alpha: 0.6)
+                : Colors.white.withValues(alpha: 0.06),
+            width: isActive ? 1.2 : 0.8,
+          ),
+        ),
         child: Row(
           children: [
-            // Playing indicator
-            if (isActive)
-              const Padding(
-                padding: EdgeInsets.only(right: 10),
-                child: Icon(Icons.play_circle_filled,
-                    color: Colors.red, size: 20),
-              ),
+            Icon(
+              isActive ? Icons.play_circle_filled_rounded : Icons.radio_button_unchecked_rounded,
+              color: isActive ? AppColors.primary : Colors.white38,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
 
             // Source info
             Expanded(

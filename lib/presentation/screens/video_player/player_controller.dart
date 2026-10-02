@@ -301,10 +301,10 @@ class PlayerController extends ChangeNotifier {
               useAsmsAudioTracks: isHls,
               useAsmsSubtitles: isHls,
               bufferingConfiguration: const BetterPlayerBufferingConfiguration(
-                minBufferMs: 5000,
-                maxBufferMs: 30000,
+                minBufferMs: 15000,
+                maxBufferMs: 35000,
                 bufferForPlaybackMs: 2500,
-                bufferForPlaybackAfterRebufferMs: 5000,
+                bufferForPlaybackAfterRebufferMs: 4000,
               ),
             );
 
@@ -930,6 +930,12 @@ class PlayerController extends ChangeNotifier {
 
   /// Check if subtitle sources are available.
   bool get hasSubtitles => _subtitleSources.any((s) => s.type != BetterPlayerSubtitlesSourceType.none);
+
+  /// Check if a subtitle track is currently active (not off/none)
+  bool get isSubtitleActive =>
+      _currentSubtitleSource != null &&
+      _currentSubtitleSource?.type != BetterPlayerSubtitlesSourceType.none &&
+      _currentSubtitleSource?.name != 'Off';
 
   // ─── Controls Visibility ───────────────────────────────────────────────
 

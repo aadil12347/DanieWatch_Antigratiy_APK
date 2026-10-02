@@ -114,6 +114,8 @@ internal class BetterPlayer(
             this.customDefaultLoadControl.bufferForPlaybackMs,
             this.customDefaultLoadControl.bufferForPlaybackAfterRebufferMs
         )
+        loadBuilder.setPrioritizeTimeOverSizeThresholds(true)
+        loadBuilder.setTargetBufferBytes(15 * 1024 * 1024)
         loadControl = loadBuilder.build()
         exoPlayer = ExoPlayer.Builder(context)
             .setTrackSelector(trackSelector)
@@ -513,6 +515,7 @@ internal class BetterPlayer(
                         cuesList.add(text)
                     }
                 }
+                Log.d(TAG, "onCues: Dispatched ${cuesList.size} cues to Flutter")
                 val event: MutableMap<String, Any?> = HashMap()
                 event["event"] = "cues"
                 event["key"] = key
@@ -736,70 +739,126 @@ internal class BetterPlayer(
     fun setTextTrack(name: String?, index: Int) {
         try {
             val player = exoPlayer ?: return
+            Log.d(TAG, "setTextTrack: requested name=$name, index=$index")
             if (index < 0) {
                 Log.d(TAG, "setTextTrack: Disabling subtitles (index=$index)")
+                val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+                if (mappedTrackInfo != null) {
+                    for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                        if (mappedTrackInfo.getRendererType(rendererIndex) == C.TRACK_TYPE_TEXT) {
+                            val builder = trackSelector.parameters
+                                .buildUpon()
+                                .setRendererDisabled(rendererIndex, true)
+                                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            trackSelector.setParameters(builder)
+                        }
+                    }
+                }
                 val builder = player.trackSelectionParameters
                     .buildUpon()
                     .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 player.trackSelectionParameters = builder.build()
+
+                // Immediately clear any active cues in UI
+                val event: MutableMap<String, Any?> = HashMap()
+                event["event"] = "cues"
+                event["key"] = key
+                event["cues"] = ArrayList<String>()
+                eventSink.success(event)
                 return
             }
 
-            var textIndex = 0
-            var targetGroup: Tracks.Group? = null
-            var targetTrackIndex = 0
+            val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+            if (mappedTrackInfo != null) {
+                for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                    if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) {
+                        continue
+                    }
+                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
+                    var matchedGroupIndex = -1
+                    var matchedTrackIndex = 0
+                    var flatIndex = 0
 
-            // 1. Try matching by name/language
-            if (!name.isNullOrEmpty()) {
-                for (group in player.currentTracks.groups) {
-                    if (group.type == C.TRACK_TYPE_TEXT) {
-                        for (i in 0 until group.length) {
-                            val format = group.getTrackFormat(i)
+                    for (g in 0 until trackGroupArray.length) {
+                        val group = trackGroupArray.get(g)
+                        for (t in 0 until group.length) {
+                            val format = group.getFormat(t)
                             val label = format.label
                             val language = format.language
-                            if (name.equals(label, ignoreCase = true) ||
+                            val isMatch = (!name.isNullOrEmpty() && (
+                                name.equals(label, ignoreCase = true) ||
                                 (language != null && (name.equals(language, ignoreCase = true) ||
                                  name.startsWith(language, ignoreCase = true) ||
-                                 language.startsWith(name, ignoreCase = true)))) {
-                                targetGroup = group
-                                targetTrackIndex = i
+                                 language.startsWith(name, ignoreCase = true)))
+                            )) || (flatIndex == index)
+
+                            if (isMatch) {
+                                matchedGroupIndex = g
+                                matchedTrackIndex = t
+                                Log.d(TAG, "setTextTrack: Found in trackSelector: renderer=$rendererIndex, group=$g, track=$t, label=$label, lang=$language")
                                 break
                             }
+                            flatIndex++
                         }
-                        if (targetGroup != null) break
+                        if (matchedGroupIndex >= 0) break
+                    }
+
+                    if (matchedGroupIndex >= 0) {
+                        val group = trackGroupArray.get(matchedGroupIndex)
+                        val safeTrackIndex = matchedTrackIndex.coerceIn(0, group.length - 1)
+                        val builder = trackSelector.parameters
+                            .buildUpon()
+                            .setRendererDisabled(rendererIndex, false)
+                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setPreferredTextLanguage(group.getFormat(safeTrackIndex).language)
+                            .addOverride(TrackSelectionOverride(group, safeTrackIndex))
+                        trackSelector.setParameters(builder)
+
+                        val pBuilder = player.trackSelectionParameters
+                            .buildUpon()
+                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setPreferredTextLanguage(group.getFormat(safeTrackIndex).language)
+                            .setOverrideForType(TrackSelectionOverride(group, safeTrackIndex))
+                        player.trackSelectionParameters = pBuilder.build()
+                        Log.d(TAG, "setTextTrack: Successfully applied text track selection")
+                        return
                     }
                 }
             }
 
-            // 2. Fallback: match by index
-            if (targetGroup == null && index >= 0) {
-                textIndex = 0
-                for (group in player.currentTracks.groups) {
-                    if (group.type == C.TRACK_TYPE_TEXT) {
-                        for (i in 0 until group.length) {
-                            if (textIndex == index) {
-                                targetGroup = group
-                                targetTrackIndex = i
-                                break
-                            }
-                            textIndex++
+            // Fallback: match using player.currentTracks
+            var textIndex = 0
+            for (group in player.currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_TEXT) {
+                    for (i in 0 until group.length) {
+                        val format = group.getTrackFormat(i)
+                        val label = format.label
+                        val language = format.language
+                        val isMatch = (!name.isNullOrEmpty() && (
+                            name.equals(label, ignoreCase = true) ||
+                            (language != null && (name.equals(language, ignoreCase = true) ||
+                             name.startsWith(language, ignoreCase = true) ||
+                             language.startsWith(name, ignoreCase = true)))
+                        )) || (textIndex == index)
+
+                        if (isMatch) {
+                            Log.d(TAG, "setTextTrack: Matched on currentTracks: group=${group.mediaTrackGroup}, track=$i")
+                            val builder = player.trackSelectionParameters
+                                .buildUpon()
+                                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                .setPreferredTextLanguage(format.language)
+                                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
+                            player.trackSelectionParameters = builder.build()
+                            return
                         }
-                        if (targetGroup != null) break
+                        textIndex++
                     }
                 }
-            }
-
-            if (targetGroup != null) {
-                Log.d(TAG, "setTextTrack: Enabling text track index=$targetTrackIndex in group=${targetGroup.mediaTrackGroup}")
-                val builder = player.trackSelectionParameters
-                    .buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setOverrideForType(TrackSelectionOverride(targetGroup.mediaTrackGroup, targetTrackIndex))
-                player.trackSelectionParameters = builder.build()
-            } else {
-                Log.w(TAG, "setTextTrack: No matching text track found for name=$name, index=$index")
             }
         } catch (e: Exception) {
             Log.e(TAG, "setTextTrack failed: $e")

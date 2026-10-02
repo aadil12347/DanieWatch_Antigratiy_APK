@@ -56,47 +56,54 @@ class PlayerOverlay extends StatelessWidget {
   }
 
   Widget _buildLockedOverlay() {
-    return Positioned(
-      right: 24,
-      top: 0,
-      bottom: 0,
-      child: Center(
-        child: GestureDetector(
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            controller.toggleLock();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.6), width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.25),
-                  blurRadius: 16,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.lock_rounded, color: AppColors.primary, size: 20),
-                SizedBox(width: 8),
-                Text(
-                  'Tap to Unlock',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+    return SizedBox.expand(
+      child: Stack(
+        children: [
+          // Unlock button in center right
+          Positioned(
+            right: 28,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _AnimatedTapScale(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  controller.toggleLock();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: AppColors.primary, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        blurRadius: 18,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.lock_open_rounded, color: AppColors.primary, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Tap to Unlock',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -146,7 +153,7 @@ class PlayerOverlay extends StatelessWidget {
   Widget _buildTopBar(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
             // Back button
@@ -158,7 +165,7 @@ class PlayerOverlay extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.5),
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                 ),
                 child: const Center(
                   child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
@@ -166,100 +173,42 @@ class PlayerOverlay extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(width: 12),
+            const Spacer(),
 
-            // Title + subtitle badge
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      // Episode badge if TV show
-                      if (controller.isTvShow && controller.season != null && controller.episode != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'S${controller.season.toString().padLeft(2, '0')}E${controller.episode.toString().padLeft(2, '0')}',
-                            style: GoogleFonts.inter(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      Expanded(
-                        child: Text(
-                          controller.title,
-                          style: GoogleFonts.plusJakartaSans(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (controller.currentSource != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        controller.currentSource!.displayName,
-                        style: GoogleFonts.inter(
-                          color: Colors.white.withValues(alpha: 0.65),
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            // Subtitle track button
+            // Subtitle track button (ONLY glows when an actual subtitle track is active)
             _buildTopActionButton(
               icon: Icons.subtitles_rounded,
               tooltip: 'Subtitles',
               onTap: onSubtitleTap,
-              isActive: controller.currentSubtitleSource != null,
+              isActive: controller.isSubtitleActive,
             ),
 
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
 
-            // Audio track button
+            // Audio track button (Neutral dark glass style, never glows)
             _buildTopActionButton(
               icon: Icons.audiotrack_rounded,
               tooltip: 'Audio Tracks',
               onTap: onAudioTap,
-              isActive: controller.hasAudioTracks,
+              isActive: false,
             ),
 
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
 
             // Speed button (pill)
             _AnimatedTapScale(
               onTap: onSpeedTap ?? () => _cycleSpeed(),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
                   color: controller.playbackSpeed != 1.0
-                      ? AppColors.primary.withValues(alpha: 0.3)
+                      ? AppColors.primary.withValues(alpha: 0.25)
                       : Colors.black.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: controller.playbackSpeed != 1.0
-                        ? AppColors.primary
-                        : Colors.white.withValues(alpha: 0.15),
+                        ? AppColors.primary.withValues(alpha: 0.6)
+                        : Colors.white.withValues(alpha: 0.12),
                   ),
                 ),
                 child: Text(
@@ -273,20 +222,7 @@ class PlayerOverlay extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(width: 6),
-
-            // Aspect ratio button
-            _buildTopActionButton(
-              icon: controller.resizeMode == VideoResizeMode.fit
-                  ? Icons.fit_screen_rounded
-                  : (controller.resizeMode == VideoResizeMode.fill
-                      ? Icons.crop_free_rounded
-                      : Icons.aspect_ratio_rounded),
-              tooltip: 'Aspect Ratio',
-              onTap: controller.cycleResizeMode,
-            ),
-
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
 
             // Lock button
             _buildTopActionButton(
@@ -536,56 +472,66 @@ class PlayerOverlay extends StatelessWidget {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Seek bar with buffer progress in DanieWatch Red
-            SizedBox(
-              height: 24,
-              child: Stack(
-                alignment: Alignment.center,
+            // 1. DanieWatch Custom Scrubber with vibrant red from pixel 0 and buffered indicator
+            _DanieWatchScrubber(
+              progress: progress,
+              bufferProgress: bufferProgress,
+              position: position,
+              duration: duration,
+              onSeek: (newPos) => controller.seekTo(newPos),
+            ),
+
+            // 2. Title at the bottom center below the progress line
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Buffer progress track (secondary)
-                  SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 3.5,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
-                      activeTrackColor: Colors.white.withValues(alpha: 0.35),
-                      inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
-                      thumbColor: Colors.transparent,
-                      overlayShape: SliderComponentShape.noOverlay,
+                  if (controller.isTvShow && controller.season != null && controller.episode != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE50914),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'S${controller.season.toString().padLeft(2, '0')}E${controller.episode.toString().padLeft(2, '0')}',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
                     ),
-                    child: Slider(
-                      value: bufferProgress.clamp(0.0, 1.0),
-                      onChanged: (_) {},
-                    ),
-                  ),
-                  // Active seek slider (primary DanieWatch red)
-                  SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 3.5,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                      activeTrackColor: AppColors.primary,
-                      inactiveTrackColor: Colors.transparent,
-                      thumbColor: AppColors.primary,
-                      overlayColor: AppColors.primary.withValues(alpha: 0.25),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                    ),
-                    child: Slider(
-                      value: progress.clamp(0.0, 1.0),
-                      onChanged: (value) {
-                        final seekPos = Duration(
-                            milliseconds: (value * duration.inMilliseconds).toInt());
-                        controller.seekTo(seekPos);
-                      },
+                  Flexible(
+                    child: Text(
+                      controller.title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.plusJakartaSans(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        shadows: const [
+                          Shadow(color: Colors.black87, blurRadius: 4),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
             ),
 
-            // Time + controls row (strictly NO episode button)
+            // 3. Time + controls row (strictly NO episode button)
             Row(
               children: [
                 // Time display
@@ -593,22 +539,22 @@ class PlayerOverlay extends StatelessWidget {
                   _formatDuration(position),
                   style: GoogleFonts.plusJakartaSans(
                     color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
                   ' / ${_formatDuration(duration)}',
                   style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 13,
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
 
                 const Spacer(),
 
-                // Sources button (if multiple sources available)
+                // Sources button (if available)
                 if (controller.sources.isNotEmpty)
                   GestureDetector(
                     onTap: onSourceTap,
@@ -623,7 +569,7 @@ class PlayerOverlay extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.dns_rounded, color: Colors.white70, size: 14),
+                          const Icon(Icons.dns_rounded, color: Colors.white70, size: 13),
                           const SizedBox(width: 5),
                           Text(
                             controller.sources.length > 1
@@ -631,7 +577,7 @@ class PlayerOverlay extends StatelessWidget {
                                 : 'Server 1',
                             style: GoogleFonts.inter(
                               color: Colors.white,
-                              fontSize: 12,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -640,7 +586,7 @@ class PlayerOverlay extends StatelessWidget {
                     ),
                   ),
 
-                // Aspect ratio indicator
+                // Aspect ratio button (Fit / Fill / Stretch)
                 GestureDetector(
                   onTap: controller.cycleResizeMode,
                   child: Container(
@@ -650,13 +596,28 @@ class PlayerOverlay extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                     ),
-                    child: Text(
-                      controller.resizeModeLabel,
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          controller.resizeMode == VideoResizeMode.fit
+                              ? Icons.fit_screen_rounded
+                              : (controller.resizeMode == VideoResizeMode.fill
+                                  ? Icons.crop_free_rounded
+                                  : Icons.aspect_ratio_rounded),
+                          color: Colors.white70,
+                          size: 13,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          controller.resizeModeLabel,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -676,6 +637,144 @@ class PlayerOverlay extends StatelessWidget {
       return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+// ─── Custom DanieWatch Scrubber ──────────────────────────────────────────────
+
+class _DanieWatchScrubber extends StatefulWidget {
+  final double progress;
+  final double bufferProgress;
+  final Duration position;
+  final Duration duration;
+  final ValueChanged<Duration> onSeek;
+
+  const _DanieWatchScrubber({
+    required this.progress,
+    required this.bufferProgress,
+    required this.position,
+    required this.duration,
+    required this.onSeek,
+  });
+
+  @override
+  State<_DanieWatchScrubber> createState() => _DanieWatchScrubberState();
+}
+
+class _DanieWatchScrubberState extends State<_DanieWatchScrubber> {
+  double? _dragProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveProgress = (_dragProgress ?? widget.progress).clamp(0.0, 1.0);
+    final effectiveBuffer = widget.bufferProgress.clamp(0.0, 1.0);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalWidth = constraints.maxWidth;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: (details) {
+            _updateFromPosition(details.localPosition.dx, totalWidth);
+          },
+          onHorizontalDragUpdate: (details) {
+            _updateFromPosition(details.localPosition.dx, totalWidth);
+          },
+          onHorizontalDragEnd: (_) {
+            if (_dragProgress != null && widget.duration.inMilliseconds > 0) {
+              final seekPos = Duration(
+                milliseconds: (_dragProgress! * widget.duration.inMilliseconds).toInt(),
+              );
+              widget.onSeek(seekPos);
+            }
+            setState(() => _dragProgress = null);
+          },
+          onTapDown: (details) {
+            final p = (details.localPosition.dx / totalWidth).clamp(0.0, 1.0);
+            if (widget.duration.inMilliseconds > 0) {
+              final seekPos = Duration(
+                milliseconds: (p * widget.duration.inMilliseconds).toInt(),
+              );
+              widget.onSeek(seekPos);
+            }
+          },
+          child: Container(
+            height: 24,
+            alignment: Alignment.center,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.centerLeft,
+              children: [
+                // 1. Inactive background track
+                Container(
+                  width: totalWidth,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+
+                // 2. Buffered progress track
+                Container(
+                  width: totalWidth * effectiveBuffer,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.40),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+
+                // 3. Played progress track (vibrant DanieWatch red from pixel 0)
+                Container(
+                  width: totalWidth * effectiveProgress,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE50914),
+                    borderRadius: BorderRadius.circular(2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFE50914).withValues(alpha: 0.45),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 4. Scrubber Thumb (glowing red dot)
+                Positioned(
+                  left: (totalWidth * effectiveProgress - 7).clamp(0.0, totalWidth - 14),
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE50914),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFE50914).withValues(alpha: 0.6),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _updateFromPosition(double localX, double totalWidth) {
+    if (totalWidth <= 0) return;
+    setState(() {
+      _dragProgress = (localX / totalWidth).clamp(0.0, 1.0);
+    });
   }
 }
 

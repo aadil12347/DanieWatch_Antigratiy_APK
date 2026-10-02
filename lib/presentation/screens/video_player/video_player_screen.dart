@@ -530,33 +530,34 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Widget _buildSubtitleOverlay() {
     if (_controller.currentSubtitleSource == null ||
         _controller.currentSubtitleSource?.type == BetterPlayerSubtitlesSourceType.none ||
+        _controller.currentSubtitleSource?.name == 'Off' ||
         _controller.currentCues.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final bottomPadding = _controller.controlsVisible ? 85.0 : 28.0;
+    final bottomPadding = _controller.controlsVisible ? 100.0 : 32.0;
 
-    return IgnorePointer(
-      child: AnimatedPositioned(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        left: 40,
-        right: 40,
-        bottom: bottomPadding,
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      left: 40,
+      right: 40,
+      bottom: bottomPadding,
+      child: IgnorePointer(
         child: Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.8),
+              color: Colors.black.withValues(alpha: 0.82),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
+                color: Colors.white.withValues(alpha: 0.15),
                 width: 0.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  blurRadius: 10,
+                  color: Colors.black.withValues(alpha: 0.7),
+                  blurRadius: 12,
                   offset: const Offset(0, 2),
                 ),
               ],
@@ -571,10 +572,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    height: 1.3,
                     shadows: const [
                       Shadow(
                         color: Colors.black,
-                        blurRadius: 4,
+                        blurRadius: 6,
                         offset: Offset(0, 1),
                       ),
                     ],

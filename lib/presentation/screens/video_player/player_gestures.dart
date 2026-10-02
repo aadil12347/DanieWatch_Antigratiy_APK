@@ -67,6 +67,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   Future<void> _initVolumeAndBrightness() async {
     try {
+      VolumeController.instance.showSystemUI = false;
       _currentVolume = await VolumeController.instance.getVolume();
       _currentBrightness = await ScreenBrightness().current;
     } catch (_) {
@@ -135,41 +136,37 @@ class _PlayerGesturesState extends State<PlayerGestures>
             ),
           ),
 
-        // 2X Speed pulsing pill indicator (top center)
+        // 2X Speed subtle minimal indicator (top center)
         if (_isLongPressing)
           Positioned(
-            top: 24,
+            top: 16,
             left: 0,
             right: 0,
             child: Center(
               child: FadeTransition(
                 opacity: _speedPillAnim,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: AppColors.primary, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.4),
-                        blurRadius: 16,
-                        spreadRadius: 2,
-                      ),
-                    ],
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      width: 0.5,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.fast_forward_rounded, color: AppColors.primary, size: 18),
-                      const SizedBox(width: 8),
+                      const Icon(Icons.fast_forward_rounded, color: Colors.white70, size: 12),
+                      const SizedBox(width: 4),
                       Text(
-                        '2X SPEED',
-                        style: GoogleFonts.plusJakartaSans(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
+                        '2x',
+                        style: GoogleFonts.inter(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ],
@@ -283,12 +280,17 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Single tap ─────────────────────────────────────────────────────────
 
   void _onTap() {
+    if (widget.controller.isLocked) {
+      widget.controller.showControls();
+      return;
+    }
     widget.controller.toggleControls();
   }
 
   // ─── Double-tap seek ────────────────────────────────────────────────────
 
   void _onDoubleTapDown(TapDownDetails details, BuildContext context) {
+    if (widget.controller.isLocked) return;
     final screenWidth = MediaQuery.of(context).size.width;
     final tapX = details.globalPosition.dx;
     final isLeft = tapX < screenWidth / 2;
@@ -370,6 +372,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
     } else {
       _currentVolume = (_currentVolume + delta).clamp(0.0, 1.0);
       try {
+        VolumeController.instance.showSystemUI = false;
         VolumeController.instance.setVolume(_currentVolume);
       } catch (_) {}
     }
