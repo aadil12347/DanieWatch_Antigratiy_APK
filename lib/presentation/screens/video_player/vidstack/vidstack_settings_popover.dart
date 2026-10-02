@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:better_player_plus/better_player_plus.dart';
-import '../../../../services/extraction/models.dart';
 import '../player_controller.dart';
 import 'vidstack_icons.dart';
 import 'vidstack_theme.dart';
@@ -87,23 +86,22 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   }
 
   String _getQualityLabel() {
+    if (widget.controller.selectedResolution.isNotEmpty) {
+      return widget.controller.selectedResolution.toUpperCase();
+    }
     final cur = widget.controller.currentSource;
     if (cur != null) {
-      if (cur.quality > 0) return '${cur.quality}p';
+      if (cur.quality > 0) return '${cur.quality}p'.toUpperCase();
       final match = RegExp(r'(\d{3,4}p|4k)', caseSensitive: false).firstMatch(cur.displayName);
       if (match != null) return match.group(1)!.toUpperCase();
     }
-    final bp = widget.controller.betterPlayerController;
-    if (bp != null && bp.betterPlayerAsmsTracks.isNotEmpty) {
-      return 'Auto';
-    }
-    return '720p';
+    return '720P';
   }
 
   String _getAudioLabel() {
     final cur = widget.controller.currentAudioTrack;
     if (cur != null) {
-      return cur.label ?? cur.language ?? 'Track 1';
+      return cur.label ?? cur.language ?? 'Default';
     }
     return widget.controller.audioTracks.isNotEmpty
         ? (widget.controller.audioTracks.first.label ?? 'Default')
@@ -119,6 +117,9 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   }
 
   String _getServerLabel() {
+    if (widget.controller.selectedServer.isNotEmpty) {
+      return widget.controller.selectedServer;
+    }
     final cur = widget.controller.currentSource;
     if (cur != null) {
       final name = cur.displayName.isNotEmpty
@@ -126,7 +127,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
           : (cur.sourceName.isNotEmpty ? cur.sourceName : 'Server 1');
       return name;
     }
-    return 'Default';
+    return 'Server 1';
   }
 
   double _getCaretRightPadding() {
@@ -289,7 +290,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
         ),
 
         // 5. Server Source
-        if (widget.controller.sources.isNotEmpty)
+        if (widget.controller.currentServers.isNotEmpty || widget.controller.sources.isNotEmpty)
           _buildRootRow(
             icon: VidstackIcon.server(size: 18),
             title: 'Server',
@@ -461,35 +462,29 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   // ─── QUALITY SUBMENU ───────────────────────────────────────────────────
 
   Widget _buildQualityMenu() {
-    final bp = widget.controller.betterPlayerController;
-    final asmsTracks = bp?.betterPlayerAsmsTracks ?? [];
-    final sources = widget.controller.sources;
-    final current = widget.controller.currentSource;
-
-    // Group and pick best server link for each distinct resolution
-    final Map<String, ExtractorLink> resolutionMap = {};
-    for (final s in sources) {
+    final Map<String, String> allResolutions =
+        Map.from(widget.controller.availableResolutions);
+    for (final s in widget.controller.sources) {
       String resKey;
       if (s.quality > 0) {
         resKey = '${s.quality}p';
       } else {
-        final match = RegExp(r'(\d{3,4}p|4k)', caseSensitive: false).firstMatch(s.displayName);
+        final match =
+            RegExp(r'(\d{3,4}p|4k)', caseSensitive: false).firstMatch(s.displayName);
         resKey = match != null ? match.group(1)!.toLowerCase() : '720p';
       }
-      // Prefer Server 2 (FSLv2) if multiple links have the same resolution
-      final sLower = s.displayName.toLowerCase();
-      if (!resolutionMap.containsKey(resKey) ||
-          sLower.contains('fslv2') ||
-          sLower.contains('server 2')) {
-        resolutionMap[resKey] = s;
+      if (!allResolutions.containsKey(resKey)) {
+        allResolutions[resKey] = s.url;
       }
     }
 
+    final selectedRes = widget.controller.selectedResolution.toLowerCase();
+
     // Sort descending: 2160p/4k > 1080p > 720p > 480p > 360p
-    final sortedResKeys = resolutionMap.keys.toList()
+    final sortedResKeys = allResolutions.keys.toList()
       ..sort((a, b) {
         int getVal(String k) {
-          if (k.contains('4k') || k.contains('2160')) return 2160;
+          if (k.toLowerCase().contains('4k') || k.contains('2160')) return 2160;
           return int.tryParse(k.replaceAll(RegExp(r'\D'), '')) ?? 0;
         }
         return getVal(b).compareTo(getVal(a));
@@ -510,49 +505,20 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (asmsTracks.isNotEmpty) ...[
-                  _buildOptionRow(
-                    title: 'Auto (Recommended)',
-                    subtitle: 'Automatically adapts to bandwidth',
-                    isSelected: true,
-                    onTap: () {
-                      if (bp != null) {
-                        bp.setTrack(BetterPlayerAsmsTrack.defaultTrack());
-                      }
-                      _navigateBack();
-                    },
-                  ),
-                  ...asmsTracks.map((t) {
-                    final label = t.height != null && t.height! > 0
-                        ? '${t.height}p'
-                        : (t.bitrate != null ? '${(t.bitrate! / 1000).round()} kbps' : 'Stream');
-                    return _buildOptionRow(
-                      title: label,
-                      isSelected: false,
-                      onTap: () {
-                        if (bp != null) {
-                          bp.setTrack(t);
-                        }
-                        _navigateBack();
-                      },
-                    );
-                  }),
-                ] else if (sortedResKeys.isNotEmpty) ...[
+                if (sortedResKeys.isNotEmpty) ...[
                   ...sortedResKeys.map((resKey) {
-                    final source = resolutionMap[resKey]!;
-                    final isCur = current != null &&
-                        (current.quality > 0
-                            ? '${current.quality}p'.toLowerCase() == resKey
-                            : current.displayName.toLowerCase().contains(resKey.toLowerCase()));
+                    final lowerKey = resKey.toLowerCase();
+                    final isCur = selectedRes.contains(lowerKey) ||
+                        lowerKey.contains(selectedRes);
 
                     String subtitle;
-                    if (resKey.contains('2160') || resKey.contains('4k')) {
+                    if (lowerKey.contains('2160') || lowerKey.contains('4k')) {
                       subtitle = 'Ultra HD (4K)';
-                    } else if (resKey.contains('1080')) {
+                    } else if (lowerKey.contains('1080')) {
                       subtitle = 'Full HD (1080p)';
-                    } else if (resKey.contains('720')) {
+                    } else if (lowerKey.contains('720')) {
                       subtitle = 'High Definition (720p)';
-                    } else if (resKey.contains('480')) {
+                    } else if (lowerKey.contains('480')) {
                       subtitle = 'Standard Definition (480p)';
                     } else {
                       subtitle = 'Resolution $resKey';
@@ -563,7 +529,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
                       subtitle: subtitle,
                       isSelected: isCur,
                       onTap: () {
-                        widget.controller.switchSource(source);
+                        widget.controller.switchResolution(resKey);
                         _navigateBack();
                       },
                     );
@@ -687,7 +653,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
                   },
                 ),
                 ...validSources.map((s) {
-                  final isSelected = !isOff && current?.name == s.name;
+                  final isSelected = !isOff && current.name == s.name;
                   return _buildOptionRow(
                     title: s.name ?? 'Subtitle Track',
                     isSelected: isSelected,
@@ -713,15 +679,15 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   // ─── SERVER SUBMENU ────────────────────────────────────────────────────
 
   Widget _buildServerMenu() {
-    final sources = widget.controller.sources;
-    final current = widget.controller.currentSource;
+    final servers = widget.controller.currentServers;
+    final selectedServer = widget.controller.selectedServer;
 
     return Column(
       key: const ValueKey('servers'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSubmenuHeader('Source Server'),
+        _buildSubmenuHeader('Streaming Server'),
         const Divider(color: VidstackTheme.borderSubtle, height: 1),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 240),
@@ -730,22 +696,43 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: sources.map((s) {
-                final isSelected = current == s;
-                final title = s.displayName.isNotEmpty ? s.displayName : s.sourceName;
-                final subtitle = s.quality > 0
-                    ? '${s.quality}p${s.qualityTags != null ? ' • ${s.qualityTags}' : ''}'
-                    : (s.qualityTags);
-                return _buildOptionRow(
-                  title: title,
-                  subtitle: subtitle,
-                  isSelected: isSelected,
-                  onTap: () {
-                    widget.controller.switchSource(s);
-                    _navigateBack();
-                  },
-                );
-              }).toList(),
+              children: servers.isNotEmpty
+                  ? servers.entries.map((entry) {
+                      final serverName = entry.key;
+                      final streamUrl = entry.value;
+                      final isSelected = selectedServer.isNotEmpty
+                          ? selectedServer == serverName
+                          : (widget.controller.currentSource?.url == streamUrl);
+
+                      String? subtitle;
+                      if (serverName.contains('FSLv2')) {
+                        subtitle = 'Fastest direct streaming • Low latency';
+                      } else if (serverName.contains('FSL')) {
+                        subtitle = 'Direct high-speed streaming';
+                      } else if (serverName.contains('FastDL') || serverName.contains('Google')) {
+                        subtitle = 'Google Cloud CDN streaming';
+                      } else if (serverName.contains('Pixeldrain')) {
+                        subtitle = 'Reliable high-bandwidth fallback';
+                      }
+
+                      return _buildOptionRow(
+                        title: serverName,
+                        subtitle: subtitle,
+                        isSelected: isSelected,
+                        onTap: () {
+                          widget.controller.switchServer(serverName, streamUrl);
+                          _navigateBack();
+                        },
+                      );
+                    }).toList()
+                  : [
+                      _buildOptionRow(
+                        title: selectedServer.isNotEmpty ? selectedServer : 'Server 2 (FSLv2)',
+                        subtitle: 'Primary direct stream',
+                        isSelected: true,
+                        onTap: _navigateBack,
+                      ),
+                    ],
             ),
           ),
         ),

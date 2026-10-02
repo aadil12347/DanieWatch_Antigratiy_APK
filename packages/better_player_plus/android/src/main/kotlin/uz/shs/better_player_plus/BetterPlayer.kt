@@ -43,6 +43,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionOverride
+import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
@@ -105,6 +106,7 @@ internal class BetterPlayer(
     private val customDefaultLoadControl: CustomDefaultLoadControl =
         customDefaultLoadControl ?: CustomDefaultLoadControl()
     private var lastSendBufferedPosition = 0L
+    private var loudnessEnhancer: LoudnessEnhancer? = null
 
     init {
         val loadBuilder = DefaultLoadControl.Builder()
@@ -464,8 +466,11 @@ internal class BetterPlayer(
         )
         surface = Surface(textureEntry.surfaceTexture())
         exoPlayer?.setVideoSurface(surface)
-        setAudioAttributes(exoPlayer, true)
+        setAudioAttributes(exoPlayer, false)
         exoPlayer?.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                initLoudnessEnhancer(audioSessionId)
+            }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
@@ -479,6 +484,12 @@ internal class BetterPlayer(
                         if (!isInitialized) {
                             isInitialized = true
                             sendInitialized()
+                        }
+                        if (loudnessEnhancer == null) {
+                            val sid = exoPlayer?.audioSessionId ?: 0
+                            if (sid != 0) {
+                                initLoudnessEnhancer(sid)
+                            }
                         }
                         val event: MutableMap<String, Any> = HashMap()
                         event["event"] = "bufferingEnd"
@@ -545,11 +556,26 @@ internal class BetterPlayer(
         }
     }
 
+    private fun initLoudnessEnhancer(sessionId: Int) {
+        if (sessionId == 0 || sessionId == C.AUDIO_SESSION_ID_UNSET) return
+        try {
+            loudnessEnhancer?.release()
+            loudnessEnhancer = LoudnessEnhancer(sessionId).apply {
+                setTargetGain(1500) // +15dB cinema-to-mobile dialogue and speaker volume boost
+                enabled = true
+            }
+            Log.d(TAG, "LoudnessEnhancer enabled for session $sessionId (+15dB boost)")
+        } catch (e: Exception) {
+            Log.e(TAG, "LoudnessEnhancer setup failed: $e")
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun setAudioAttributes(exoPlayer: ExoPlayer?, mixWithOthers: Boolean) {
         exoPlayer?.setAudioAttributes(
             AudioAttributes.Builder()
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .setUsage(C.USAGE_MEDIA)
                 .build(),
             !mixWithOthers
         )
@@ -691,23 +717,69 @@ internal class BetterPlayer(
     }
 
     fun getAudioTracks(): List<Map<String, Any?>> {
-        val list = ArrayList<Map<String, Any?>>()
+        val list = ArrayList<MutableMap<String, Any?>>()
         val player = exoPlayer ?: return list
-        var index = 0
-        for (group in player.currentTracks.groups) {
-            if (group.type == C.TRACK_TYPE_AUDIO) {
-                for (i in 0 until group.length) {
-                    val format = group.getTrackFormat(i)
-                    val map = HashMap<String, Any?>()
-                    map["index"] = index
-                    map["label"] = format.label
-                    map["language"] = format.language
-                    map["channels"] = format.channelCount
-                    map["bitrate"] = format.bitrate
-                    map["mimeType"] = format.sampleMimeType
-                    map["selected"] = group.isTrackSelected(i)
-                    list.add(map)
-                    index++
+
+        val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+        if (mappedTrackInfo != null) {
+            var index = 0
+            for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                if (mappedTrackInfo.getRendererType(rendererIndex) == C.TRACK_TYPE_AUDIO) {
+                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
+                    for (g in 0 until trackGroupArray.length) {
+                        val group = trackGroupArray.get(g)
+                        for (i in 0 until group.length) {
+                            val format = group.getFormat(i)
+                            val map = HashMap<String, Any?>()
+                            map["index"] = index
+                            map["groupIndex"] = g
+                            map["trackIndex"] = i
+                            map["label"] = format.label
+                            map["language"] = format.language
+                            map["channels"] = format.channelCount
+                            map["bitrate"] = format.bitrate
+                            map["mimeType"] = format.sampleMimeType
+                            map["selected"] = false
+                            list.add(map)
+                            index++
+                        }
+                    }
+                }
+            }
+        }
+
+        if (list.isEmpty()) {
+            var index = 0
+            for (group in player.currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_AUDIO) {
+                    for (i in 0 until group.length) {
+                        val format = group.getTrackFormat(i)
+                        val map = HashMap<String, Any?>()
+                        map["index"] = index
+                        map["label"] = format.label
+                        map["language"] = format.language
+                        map["channels"] = format.channelCount
+                        map["bitrate"] = format.bitrate
+                        map["mimeType"] = format.sampleMimeType
+                        map["selected"] = group.isTrackSelected(i)
+                        list.add(map)
+                        index++
+                    }
+                }
+            }
+        } else {
+            for (group in player.currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_AUDIO) {
+                    for (i in 0 until group.length) {
+                        if (group.isTrackSelected(i)) {
+                            val format = group.getTrackFormat(i)
+                            for (m in list) {
+                                if (m["label"] == format.label && m["language"] == format.language) {
+                                    m["selected"] = true
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -715,21 +787,65 @@ internal class BetterPlayer(
     }
 
     fun getTextTracks(): List<Map<String, Any?>> {
-        val list = ArrayList<Map<String, Any?>>()
+        val list = ArrayList<MutableMap<String, Any?>>()
         val player = exoPlayer ?: return list
-        var index = 0
-        for (group in player.currentTracks.groups) {
-            if (group.type == C.TRACK_TYPE_TEXT) {
-                for (i in 0 until group.length) {
-                    val format = group.getTrackFormat(i)
-                    val map = HashMap<String, Any?>()
-                    map["index"] = index
-                    map["label"] = format.label
-                    map["language"] = format.language
-                    map["mimeType"] = format.sampleMimeType
-                    map["selected"] = group.isTrackSelected(i)
-                    list.add(map)
-                    index++
+
+        val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+        if (mappedTrackInfo != null) {
+            var index = 0
+            for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                if (mappedTrackInfo.getRendererType(rendererIndex) == C.TRACK_TYPE_TEXT) {
+                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
+                    for (g in 0 until trackGroupArray.length) {
+                        val group = trackGroupArray.get(g)
+                        for (i in 0 until group.length) {
+                            val format = group.getFormat(i)
+                            val map = HashMap<String, Any?>()
+                            map["index"] = index
+                            map["groupIndex"] = g
+                            map["trackIndex"] = i
+                            map["label"] = format.label
+                            map["language"] = format.language
+                            map["mimeType"] = format.sampleMimeType
+                            map["selected"] = false
+                            list.add(map)
+                            index++
+                        }
+                    }
+                }
+            }
+        }
+
+        if (list.isEmpty()) {
+            var index = 0
+            for (group in player.currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_TEXT) {
+                    for (i in 0 until group.length) {
+                        val format = group.getTrackFormat(i)
+                        val map = HashMap<String, Any?>()
+                        map["index"] = index
+                        map["label"] = format.label
+                        map["language"] = format.language
+                        map["mimeType"] = format.sampleMimeType
+                        map["selected"] = group.isTrackSelected(i)
+                        list.add(map)
+                        index++
+                    }
+                }
+            }
+        } else {
+            for (group in player.currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_TEXT) {
+                    for (i in 0 until group.length) {
+                        if (group.isTrackSelected(i)) {
+                            val format = group.getTrackFormat(i)
+                            for (m in list) {
+                                if (m["label"] == format.label && m["language"] == format.language) {
+                                    m["selected"] = true
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -787,17 +903,21 @@ internal class BetterPlayer(
                             val format = group.getFormat(t)
                             val label = format.label
                             val language = format.language
-                            val isMatch = (!name.isNullOrEmpty() && (
+                            val isMatch = if (index >= 0) {
+                                flatIndex == index
+                            } else if (!name.isNullOrEmpty()) {
                                 name.equals(label, ignoreCase = true) ||
                                 (language != null && (name.equals(language, ignoreCase = true) ||
                                  name.startsWith(language, ignoreCase = true) ||
                                  language.startsWith(name, ignoreCase = true)))
-                            )) || (flatIndex == index)
+                            } else {
+                                false
+                            }
 
                             if (isMatch) {
                                 matchedGroupIndex = g
                                 matchedTrackIndex = t
-                                Log.d(TAG, "setTextTrack: Found in trackSelector: renderer=$rendererIndex, group=$g, track=$t, label=$label, lang=$language")
+                                Log.d(TAG, "setTextTrack: Found in trackSelector: renderer=$rendererIndex, group=$g, track=$t, label=$label, lang=$language (flatIndex=$flatIndex, reqIndex=$index)")
                                 break
                             }
                             flatIndex++
@@ -1020,6 +1140,10 @@ internal class BetterPlayer(
         textureEntry.release()
         eventChannel.setStreamHandler(null)
         surface?.release()
+        try {
+            loudnessEnhancer?.release()
+        } catch (_: Exception) {}
+        loudnessEnhancer = null
         exoPlayer?.release()
     }
 
