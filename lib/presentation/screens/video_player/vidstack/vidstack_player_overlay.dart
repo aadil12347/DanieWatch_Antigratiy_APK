@@ -38,10 +38,15 @@ class VidstackPlayerOverlay extends StatefulWidget {
   State<VidstackPlayerOverlay> createState() => _VidstackPlayerOverlayState();
 }
 
-class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
+class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
+    with SingleTickerProviderStateMixin {
   bool _showSettingsPopover = false;
   VidstackSettingsSubmenu _popoverSubmenu = VidstackSettingsSubmenu.root;
   bool _showCountdownTime = false;
+
+  late final AnimationController _popoverAnimController;
+  late final Animation<double> _popoverScaleAnim;
+  late final Animation<double> _popoverFadeAnim;
 
   // ─── Locked State Auto-Vanish ──────────────────────────────────────────
   bool _showUnlockButton = true;
@@ -51,11 +56,31 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
   void initState() {
     super.initState();
     _startUnlockVanishTimer();
+    _popoverAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+      reverseDuration: const Duration(milliseconds: 180),
+    );
+    _popoverScaleAnim = Tween<double>(begin: 0.82, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _popoverAnimController,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeInCubic,
+      ),
+    );
+    _popoverFadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _popoverAnimController,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
+    );
   }
 
   @override
   void dispose() {
     _unlockVanishTimer?.cancel();
+    _popoverAnimController.dispose();
     super.dispose();
   }
 
@@ -74,22 +99,26 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
   }
 
   void _toggleSettingsPopover([VidstackSettingsSubmenu menu = VidstackSettingsSubmenu.root]) {
-    HapticFeedback.lightImpact();
-    setState(() {
-      if (_showSettingsPopover && _popoverSubmenu == menu) {
-        _showSettingsPopover = false;
-      } else {
+    if (_showSettingsPopover && _popoverSubmenu == menu) {
+      _closeSettingsPopover();
+    } else {
+      setState(() {
         _popoverSubmenu = menu;
         _showSettingsPopover = true;
-      }
-    });
+      });
+      _popoverAnimController.forward(from: 0.0);
+    }
   }
 
   void _closeSettingsPopover() {
     if (_showSettingsPopover) {
-      setState(() {
-        _showSettingsPopover = false;
-        _popoverSubmenu = VidstackSettingsSubmenu.root;
+      _popoverAnimController.reverse().then((_) {
+        if (mounted) {
+          setState(() {
+            _showSettingsPopover = false;
+            _popoverSubmenu = VidstackSettingsSubmenu.root;
+          });
+        }
       });
     }
   }
@@ -166,7 +195,16 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
         }
 
         // Normal mode: animated controls with 250ms cubic ease
-        final visible = widget.controller.controlsVisible || _showSettingsPopover;
+        final visible = widget.controller.controlsVisible;
+
+        // Auto close popover if controls were hidden
+        if (!visible && _showSettingsPopover) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _showSettingsPopover) {
+              _closeSettingsPopover();
+            }
+          });
+        }
 
         return AnimatedOpacity(
           opacity: visible ? 1.0 : 0.0,
@@ -213,7 +251,6 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                             border: Border.all(color: VidstackTheme.brand, width: 1.5),
                             tooltip: 'Unlock Controls',
                             onTap: () {
-                              HapticFeedback.mediumImpact();
                               widget.controller.toggleLock();
                             },
                             child: VidstackIcon.unlock(size: 18, color: VidstackTheme.brand),
@@ -238,7 +275,25 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: _closeSettingsPopover,
+      onTap: () {
+        if (_showSettingsPopover) {
+          _closeSettingsPopover();
+        } else {
+          widget.controller.toggleControls();
+        }
+      },
+      onDoubleTapDown: (details) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        if (details.localPosition.dx < screenWidth * 0.35) {
+          widget.controller.skipBackward();
+        } else if (details.localPosition.dx > screenWidth * 0.65) {
+          widget.controller.skipForward();
+        } else {
+          HapticFeedback.lightImpact();
+          widget.controller.togglePlayPause();
+        }
+      },
+      onDoubleTap: () {},
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.transparent,
@@ -295,25 +350,16 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 curve: Curves.easeOutCubic,
                 right: _getPopoverRightOffset(context),
                 bottom: popoverBottom,
-                child: TweenAnimationBuilder<double>(
-                  key: ValueKey(_popoverSubmenu),
-                  tween: Tween<double>(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutBack,
-                  builder: (context, anim, child) {
-                    return Transform.scale(
-                      scale: 0.88 + (0.12 * anim),
-                      alignment: _getPopoverAlignment(),
-                      child: Opacity(
-                        opacity: anim.clamp(0.0, 1.0),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: VidstackSettingsPopover(
-                    controller: widget.controller,
-                    onClose: _closeSettingsPopover,
-                    initialMenu: _popoverSubmenu,
+                child: FadeTransition(
+                  opacity: _popoverFadeAnim,
+                  child: ScaleTransition(
+                    scale: _popoverScaleAnim,
+                    alignment: _getPopoverAlignment(),
+                    child: VidstackSettingsPopover(
+                      controller: widget.controller,
+                      onClose: _closeSettingsPopover,
+                      initialMenu: _popoverSubmenu,
+                    ),
                   ),
                 ),
               ),
@@ -451,7 +497,6 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
           border: Border.all(color: VidstackTheme.borderMedium),
           tooltip: 'Rewind 10 seconds',
           onTap: () {
-            HapticFeedback.lightImpact();
             widget.controller.skipBackward();
           },
           child: VidstackIcon.seekBackward10(size: 28, color: Colors.white),
@@ -467,7 +512,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
           border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.5),
           tooltip: isCompleted ? 'Replay' : (widget.controller.isPlaying ? 'Pause' : 'Play'),
           onTap: () {
-            HapticFeedback.mediumImpact();
+            HapticFeedback.lightImpact(); // minor vibration on play pause
             if (isCompleted) {
               widget.controller.seekTo(Duration.zero);
             } else {
@@ -505,7 +550,6 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
           border: Border.all(color: VidstackTheme.borderMedium),
           tooltip: 'Forward 10 seconds',
           onTap: () {
-            HapticFeedback.lightImpact();
             widget.controller.skipForward();
           },
           child: VidstackIcon.seekForward10(size: 28, color: Colors.white),
@@ -596,7 +640,10 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 // Mini Play / Pause Toggle
                 VidstackButton(
                   tooltip: widget.controller.isPlaying ? 'Pause (k)' : 'Play (k)',
-                  onTap: widget.controller.togglePlayPause,
+                  onTap: () {
+                    HapticFeedback.lightImpact(); // minor vibration on play pause
+                    widget.controller.togglePlayPause();
+                  },
                   child: widget.controller.isPlaying
                       ? VidstackIcon.pause(size: 20)
                       : VidstackIcon.play(size: 20),
@@ -612,7 +659,6 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 // Time Display with countdown toggle
                 GestureDetector(
                   onTap: () {
-                    HapticFeedback.selectionClick();
                     setState(() => _showCountdownTime = !_showCountdownTime);
                   },
                   child: Row(
@@ -650,9 +696,14 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                   tooltip: 'Subtitles (c)',
                   isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
                   onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.subtitles),
-                  child: VidstackIcon.captions(
-                    size: 20,
-                    isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
+                  child: AnimatedScale(
+                    scale: isSubtitlesOpen ? 1.15 : 1.0,
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutBack,
+                    child: VidstackIcon.captions(
+                      size: 20,
+                      isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
+                    ),
                   ),
                 ),
 
@@ -663,9 +714,14 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                   tooltip: 'Audio Track',
                   isActive: isAudioOpen,
                   onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.audio),
-                  child: VidstackIcon.audio(
-                    size: 20,
-                    color: isAudioOpen ? VidstackTheme.brand : Colors.white,
+                  child: AnimatedScale(
+                    scale: isAudioOpen ? 1.15 : 1.0,
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutBack,
+                    child: VidstackIcon.audio(
+                      size: 20,
+                      color: isAudioOpen ? VidstackTheme.brand : Colors.white,
+                    ),
                   ),
                 ),
 
@@ -676,9 +732,19 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                   tooltip: 'Settings',
                   isActive: isSettingsOpen,
                   onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.root),
-                  child: VidstackIcon.settings(
-                    size: 20,
-                    color: isSettingsOpen ? VidstackTheme.brand : Colors.white,
+                  child: AnimatedRotation(
+                    turns: isSettingsOpen ? 0.25 : 0.0,
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedScale(
+                      scale: isSettingsOpen ? 1.12 : 1.0,
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutBack,
+                      child: VidstackIcon.settings(
+                        size: 20,
+                        color: isSettingsOpen ? VidstackTheme.brand : Colors.white,
+                      ),
+                    ),
                   ),
                 ),
 

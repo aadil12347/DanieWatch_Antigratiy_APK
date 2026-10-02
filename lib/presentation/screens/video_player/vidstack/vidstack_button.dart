@@ -72,7 +72,6 @@ class _VidstackButtonState extends State<VidstackButton>
     Future.delayed(const Duration(milliseconds: 50), () {
       if (mounted) _controller.reverse();
     });
-    HapticFeedback.lightImpact();
     widget.onTap?.call();
   }
 

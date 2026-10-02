@@ -108,7 +108,6 @@ class SpeedSelectorSheet extends StatelessWidget {
 
                             return GestureDetector(
                               onTap: () {
-                                HapticFeedback.selectionClick();
                                 controller.setPlaybackSpeed(speed);
                                 Navigator.of(context).pop();
                               },

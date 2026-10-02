@@ -129,7 +129,6 @@ class SubtitleTrackSelectorSheet extends StatelessWidget {
                             // Off option
                             GestureDetector(
                               onTap: () {
-                                HapticFeedback.selectionClick();
                                 controller.disableSubtitles();
                                 Navigator.of(context).pop();
                               },
@@ -192,7 +191,6 @@ class SubtitleTrackSelectorSheet extends StatelessWidget {
 
                               return GestureDetector(
                                 onTap: () {
-                                  HapticFeedback.selectionClick();
                                   controller.setSubtitleSource(source);
                                   Navigator.of(context).pop();
                                 },

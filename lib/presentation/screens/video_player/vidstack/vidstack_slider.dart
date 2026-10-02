@@ -68,7 +68,6 @@ class _VidstackSliderState extends State<VidstackSlider>
   void _onDragStart(DragStartDetails details, double totalWidth) {
     if (totalWidth <= 0) return;
     _expandAnim.forward();
-    HapticFeedback.selectionClick();
     widget.onSeekStart?.call();
     _updateProgress(details.localPosition.dx, totalWidth);
   }
@@ -83,7 +82,6 @@ class _VidstackSliderState extends State<VidstackSlider>
     if (_dragProgress != null && widget.duration.inMilliseconds > 0) {
       final seekMillis = (_dragProgress! * widget.duration.inMilliseconds).toInt();
       widget.onSeek(Duration(milliseconds: seekMillis));
-      HapticFeedback.lightImpact();
     }
     setState(() => _dragProgress = null);
     widget.onSeekEnd?.call();
@@ -95,7 +93,6 @@ class _VidstackSliderState extends State<VidstackSlider>
     if (widget.duration.inMilliseconds > 0) {
       final seekMillis = (p * widget.duration.inMilliseconds).toInt();
       widget.onSeek(Duration(milliseconds: seekMillis));
-      HapticFeedback.lightImpact();
     }
   }
 

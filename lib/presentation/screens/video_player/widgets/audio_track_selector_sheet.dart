@@ -145,7 +145,6 @@ class AudioTrackSelectorSheet extends StatelessWidget {
 
                                   return GestureDetector(
                                     onTap: () {
-                                      HapticFeedback.selectionClick();
                                       controller.setAudioTrack(track);
                                       Navigator.of(context).pop();
                                     },

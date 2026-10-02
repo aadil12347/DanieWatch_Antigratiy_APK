@@ -39,7 +39,6 @@ class _VidstackVolumeControlState extends State<VidstackVolumeControl> {
   }
 
   void _toggleMute() {
-    HapticFeedback.lightImpact();
     if (_isMuted) {
       final target = _lastNonZeroVolume > 0.05 ? _lastNonZeroVolume : 0.5;
       VolumeController.instance.setVolume(target);

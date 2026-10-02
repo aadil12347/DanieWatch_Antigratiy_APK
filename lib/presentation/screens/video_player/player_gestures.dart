@@ -427,7 +427,6 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   void _triggerPinch({required bool fill}) {
     if (widget.controller.isLocked) return;
-    HapticFeedback.mediumImpact();
 
     final targetMode = fill ? VideoResizeMode.fill : VideoResizeMode.fit;
     widget.controller.setResizeMode(targetMode);

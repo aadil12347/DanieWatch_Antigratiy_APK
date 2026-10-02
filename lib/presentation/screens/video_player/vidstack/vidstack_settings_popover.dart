@@ -62,7 +62,6 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   }
 
   void _navigateTo(VidstackSettingsSubmenu menu) {
-    HapticFeedback.selectionClick();
     setState(() {
       _isForward = true;
       _currentMenu = menu;
@@ -70,7 +69,6 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   }
 
   void _navigateBack() {
-    HapticFeedback.selectionClick();
     if (widget.initialMenu != VidstackSettingsSubmenu.root &&
         _currentMenu == widget.initialMenu) {
       widget.onClose();
@@ -729,10 +727,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
     required VoidCallback onTap,
   }) {
     return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
+      onTap: onTap,
       splashColor: Colors.white10,
       highlightColor: Colors.white.withValues(alpha: 0.05),
       child: Padding(
