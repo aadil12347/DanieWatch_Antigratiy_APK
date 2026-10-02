@@ -401,9 +401,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 return GestureDetector(
                   onTap: () {
                     HapticFeedback.lightImpact();
+                    if (match!.is10Gbps) {
+                      CustomToast.show(context, 'Pause/resume not supported for this link', type: ToastType.warning);
+                      return;
+                    }
                     if (isPaused) {
-                      DownloadManager.instance.resumeDownload(match!.id);
-                    } else if (match!.status == DownloadStatus.downloading) {
+                      DownloadManager.instance.resumeDownload(match.id);
+                    } else if (match.status == DownloadStatus.downloading) {
                       DownloadManager.instance.pauseDownload(match.id);
                     }
                   },
@@ -424,7 +428,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                           ),
                         ),
                         Icon(
-                          isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          match?.is10Gbps == true
+                              ? Icons.arrow_downward_rounded
+                              : (isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
                           color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
                           size: 18,
                         ),
@@ -484,6 +490,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 return GestureDetector(
                   onTap: () {
                     HapticFeedback.lightImpact();
+                    if (match.is10Gbps) {
+                      CustomToast.show(context, 'Pause/resume not supported for this link', type: ToastType.warning);
+                      return;
+                    }
                     if (isPaused) {
                       DownloadManager.instance.resumeDownload(match.id);
                     } else if (match.status == DownloadStatus.downloading) {
@@ -507,7 +517,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                           ),
                         ),
                         Icon(
-                          isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          match.is10Gbps
+                              ? Icons.arrow_downward_rounded
+                              : (isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
                           color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
                           size: 18,
                         ),
@@ -1431,9 +1443,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   return GestureDetector(
                     onTap: () {
                       HapticFeedback.lightImpact();
+                      if (match!.is10Gbps) {
+                        CustomToast.show(context, 'Pause/resume not supported for this link', type: ToastType.warning);
+                        return;
+                      }
                       if (isPaused) {
-                        DownloadManager.instance.resumeDownload(match!.id);
-                      } else if (match!.status == DownloadStatus.downloading) {
+                        DownloadManager.instance.resumeDownload(match.id);
+                      } else if (match.status == DownloadStatus.downloading) {
                         DownloadManager.instance.pauseDownload(match.id);
                       }
                     },
@@ -1457,7 +1473,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                                 ),
                               ),
                               Icon(
-                                isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                                match?.is10Gbps == true
+                                    ? Icons.arrow_downward_rounded
+                                    : (isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
                                 color: (isPaused ? Colors.orangeAccent : AppColors.primary).withValues(alpha: 0.7),
                                 size: 18,
                               ),
@@ -1696,9 +1714,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   return GestureDetector(
                     onTap: () {
                       HapticFeedback.lightImpact();
+                      if (match!.is10Gbps) {
+                        CustomToast.show(context, 'Pause/resume not supported for this link', type: ToastType.warning);
+                        return;
+                      }
                       if (isPaused) {
-                        DownloadManager.instance.resumeDownload(match!.id);
-                      } else if (match!.status == DownloadStatus.downloading) {
+                        DownloadManager.instance.resumeDownload(match.id);
+                      } else if (match.status == DownloadStatus.downloading) {
                         DownloadManager.instance.pauseDownload(match.id);
                       }
                     },
@@ -1727,9 +1749,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                                 ),
                               ),
                               Icon(
-                                isPaused
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.pause_rounded,
+                                match?.is10Gbps == true
+                                    ? Icons.arrow_downward_rounded
+                                    : (isPaused
+                                        ? Icons.play_arrow_rounded
+                                        : Icons.pause_rounded),
                                 color: (isPaused
                                         ? Colors.orangeAccent
                                         : AppColors.primary)
@@ -1756,7 +1780,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 }
 
                 return GestureDetector(
-                  onTap: () => _handleNextdriveDownload(episode, content),
+                  onTap: () => _startDownload(
+                    episode.episodeNumber ?? episode.index,
+                    content,
+                    episodeRuntime: content.runtime,
+                  ),
                   child: Container(
                     width: 44,
                     height: 44,
@@ -1821,11 +1849,105 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
           description: content.overview,
           streamResolver: () async {
-            final res = await SitePostExtractor.instance.resolveVcloudStream(episode.vcloudUrl);
+            var res = await SitePostExtractor.instance.resolveVcloudStream(
+              episode.vcloudUrl,
+              alternativeUrls: episode.alternativeUrls,
+            );
             if (res.canStreamOnline && res.onlineStreamUrl != null) {
               return res.onlineStreamUrl!;
             }
+
+            // Fallback: If primary had no playable stream, check companion buttons (G-Direct, etc.)
+            try {
+              var postUrl = content.postUrl ??
+                  MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                  MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+                  '';
+              if (postUrl.isEmpty) {
+                postUrl = await SitePostExtractor.instance.findPostUrl(
+                  title: content.title,
+                  tmdbId: widget.tmdbId,
+                  year: content.releaseYear,
+                  imdbId: content.imdbId,
+                ) ?? '';
+              }
+              if (postUrl.isNotEmpty) {
+                final buttons =
+                    await SitePostExtractor.instance.extractPostButtons(postUrl);
+                final sNum = _selectedSeason;
+                final epNum = episode.episodeNumber ?? episode.index;
+                final altButtons = buttons
+                    .where((b) =>
+                        b.seasonNumber == sNum &&
+                        !b.isBatchZip &&
+                        b.href != episode.vcloudUrl)
+                    .toList();
+                for (final btn in altButtons) {
+                  final altEps = await SitePostExtractor.instance
+                      .extractNextdriveEpisodes(btn.href);
+                  final matched = altEps
+                      .where((e) => (e.episodeNumber ?? e.index) == epNum)
+                      .firstOrNull;
+                  if (matched != null) {
+                    final altRes =
+                        await SitePostExtractor.instance.resolveVcloudStream(
+                      matched.vcloudUrl,
+                      alternativeUrls: matched.alternativeUrls,
+                    );
+                    if (altRes.canStreamOnline &&
+                        altRes.onlineStreamUrl != null) {
+                      return altRes.onlineStreamUrl!;
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+
             return null;
+          },
+          initialResolutionMap: {
+            '720p': episode.vcloudUrl,
+          },
+          resolutionMapResolver: () async {
+            final epNum = episode.episodeNumber ?? episode.index;
+            // 1. Try fast GitHub DB (~200ms)
+            try {
+              final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
+                tmdbId: widget.tmdbId,
+                mediaType: 'tv',
+                title: content.title,
+                season: _selectedSeason,
+                episode: epNum,
+              );
+              if (dbMap.isNotEmpty) return dbMap;
+            } catch (_) {}
+
+            // 2. Fallback to SitePostExtractor across season buttons
+            try {
+              var postUrl = content.postUrl ??
+                  MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                  MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+                  '';
+              if (postUrl.isEmpty) {
+                postUrl = await SitePostExtractor.instance.findPostUrl(
+                  title: content.title,
+                  tmdbId: widget.tmdbId,
+                  year: content.releaseYear,
+                  imdbId: content.imdbId,
+                ) ?? '';
+              }
+              if (postUrl.isNotEmpty) {
+                final res = await SitePostExtractor.instance
+                    .getAvailableResolutionsForContent(
+                  postUrl: postUrl,
+                  isMovie: false,
+                  seasonNumber: _selectedSeason,
+                  episodeNumber: epNum,
+                );
+                if (res.isNotEmpty) return res;
+              }
+            } catch (_) {}
+            return {'720p': episode.vcloudUrl};
           },
         ),
       ),
@@ -1841,7 +1963,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     try {
       final res =
-          await SitePostExtractor.instance.resolveVcloudStream(episode.vcloudUrl);
+          await SitePostExtractor.instance.resolveVcloudStream(
+        episode.vcloudUrl,
+        alternativeUrls: episode.alternativeUrls,
+      );
       final downloadUrl = res.bestDownloadUrl;
 
       if (!mounted) return;
@@ -1966,7 +2091,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final actualRuntime = episodeRuntime ?? content.runtime;
 
     // 1. Immediately morph navbar to loading modal
-    final selectionFuture = showQualitySelectorSheet(
+    showQualitySelectorSheet(
       context: context,
       ref: ref,
       m3u8Url: '',
@@ -1980,174 +2105,256 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: actualRuntime,
     );
 
+    // 2. Fetch available resolution links map quickly from GitHub database (~200ms)
+    Map<String, String> resMap = {};
     try {
-      // 2. Fetch stream links from Vcloud database
-      final resolvedResMap = await VcloudExtractorService().fetchStreamLinks(
+      resMap = await VcloudExtractorService().fetchResolutionLinksMap(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
         title: content.title,
         season: content.isMovie ? null : _selectedSeason,
         episode: content.isMovie ? null : episodeNumber,
       );
-
-      if (!mounted) return;
-
-      if (resolvedResMap.isEmpty) {
-        // Vcloud returned nothing — show error (VidNest/Peachify fallback REMOVED for downloads)
-        debugPrint('[Download] Vcloud empty — no download sources available.');
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-        _showToastError('No download sources found.');
-        return;
-      } else {
-
-      // Map resolvedResMap (resolution -> { server -> url }) to server -> { resolution -> url }
-      final Map<String, Map<String, String>> serverToResUrl = {};
-      resolvedResMap.forEach((res, serversMap) {
-        serversMap.forEach((serverName, directUrl) {
-          serverToResUrl.putIfAbsent(serverName, () => {})[res] = directUrl;
-        });
-      });
-
-      // Construct List<PeachifyStream>
-      final List<PeachifyStream> fetchedStreams = [];
-      final priorityServers = ['Server 1', 'Server 2', 'Server 3'];
-      
-      final lastLangs = VcloudExtractorService().lastLanguages;
-      final bool hasHindi = lastLangs.any((l) => l.toLowerCase().contains('hindi')) ||
-                            (content.language?.toLowerCase().contains('hindi') ?? false);
-      String langPrefix = 'Hindi';
-      if (!hasHindi) {
-        if (lastLangs.isNotEmpty) {
-          langPrefix = lastLangs.first;
-        } else if (content.language != null && content.language!.isNotEmpty) {
-          langPrefix = content.language!.split(',').first.trim();
-        } else {
-          langPrefix = 'Server';
-        }
-      }
-      
-      if (langPrefix.isNotEmpty) {
-        langPrefix = langPrefix[0].toUpperCase() + langPrefix.substring(1);
-      } else {
-        langPrefix = 'Server';
-      }
-
-      for (final server in priorityServers) {
-        if (serverToResUrl.containsKey(server) && serverToResUrl[server]!.isNotEmpty) {
-          final payloadMap = serverToResUrl[server]!;
-          final List<String> sortedResKeys = payloadMap.keys.toList();
-          sortedResKeys.sort((a, b) {
-            final aInt = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
-            final bInt = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
-            return aInt.compareTo(bInt);
-          });
-          final resSuffix = sortedResKeys.isNotEmpty ? ' (${sortedResKeys.join(", ")})' : '';
-
-          String displayName = '';
-          if (server == 'Server 1') {
-            displayName = '$langPrefix 1$resSuffix';
-          } else if (server == 'Server 2') {
-            displayName = '$langPrefix 2$resSuffix';
-          } else if (server == 'Server 3') {
-            displayName = '$langPrefix 3$resSuffix';
-          } else {
-            displayName = '$server$resSuffix';
-          }
-
-          final base64Payload = base64Encode(utf8.encode(jsonEncode(payloadMap)));
-          final mockUrl = 'mock_vcloud://$base64Payload';
-
-          fetchedStreams.add(PeachifyStream(
-            providerName: displayName,
-            dub: langPrefix,
-            type: 'video',
-            url: mockUrl,
-            headers: const {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-          ));
-        }
-      }
-
-      if (fetchedStreams.isEmpty) {
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-        _showToastError('No downloadable servers found.');
-        return;
-      }
-
-      // 3. Update modal with the real streams list and stop loading skeleton
-      ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
-            streams: fetchedStreams,
-            isLoading: false,
-          ));
-      }
     } catch (e) {
-      if (mounted) {
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-        _showToastError('Extraction error. Please try again.');
+      debugPrint('[Download] Error fetching VCloud resolution map: $e');
+    }
+
+    // 2a. Fallback to SitePostExtractor post buttons / episode links if GitHub DB has no entries
+    if (resMap.isEmpty) {
+      try {
+        final postUrl = content.postUrl ??
+            MovieSiteScraperService.instance.getPostUrl(content.id) ??
+            MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+            '';
+        if (postUrl.isNotEmpty) {
+          final fetched = await SitePostExtractor.instance.getAvailableResolutionsForContent(
+            postUrl: postUrl,
+            isMovie: content.isMovie,
+            seasonNumber: content.isMovie ? null : _selectedSeason,
+            episodeNumber: content.isMovie ? null : episodeNumber,
+          );
+          if (fetched.isNotEmpty) {
+            resMap.addAll(fetched);
+          } else {
+            final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
+            for (final b in buttons) {
+              if (content.isMovie || b.seasonNumber == _selectedSeason) {
+                if (!resMap.containsKey(b.quality)) {
+                  resMap[b.quality] = b.href;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[Download] Error extracting post buttons: $e');
       }
+    }
+
+    // 2b. Fallback to Nextdrive episode VCloud URL for TV series if still empty
+    if (resMap.isEmpty && content.isTv) {
+      try {
+        final postUrl = content.postUrl ??
+            MovieSiteScraperService.instance.getPostUrl(content.id) ??
+            MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+            '';
+        final epParams = NextdriveEpisodeParams(
+          tmdbId: content.id,
+          title: content.title,
+          seasonNumber: _selectedSeason,
+          postUrl: postUrl,
+          posterUrl: content.posterUrl,
+        );
+        List<NextdriveEpisode> episodes =
+            ref.read(nextdriveEpisodesProvider(epParams)).valueOrNull ?? [];
+        if (episodes.isEmpty) {
+          episodes = await ref.read(nextdriveEpisodesProvider(epParams).future);
+        }
+        if (episodes.isNotEmpty) {
+          final targetEp = episodes.firstWhere(
+            (e) => (e.episodeNumber ?? e.index) == episodeNumber,
+            orElse: () => episodes.first,
+          );
+          if (targetEp.vcloudUrl.isNotEmpty) {
+            resMap['720p'] = targetEp.vcloudUrl;
+          }
+        }
+      } catch (e) {
+        debugPrint('[Download] Nextdrive episode lookup error: $e');
+      }
+    }
+
+    if (!mounted) return;
+
+    if (resMap.isEmpty) {
+      debugPrint('[Download] No download sources found.');
+      ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+      _showToastError('No download sources found.');
       return;
     }
 
-    // 4. Wait for user to pick server and quality
-    final selection = await selectionFuture;
-    if (selection == null || !mounted) return;
+    // 3. Sort resolutions: 1080p (or 4k) > 720p > 480p
+    final sortedRes = resMap.keys.toList()
+      ..sort((a, b) {
+        final aNum = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+        final bNum = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+        return bNum.compareTo(aNum);
+      });
 
-    // 5. Start direct or HLS download
-    try {
-      final downloadUrl = selection.quality.url;
-      final isHlsStream = downloadUrl.contains('.m3u8');
+    // 4. Update morphed navbar modal with resolutions list and callback
+    ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
+      isLoading: false,
+      availableResolutions: sortedRes,
+      resolutionUrls: resMap,
+      onSelectResolution: (chosenRes) async {
+        ref.read(downloadModalProvider.notifier).update(
+          (s) => s.copyWith(extractingResolution: chosenRes),
+        );
 
-      if (isHlsStream) {
-        final item = await DownloadManager.instance.startSegmentDownload(
-          m3u8Url: selection.masterUrl,
-          title: content.title,
-          season: content.isMovie ? 0 : _selectedSeason,
-          episode: content.isMovie ? 0 : episodeNumber,
-          posterUrl: content.posterUrl,
-          variant: selection.quality,
-          audioTrack: selection.audioTrack,
-          subtitleTrack: selection.subtitleTrack,
-          context: context,
-          originalEmbedUrl: selection.masterUrl,
-          tmdbId: widget.tmdbId,
-          mediaType: widget.mediaType,
-          providerName: selection.providerName,
-          headers: selection.headers,
-          runtime: actualRuntime,
-        );
-        if (item != null && mounted) {
-          _showDownloadStartedToast(item);
+        final targetVcloudUrl = resMap[chosenRes];
+        if (targetVcloudUrl == null || targetVcloudUrl.isEmpty) {
+          if (mounted) {
+            ref.read(downloadModalProvider.notifier).update(
+              (s) => s.copyWith(extractingResolution: null),
+            );
+            _showToastError('No link available for $chosenRes');
+          }
+          return;
         }
-      } else {
-        // Direct file downloader (non-HLS, legacy download via FlutterDownloader)
-        final item = await DownloadManager.instance.startDownload(
-          url: downloadUrl,
-          title: content.title,
-          season: content.isMovie ? 0 : _selectedSeason,
-          episode: content.isMovie ? 0 : episodeNumber,
-          posterUrl: content.posterUrl,
-          context: context,
-          fileExtension: selection.fileExtension,
-          runtime: actualRuntime,
-          qualityLabel: selection.quality.qualityLabel,
-          audioLabel: selection.audioTrack?.displayName,
-          tmdbId: widget.tmdbId,
-          mediaType: widget.mediaType,
-          providerName: selection.providerName,
-          fileSizeBytes: selection.fileSizeBytes,
-          headers: selection.headers,
-          originalEmbedUrl: selection.masterUrl,
-        );
-        if (mounted) {
-          _showDownloadStartedToast(item);
+
+        String? downloadUrl;
+        String providerName = 'V-Cloud';
+        bool is10Gbps = false;
+
+        try {
+          // Extraction order: 1st Server 2 (FSLv2) > 2nd Server 1 (FSL) > 3rd Server 3 (10Gbps)
+          final servers = await VcloudExtractorService().extractVcloud(targetVcloudUrl);
+          
+          if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+            downloadUrl = servers['Server 2']!;
+            providerName = 'FSLv2 Server';
+            is10Gbps = false;
+          } else if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+            downloadUrl = servers['Server 1']!;
+            providerName = 'FSL Server';
+            is10Gbps = false;
+          } else if (servers.containsKey('Server 3') && servers['Server 3']!.isNotEmpty) {
+            final hubUrl = servers['Server 3']!;
+            final resolved = await VcloudExtractorService().resolveHubCloudRedirect(hubUrl);
+            downloadUrl = (resolved != null && resolved.isNotEmpty) ? resolved : hubUrl;
+            providerName = '10Gbps Server';
+            is10Gbps = true;
+          } else {
+            for (final k in servers.keys) {
+              final lk = k.toLowerCase();
+              if (lk.contains('fslv2') || lk.contains('server 2')) {
+                downloadUrl = servers[k]!;
+                providerName = 'FSLv2 Server';
+                is10Gbps = false;
+                break;
+              }
+            }
+            if (downloadUrl == null) {
+              for (final k in servers.keys) {
+                final lk = k.toLowerCase();
+                if (lk.contains('fsl') || lk.contains('server 1')) {
+                  downloadUrl = servers[k]!;
+                  providerName = 'FSL Server';
+                  is10Gbps = false;
+                  break;
+                }
+              }
+            }
+            if (downloadUrl == null) {
+              for (final k in servers.keys) {
+                final lk = k.toLowerCase();
+                if (lk.contains('10gbps') || lk.contains('server 3') || lk.contains('hubcloud') || lk.contains('gpdl')) {
+                  final hubUrl = servers[k]!;
+                  final resolved = await VcloudExtractorService().resolveHubCloudRedirect(hubUrl);
+                  downloadUrl = (resolved != null && resolved.isNotEmpty) ? resolved : hubUrl;
+                  providerName = '10Gbps Server';
+                  is10Gbps = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Fallback to SitePostExtractor.resolveVcloudStream if VcloudExtractorService returned no link
+          if (downloadUrl == null || downloadUrl.isEmpty) {
+            final siteRes = await SitePostExtractor.instance.resolveVcloudStream(targetVcloudUrl);
+            if (siteRes.fslv2Url != null && siteRes.fslv2Url!.isNotEmpty) {
+              downloadUrl = siteRes.fslv2Url;
+              providerName = 'FSLv2 Server';
+              is10Gbps = false;
+            } else if (siteRes.fslUrl != null && siteRes.fslUrl!.isNotEmpty) {
+              downloadUrl = siteRes.fslUrl;
+              providerName = 'FSL Server';
+              is10Gbps = false;
+            } else if (siteRes.tenGbpsUrl != null && siteRes.tenGbpsUrl!.isNotEmpty) {
+              final resolved = await VcloudExtractorService().resolveHubCloudRedirect(siteRes.tenGbpsUrl!);
+              downloadUrl = (resolved != null && resolved.isNotEmpty) ? resolved : siteRes.tenGbpsUrl!;
+              providerName = '10Gbps Server';
+              is10Gbps = true;
+            } else if (siteRes.pixeldrainUrl != null && siteRes.pixeldrainUrl!.isNotEmpty) {
+              downloadUrl = siteRes.pixeldrainUrl;
+              providerName = 'PixelDrain Server';
+              is10Gbps = false;
+            }
+          }
+        } catch (e) {
+          debugPrint('[Download] Error resolving server for $chosenRes: $e');
         }
-      }
-    } catch (e) {
-      if (mounted) {
-        _showToastError('Failed to start download. Please try again.');
-      }
-    }
+
+        if (!mounted) return;
+
+        if (downloadUrl == null || downloadUrl.isEmpty) {
+          ref.read(downloadModalProvider.notifier).update(
+            (s) => s.copyWith(extractingResolution: null),
+          );
+          _showToastError('Could not resolve download server for $chosenRes. Try another quality.');
+          return;
+        }
+
+        // Close morphed navbar modal
+        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+
+        final downloadTitle = content.isMovie
+            ? content.title
+            : '${content.title} S${_selectedSeason.toString().padLeft(2, '0')}E${episodeNumber.toString().padLeft(2, '0')}';
+
+        try {
+          final item = await DownloadManager.instance.startDownload(
+            url: downloadUrl,
+            title: downloadTitle,
+            season: content.isMovie ? 0 : _selectedSeason,
+            episode: content.isMovie ? 0 : episodeNumber,
+            posterUrl: content.posterUrl,
+            context: context,
+            fileExtension: downloadUrl.contains('.zip') ? 'zip' : 'mkv',
+            runtime: actualRuntime,
+            qualityLabel: chosenRes,
+            tmdbId: widget.tmdbId,
+            mediaType: widget.mediaType,
+            providerName: providerName,
+            is10Gbps: is10Gbps,
+            originalEmbedUrl: targetVcloudUrl,
+          );
+          if (item != null && mounted) {
+            CustomToast.show(
+              context,
+              'Download started ($chosenRes · $providerName)',
+              type: ToastType.info,
+              icon: Icons.download_done_rounded,
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            _showToastError('Failed to start download: $e');
+          }
+        }
+      },
+    ));
   }
 
   void _showDownloadStartedToast(DownloadItem item) {
@@ -2242,6 +2449,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   );
 
                   String targetVcloudUrl = bestBtn.href;
+                  List<String> altUrls = [];
 
                   // If it's a Nextdrive / VGMLink / FastDL landing page, extract the movie VCloud link from it!
                   final lowerHref = bestBtn.href.toLowerCase();
@@ -2252,33 +2460,21 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(bestBtn.href);
                       if (episodes.isNotEmpty) {
                         targetVcloudUrl = episodes.first.vcloudUrl;
+                        altUrls = episodes.first.alternativeUrls;
                       }
                     } catch (e) {
                       debugPrint('[DetailsScreen] Movie Nextdrive extract error: $e');
                     }
                   }
 
-                  // If it's HubCloud or GPDL redirect, resolve directly
-                  if (targetVcloudUrl.toLowerCase().contains('hubcloud') ||
-                      targetVcloudUrl.toLowerCase().contains('gpdl')) {
-                    try {
-                      final resolved = await VcloudExtractorService().resolveHubCloudRedirect(targetVcloudUrl);
-                      if (resolved != null && resolved.isNotEmpty) {
-                        return resolved;
-                      }
-                    } catch (e) {
-                      debugPrint('[DetailsScreen] Movie HubCloud resolve error: $e');
-                    }
-                  }
-
-                  // Resolve VCloud direct stream
+                  // Resolve VCloud direct stream (strictly FSLv2 > FSL, NEVER 10Gbps online)
                   try {
-                    final res = await SitePostExtractor.instance.resolveVcloudStream(targetVcloudUrl);
+                    final res = await SitePostExtractor.instance.resolveVcloudStream(
+                      targetVcloudUrl,
+                      alternativeUrls: altUrls,
+                    );
                     if (res.canStreamOnline && res.onlineStreamUrl != null) {
                       return res.onlineStreamUrl!; // Strictly FSLv2 > FSL
-                    }
-                    if (res.bestDownloadUrl != null && res.bestDownloadUrl!.isNotEmpty) {
-                      return res.bestDownloadUrl!; // Fallback (10Gbps, Pixeldrain, Direct)
                     }
                   } catch (e) {
                     debugPrint('[DetailsScreen] Movie resolveVcloudStream error: $e');
@@ -2286,7 +2482,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 }
               }
 
-              // Fallback: Check GitHub streaming database for Movie
+              // Fallback: Check GitHub streaming database for Movie (prioritize 720p > 480p > 1080p)
               try {
                 final vcloudLinks = await VcloudExtractorService().fetchResolutionLinksMap(
                   tmdbId: widget.tmdbId,
@@ -2299,21 +2495,64 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       vcloudLinks['1080p'] ??
                       vcloudLinks.values.first;
                   final servers = await VcloudExtractorService().extractVcloud(vUrl);
+                  // Strictly check Server 2 (FSLv2) > Server 1 (FSL), NEVER Server 3 (10Gbps)
+                  if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+                    return servers['Server 2']!;
+                  }
+                  if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+                    return servers['Server 1']!;
+                  }
                   for (final entry in servers.entries) {
                     final key = entry.key.toLowerCase();
-                    if (key.contains('fslv2') || key.contains('fsl') || key.contains('direct')) {
+                    final val = entry.value.toLowerCase();
+                    if ((key.contains('fslv2') || key.contains('fsl') || key.contains('direct')) &&
+                        !key.contains('10gbps') &&
+                        !val.contains('hubcloud') &&
+                        !val.contains('gpdl')) {
                       return entry.value;
                     }
-                  }
-                  if (servers.isNotEmpty) {
-                    return servers.values.first;
                   }
                 }
               } catch (e) {
                 debugPrint('[DetailsScreen] Movie VCloud DB fallback error: $e');
               }
-
               return null;
+            },
+            resolutionMapResolver: () async {
+              // 1. Try fast GitHub DB (~200ms)
+              try {
+                final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
+                  tmdbId: widget.tmdbId,
+                  mediaType: content.isMovie ? 'movie' : 'tv',
+                  title: content.title,
+                  season: content.isMovie ? null : _selectedSeason,
+                  episode: content.isMovie ? null : 1,
+                );
+                if (dbMap.isNotEmpty) return dbMap;
+              } catch (_) {}
+
+              // 2. Fallback: SitePostExtractor
+              try {
+                var postUrl = content.postUrl ??
+                    MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                    MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
+                if (postUrl == null || postUrl.isEmpty) {
+                  postUrl = await SitePostExtractor.instance.findPostUrl(
+                    title: content.title,
+                    tmdbId: widget.tmdbId,
+                    year: content.releaseYear,
+                  );
+                }
+                if (postUrl != null && postUrl.isNotEmpty) {
+                  return await SitePostExtractor.instance.getAvailableResolutionsForContent(
+                    postUrl: postUrl,
+                    isMovie: content.isMovie,
+                    seasonNumber: _selectedSeason,
+                    episodeNumber: 1,
+                  );
+                }
+              } catch (_) {}
+              return {};
             },
           ),
         ),
@@ -2381,12 +2620,90 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                         orElse: () => episodes.first)
                     : episodes.first;
 
-                final res = await SitePostExtractor.instance.resolveVcloudStream(targetEp.vcloudUrl);
+                final res = await SitePostExtractor.instance.resolveVcloudStream(
+                  targetEp.vcloudUrl,
+                  alternativeUrls: targetEp.alternativeUrls,
+                );
                 if (res.canStreamOnline && res.onlineStreamUrl != null) {
                   return res.onlineStreamUrl!;
                 }
               }
+
+              // Fallback: Check GitHub streaming database for TV episode (prioritize 720p > 480p > 1080p)
+              try {
+                final vcloudLinks = await VcloudExtractorService().fetchResolutionLinksMap(
+                  tmdbId: widget.tmdbId,
+                  mediaType: 'tv',
+                  title: content.title,
+                  season: targetSeason,
+                  episode: targetEpNum,
+                );
+                if (vcloudLinks.isNotEmpty) {
+                  final vUrl = vcloudLinks['720p'] ??
+                      vcloudLinks['480p'] ??
+                      vcloudLinks['1080p'] ??
+                      vcloudLinks.values.first;
+                  final servers = await VcloudExtractorService().extractVcloud(vUrl);
+                  // Strictly check Server 2 (FSLv2) > Server 1 (FSL), NEVER Server 3 (10Gbps)
+                  if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+                    return servers['Server 2']!;
+                  }
+                  if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+                    return servers['Server 1']!;
+                  }
+                  for (final entry in servers.entries) {
+                    final key = entry.key.toLowerCase();
+                    final val = entry.value.toLowerCase();
+                    if ((key.contains('fslv2') || key.contains('fsl') || key.contains('direct')) &&
+                        !key.contains('10gbps') &&
+                        !val.contains('hubcloud') &&
+                        !val.contains('gpdl')) {
+                      return entry.value;
+                    }
+                  }
+                }
+              } catch (e) {
+                debugPrint('[DetailsScreen] TV VCloud DB fallback error: $e');
+              }
               return null;
+            },
+            resolutionMapResolver: () async {
+              // 1. Try fast GitHub DB (~200ms)
+              try {
+                final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
+                  tmdbId: widget.tmdbId,
+                  mediaType: 'tv',
+                  title: content.title,
+                  season: targetSeason,
+                  episode: targetEpNum,
+                );
+                if (dbMap.isNotEmpty) return dbMap;
+              } catch (_) {}
+
+              // 2. Fallback to SitePostExtractor across season buttons
+              try {
+                var postUrl = content.postUrl ??
+                    MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                    MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+                    '';
+                if (postUrl.isEmpty) {
+                  postUrl = await SitePostExtractor.instance.findPostUrl(
+                    title: content.title,
+                    tmdbId: widget.tmdbId,
+                    year: content.releaseYear,
+                    imdbId: content.imdbId,
+                  ) ?? '';
+                }
+                if (postUrl.isNotEmpty) {
+                  return await SitePostExtractor.instance.getAvailableResolutionsForContent(
+                    postUrl: postUrl,
+                    isMovie: false,
+                    seasonNumber: targetSeason,
+                    episodeNumber: targetEpNum,
+                  );
+                }
+              } catch (_) {}
+              return {};
             },
           ),
         ),
@@ -2423,6 +2740,42 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           description: content.overview,
           isDirectLink: false,
           is3rdPartyHosted: is3rdParty,
+          resolutionMapResolver: () async {
+            try {
+              final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
+                tmdbId: widget.tmdbId,
+                mediaType: content.isMovie ? 'movie' : 'tv',
+                title: content.title,
+                season: content.isMovie ? null : season,
+                episode: content.isMovie ? null : episode,
+              );
+              if (dbMap.isNotEmpty) return dbMap;
+            } catch (_) {}
+
+            try {
+              var postUrl = content.postUrl ??
+                  MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                  MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+                  '';
+              if (postUrl.isEmpty) {
+                postUrl = await SitePostExtractor.instance.findPostUrl(
+                  title: content.title,
+                  tmdbId: widget.tmdbId,
+                  year: content.releaseYear,
+                  imdbId: content.imdbId,
+                ) ?? '';
+              }
+              if (postUrl.isNotEmpty) {
+                return await SitePostExtractor.instance.getAvailableResolutionsForContent(
+                  postUrl: postUrl,
+                  isMovie: content.isMovie,
+                  seasonNumber: season,
+                  episodeNumber: episode,
+                );
+              }
+            } catch (_) {}
+            return {};
+          },
         ),
       ),
     );

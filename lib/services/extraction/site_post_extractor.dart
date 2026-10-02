@@ -34,6 +34,7 @@ class SitePostButton {
 class NextdriveEpisode {
   final String title;
   final String vcloudUrl;
+  final List<String> alternativeUrls;
   final int index;
   final int? episodeNumber;
   final int? rangeStart;
@@ -44,17 +45,18 @@ class NextdriveEpisode {
   NextdriveEpisode({
     required this.title,
     required this.vcloudUrl,
+    List<String>? alternativeUrls,
     required this.index,
     this.episodeNumber,
     this.rangeStart,
     this.rangeEnd,
     this.isComplete = false,
     this.thumbnailUrl,
-  });
+  }) : alternativeUrls = alternativeUrls ?? [];
 
   @override
   String toString() =>
-      'NextdriveEpisode(index: $index, title: "$title", epNum: $episodeNumber, range: $rangeStart-$rangeEnd, isComplete: $isComplete, url: "$vcloudUrl")';
+      'NextdriveEpisode(index: $index, title: "$title", epNum: $episodeNumber, range: $rangeStart-$rangeEnd, isComplete: $isComplete, url: "$vcloudUrl", alts: ${alternativeUrls.length})';
 }
 
 /// Resolved stream URLs from VCloud.
@@ -63,28 +65,43 @@ class VcloudStreamResult {
   final String? fslUrl;
   final String? tenGbpsUrl;
   final String? pixeldrainUrl;
+  final String? fastDlUrl;
 
   VcloudStreamResult({
     this.fslv2Url,
     this.fslUrl,
     this.tenGbpsUrl,
     this.pixeldrainUrl,
+    this.fastDlUrl,
   });
 
   /// Online playback policy:
-  /// Strictly FSLv2 > FSL (NO 10Gbps link for online play).
-  String? get onlineStreamUrl => fslv2Url ?? fslUrl;
+  /// Strictly FSLv2 > FSL > FastDL (GoogleUserContent) > Pixeldrain direct API.
+  /// NO 10Gbps link for online play.
+  String? get onlineStreamUrl {
+    if (fslv2Url != null && fslv2Url!.isNotEmpty) return fslv2Url;
+    if (fslUrl != null && fslUrl!.isNotEmpty) return fslUrl;
+    if (fastDlUrl != null && fastDlUrl!.isNotEmpty) return fastDlUrl;
+    if (pixeldrainUrl != null && pixeldrainUrl!.isNotEmpty) {
+      if (pixeldrainUrl!.contains('/u/')) {
+        final id = pixeldrainUrl!.split('/u/').last.split('?').first.trim();
+        return 'https://pixeldrain.dev/api/file/$id';
+      }
+      return pixeldrainUrl;
+    }
+    return null;
+  }
 
   bool get canStreamOnline => onlineStreamUrl != null;
 
   /// Download fallback:
-  /// FSLv2 > FSL > Pixeldrain > 10Gbps
+  /// FSLv2 > FSL > FastDL > Pixeldrain > 10Gbps
   String? get bestDownloadUrl =>
-      fslv2Url ?? fslUrl ?? pixeldrainUrl ?? tenGbpsUrl;
+      fslv2Url ?? fslUrl ?? fastDlUrl ?? pixeldrainUrl ?? tenGbpsUrl;
 
   @override
   String toString() =>
-      'VcloudStreamResult(FSLv2: $fslv2Url, FSL: $fslUrl, 10Gbps: $tenGbpsUrl, PXL: $pixeldrainUrl)';
+      'VcloudStreamResult(FSLv2: $fslv2Url, FSL: $fslUrl, FastDL: $fastDlUrl, 10Gbps: $tenGbpsUrl, PXL: $pixeldrainUrl)';
 }
 
 /// Unified extractor for Vegamovies & Rogmovies detail posts, Nextdrive episode pages,
@@ -439,6 +456,110 @@ class SitePostExtractor {
         .toList();
   }
 
+  /// Extract available resolutions map (e.g. {'480p': 'vcloud...', '720p': 'vcloud...', '1080p': 'vcloud...'})
+  /// for both Movies and TV Series (any season, any episode) on Vegamovies and Rogmovies.
+  Future<Map<String, String>> getAvailableResolutionsForContent({
+    required String postUrl,
+    required bool isMovie,
+    int? seasonNumber,
+    int? episodeNumber,
+  }) async {
+    final Map<String, String> resMap = {};
+    try {
+      final buttons = await extractPostButtons(postUrl);
+      if (buttons.isEmpty) return resMap;
+
+      if (isMovie) {
+        // Movies: Each non-batch button corresponds to a resolution
+        final nonBatch = buttons.where((b) => !b.isBatchZip).toList();
+        for (final b in nonBatch) {
+          final q = b.quality.toLowerCase();
+          if (resMap.containsKey(q)) continue;
+
+          final lh = b.href.toLowerCase();
+          if (lh.contains('nexdrive') ||
+              lh.contains('vgmlink') ||
+              lh.contains('fastdl')) {
+            try {
+              final vcloud = await _extractVcloudFromLanding(b.href);
+              if (vcloud != null && vcloud.isNotEmpty) {
+                resMap[q] = vcloud;
+              }
+            } catch (e) {
+              debugPrint('[SitePostExtractor] Error resolving landing for $q: $e');
+            }
+          } else if (lh.contains('vcloud')) {
+            resMap[q] = b.href;
+          }
+        }
+      } else {
+        // TV Series: Find season buttons for seasonNumber
+        final sNum = seasonNumber ?? 1;
+        final targetEpNum = episodeNumber ?? 1;
+
+        final seasonButtons = buttons
+            .where((b) => b.seasonNumber == sNum && !b.isBatchZip)
+            .toList();
+
+        final targetBtns = (seasonButtons.isEmpty && sNum == 1)
+            ? buttons.where((b) => !b.isBatchZip).toList()
+            : seasonButtons;
+
+        for (final b in targetBtns) {
+          final q = b.quality.toLowerCase();
+          if (resMap.containsKey(q)) continue;
+
+          final lh = b.href.toLowerCase();
+          if (lh.contains('nexdrive') ||
+              lh.contains('vgmlink') ||
+              lh.contains('fastdl')) {
+            try {
+              final episodes = await extractNextdriveEpisodes(b.href);
+              if (episodes.isNotEmpty) {
+                final match = episodes.firstWhere(
+                  (e) => (e.episodeNumber ?? e.index) == targetEpNum,
+                  orElse: () => (targetEpNum <= episodes.length
+                      ? episodes[targetEpNum - 1]
+                      : episodes.first),
+                );
+                resMap[q] = match.vcloudUrl;
+              }
+            } catch (e) {
+              debugPrint('[SitePostExtractor] Error extracting episodes for quality $q: $e');
+            }
+          } else if (lh.contains('vcloud')) {
+            resMap[q] = b.href;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] Error getting resolutions: $e');
+    }
+    return resMap;
+  }
+
+  /// Helper to extract first VCloud anchor from a movie Nexdrive landing page
+  Future<String?> _extractVcloudFromLanding(String landingUrl) async {
+    try {
+      final html = await fetchHtml(landingUrl);
+      final doc = html_parser.parse(html);
+      for (final a in doc.querySelectorAll('a[href]')) {
+        final href = a.attributes['href'] ?? '';
+        if (href.toLowerCase().contains('vcloud')) {
+          return href;
+        }
+      }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] _extractVcloudFromLanding error: $e');
+    }
+    return null;
+  }
+
+  /// Extract episodes directly from a Nextdrive episode selector page.
+  /// Strictly extracts the episode titles from the page itself (never TMDB).
+  /// Handles both old format and new format:
+  ///   Old: <h4>Episode 1</h4> <p><a href="vcloud...">...</a></p>
+  ///   New: <h4>-:Episode: 1:-</h4> <p><a href="vcloud...">...</a></p>
   /// Extract episodes directly from a Nextdrive episode selector page.
   /// Strictly extracts the episode titles from the page itself (never TMDB).
   /// Handles both old format and new format:
@@ -453,7 +574,7 @@ class SitePostExtractor {
       final episodes = <NextdriveEpisode>[];
       final seenUrls = <String>{};
 
-      // Search all anchors pointing to vcloud.fit or vegadrive
+      // Search all anchors pointing to vcloud, fastdl, vegadrive, filebee
       final anchors = doc.querySelectorAll('a[href]');
       for (final a in anchors) {
         var href = a.attributes['href'] ?? '';
@@ -462,9 +583,13 @@ class SitePostExtractor {
           href = Uri.parse(nextdriveUrl).resolve(href).toString();
         } catch (_) {}
 
-        // Match vcloud or vegadrive links (skip non-download links)
         final lhref = href.toLowerCase();
-        if (!lhref.contains('vcloud')) continue;
+        final isSupported = lhref.contains('vcloud') ||
+            lhref.contains('fastdl') ||
+            lhref.contains('vegadrive') ||
+            lhref.contains('filebee');
+        if (!isSupported) continue;
+
         // Skip telegram, social media links
         if (lhref.contains('telegram') ||
             lhref.contains('t.me') ||
@@ -582,9 +707,21 @@ class SitePostExtractor {
           formattedTitle = 'Episode $epNum';
         }
 
+        // If an episode with the same episodeNumber or title already exists, attach as alternativeUrl
+        final existingIdx = episodes.indexWhere((e) =>
+            (epNum != null && e.episodeNumber == epNum) ||
+            e.title.toLowerCase() == formattedTitle.toLowerCase());
+        if (existingIdx >= 0) {
+          if (!episodes[existingIdx].alternativeUrls.contains(href)) {
+            episodes[existingIdx].alternativeUrls.add(href);
+          }
+          continue;
+        }
+
         episodes.add(NextdriveEpisode(
           title: formattedTitle,
           vcloudUrl: href,
+          alternativeUrls: [],
           index: episodes.length + 1,
           episodeNumber: epNum,
           rangeStart: rStart,
@@ -601,11 +738,97 @@ class SitePostExtractor {
     }
   }
 
-  /// Resolve a VCloud landing URL to direct stream and download links.
-  Future<VcloudStreamResult> resolveVcloudStream(String vcloudUrl,
+  /// Resolve a VCloud landing URL or FastDL / GoogleUserContent / Pixeldrain direct stream link.
+  Future<VcloudStreamResult> resolveVcloudStream(
+    String vcloudUrl, {
+    String? referer,
+    List<String>? alternativeUrls,
+  }) async {
+    // 1. Try primary link
+    final primaryRes =
+        await _resolveSingleStreamLink(vcloudUrl, referer: referer);
+    if (primaryRes.canStreamOnline) {
+      return primaryRes;
+    }
+
+    // 2. Fallback to alternative links (e.g. FastDL, Vegadrive, companion links)
+    if (alternativeUrls != null && alternativeUrls.isNotEmpty) {
+      for (final alt in alternativeUrls) {
+        if (alt.isEmpty || alt == vcloudUrl) continue;
+        try {
+          final altRes =
+              await _resolveSingleStreamLink(alt, referer: referer);
+          if (altRes.canStreamOnline) {
+            debugPrint(
+                '[SitePostExtractor] Successfully resolved online stream from alternative: $alt');
+            return altRes;
+          }
+        } catch (e) {
+          debugPrint(
+              '[SitePostExtractor] Error resolving alternative $alt: $e');
+        }
+      }
+    }
+
+    return primaryRes;
+  }
+
+  Future<VcloudStreamResult> _resolveSingleStreamLink(String url,
       {String? referer}) async {
     try {
-      final vHtml = await fetchHtml(vcloudUrl, referer: referer);
+      final lurl = url.toLowerCase();
+
+      // Case A: FastDL embed link (yields direct Google User Content video stream)
+      if (lurl.contains('fastdl.zip')) {
+        final fHtml = await fetchHtml(url,
+            referer: referer ?? 'https://fastdl.zip/');
+        final gMatch = RegExp(
+                r'link=(https://video-downloads\.googleusercontent\.com/[^"\x27\s]+)')
+            .firstMatch(fHtml);
+        if (gMatch != null) {
+          return VcloudStreamResult(fastDlUrl: gMatch.group(1));
+        }
+        final reMatch =
+            RegExp(r'''var\s+reurl\s*=\s*['"]([^'"]+)['"]''').firstMatch(fHtml);
+        if (reMatch != null) {
+          final reurl = reMatch.group(1)!;
+          if (reurl.contains('googleusercontent.com')) {
+            final inner = RegExp(
+                    r'link=(https://video-downloads\.googleusercontent\.com/[^"\x27\s]+)')
+                .firstMatch(reurl);
+            if (inner != null) {
+              return VcloudStreamResult(fastDlUrl: inner.group(1));
+            }
+          }
+          return VcloudStreamResult(fastDlUrl: reurl);
+        }
+      }
+
+      // Case B: Direct Pixeldrain link
+      if (lurl.contains('pixeldrain.com/u/') ||
+          lurl.contains('pixeldrain.dev/u/')) {
+        final id = url.split('/u/').last.split('?').first.trim();
+        return VcloudStreamResult(
+            pixeldrainUrl: 'https://pixeldrain.dev/api/file/$id');
+      }
+
+      // Case C: Vegadrive landing
+      if (lurl.contains('vegadrive.app/s/') ||
+          lurl.contains('vegadrive.me/d/')) {
+        final vdHtml =
+            await fetchHtml(url, referer: referer ?? 'https://nexdrive.fit/');
+        final vdDoc = html_parser.parse(vdHtml);
+        for (final a in vdDoc.querySelectorAll('a[href]')) {
+          final h = a.attributes['href'] ?? '';
+          final lh = h.toLowerCase();
+          if (lh.contains('gofile') || lh.contains('buzzheavier')) {
+            return VcloudStreamResult(fastDlUrl: h);
+          }
+        }
+      }
+
+      // Case D: Standard V-Cloud
+      final vHtml = await fetchHtml(url, referer: referer);
 
       // 1. Look for double atob
       String? tokenUrl;
@@ -644,12 +867,12 @@ class SitePostExtractor {
       }
 
       if (!tokenUrl.startsWith('http')) {
-        final p = Uri.parse(vcloudUrl);
+        final p = Uri.parse(url);
         tokenUrl =
             '${p.scheme}://${p.host}${tokenUrl.startsWith('/') ? '' : '/'}$tokenUrl';
       }
 
-      final dlHtml = await fetchHtml(tokenUrl, referer: vcloudUrl);
+      final dlHtml = await fetchHtml(tokenUrl, referer: url);
       final dlDoc = html_parser.parse(dlHtml);
 
       String? fslv2Url;
@@ -698,6 +921,11 @@ class SitePostExtractor {
         pixeldrainUrl ??= pxlMatch.group(1);
       }
 
+      if (pixeldrainUrl != null && pixeldrainUrl.contains('/u/')) {
+        final id = pixeldrainUrl.split('/u/').last.split('?').first.trim();
+        pixeldrainUrl = 'https://pixeldrain.dev/api/file/$id';
+      }
+
       return VcloudStreamResult(
         fslv2Url: fslv2Url,
         fslUrl: fslUrl,
@@ -705,7 +933,7 @@ class SitePostExtractor {
         pixeldrainUrl: pixeldrainUrl,
       );
     } catch (e) {
-      debugPrint('[SitePostExtractor] Error resolving VCloud stream: $e');
+      debugPrint('[SitePostExtractor] Error resolving stream link: $e');
       return VcloudStreamResult();
     }
   }

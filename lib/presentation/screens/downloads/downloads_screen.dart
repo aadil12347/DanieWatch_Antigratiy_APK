@@ -419,30 +419,32 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  LiquidTapEffect(
-                    onTap: () {
-                      if (item.status == DownloadStatus.paused ||
-                          item.status == DownloadStatus.failed) {
-                        DownloadManager.instance.resumeDownload(item.id);
-                      } else {
-                        DownloadManager.instance.pauseDownload(item.id);
-                      }
-                      setState(() {});
-                    },
-                    child: Icon(
-                      item.status == DownloadStatus.paused ||
-                              item.status == DownloadStatus.failed
-                          ? Icons.play_circle_outline_rounded
-                          : Icons.pause_circle_outline_rounded,
-                      color: item.status == DownloadStatus.failed
-                          ? Colors.red
-                          : item.status == DownloadStatus.paused
-                              ? Colors.orange
-                              : AppColors.primary,
-                      size: 28,
+                  if (!item.is10Gbps) ...[
+                    LiquidTapEffect(
+                      onTap: () {
+                        if (item.status == DownloadStatus.paused ||
+                            item.status == DownloadStatus.failed) {
+                          DownloadManager.instance.resumeDownload(item.id);
+                        } else {
+                          DownloadManager.instance.pauseDownload(item.id);
+                        }
+                        setState(() {});
+                      },
+                      child: Icon(
+                        item.status == DownloadStatus.paused ||
+                                item.status == DownloadStatus.failed
+                            ? Icons.play_circle_outline_rounded
+                            : Icons.pause_circle_outline_rounded,
+                        color: item.status == DownloadStatus.failed
+                            ? Colors.red
+                            : item.status == DownloadStatus.paused
+                                ? Colors.orange
+                                : AppColors.primary,
+                        size: 28,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                  ],
                   LiquidTapEffect(
                     onTap: () => _showDeleteConfirmation(item),
                     child: const Icon(

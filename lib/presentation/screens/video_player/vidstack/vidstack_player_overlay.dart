@@ -102,6 +102,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
     if (_showSettingsPopover && _popoverSubmenu == menu) {
       _closeSettingsPopover();
     } else {
+      widget.controller.setModalOpen(true);
       setState(() {
         _popoverSubmenu = menu;
         _showSettingsPopover = true;
@@ -112,6 +113,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
 
   void _closeSettingsPopover() {
     if (_showSettingsPopover) {
+      widget.controller.setModalOpen(false);
       _popoverAnimController.reverse().then((_) {
         if (mounted) {
           setState(() {

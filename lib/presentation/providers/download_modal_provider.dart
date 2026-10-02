@@ -14,6 +14,10 @@ class DownloadModalState {
   final String? fallbackLanguage;
   final int? runtime; // Episode/movie duration in minutes
   final List<PeachifyStream>? streams;
+  final List<String>? availableResolutions;
+  final Map<String, String>? resolutionUrls;
+  final String? extractingResolution;
+  final void Function(String resolution)? onSelectResolution;
   final void Function(DownloadSelection)? onSelected;
   final void Function()? onCancel;
 
@@ -29,6 +33,10 @@ class DownloadModalState {
     this.fallbackLanguage,
     this.runtime,
     this.streams,
+    this.availableResolutions,
+    this.resolutionUrls,
+    this.extractingResolution,
+    this.onSelectResolution,
     this.onSelected,
     this.onCancel,
   });
@@ -45,6 +53,10 @@ class DownloadModalState {
     String? fallbackLanguage,
     int? runtime,
     List<PeachifyStream>? streams,
+    List<String>? availableResolutions,
+    Map<String, String>? resolutionUrls,
+    String? extractingResolution,
+    void Function(String resolution)? onSelectResolution,
     void Function(DownloadSelection)? onSelected,
     void Function()? onCancel,
   }) {
@@ -60,6 +72,10 @@ class DownloadModalState {
       fallbackLanguage: fallbackLanguage ?? this.fallbackLanguage,
       runtime: runtime ?? this.runtime,
       streams: streams ?? this.streams,
+      availableResolutions: availableResolutions ?? this.availableResolutions,
+      resolutionUrls: resolutionUrls ?? this.resolutionUrls,
+      extractingResolution: extractingResolution ?? this.extractingResolution,
+      onSelectResolution: onSelectResolution ?? this.onSelectResolution,
       onSelected: onSelected ?? this.onSelected,
       onCancel: onCancel ?? this.onCancel,
     );

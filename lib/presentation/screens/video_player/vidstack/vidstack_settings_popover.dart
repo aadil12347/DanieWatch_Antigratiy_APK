@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:better_player_plus/better_player_plus.dart';
+import '../../../../services/extraction/models.dart';
 import '../player_controller.dart';
 import 'vidstack_icons.dart';
 import 'vidstack_theme.dart';
@@ -86,11 +87,17 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
   }
 
   String _getQualityLabel() {
+    final cur = widget.controller.currentSource;
+    if (cur != null) {
+      if (cur.quality > 0) return '${cur.quality}p';
+      final match = RegExp(r'(\d{3,4}p|4k)', caseSensitive: false).firstMatch(cur.displayName);
+      if (match != null) return match.group(1)!.toUpperCase();
+    }
     final bp = widget.controller.betterPlayerController;
-    if (bp == null) return 'Auto';
-    final tracks = bp.betterPlayerAsmsTracks;
-    if (tracks.isEmpty) return 'Auto (1080p)';
-    return 'Auto';
+    if (bp != null && bp.betterPlayerAsmsTracks.isNotEmpty) {
+      return 'Auto';
+    }
+    return '720p';
   }
 
   String _getAudioLabel() {
@@ -455,7 +462,38 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
 
   Widget _buildQualityMenu() {
     final bp = widget.controller.betterPlayerController;
-    final tracks = bp?.betterPlayerAsmsTracks ?? [];
+    final asmsTracks = bp?.betterPlayerAsmsTracks ?? [];
+    final sources = widget.controller.sources;
+    final current = widget.controller.currentSource;
+
+    // Group and pick best server link for each distinct resolution
+    final Map<String, ExtractorLink> resolutionMap = {};
+    for (final s in sources) {
+      String resKey;
+      if (s.quality > 0) {
+        resKey = '${s.quality}p';
+      } else {
+        final match = RegExp(r'(\d{3,4}p|4k)', caseSensitive: false).firstMatch(s.displayName);
+        resKey = match != null ? match.group(1)!.toLowerCase() : '720p';
+      }
+      // Prefer Server 2 (FSLv2) if multiple links have the same resolution
+      final sLower = s.displayName.toLowerCase();
+      if (!resolutionMap.containsKey(resKey) ||
+          sLower.contains('fslv2') ||
+          sLower.contains('server 2')) {
+        resolutionMap[resKey] = s;
+      }
+    }
+
+    // Sort descending: 2160p/4k > 1080p > 720p > 480p > 360p
+    final sortedResKeys = resolutionMap.keys.toList()
+      ..sort((a, b) {
+        int getVal(String k) {
+          if (k.contains('4k') || k.contains('2160')) return 2160;
+          return int.tryParse(k.replaceAll(RegExp(r'\D'), '')) ?? 0;
+        }
+        return getVal(b).compareTo(getVal(a));
+      });
 
     return Column(
       key: const ValueKey('quality'),
@@ -472,32 +510,72 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildOptionRow(
-                  title: 'Auto (Recommended)',
-                  subtitle: 'Automatically adapts to bandwidth',
-                  isSelected: true,
-                  onTap: () {
-                    if (bp != null) {
-                      bp.setTrack(BetterPlayerAsmsTrack.defaultTrack());
-                    }
-                    _navigateBack();
-                  },
-                ),
-                ...tracks.map((t) {
-                  final label = t.height != null && t.height! > 0
-                      ? '${t.height}p'
-                      : (t.bitrate != null ? '${(t.bitrate! / 1000).round()} kbps' : 'Stream');
-                  return _buildOptionRow(
-                    title: label,
-                    isSelected: false,
+                if (asmsTracks.isNotEmpty) ...[
+                  _buildOptionRow(
+                    title: 'Auto (Recommended)',
+                    subtitle: 'Automatically adapts to bandwidth',
+                    isSelected: true,
                     onTap: () {
                       if (bp != null) {
-                        bp.setTrack(t);
+                        bp.setTrack(BetterPlayerAsmsTrack.defaultTrack());
                       }
                       _navigateBack();
                     },
-                  );
-                }),
+                  ),
+                  ...asmsTracks.map((t) {
+                    final label = t.height != null && t.height! > 0
+                        ? '${t.height}p'
+                        : (t.bitrate != null ? '${(t.bitrate! / 1000).round()} kbps' : 'Stream');
+                    return _buildOptionRow(
+                      title: label,
+                      isSelected: false,
+                      onTap: () {
+                        if (bp != null) {
+                          bp.setTrack(t);
+                        }
+                        _navigateBack();
+                      },
+                    );
+                  }),
+                ] else if (sortedResKeys.isNotEmpty) ...[
+                  ...sortedResKeys.map((resKey) {
+                    final source = resolutionMap[resKey]!;
+                    final isCur = current != null &&
+                        (current.quality > 0
+                            ? '${current.quality}p'.toLowerCase() == resKey
+                            : current.displayName.toLowerCase().contains(resKey.toLowerCase()));
+
+                    String subtitle;
+                    if (resKey.contains('2160') || resKey.contains('4k')) {
+                      subtitle = 'Ultra HD (4K)';
+                    } else if (resKey.contains('1080')) {
+                      subtitle = 'Full HD (1080p)';
+                    } else if (resKey.contains('720')) {
+                      subtitle = 'High Definition (720p)';
+                    } else if (resKey.contains('480')) {
+                      subtitle = 'Standard Definition (480p)';
+                    } else {
+                      subtitle = 'Resolution $resKey';
+                    }
+
+                    return _buildOptionRow(
+                      title: resKey.toUpperCase(),
+                      subtitle: subtitle,
+                      isSelected: isCur,
+                      onTap: () {
+                        widget.controller.switchSource(source);
+                        _navigateBack();
+                      },
+                    );
+                  }),
+                ] else ...[
+                  _buildOptionRow(
+                    title: 'Auto (720p)',
+                    subtitle: 'Optimized stream resolution',
+                    isSelected: true,
+                    onTap: _navigateBack,
+                  ),
+                ],
               ],
             ),
           ),

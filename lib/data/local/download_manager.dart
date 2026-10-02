@@ -114,6 +114,7 @@ class DownloadItem {
   DateTime? urlObtainedAt;
 
   final int? runtime;
+  final bool is10Gbps;
 
   DownloadItem({
     required this.id,
@@ -153,6 +154,7 @@ class DownloadItem {
     this.muxMethod = '',
     this.muxElapsedMs = 0,
     this.runtime,
+    this.is10Gbps = false,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get displayName {
@@ -332,6 +334,7 @@ class DownloadItem {
         'providerName': providerName,
         'headers': headers,
         'runtime': runtime,
+        'is10Gbps': is10Gbps,
       };
 
   factory DownloadItem.fromJson(Map<String, dynamic> json) => DownloadItem(
@@ -373,6 +376,7 @@ class DownloadItem {
         providerName: json['providerName'],
         headers: json['headers'] != null ? Map<String, String>.from(json['headers']) : null,
         runtime: json['runtime'] as int?,
+        is10Gbps: json['is10Gbps'] as bool? ?? false,
       );
 }
 
@@ -1064,6 +1068,11 @@ class DownloadManager {
     final item = _findById(id);
     if (item == null) return;
 
+    if (item.is10Gbps) {
+      debugPrint('[DownloadManager] Pause not supported for 10Gbps download $id');
+      return;
+    }
+
     // Background Service
     item.status = DownloadStatus.paused;
     BackgroundDownloadService().pauseDownload(id);
@@ -1078,8 +1087,6 @@ class DownloadManager {
     onDownloadUpdate?.call(item);
   }
 
-
-
   /// Resume a paused download
   ///
   /// If the background service is still alive, we simply flip the pause flag.
@@ -1090,6 +1097,11 @@ class DownloadManager {
     if (kIsWeb) return;
     final item = _findById(id);
     if (item == null) return;
+
+    if (item.is10Gbps) {
+      debugPrint('[DownloadManager] Resume not supported for 10Gbps download $id');
+      return;
+    }
 
     item.status = DownloadStatus.downloading;
     item.error = null;
@@ -1252,6 +1264,7 @@ class DownloadManager {
     int? fileSizeBytes,
     Map<String, String>? headers,
     String? originalEmbedUrl,
+    bool is10Gbps = false,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
     final hasPermission = await requestPermissions(context);
@@ -1261,7 +1274,11 @@ class DownloadManager {
 
     var downloadUrl = url;
     Map<String, String>? finalHeaders = headers;
-    if (downloadUrl.contains('hubcloud') || downloadUrl.contains('gpdl')) {
+    final bool isHubCloud = downloadUrl.contains('hubcloud') ||
+        downloadUrl.contains('gpdl') ||
+        url.contains('hubcloud') ||
+        url.contains('gpdl');
+    if (isHubCloud) {
       debugPrint('[DownloadManager] Resolving HubCloud redirect: $downloadUrl');
       final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(downloadUrl);
       if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
@@ -1269,6 +1286,10 @@ class DownloadManager {
         debugPrint('[DownloadManager] Resolved HubCloud to: $downloadUrl');
       }
     }
+
+    final bool finalIs10Gbps = is10Gbps ||
+        isHubCloud ||
+        (providerName?.toLowerCase().contains('10gbps') ?? false);
 
     final isStorageOrGoogle = downloadUrl.contains('googleusercontent.com') ||
         downloadUrl.contains('google.com') ||
@@ -1315,6 +1336,7 @@ class DownloadManager {
       urlObtainedAt: DateTime.now(),
       headers: finalHeaders,
       originalEmbedUrl: originalEmbedUrl,
+      is10Gbps: finalIs10Gbps,
     );
 
     _downloads.insert(0, item);

@@ -13,6 +13,7 @@ import 'package:better_player_plus/better_player_plus.dart';
 import '../../../services/extraction/models.dart';
 import '../../../services/extraction/provider_registry.dart';
 import '../../../services/vcloud_extractor.dart';
+import '../../../services/extraction/site_post_extractor.dart';
 
 /// Playback state for the UI to observe.
 enum PlaybackState {
@@ -66,6 +67,7 @@ class PlayerController extends ChangeNotifier {
   // ─── Playback Info ─────────────────────────────────────────────────────
   Duration _position = Duration.zero;
   Duration get position => _position;
+  Duration? _targetSeekPosition;
 
   Duration _duration = Duration.zero;
   Duration get duration => _duration;
@@ -101,6 +103,9 @@ class PlayerController extends ChangeNotifier {
 
   List<String> _currentCues = [];
   List<String> get currentCues => _currentCues;
+
+  bool _subtitlesExplicitlyDisabled = false;
+  bool get subtitlesExplicitlyDisabled => _subtitlesExplicitlyDisabled;
 
   // ─── Content Info ──────────────────────────────────────────────────────
   String _title = '';
@@ -143,8 +148,8 @@ class PlayerController extends ChangeNotifier {
     required String title,
     required int tmdbId,
     required String mediaType,
-    String? imdbId,
     int? year,
+    String? imdbId,
     int? season,
     int? episode,
     String? directUrl,
@@ -152,6 +157,8 @@ class PlayerController extends ChangeNotifier {
     List<int>? seasonNumbers,
     int? totalEpisodes,
     Future<String?> Function()? streamResolver,
+    Map<String, String>? initialResolutionMap,
+    Future<Map<String, String>> Function()? resolutionMapResolver,
   }) async {
     _title = title;
     _tmdbId = tmdbId;
@@ -185,12 +192,28 @@ class PlayerController extends ChangeNotifier {
         final resolvedUrl = await streamResolver();
         if (_isDisposed) return;
         if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
-          _sources.add(ExtractorLink(
-            sourceName: 'FastStream',
-            displayName: 'Stream 1',
+          final initialLink = ExtractorLink(
+            sourceName: 'VCloud',
+            displayName: 'Auto (720p)',
             url: resolvedUrl,
-          ));
+            quality: 720,
+          );
+          _sources.add(initialLink);
+
+          // Populate initial resolutions if provided
+          if (initialResolutionMap != null && initialResolutionMap.isNotEmpty) {
+            _populateResolutionMap(initialResolutionMap);
+          }
+
           await _playSource(_sources.first, startPosition: startPosition);
+
+          // Background resolution resolver
+          if (resolutionMapResolver != null) {
+            _resolveBackgroundResolutions(resolutionMapResolver);
+          }
+
+          // Run extraction in background to load all other resolutions & servers for switching
+          _startExtraction(startPosition: startPosition, isBackground: true);
           return;
         }
       } catch (e) {
@@ -204,14 +227,64 @@ class PlayerController extends ChangeNotifier {
       // Start extraction from all providers
       _state = PlaybackState.extracting;
       _safeNotify();
+      if (initialResolutionMap != null && initialResolutionMap.isNotEmpty) {
+        _populateResolutionMap(initialResolutionMap);
+      }
+      if (resolutionMapResolver != null) {
+        _resolveBackgroundResolutions(resolutionMapResolver);
+      }
       await _startExtraction(startPosition: startPosition);
+    }
+  }
+
+  void _populateResolutionMap(Map<String, String> resMap) {
+    for (final entry in resMap.entries) {
+      final res = entry.key; // e.g. "480p", "720p", "1080p", "2160p"
+      final url = entry.value;
+      if (url.isEmpty) continue;
+
+      int qVal = 720;
+      if (res.contains('480')) {
+        qVal = 480;
+      } else if (res.contains('1080')) {
+        qVal = 1080;
+      } else if (res.contains('2160') || res.contains('4k')) {
+        qVal = 2160;
+      }
+
+      // Check if resolution is already in _sources
+      final alreadyExists = _sources.any((s) =>
+          s.quality == qVal ||
+          s.displayName.toLowerCase().contains(res.toLowerCase()));
+
+      if (!alreadyExists) {
+        _sources.add(ExtractorLink(
+          sourceName: 'VCloud',
+          displayName: '[VCloud] $res',
+          url: url,
+          quality: qVal,
+        ));
+      }
+    }
+    _safeNotify();
+  }
+
+  void _resolveBackgroundResolutions(
+      Future<Map<String, String>> Function() resolver) async {
+    try {
+      final resMap = await resolver();
+      if (!_isDisposed && resMap.isNotEmpty) {
+        _populateResolutionMap(resMap);
+      }
+    } catch (e) {
+      debugPrint('[PlayerController] Error resolving background resolutions: $e');
     }
   }
 
   // ─── Extraction ────────────────────────────────────────────────────────
 
-  Future<void> _startExtraction({double? startPosition}) async {
-    bool firstLinkPlayed = false;
+  Future<void> _startExtraction({double? startPosition, bool isBackground = false}) async {
+    bool firstLinkPlayed = isBackground;
 
     try {
       await ProviderRegistry().extractAll(
@@ -224,11 +297,26 @@ class PlayerController extends ChangeNotifier {
         episode: _episode,
         onLinkFound: (link) {
           if (_isDisposed) return;
-          _sources.add(link);
-          _safeNotify();
 
-          // Auto-play the first link found
-          if (!firstLinkPlayed) {
+          // STRICT RULE: Never play online with 10Gbps / Server 3 links!
+          final lowerUrl = link.url.toLowerCase();
+          final lowerName = link.displayName.toLowerCase();
+          if (lowerName.contains('server 3') ||
+              lowerName.contains('10gbps') ||
+              lowerUrl.contains('hubcloud') ||
+              lowerUrl.contains('gpdl')) {
+            debugPrint('[PlayerController] Skipping 10Gbps link for online play: ${link.displayName}');
+            return;
+          }
+
+          // Avoid duplicate links
+          if (!_sources.any((s) => s.url == link.url)) {
+            _sources.add(link);
+            _safeNotify();
+          }
+
+          // Auto-play the first link found (priority 720p > 480p > 1080p from provider)
+          if (!firstLinkPlayed && !isBackground) {
             firstLinkPlayed = true;
             _playSource(link, startPosition: startPosition);
           }
@@ -241,7 +329,7 @@ class PlayerController extends ChangeNotifier {
       );
 
       if (_isDisposed) return;
-      if (_sources.isEmpty) {
+      if (_sources.isEmpty && !isBackground) {
         _state = PlaybackState.error;
         _errorMessage = 'No streaming sources found';
         _safeNotify();
@@ -249,7 +337,7 @@ class PlayerController extends ChangeNotifier {
     } catch (e) {
       debugPrint('[PlayerController] Extraction error: $e');
       if (_isDisposed) return;
-      if (_sources.isEmpty) {
+      if (_sources.isEmpty && !isBackground) {
         _state = PlaybackState.error;
         _errorMessage = 'Extraction failed: $e';
         _safeNotify();
@@ -265,7 +353,62 @@ class PlayerController extends ChangeNotifier {
     _state = PlaybackState.buffering;
     _currentSource = source;
     _errorMessage = null;
+    if (startPosition != null && startPosition > 0) {
+      _targetSeekPosition = Duration(milliseconds: (startPosition * 1000).toInt());
+    } else {
+      _targetSeekPosition = null;
+    }
     _safeNotify();
+
+    String playableUrl = source.url;
+    final lower = playableUrl.toLowerCase();
+    if (lower.contains('vcloud') ||
+        lower.contains('nexdrive') ||
+        lower.contains('vgmlink') ||
+        lower.contains('fastdl.zip') ||
+        lower.contains('vegadrive') ||
+        lower.contains('filebee')) {
+      try {
+        final streamRes =
+            await SitePostExtractor.instance.resolveVcloudStream(playableUrl);
+        if (streamRes.canStreamOnline && streamRes.onlineStreamUrl != null) {
+          playableUrl = streamRes.onlineStreamUrl!; // Strictly FSLv2 > FSL > FastDL > Pixeldrain
+        } else {
+          final servers =
+              await VcloudExtractorService().extractVcloud(playableUrl);
+          if (servers.containsKey('Server 2') &&
+              servers['Server 2']!.isNotEmpty) {
+            playableUrl = servers['Server 2']!;
+          } else if (servers.containsKey('Server 1') &&
+              servers['Server 1']!.isNotEmpty) {
+            playableUrl = servers['Server 1']!;
+          } else if (servers.containsKey('PixelServer') &&
+              servers['PixelServer']!.isNotEmpty) {
+            playableUrl = servers['PixelServer']!;
+          }
+        }
+      } catch (e) {
+        debugPrint(
+            '[PlayerController] Error resolving target resolution stream: $e');
+      }
+    }
+
+    final targetSource = ExtractorLink(
+      sourceName: source.sourceName,
+      displayName: source.displayName,
+      url: playableUrl,
+      quality: source.quality,
+      type: source.type,
+      headers: source.headers,
+    );
+
+    // Update in _sources list
+    final srcIdx =
+        _sources.indexWhere((s) => s.displayName == source.displayName);
+    if (srcIdx >= 0) {
+      _sources[srcIdx] = targetSource;
+    }
+    _currentSource = targetSource;
 
     try {
       // Dispose previous controller if exists
@@ -273,24 +416,24 @@ class PlayerController extends ChangeNotifier {
       _betterPlayerController?.dispose();
       _betterPlayerController = null;
 
-      final isLocalFile = source.url.startsWith('/') || !source.url.startsWith('http');
-      final isHls = source.resolvedType == LinkType.m3u8 ||
-          source.url.toLowerCase().contains('.m3u8') ||
-          source.url.toLowerCase().contains('hsl') ||
-          source.url.toLowerCase().contains('master');
+      final isLocalFile = targetSource.url.startsWith('/') || !targetSource.url.startsWith('http');
+      final isHls = targetSource.resolvedType == LinkType.m3u8 ||
+          targetSource.url.toLowerCase().contains('.m3u8') ||
+          targetSource.url.toLowerCase().contains('hsl') ||
+          targetSource.url.toLowerCase().contains('master');
 
       final dataSource = isLocalFile
           ? BetterPlayerDataSource(
               BetterPlayerDataSourceType.file,
-              source.url,
+              targetSource.url,
             )
           : BetterPlayerDataSource(
               BetterPlayerDataSourceType.network,
-              source.url,
-              headers: source.headers.isNotEmpty
-                  ? source.headers
+              targetSource.url,
+              headers: targetSource.headers.isNotEmpty
+                  ? targetSource.headers
                   : {
-                      if (!source.url.contains('google') && !source.url.contains('storage')) ...{
+                      if (!targetSource.url.contains('google') && !targetSource.url.contains('storage')) ...{
                         'User-Agent':
                             'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
                         'Accept': '*/*',
@@ -335,17 +478,22 @@ class PlayerController extends ChangeNotifier {
         betterPlayerDataSource: dataSource,
       );
 
+      if (startPosition != null && startPosition > 0) {
+        _targetSeekPosition =
+            Duration(milliseconds: (startPosition * 1000).toInt());
+      }
+
       // Listen to events
       _betterPlayerController!.addEventsListener(_onPlayerEvent);
 
       // Start position tracking
       _startPositionTracking();
 
-      debugPrint('[PlayerController] Playing: ${source.displayName}');
+      debugPrint('[PlayerController] Playing: ${targetSource.displayName} (${targetSource.url})');
     } catch (e) {
       debugPrint('[PlayerController] Play error: $e');
       // Auto-try next source on failure
-      _tryNextSource(source, startPosition: startPosition);
+      _tryNextSource(targetSource, startPosition: startPosition);
     }
   }
 
@@ -363,7 +511,7 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
-  /// Switch to a different source.
+  /// Switch to a different source / resolution with timestamp preservation.
   Future<void> switchSource(ExtractorLink source) async {
     final currentPos = _position;
     await _playSource(source,
@@ -379,6 +527,11 @@ class PlayerController extends ChangeNotifier {
             null) {
           _duration = _betterPlayerController!
               .videoPlayerController!.value.duration!;
+        }
+        if (_targetSeekPosition != null && _targetSeekPosition! > Duration.zero) {
+          _betterPlayerController?.seekTo(_targetSeekPosition!);
+          _position = _targetSeekPosition!;
+          _targetSeekPosition = null;
         }
         _updateTracksAndSubtitles();
         notifyListeners();
@@ -515,19 +668,55 @@ class PlayerController extends ChangeNotifier {
         for (final t in nativeText)
           BetterPlayerSubtitlesSource(
             type: BetterPlayerSubtitlesSourceType.network,
-            name: _cleanSubtitleName(t['language'] as String?, t['label'] as String?),
+            name: _cleanSubtitleName(
+                t['language'] as String?, t['label'] as String?),
             selectedByDefault: t['selected'] as bool? ?? false,
           ),
       ];
 
-      final selectedTextMap = nativeText.firstWhere(
-        (t) => t['selected'] == true,
-        orElse: () => <String, dynamic>{},
-      );
-      if (selectedTextMap.isNotEmpty) {
-        final selLabel = _cleanSubtitleName(selectedTextMap['language'] as String?, selectedTextMap['label'] as String?);
+      if (!_subtitlesExplicitlyDisabled) {
+        final selectedTextMap = nativeText.firstWhere(
+          (t) => t['selected'] == true,
+          orElse: () => <String, dynamic>{},
+        );
+        if (selectedTextMap.isNotEmpty) {
+          final selLabel = _cleanSubtitleName(
+              selectedTextMap['language'] as String?,
+              selectedTextMap['label'] as String?);
+          _currentSubtitleSource = _subtitleSources.firstWhere(
+            (s) => s.name == selLabel,
+            orElse: () => _subtitleSources.first,
+          );
+          final nonOff = _subtitleSources
+              .where((s) =>
+                  s.type != BetterPlayerSubtitlesSourceType.none &&
+                  s.name != 'Off')
+              .toList();
+          final idx = nonOff.indexOf(_currentSubtitleSource!);
+          _betterPlayerController?.setTextTrack(
+              _currentSubtitleSource!.name, idx >= 0 ? idx : 0);
+        } else {
+          // Auto-select English or first available non-off track
+          final nonOff = _subtitleSources
+              .where((s) =>
+                  s.type != BetterPlayerSubtitlesSourceType.none &&
+                  s.name != 'Off')
+              .toList();
+          if (nonOff.isNotEmpty) {
+            final defaultTrack = nonOff.firstWhere(
+              (s) => (s.name ?? '').toLowerCase().contains('eng'),
+              orElse: () => nonOff.first,
+            );
+            _currentSubtitleSource = defaultTrack;
+            final idx = nonOff.indexOf(defaultTrack);
+            _betterPlayerController?.setTextTrack(
+                defaultTrack.name, idx >= 0 ? idx : 0);
+          }
+        }
+      } else {
         _currentSubtitleSource = _subtitleSources.firstWhere(
-          (s) => s.name == selLabel,
+          (s) =>
+              s.type == BetterPlayerSubtitlesSourceType.none || s.name == 'Off',
           orElse: () => _subtitleSources.first,
         );
       }
@@ -535,12 +724,26 @@ class PlayerController extends ChangeNotifier {
       final subs = _betterPlayerController!.betterPlayerSubtitlesSourceList;
       if (subs.isNotEmpty) {
         _subtitleSources = subs;
-        _currentSubtitleSource = _betterPlayerController!.betterPlayerSubtitlesSource;
+        if (!_subtitlesExplicitlyDisabled) {
+          _currentSubtitleSource =
+              _betterPlayerController!.betterPlayerSubtitlesSource ??
+                  _subtitleSources.firstWhere(
+                    (s) =>
+                        s.type != BetterPlayerSubtitlesSourceType.none &&
+                        s.name != 'Off',
+                    orElse: () => _subtitleSources.first,
+                  );
+        }
       } else if (_currentSource?.url.toLowerCase().contains('.mkv') == true) {
         _subtitleSources = [
-          BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none, name: 'Off'),
-          BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.network, name: 'English'),
+          BetterPlayerSubtitlesSource(
+              type: BetterPlayerSubtitlesSourceType.none, name: 'Off'),
+          BetterPlayerSubtitlesSource(
+              type: BetterPlayerSubtitlesSourceType.network, name: 'English'),
         ];
+        if (!_subtitlesExplicitlyDisabled) {
+          _currentSubtitleSource = _subtitleSources[1];
+        }
       }
     }
   }
@@ -886,14 +1089,17 @@ class PlayerController extends ChangeNotifier {
   /// Set subtitle source from the available subtitle sources list.
   void setSubtitleSource(BetterPlayerSubtitlesSource source) {
     if (_betterPlayerController == null) return;
-    if (source.type == BetterPlayerSubtitlesSourceType.none || source.name == 'Off') {
+    if (source.type == BetterPlayerSubtitlesSourceType.none ||
+        source.name == 'Off') {
       disableSubtitles();
       return;
     }
 
+    _subtitlesExplicitlyDisabled = false;
     _currentSubtitleSource = source;
     final nonNone = _subtitleSources
-        .where((s) => s.type != BetterPlayerSubtitlesSourceType.none && s.name != 'Off')
+        .where((s) =>
+            s.type != BetterPlayerSubtitlesSourceType.none && s.name != 'Off')
         .toList();
     final idx = nonNone.indexOf(source);
 
@@ -904,16 +1110,16 @@ class PlayerController extends ChangeNotifier {
     if (source.urls != null && source.urls!.isNotEmpty) {
       _betterPlayerController!.setupSubtitleSource(source);
     }
-    debugPrint('[PlayerController] Switched subtitle to: ${source.name} (index: $idx)');
+    debugPrint(
+        '[PlayerController] Switched subtitle to: ${source.name} (index: $idx)');
     _safeNotify();
   }
 
   /// Current active subtitle texts from either ExoPlayer cues or parsed subtitle files.
   List<String> get activeSubtitleTexts {
     if (!isSubtitleActive) return const [];
-    final validExoCues = _currentCues
-        .where((c) => c.trim().isNotEmpty)
-        .toList();
+    final validExoCues =
+        _currentCues.where((c) => c.trim().isNotEmpty).toList();
     if (validExoCues.isNotEmpty) {
       return validExoCues;
     }
@@ -921,15 +1127,20 @@ class PlayerController extends ChangeNotifier {
     if (bp != null) {
       final rendered = bp.renderedSubtitle;
       if (rendered != null && rendered.texts != null) {
-        final validTexts = rendered.texts!.where((c) => c.trim().isNotEmpty).toList();
+        final validTexts =
+            rendered.texts!.where((c) => c.trim().isNotEmpty).toList();
         if (validTexts.isNotEmpty) return validTexts;
       }
       if (bp.subtitlesLines.isNotEmpty) {
         final pos = _position;
         for (final sub in bp.subtitlesLines) {
-          if (sub.start != null && sub.end != null && sub.start! <= pos && sub.end! >= pos) {
+          if (sub.start != null &&
+              sub.end != null &&
+              sub.start! <= pos &&
+              sub.end! >= pos) {
             if (sub.texts != null) {
-              final validTexts = sub.texts!.where((c) => c.trim().isNotEmpty).toList();
+              final validTexts =
+                  sub.texts!.where((c) => c.trim().isNotEmpty).toList();
               if (validTexts.isNotEmpty) return validTexts;
             }
           }
@@ -941,16 +1152,18 @@ class PlayerController extends ChangeNotifier {
 
   /// Disable subtitles.
   void disableSubtitles() {
+    _subtitlesExplicitlyDisabled = true;
     if (_betterPlayerController == null) return;
     // Tell native ExoPlayer to disable subtitles
     _betterPlayerController!.setTextTrack(null, -1);
 
     final noneSource = _subtitleSources.firstWhere(
       (s) => s.type == BetterPlayerSubtitlesSourceType.none,
-      orElse: () => BetterPlayerSubtitlesSource(type: BetterPlayerSubtitlesSourceType.none, name: 'Off'),
+      orElse: () => BetterPlayerSubtitlesSource(
+          type: BetterPlayerSubtitlesSourceType.none, name: 'Off'),
     );
     _betterPlayerController!.setupSubtitleSource(noneSource);
-    _currentSubtitleSource = null;
+    _currentSubtitleSource = noneSource;
     _currentCues = [];
     debugPrint('[PlayerController] Disabled subtitles');
     _safeNotify();
@@ -960,15 +1173,32 @@ class PlayerController extends ChangeNotifier {
   bool get hasAudioTracks => _audioTracks.length > 1;
 
   /// Check if subtitle sources are available.
-  bool get hasSubtitles => _subtitleSources.any((s) => s.type != BetterPlayerSubtitlesSourceType.none);
+  bool get hasSubtitles =>
+      _subtitleSources.any((s) => s.type != BetterPlayerSubtitlesSourceType.none);
 
   /// Check if a subtitle track is currently active (not off/none)
   bool get isSubtitleActive =>
-      _currentSubtitleSource != null &&
-      _currentSubtitleSource?.type != BetterPlayerSubtitlesSourceType.none &&
-      _currentSubtitleSource?.name != 'Off';
+      !_subtitlesExplicitlyDisabled &&
+      (_currentSubtitleSource == null ||
+          (_currentSubtitleSource?.type !=
+                  BetterPlayerSubtitlesSourceType.none &&
+              _currentSubtitleSource?.name != 'Off'));
 
   // ─── Controls Visibility ───────────────────────────────────────────────
+
+  bool _isModalOpen = false;
+  bool get isModalOpen => _isModalOpen;
+
+  void setModalOpen(bool open) {
+    _isModalOpen = open;
+    if (open) {
+      _controlsTimer?.cancel();
+      _controlsVisible = true;
+    } else {
+      _resetControlsTimer();
+    }
+    _safeNotify();
+  }
 
   void showControls() {
     if (_isLocked) return;
@@ -978,6 +1208,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   void hideControls() {
+    if (_isModalOpen) return;
     _controlsVisible = false;
     _controlsTimer?.cancel();
     _safeNotify();
@@ -993,8 +1224,9 @@ class PlayerController extends ChangeNotifier {
 
   void _resetControlsTimer() {
     _controlsTimer?.cancel();
+    if (_isModalOpen) return;
     _controlsTimer = Timer(const Duration(seconds: 3), () {
-      if (_isPlaying && _controlsVisible) {
+      if (_isPlaying && _controlsVisible && !_isModalOpen) {
         hideControls();
       }
     });

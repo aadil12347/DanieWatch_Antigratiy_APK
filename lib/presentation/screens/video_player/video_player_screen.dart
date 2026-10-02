@@ -43,6 +43,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final Map<String, PeachifyStream>? extractedStreams;
   final bool is3rdPartyHosted;
   final Future<String?> Function()? streamResolver;
+  final Map<String, String>? initialResolutionMap;
+  final Future<Map<String, String>> Function()? resolutionMapResolver;
 
   const VideoPlayerScreen({
     super.key,
@@ -66,6 +68,8 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.extractedStreams,
     this.is3rdPartyHosted = false,
     this.streamResolver,
+    this.initialResolutionMap,
+    this.resolutionMapResolver,
   });
 
   @override
@@ -116,6 +120,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       startPosition: widget.startPosition,
       seasonNumbers: widget.seasons,
       streamResolver: widget.streamResolver,
+      initialResolutionMap: widget.initialResolutionMap,
+      resolutionMapResolver: widget.resolutionMapResolver,
     );
   }
 
@@ -246,11 +252,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   ),
                 ),
 
-              // 2. Subtitle Layer (Vidstack styled, subtle grey pill background, small text at center bottom)
-              if (isReady)
-                _buildSubtitleOverlay(context),
-
-              // 3. Gesture Controls (VLC style) + Vidstack Player Overlay
+              // 2. Gesture Controls (VLC style) + Vidstack Player Overlay
               if (isReady)
                 Positioned.fill(
                   child: PlayerGestures(
@@ -262,6 +264,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                     ),
                   ),
                 ),
+
+              // 3. Subtitle Layer (Vidstack styled, subtle grey pill background, small text at center bottom)
+              if (isReady)
+                _buildSubtitleOverlay(context),
 
               // 4. Cinematic Landscape Loading Screen
               if (!isReady)
@@ -484,38 +490,42 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   void _showAudioSelector() {
+    _controller.setModalOpen(true);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => AudioTrackSelectorSheet(controller: _controller),
-    );
+    ).whenComplete(() => _controller.setModalOpen(false));
   }
 
   void _showSubtitleSelector() {
+    _controller.setModalOpen(true);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => SubtitleTrackSelectorSheet(controller: _controller),
-    );
+    ).whenComplete(() => _controller.setModalOpen(false));
   }
 
   void _showSpeedSelector() {
+    _controller.setModalOpen(true);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => SpeedSelectorSheet(controller: _controller),
-    );
+    ).whenComplete(() => _controller.setModalOpen(false));
   }
 
   void _showSourceSelector() {
+    _controller.setModalOpen(true);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => SourceSelectorSheet(controller: _controller),
-    );
+    ).whenComplete(() => _controller.setModalOpen(false));
   }
 
   void _showSettings() {
@@ -523,9 +533,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Widget _buildSubtitleOverlay(BuildContext context) {
-    if (_controller.currentSubtitleSource == null ||
-        _controller.currentSubtitleSource?.type == BetterPlayerSubtitlesSourceType.none ||
-        _controller.currentSubtitleSource?.name == 'Off') {
+    if (_controller.subtitlesExplicitlyDisabled ||
+        _controller.currentSubtitleSource?.name == 'Off' ||
+        _controller.currentSubtitleSource?.type ==
+            BetterPlayerSubtitlesSourceType.none) {
       return const SizedBox.shrink();
     }
 

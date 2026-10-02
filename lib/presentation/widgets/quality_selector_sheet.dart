@@ -59,6 +59,9 @@ Future<DownloadSelection?> showQualitySelectorSheet({
   String? fallbackLanguage,
   int? runtime,
   List<PeachifyStream>? streams,
+  List<String>? availableResolutions,
+  Map<String, String>? resolutionUrls,
+  void Function(String resolution)? onSelectResolution,
 }) async {
   final currentState = ref.read(downloadModalProvider);
   if (currentState.isOpen) {
@@ -81,6 +84,9 @@ Future<DownloadSelection?> showQualitySelectorSheet({
     fallbackLanguage: fallbackLanguage,
     runtime: runtime,
     streams: streams,
+    availableResolutions: availableResolutions,
+    resolutionUrls: resolutionUrls,
+    onSelectResolution: onSelectResolution,
     onSelected: (sel) {
       ref.read(downloadModalProvider.notifier).state =
           const DownloadModalState();
@@ -651,6 +657,8 @@ class _QualitySelectorContentState
                 _buildSkeleton()
               else if (_error != null)
                 _buildError()
+              else if (modalState.availableResolutions != null && modalState.availableResolutions!.isNotEmpty)
+                _buildResolutionList(modalState)
               else if (_selectedStream == null)
                 _buildStreamsList(streams)
               else ...[
@@ -780,6 +788,184 @@ class _QualitySelectorContentState
     } else {
       return v.badgeLabel.replaceAll(' HD', '').replaceAll('SD', 'Original');
     }
+  }
+
+  String _estimateSizeForResolution(String res, int? runtimeMinutes) {
+    final mins = (runtimeMinutes != null && runtimeMinutes > 0) ? runtimeMinutes : 45;
+    final rLower = res.toLowerCase();
+    double mb;
+    if (rLower.contains('2160') || rLower.contains('4k')) {
+      mb = (mins * 60 * 12000000) / (8 * 1024 * 1024);
+    } else if (rLower.contains('1080')) {
+      mb = (mins * 60 * 4500000) / (8 * 1024 * 1024);
+    } else if (rLower.contains('720')) {
+      mb = (mins * 60 * 2000000) / (8 * 1024 * 1024);
+    } else if (rLower.contains('480')) {
+      mb = (mins * 60 * 900000) / (8 * 1024 * 1024);
+    } else {
+      mb = (mins * 60 * 1500000) / (8 * 1024 * 1024);
+    }
+    if (mb >= 1024) {
+      return '~${(mb / 1024).toStringAsFixed(1)} GB';
+    }
+    return '~${mb.round()} MB';
+  }
+
+  Widget _buildResolutionList(DownloadModalState modalState) {
+    final resolutions = modalState.availableResolutions ?? [];
+    if (resolutions.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+        child: Column(
+          children: [
+            Icon(Icons.info_outline_rounded, color: Colors.white30, size: 48),
+            SizedBox(height: 16),
+            Text(
+              'No download resolutions available',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Please try extracting again later.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white38, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Text(
+            'SELECT DOWNLOAD RESOLUTION',
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
+            ),
+          ),
+        ),
+        ...resolutions.map((res) {
+          final isExtracting = modalState.extractingResolution == res;
+          final rLower = res.toLowerCase();
+
+          String badge;
+          IconData icon;
+          if (rLower.contains('2160') || rLower.contains('4k')) {
+            badge = '4K Ultra HD';
+            icon = Icons.four_k_rounded;
+          } else if (rLower.contains('1080')) {
+            badge = '1080p Full HD';
+            icon = Icons.high_quality_rounded;
+          } else if (rLower.contains('720')) {
+            badge = '720p HD · Default';
+            icon = Icons.hd_rounded;
+          } else if (rLower.contains('480')) {
+            badge = '480p SD · Data Saver';
+            icon = Icons.video_file_rounded;
+          } else {
+            badge = res;
+            icon = Icons.video_file_rounded;
+          }
+
+          final sizeEstimate = _estimateSizeForResolution(res, modalState.runtime);
+
+          return GestureDetector(
+            onTap: isExtracting
+                ? null
+                : () {
+                    HapticFeedback.mediumImpact();
+                    modalState.onSelectResolution?.call(res);
+                  },
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: isExtracting
+                    ? AppColors.primary.withValues(alpha: 0.15)
+                    : AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isExtracting
+                      ? AppColors.primary
+                      : AppColors.border,
+                  width: isExtracting ? 1.5 : 1.0,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: AppColors.primary, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          badge,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          isExtracting
+                              ? 'Extracting server link...'
+                              : 'Est. size: $sizeEstimate',
+                          style: TextStyle(
+                            color: isExtracting
+                                ? AppColors.primary
+                                : Colors.white.withValues(alpha: 0.5),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isExtracting)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.download_rounded,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+      ],
+    );
   }
 
   Widget _buildStreamsList(List<PeachifyStream> streams) {

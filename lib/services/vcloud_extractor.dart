@@ -508,13 +508,12 @@ class VcloudExtractorService {
 
       // Specific matched servers based on known attributes/text
       if (id == 'fsl' || innerHtml.contains('[FSL Server]')) {
-        resolved['Server 1'] = href + '1$minutes';
+        resolved['Server 1'] = href;
       } else if (id == 's3' || innerHtml.contains('[FSLv2 Server]')) {
-        if (href.contains('X-Amz-Signature') || href.contains('r2.cloudflarestorage') || href.contains('r2.dev')) {
-          resolved['Server 2'] = href;
-        } else {
-          resolved['Server 2'] = href + '_1$minutes';
-        }
+        resolved['Server 2'] = href;
+      } else if (innerHtml.contains('PixelServer') || href.contains('pixeldrain.')) {
+        final pixelUrl = href.replaceFirst('/u/', '/api/file/');
+        resolved['PixelServer'] = pixelUrl;
       } else if (innerHtml.contains('[Server : 10Gbps]') || 
                  href.contains('pixel.hubcloud') || 
                  href.contains('gpdl') || 

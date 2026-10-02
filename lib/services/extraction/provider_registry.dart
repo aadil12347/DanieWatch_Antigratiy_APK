@@ -15,8 +15,9 @@ import 'gdflix_extractor.dart';
 import 'driveleech_extractor.dart';
 import 'vegamovies_scraper.dart';
 import 'extraction_utils.dart';
-import 'quality_tags.dart';
 import 'manifest_stream_provider.dart';
+import 'site_post_extractor.dart';
+import 'movie_site_scraper_service.dart';
 
 // ─── Source Provider Base ──────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ class VCloudDBProvider extends SourceProvider {
     required String title,
     int? year,
   }) async {
-    return _extractFromVcloud(tmdbId, title, isMovie: true);
+    return _extractFromVcloud(tmdbId, title, isMovie: true, year: year);
   }
 
   @override
@@ -75,13 +76,14 @@ class VCloudDBProvider extends SourceProvider {
     required int episode,
   }) async {
     return _extractFromVcloud(tmdbId, title,
-        isMovie: false, season: season, episode: episode);
+        isMovie: false, season: season, episode: episode, year: year);
   }
 
   Future<List<ExtractorLink>> _extractFromVcloud(
     String tmdbId,
     String title, {
     required bool isMovie,
+    int? year,
     int? season,
     int? episode,
   }) async {
@@ -90,7 +92,7 @@ class VCloudDBProvider extends SourceProvider {
 
     try {
       // Step 1: Get VCloud page URLs from the GitHub database, grouped by resolution
-      final resolutionMap = await _extractor.fetchResolutionLinksMap(
+      Map<String, String> resolutionMap = await _extractor.fetchResolutionLinksMap(
         tmdbId: tmdbIdInt,
         mediaType: isMovie ? 'movie' : 'tv',
         title: title,
@@ -98,41 +100,87 @@ class VCloudDBProvider extends SourceProvider {
         episode: episode,
       );
 
+      // Fallback: If GitHub DB has no entries, extract from Vegamovies/Rogmovies detail post
       if (resolutionMap.isEmpty) {
-        debugPrint('[VCloudDB] No resolution links found in DB for TMDB: $tmdbId');
+        debugPrint('[VCloudDB] No resolution links found in DB for TMDB: $tmdbId, trying SitePostExtractor...');
+        try {
+          final postUrl = MovieSiteScraperService.instance.getPostUrl(tmdbIdInt) ??
+              await SitePostExtractor.instance.findPostUrl(
+                title: title,
+                tmdbId: tmdbIdInt,
+                year: year,
+              );
+          if (postUrl != null && postUrl.isNotEmpty) {
+            resolutionMap = await SitePostExtractor.instance.getAvailableResolutionsForContent(
+              postUrl: postUrl,
+              isMovie: isMovie,
+              seasonNumber: season,
+              episodeNumber: episode,
+            );
+          }
+        } catch (e) {
+          debugPrint('[VCloudDB] SitePostExtractor fallback error: $e');
+        }
+      }
+
+      if (resolutionMap.isEmpty) {
+        debugPrint('[VCloudDB] No resolution links found for TMDB: $tmdbId');
         return links;
       }
 
       // Step 2: Extract direct server URLs from each resolution's VCloud page
-      for (final entry in resolutionMap.entries) {
+      // Prioritize 720p auto -> 480p -> 1080p -> others
+      final sortedEntries = resolutionMap.entries.toList()
+        ..sort((a, b) {
+          int getPri(String r) {
+            final lr = r.toLowerCase();
+            if (lr.contains('720')) return 0;
+            if (lr.contains('480')) return 1;
+            if (lr.contains('1080')) return 2;
+            return 3;
+          }
+          return getPri(a.key).compareTo(getPri(b.key));
+        });
+
+      for (final entry in sortedEntries) {
         final resolution = entry.key; // e.g. "480p", "720p", "1080p"
         final vcloudUrl = entry.value;
 
         try {
           final servers = await _extractor.extractVcloud(vcloudUrl);
-          for (final serverEntry in servers.entries) {
-            final serverName = serverEntry.key;
-            var serverUrl = serverEntry.value;
-            if (serverUrl.isEmpty) continue;
-
-            // If it's a HubCloud/GPDL link, resolve the redirect
-            if (serverName == 'Server 3' ||
-                serverUrl.contains('hubcloud') ||
-                serverUrl.contains('gpdl')) {
-              final resolvedUrl =
-                  await _extractor.resolveHubCloudRedirect(serverUrl);
-              if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
-                serverUrl = resolvedUrl;
-              }
-            }
+          
+          // Server priority for online playback: Server 2 (FSLv2) > Server 1 (FSL).
+          // STRICT RULE: Never play online with 10Gbps (Server 3) links!
+          final serverPriority = ['Server 2', 'Server 1'];
+          bool addedServer = false;
+          for (final serverName in serverPriority) {
+            final serverUrl = servers[serverName];
+            if (serverUrl == null || serverUrl.isEmpty) continue;
 
             final quality = getIndexQuality(resolution);
+            final tag = serverName == 'Server 2' ? 'FSLv2' : 'FSL';
             links.add(ExtractorLink(
               sourceName: name,
-              displayName: '[$name] $resolution $serverName',
+              displayName: '[$name] $resolution ($tag)',
               url: serverUrl,
               quality: quality,
             ));
+            addedServer = true;
+          }
+
+          // Fallback: If extractVcloud didn't produce a stream, try SitePostExtractor.resolveVcloudStream
+          if (!addedServer) {
+            final siteRes = await SitePostExtractor.instance.resolveVcloudStream(vcloudUrl);
+            if (siteRes.canStreamOnline && siteRes.onlineStreamUrl != null) {
+              final quality = getIndexQuality(resolution);
+              final tag = siteRes.fslv2Url != null ? 'FSLv2' : 'FSL';
+              links.add(ExtractorLink(
+                sourceName: name,
+                displayName: '[$name] $resolution ($tag)',
+                url: siteRes.onlineStreamUrl!,
+                quality: quality,
+              ));
+            }
           }
         } catch (e) {
           debugPrint('[VCloudDB] Error extracting $resolution from $vcloudUrl: $e');
@@ -449,7 +497,6 @@ class ProviderRegistry {
     Function(String providerName, ProviderStatus status)? onProviderStatus,
   }) async {
     final allLinks = <ExtractorLink>[];
-    final completer = Completer<List<ExtractorLink>>();
 
     final futures = <Future<void>>[];
 
