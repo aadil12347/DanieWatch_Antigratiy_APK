@@ -300,9 +300,34 @@ class SitePostExtractor {
         final aText = a.text.trim().replaceAll(RegExp(r'\s+'), ' ');
         final lowerText = aText.toLowerCase();
 
+        // Check if nearby heading text mentions batch/zip
+        bool headingHasBatch = false;
+        var checkEl = a.parent;
+        while (checkEl != null && checkEl != contentEl) {
+          final prevSib = checkEl.previousElementSibling;
+          if (prevSib != null) {
+            final prevText = prevSib.text.toLowerCase();
+            final prevTag = (prevSib.localName ?? '').toLowerCase();
+            if (RegExp(r'^h[1-6]$|^p$|^strong$').hasMatch(prevTag) &&
+                (prevText.contains('batch') ||
+                    prevText.contains('zip') ||
+                    prevText.contains('full season') ||
+                    prevText.contains('complete season') ||
+                    prevText.contains('all episodes'))) {
+              headingHasBatch = true;
+              break;
+            }
+          }
+          checkEl = checkEl.parent;
+        }
+
         final isBatchZip = lowerText.contains('batch') ||
             lowerText.contains('zip') ||
-            lowerText.contains('pack');
+            lowerText.contains('pack') ||
+            lowerText.contains('full season') ||
+            lowerText.contains('complete season') ||
+            lowerText.contains('all episodes') ||
+            headingHasBatch;
 
         final isEpisodeList = lowerText.contains('episode') ||
             lowerText.contains('v-cloud') ||
@@ -939,40 +964,119 @@ class SitePostExtractor {
   }
 
   /// Resolve a Batch/Zip landing button to a direct `.zip` file download link.
+  ///
+  /// Handles multiple resolution chains:
+  ///   1. Direct vcloud/hubcloud link on the batch page
+  ///   2. Nexdrive/FastDL/GDFlix/VGMLink intermediary -> vcloud -> download
+  ///   3. Direct download links (e.g. .zip URLs)
   Future<String?> resolveBatchZipDirectLink(String batchZipLandingUrl) async {
     try {
+      final lUrl = batchZipLandingUrl.toLowerCase();
+
+      // If the landing URL itself is already a vcloud/hubcloud URL, resolve it directly
+      if (lUrl.contains('vcloud') || lUrl.contains('hubcloud')) {
+        final result = await resolveVcloudStream(batchZipLandingUrl);
+        final dl = result.bestDownloadUrl;
+        if (dl != null && dl.isNotEmpty) return dl;
+      }
+
+      // If the landing URL is a nexdrive/fastdl/gdflix/vgmlink intermediary,
+      // first extract vcloud URL from it, then resolve
+      if (lUrl.contains('nexdrive') ||
+          lUrl.contains('fastdl') ||
+          lUrl.contains('gdflix') ||
+          lUrl.contains('vgmlink') ||
+          lUrl.contains('filebee')) {
+        final vcloud = await _extractVcloudFromLanding(batchZipLandingUrl);
+        if (vcloud != null && vcloud.isNotEmpty) {
+          final result = await resolveVcloudStream(vcloud,
+              referer: batchZipLandingUrl);
+          final dl = result.bestDownloadUrl;
+          if (dl != null && dl.isNotEmpty) return dl;
+        }
+        // Also try hubcloud links on the intermediary page
+        final hubcloud = await _extractHubcloudFromLanding(batchZipLandingUrl);
+        if (hubcloud != null && hubcloud.isNotEmpty) {
+          final result = await resolveVcloudStream(hubcloud,
+              referer: batchZipLandingUrl);
+          final dl = result.bestDownloadUrl;
+          if (dl != null && dl.isNotEmpty) return dl;
+        }
+      }
+
+      // General case: parse the batch page and find download links
       final html = await fetchHtml(batchZipLandingUrl);
       final doc = html_parser.parse(html);
 
-      // Find V-Cloud button on this Batch/Zip page
       String? vcloudUrl;
+      String? intermediaryUrl;
+
       for (final a in doc.querySelectorAll('a[href]')) {
         final href = a.attributes['href'] ?? '';
+        if (href.isEmpty || href.startsWith('#')) continue;
         final text = a.text.toLowerCase();
-        if (href.contains('vcloud') || text.contains('v-cloud')) {
-          vcloudUrl = href;
-          break;
+        final lh = href.toLowerCase();
+
+        // Skip social/spam links
+        if (lh.contains('telegram') ||
+            lh.contains('t.me') ||
+            lh.contains('facebook') ||
+            lh.contains('twitter')) {
+          continue;
+        }
+
+        // Direct vcloud/hubcloud link
+        if (lh.contains('vcloud') || lh.contains('hubcloud') ||
+            text.contains('v-cloud') || text.contains('hubcloud')) {
+          vcloudUrl ??= href;
+        }
+        // Intermediary landing page link
+        else if (lh.contains('nexdrive') ||
+            lh.contains('fastdl') ||
+            lh.contains('gdflix') ||
+            lh.contains('vgmlink') ||
+            lh.contains('filebee')) {
+          intermediaryUrl ??= href;
         }
       }
 
-      if (vcloudUrl == null || vcloudUrl.isEmpty) {
-        // Fallback: any direct anchor or hubcloud
-        for (final a in doc.querySelectorAll('a[href]')) {
-          final href = a.attributes['href'] ?? '';
-          if (href.contains('vcloud') || href.contains('hubcloud')) {
-            vcloudUrl = href;
-            break;
-          }
-        }
-      }
-
+      // Try direct vcloud first
       if (vcloudUrl != null && vcloudUrl.isNotEmpty) {
         final result = await resolveVcloudStream(vcloudUrl,
             referer: batchZipLandingUrl);
-        return result.bestDownloadUrl;
+        final dl = result.bestDownloadUrl;
+        if (dl != null && dl.isNotEmpty) return dl;
+      }
+
+      // Fallback: follow intermediary -> extract vcloud -> resolve
+      if (intermediaryUrl != null && intermediaryUrl.isNotEmpty) {
+        final vcloud = await _extractVcloudFromLanding(intermediaryUrl);
+        if (vcloud != null && vcloud.isNotEmpty) {
+          final result = await resolveVcloudStream(vcloud,
+              referer: intermediaryUrl);
+          final dl = result.bestDownloadUrl;
+          if (dl != null && dl.isNotEmpty) return dl;
+        }
       }
     } catch (e) {
       debugPrint('[SitePostExtractor] Error resolving Batch/Zip link: $e');
+    }
+    return null;
+  }
+
+  /// Helper to extract first hubcloud anchor from a landing page
+  Future<String?> _extractHubcloudFromLanding(String landingUrl) async {
+    try {
+      final html = await fetchHtml(landingUrl);
+      final doc = html_parser.parse(html);
+      for (final a in doc.querySelectorAll('a[href]')) {
+        final href = a.attributes['href'] ?? '';
+        if (href.toLowerCase().contains('hubcloud')) {
+          return href;
+        }
+      }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] _extractHubcloudFromLanding error: $e');
     }
     return null;
   }

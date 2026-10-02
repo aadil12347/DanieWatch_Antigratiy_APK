@@ -9,12 +9,14 @@ import 'package:daniewatch_app/core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/search_provider.dart';
 import '../../providers/download_modal_provider.dart';
+import '../../providers/batch_zip_modal_provider.dart';
 import '../../providers/filter_modal_provider.dart';
 import '../../providers/actor_modal_provider.dart';
 import '../../widgets/quality_selector_sheet.dart';
 import '../../../core/utils/toast_utils.dart';
 import '../../widgets/main_filter_panel_sheet.dart';
 import '../../widgets/actor_modal_content.dart';
+import '../../widgets/batch_zip_selector_content.dart';
 import '../../../data/local/download_manager.dart';
 import '../../widgets/filter_selector_sheet.dart';
 import 'dart:async';
@@ -85,6 +87,7 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.read(confirmationModalProvider.notifier).state =
         const ConfirmationModalState();
     ref.read(actorModalProvider.notifier).state = const ActorModalState();
+    ref.read(batchZipModalProvider.notifier).state = const BatchZipModalState();
     ref.read(supportModalProvider.notifier).state = false;
   }
 
@@ -189,9 +192,10 @@ class _AppShellState extends ConsumerState<AppShell>
     final filterState = ref.watch(filterModalProvider);
     final confirmState = ref.watch(confirmationModalProvider);
     final actorState = ref.watch(actorModalProvider);
+    final batchZipState = ref.watch(batchZipModalProvider);
     final isSupportOpen = ref.watch(supportModalProvider);
     final isOtherModalOpen =
-        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen;
+        downloadState.isOpen || filterState.isOpen || confirmState.isOpen || actorState.isOpen || batchZipState.isOpen;
     final isModalOpen = isOtherModalOpen || isSupportOpen;
     final isAdmin = ref.watch(isAdminProvider).valueOrNull ?? false;
 
@@ -437,17 +441,24 @@ class _AppShellState extends ConsumerState<AppShell>
                                                     ? const ActorModalContent(
                                                         key: ValueKey('actor_modal'),
                                                       )
-                                                    : (filterState.view == FilterView.optionsList
-                                                        ? FilterSelectorContent(
-                                                            title: filterState.title,
-                                                            currentValue: filterState.currentValue,
-                                                            options: filterState.options,
-                                                            onChanged: filterState.onChanged ?? (_) {},
-                                                            onCancel: _closeAllModals,
+                                                    : batchZipState.isOpen
+                                                        ? BatchZipSelectorContent(
+                                                            key: const ValueKey('batch_zip_modal'),
+                                                            content: batchZipState.content!,
+                                                            seasonNumber: batchZipState.seasonNumber,
+                                                            postUrl: batchZipState.postUrl,
                                                           )
-                                                        : const MainFilterPanelContent(
-                                                            key: ValueKey('filter_main'),
-                                                          )),
+                                                        : (filterState.view == FilterView.optionsList
+                                                            ? FilterSelectorContent(
+                                                                title: filterState.title,
+                                                                currentValue: filterState.currentValue,
+                                                                options: filterState.options,
+                                                                onChanged: filterState.onChanged ?? (_) {},
+                                                                onCancel: _closeAllModals,
+                                                              )
+                                                            : const MainFilterPanelContent(
+                                                                key: ValueKey('filter_main'),
+                                                              )),
                                   )
                                 : LiquidNavBarContent(
                                     key: const ValueKey('liquid_navbar'),

@@ -34,7 +34,7 @@ import '../../widgets/liquid_tap_effect.dart';
 
 import '../video_player/video_player_screen.dart';
 import '../../providers/manifest_provider.dart';
-import '../../widgets/batch_zip_modal_content.dart';
+import '../../providers/batch_zip_modal_provider.dart';
 import '../../../services/extraction/site_post_extractor.dart';
 import '../../../services/extraction/movie_site_scraper_service.dart';
 
@@ -533,8 +533,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 icon: Icons.download_rounded,
                 onTap: () {
                   final postUrl = MovieSiteScraperService.instance.getPostUrl(widget.tmdbId);
-                  BatchZipModalContent.show(
-                    context,
+                  ref.read(batchZipModalProvider.notifier).state = BatchZipModalState(
+                    isOpen: true,
                     content: content,
                     seasonNumber: _selectedSeason,
                     postUrl: postUrl,
