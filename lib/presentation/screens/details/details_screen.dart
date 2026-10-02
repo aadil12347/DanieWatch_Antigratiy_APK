@@ -2294,8 +2294,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
 
         final downloadTitle = content.isMovie
-            ? content.title
-            : '${content.title} S${_selectedSeason.toString().padLeft(2, '0')}E${episodeNumber.toString().padLeft(2, '0')}';
+            ? '${content.title} $chosenRes DanieWatch'
+            : '${content.title} S${_selectedSeason.toString().padLeft(2, '0')}E${episodeNumber.toString().padLeft(2, '0')} $chosenRes DanieWatch';
 
         try {
           final item = await DownloadManager.instance.startDownload(
@@ -2316,7 +2316,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           if (item != null && mounted) {
             CustomToast.show(
               context,
-              'Download started ($chosenRes · $providerName)',
+              'Download started',
               type: ToastType.info,
               icon: Icons.download_done_rounded,
             );

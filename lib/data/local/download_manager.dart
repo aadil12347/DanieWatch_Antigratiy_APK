@@ -742,7 +742,7 @@ class DownloadManager {
       item.status = DownloadStatus.completed;
       item.completedAt = DateTime.now();
       _notifService.showComplete(
-          id: _notificationId(item.id), title: 'Download Completed', body: item.displayName, payload: item.id);
+          id: _notificationId(item.id), title: 'Download complete', body: item.displayName, payload: item.id);
       onDownloadComplete?.call(item);
     } else if (status == DownloadTaskStatus.failed.index) {
       item.status = DownloadStatus.failed;

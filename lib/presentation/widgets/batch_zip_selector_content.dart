@@ -119,9 +119,10 @@ class _BatchZipSelectorContentState
 
       if (directZipUrl != null && directZipUrl.isNotEmpty) {
         final seasonStr = widget.seasonNumber.toString().padLeft(2, '0');
+        final batchTitle = '${widget.content.title} Complete S$seasonStr ${option.quality} DanieWatch';
         await DownloadManager.instance.startDownload(
           url: directZipUrl,
-          title: '${widget.content.title} S$seasonStr Batch Zip',
+          title: batchTitle,
           season: widget.seasonNumber,
           episode: 0,
           posterUrl: widget.content.posterUrl,
@@ -137,8 +138,8 @@ class _BatchZipSelectorContentState
           _close();
           CustomToast.show(
             context,
-            'Batch Zip download started!',
-            type: ToastType.success,
+            'Download started',
+            type: ToastType.info,
             icon: Icons.download_done_rounded,
           );
         }
@@ -313,58 +314,21 @@ class _BatchZipSelectorContentState
                             ),
                             child: Row(
                               children: [
-                                // Quality Badge
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary
-                                        .withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: AppColors.primary
-                                          .withValues(alpha: 0.4),
-                                    ),
-                                  ),
+                                // Resolution + size text
+                                Expanded(
                                   child: Text(
-                                    opt.quality.toUpperCase(),
+                                    opt.sizeLabel != null
+                                        ? '${opt.quality} · ${opt.sizeLabel}'
+                                        : opt.quality,
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
 
-                                // Label & size
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${opt.quality} Full Season Zip',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      if (opt.sizeLabel != null)
-                                        Text(
-                                          opt.sizeLabel!,
-                                          style: TextStyle(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.45),
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-
-                                // Action icon or spinner
+                                // Download icon or spinner
                                 if (isResolving)
                                   const SizedBox(
                                     width: 20,
@@ -375,19 +339,10 @@ class _BatchZipSelectorContentState
                                     ),
                                   )
                                 else
-                                  Container(
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white
-                                          .withValues(alpha: 0.08),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.download_rounded,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
+                                  const Icon(
+                                    Icons.download_rounded,
+                                    color: Colors.white70,
+                                    size: 20,
                                   ),
                               ],
                             ),

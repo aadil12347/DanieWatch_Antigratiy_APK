@@ -852,27 +852,6 @@ class _QualitySelectorContentState
         ),
         ...resolutions.map((res) {
           final isExtracting = modalState.extractingResolution == res;
-          final rLower = res.toLowerCase();
-
-          String badge;
-          IconData icon;
-          if (rLower.contains('2160') || rLower.contains('4k')) {
-            badge = '4K Ultra HD';
-            icon = Icons.four_k_rounded;
-          } else if (rLower.contains('1080')) {
-            badge = '1080p Full HD';
-            icon = Icons.high_quality_rounded;
-          } else if (rLower.contains('720')) {
-            badge = '720p HD · Default';
-            icon = Icons.hd_rounded;
-          } else if (rLower.contains('480')) {
-            badge = '480p SD · Data Saver';
-            icon = Icons.video_file_rounded;
-          } else {
-            badge = res;
-            icon = Icons.video_file_rounded;
-          }
-
           final sizeEstimate = _estimateSizeForResolution(res, modalState.runtime);
 
           return GestureDetector(
@@ -899,41 +878,16 @@ class _QualitySelectorContentState
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(icon, color: AppColors.primary, size: 22),
-                  ),
-                  const SizedBox(width: 14),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          badge,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          isExtracting
-                              ? 'Extracting server link...'
-                              : 'Est. size: $sizeEstimate',
-                          style: TextStyle(
-                            color: isExtracting
-                                ? AppColors.primary
-                                : Colors.white.withValues(alpha: 0.5),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      isExtracting
+                          ? '$res · Extracting...'
+                          : '$res · $sizeEstimate',
+                      style: TextStyle(
+                        color: isExtracting ? AppColors.primary : Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                   if (isExtracting)
@@ -946,17 +900,10 @@ class _QualitySelectorContentState
                       ),
                     )
                   else
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.download_rounded,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
+                    const Icon(
+                      Icons.download_rounded,
+                      color: Colors.white70,
+                      size: 20,
                     ),
                 ],
               ),

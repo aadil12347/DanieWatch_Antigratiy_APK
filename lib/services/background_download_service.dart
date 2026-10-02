@@ -224,7 +224,7 @@ void _onStart(ServiceInstance service) async {
 
     await notifPlugin.show(
       notifId,
-      '✅ Download Completed',
+      'Download complete',
       title,
       const NotificationDetails(android: androidDetails),
       payload: itemId,
