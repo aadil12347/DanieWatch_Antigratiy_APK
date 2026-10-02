@@ -505,7 +505,8 @@ class DownloadManager {
       }
 
       final isHlsItem = item.isHls;
-      item.progress = isHlsItem ? (data['progress'] * 0.96) : data['progress'];
+      final rawProgress = (data['progress'] as num?)?.toDouble() ?? 0.0;
+      item.progress = isHlsItem ? (rawProgress * 0.96) : rawProgress;
       item.completedSegments = data['completed'];
       item.totalSegments = data['total'];
       item.downloadedBytes = data['bytes'];

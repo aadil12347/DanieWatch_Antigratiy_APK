@@ -580,6 +580,10 @@ class SitePostExtractor {
     return null;
   }
 
+  /// Public wrapper for _extractVcloudFromLanding — resolves a nexdrive/landing page to a VCloud URL
+  Future<String?> extractVcloudFromLandingPublic(String landingUrl) =>
+      _extractVcloudFromLanding(landingUrl);
+
   /// Extract episodes directly from a Nextdrive episode selector page.
   /// Strictly extracts the episode titles from the page itself (never TMDB).
   /// Handles both old format and new format:

@@ -2138,9 +2138,40 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           } else {
             final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
             for (final b in buttons) {
+              if (b.isBatchZip) continue;
               if (content.isMovie || b.seasonNumber == _selectedSeason) {
                 if (!resMap.containsKey(b.quality)) {
-                  resMap[b.quality] = b.href;
+                  final lh = b.href.toLowerCase();
+                  // Resolve landing pages (nexdrive/fastdl/vgmlink) to vcloud URLs
+                  if (lh.contains('nexdrive') || lh.contains('vgmlink') || lh.contains('fastdl')) {
+                    try {
+                      if (content.isMovie) {
+                        // For movies: extract vcloud link from landing page
+                        final vcloud = await SitePostExtractor.instance.extractVcloudFromLandingPublic(b.href);
+                        if (vcloud != null && vcloud.isNotEmpty) {
+                          resMap[b.quality] = vcloud;
+                        }
+                      } else {
+                        // For TV: extract episodes list, find matching episode
+                        final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(b.href);
+                        if (episodes.isNotEmpty) {
+                          final epNum = episodeNumber;
+                          final match = episodes.firstWhere(
+                            (e) => (e.episodeNumber ?? e.index) == epNum,
+                            orElse: () => (epNum <= episodes.length ? episodes[epNum - 1] : episodes.first),
+                          );
+                          if (match.vcloudUrl.isNotEmpty) {
+                            resMap[b.quality] = match.vcloudUrl;
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      debugPrint('[Download] Error resolving landing for ${b.quality}: $e');
+                    }
+                  } else {
+                    // Already a vcloud or direct URL
+                    resMap[b.quality] = b.href;
+                  }
                 }
               }
             }
@@ -2211,8 +2242,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           (s) => s.copyWith(extractingResolution: chosenRes),
         );
 
-        final targetVcloudUrl = resMap[chosenRes];
-        if (targetVcloudUrl == null || targetVcloudUrl.isEmpty) {
+        final targetUrl = resMap[chosenRes];
+        if (targetUrl == null || targetUrl.isEmpty) {
           if (mounted) {
             ref.read(downloadModalProvider.notifier).update(
               (s) => s.copyWith(extractingResolution: null),
@@ -2224,86 +2255,29 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
         String? downloadUrl;
         String providerName = 'V-Cloud';
-        bool is10Gbps = false;
 
         try {
-          // Extraction order: 1st Server 2 (FSLv2) > 2nd Server 1 (FSL) > 3rd Server 3 (10Gbps)
-          final servers = await VcloudExtractorService().extractVcloud(targetVcloudUrl);
-          
-          if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
-            downloadUrl = servers['Server 2']!;
-            providerName = 'FSLv2 Server';
-            is10Gbps = false;
-          } else if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
-            downloadUrl = servers['Server 1']!;
-            providerName = 'FSL Server';
-            is10Gbps = false;
-          } else if (servers.containsKey('Server 3') && servers['Server 3']!.isNotEmpty) {
-            final hubUrl = servers['Server 3']!;
-            final resolved = await VcloudExtractorService().resolveHubCloudRedirect(hubUrl);
-            downloadUrl = (resolved != null && resolved.isNotEmpty) ? resolved : hubUrl;
-            providerName = '10Gbps Server';
-            is10Gbps = true;
-          } else {
-            for (final k in servers.keys) {
-              final lk = k.toLowerCase();
-              if (lk.contains('fslv2') || lk.contains('server 2')) {
-                downloadUrl = servers[k]!;
-                providerName = 'FSLv2 Server';
-                is10Gbps = false;
-                break;
-              }
-            }
-            if (downloadUrl == null) {
-              for (final k in servers.keys) {
-                final lk = k.toLowerCase();
-                if (lk.contains('fsl') || lk.contains('server 1')) {
-                  downloadUrl = servers[k]!;
-                  providerName = 'FSL Server';
-                  is10Gbps = false;
-                  break;
-                }
-              }
-            }
-            if (downloadUrl == null) {
-              for (final k in servers.keys) {
-                final lk = k.toLowerCase();
-                if (lk.contains('10gbps') || lk.contains('server 3') || lk.contains('hubcloud') || lk.contains('gpdl')) {
-                  final hubUrl = servers[k]!;
-                  final resolved = await VcloudExtractorService().resolveHubCloudRedirect(hubUrl);
-                  downloadUrl = (resolved != null && resolved.isNotEmpty) ? resolved : hubUrl;
-                  providerName = '10Gbps Server';
-                  is10Gbps = true;
-                  break;
-                }
-              }
-            }
-          }
+          // Use the EXACT same extraction as the online player
+          final streamRes = await SitePostExtractor.instance.resolveVcloudStream(targetUrl);
 
-          // Fallback to SitePostExtractor.resolveVcloudStream if VcloudExtractorService returned no link
-          if (downloadUrl == null || downloadUrl.isEmpty) {
-            final siteRes = await SitePostExtractor.instance.resolveVcloudStream(targetVcloudUrl);
-            if (siteRes.fslv2Url != null && siteRes.fslv2Url!.isNotEmpty) {
-              downloadUrl = siteRes.fslv2Url;
-              providerName = 'FSLv2 Server';
-              is10Gbps = false;
-            } else if (siteRes.fslUrl != null && siteRes.fslUrl!.isNotEmpty) {
-              downloadUrl = siteRes.fslUrl;
-              providerName = 'FSL Server';
-              is10Gbps = false;
-            } else if (siteRes.tenGbpsUrl != null && siteRes.tenGbpsUrl!.isNotEmpty) {
-              final resolved = await VcloudExtractorService().resolveHubCloudRedirect(siteRes.tenGbpsUrl!);
-              downloadUrl = (resolved != null && resolved.isNotEmpty) ? resolved : siteRes.tenGbpsUrl!;
-              providerName = '10Gbps Server';
-              is10Gbps = true;
-            } else if (siteRes.pixeldrainUrl != null && siteRes.pixeldrainUrl!.isNotEmpty) {
-              downloadUrl = siteRes.pixeldrainUrl;
-              providerName = 'PixelDrain Server';
-              is10Gbps = false;
-            }
+          if (streamRes.fslv2Url != null && streamRes.fslv2Url!.isNotEmpty) {
+            downloadUrl = streamRes.fslv2Url;
+            providerName = 'FSLv2 Server';
+          } else if (streamRes.fslUrl != null && streamRes.fslUrl!.isNotEmpty) {
+            downloadUrl = streamRes.fslUrl;
+            providerName = 'FSL Server';
+          } else if (streamRes.fastDlUrl != null && streamRes.fastDlUrl!.isNotEmpty) {
+            downloadUrl = streamRes.fastDlUrl;
+            providerName = 'FastDL Server';
+          } else if (streamRes.tenGbpsUrl != null && streamRes.tenGbpsUrl!.isNotEmpty) {
+            downloadUrl = streamRes.tenGbpsUrl;
+            providerName = '10Gbps Server';
+          } else if (streamRes.pixeldrainUrl != null && streamRes.pixeldrainUrl!.isNotEmpty) {
+            downloadUrl = streamRes.pixeldrainUrl;
+            providerName = 'PixelDrain Server';
           }
         } catch (e) {
-          debugPrint('[Download] Error resolving server for $chosenRes: $e');
+          debugPrint('[Download] Error extracting direct link for $chosenRes: $e');
         }
 
         if (!mounted) return;
@@ -2312,11 +2286,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           ref.read(downloadModalProvider.notifier).update(
             (s) => s.copyWith(extractingResolution: null),
           );
-          _showToastError('Could not resolve download server for $chosenRes. Try another quality.');
+          _showToastError('Could not extract download link for $chosenRes.');
           return;
         }
 
-        // Close morphed navbar modal
+        // Close modal
         ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
 
         final downloadTitle = content.isMovie
@@ -2337,8 +2311,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             tmdbId: widget.tmdbId,
             mediaType: widget.mediaType,
             providerName: providerName,
-            is10Gbps: is10Gbps,
-            originalEmbedUrl: targetVcloudUrl,
+            originalEmbedUrl: targetUrl,
           );
           if (item != null && mounted) {
             CustomToast.show(
