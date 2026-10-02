@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -42,6 +43,36 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
   VidstackSettingsSubmenu _popoverSubmenu = VidstackSettingsSubmenu.root;
   bool _showCountdownTime = false;
 
+  // ─── Locked State Auto-Vanish ──────────────────────────────────────────
+  bool _showUnlockButton = true;
+  Timer? _unlockVanishTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startUnlockVanishTimer();
+  }
+
+  @override
+  void dispose() {
+    _unlockVanishTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startUnlockVanishTimer() {
+    _unlockVanishTimer?.cancel();
+    _unlockVanishTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _showUnlockButton = false);
+      }
+    });
+  }
+
+  void _revealUnlockButton() {
+    setState(() => _showUnlockButton = true);
+    _startUnlockVanishTimer();
+  }
+
   void _toggleSettingsPopover([VidstackSettingsSubmenu menu = VidstackSettingsSubmenu.root]) {
     HapticFeedback.lightImpact();
     setState(() {
@@ -73,12 +104,43 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  String _getCleanTitle() {
+    var t = widget.controller.title.trim();
+    if (widget.controller.isTvShow) {
+      t = t.replaceAll(RegExp(r'[\s\-–—:]+(?:Season\s*\d+\s*)?(?:Episode|Ep\.?)\s*\d+.*$', caseSensitive: false), '');
+      t = t.replaceAll(RegExp(r'[\s\-–—:]+S\d+\s*E\d+.*$', caseSensitive: false), '');
+      t = t.replaceAll(RegExp(r'[\s\-–—:]+Season\s*\d+.*$', caseSensitive: false), '');
+      t = t.replaceAll(RegExp(r'^(?:Season\s*\d+\s*)?(?:Episode|Ep\.?)\s*\d+[\s\-–—:]*', caseSensitive: false), '');
+    }
+    t = t.trim();
+    return t.isEmpty ? widget.controller.title : t;
+  }
+
+  double _getPopoverRightOffset(BuildContext context) {
+    final safeRight = MediaQuery.of(context).padding.right;
+    final rightMargin = safeRight + 16.0;
+
+    switch (_popoverSubmenu) {
+      case VidstackSettingsSubmenu.subtitles:
+        return rightMargin + 49.0;
+      case VidstackSettingsSubmenu.audio:
+        return rightMargin + 9.0;
+      case VidstackSettingsSubmenu.root:
+      case VidstackSettingsSubmenu.speed:
+      case VidstackSettingsSubmenu.quality:
+      case VidstackSettingsSubmenu.servers:
+      case VidstackSettingsSubmenu.aspect:
+      default:
+        return rightMargin;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
-        // Locked mode: only show floating unlock pill
+        // Locked mode: only show floating unlock pill with auto-vanish
         if (widget.controller.isLocked) {
           return _buildLockedOverlay();
         }
@@ -108,43 +170,49 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
   // ─── LOCKED OVERLAY ──────────────────────────────────────────────────────
 
   Widget _buildLockedOverlay() {
-    return SizedBox.expand(
-      child: Stack(
-        children: [
-          Positioned(
-            right: 28,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: VidstackButton(
-                isCircle: false,
-                size: 44,
-                backgroundColor: VidstackTheme.surfaceGlass,
-                border: Border.all(color: VidstackTheme.brand, width: 1.5),
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  widget.controller.toggleLock();
-                },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    VidstackIcon.unlock(color: VidstackTheme.brand, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Tap to Unlock',
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _revealUnlockButton,
+      child: SizedBox.expand(
+        child: Stack(
+          children: [
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Spacer(),
+                      AnimatedOpacity(
+                        opacity: _showUnlockButton ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOutCubic,
+                        child: IgnorePointer(
+                          ignoring: !_showUnlockButton,
+                          child: VidstackButton(
+                            isCircle: true,
+                            size: 38,
+                            backgroundColor: VidstackTheme.surfaceGlass,
+                            border: Border.all(color: VidstackTheme.brand, width: 1.5),
+                            tooltip: 'Unlock Controls',
+                            onTap: () {
+                              HapticFeedback.mediumImpact();
+                              widget.controller.toggleLock();
+                            },
+                            child: VidstackIcon.unlock(size: 18, color: VidstackTheme.brand),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -152,12 +220,13 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
   // ─── FULL CONTROLS OVERLAY ───────────────────────────────────────────────
 
   Widget _buildFullOverlay(BuildContext context, {bool alwaysVisible = false}) {
+    final popoverBottom = MediaQuery.of(context).padding.bottom + 78.0;
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _closeSettingsPopover,
       child: Container(
         decoration: const BoxDecoration(
-          // Subtle overall background tint for contrast
           color: Colors.transparent,
         ),
         child: Stack(
@@ -184,7 +253,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
               ),
             ),
 
-            // 1. Top Bar
+            // 1. Top Bar (Back on Left, Clean Title Center, Lock on Right only)
             Positioned(
               top: 0,
               left: 0,
@@ -197,25 +266,43 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
               child: _buildCenterControls(),
             ),
 
-            // 3. Floating Vidstack Settings Popover (Anchored bottom right)
-            if (_showSettingsPopover)
-              Positioned(
-                right: 20,
-                bottom: 60,
-                child: VidstackSettingsPopover(
-                  controller: widget.controller,
-                  onClose: _closeSettingsPopover,
-                  initialMenu: _popoverSubmenu,
-                ),
-              ),
-
-            // 4. Bottom Controls Deck (Slider + Action Row)
+            // 3. Bottom Controls Deck (Slider + Action Row)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
               child: _buildBottomDeck(context),
             ),
+
+            // 4. Floating Vidstack Settings Popover (Rendered AFTER Bottom Deck so it is on TOP of slider)
+            if (_showSettingsPopover)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                right: _getPopoverRightOffset(context),
+                bottom: popoverBottom,
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(_popoverSubmenu),
+                  tween: Tween<double>(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutBack,
+                  builder: (context, anim, child) {
+                    return Transform.scale(
+                      scale: 0.88 + (0.12 * anim),
+                      alignment: Alignment.bottomCenter,
+                      child: Opacity(
+                        opacity: anim.clamp(0.0, 1.0),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: VidstackSettingsPopover(
+                    controller: widget.controller,
+                    onClose: _closeSettingsPopover,
+                    initialMenu: _popoverSubmenu,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -233,7 +320,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
             // Back Button (Vidstack frosted circular disc)
             VidstackButton(
               isCircle: true,
-              size: 40,
+              size: 38,
               backgroundColor: VidstackTheme.surfaceGlass,
               border: Border.all(color: VidstackTheme.borderSubtle),
               tooltip: 'Back',
@@ -241,96 +328,75 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
               child: VidstackIcon.chevronLeft(size: 20, color: Colors.white),
             ),
 
-            const SizedBox(width: 14),
-
-            // Title & Episode Badge
+            // Top Center: FIRST the S01 E01 Red Badge, THEN the Clean Single-Line Title
             Expanded(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.controller.isTvShow &&
-                      widget.controller.season != null &&
-                      widget.controller.episode != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: VidstackTheme.brand,
-                        borderRadius: BorderRadius.circular(4),
-                        boxShadow: const [
-                          BoxShadow(color: VidstackTheme.brandGlow, blurRadius: 8),
-                        ],
-                      ),
-                      child: Text(
-                        'S${widget.controller.season.toString().padLeft(2, '0')}:E${widget.controller.episode.toString().padLeft(2, '0')}',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.controller.isTvShow &&
+                          widget.controller.season != null &&
+                          widget.controller.episode != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: VidstackTheme.brand, // Exact red matching center play button
+                            borderRadius: BorderRadius.circular(4),
+                            boxShadow: [
+                              BoxShadow(
+                                color: VidstackTheme.brand.withValues(alpha: 0.45),
+                                blurRadius: 6,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            'S${widget.controller.season.toString().padLeft(2, '0')} E${widget.controller.episode.toString().padLeft(2, '0')}',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          _getCleanTitle(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                            shadows: const [
+                              Shadow(color: Colors.black87, blurRadius: 8),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  Flexible(
-                    child: Text(
-                      widget.controller.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.plusJakartaSans(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                        shadows: const [
-                          Shadow(color: Colors.black87, blurRadius: 4),
-                        ],
-                      ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
 
-            const SizedBox(width: 12),
-
-            // Source Server Quick Button (if available)
-            if (widget.controller.sources.isNotEmpty)
-              VidstackButton(
-                tooltip: 'Select Source Server',
-                backgroundColor: VidstackTheme.surfaceGlass,
-                border: Border.all(color: VidstackTheme.borderSubtle),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                size: 34,
-                onTap: widget.onSourceTap ?? _toggleSettingsPopover,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    VidstackIcon.server(size: 15, color: Colors.white70),
-                    const SizedBox(width: 6),
-                    Text(
-                      widget.controller.sources.length > 1
-                          ? 'Server (${widget.controller.sources.length})'
-                          : 'Server 1',
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(width: 8),
-
-            // Lock Screen Button
+            // Lock Screen Button (top right only, matches unlock position)
             VidstackButton(
               isCircle: true,
-              size: 36,
+              size: 38,
               backgroundColor: VidstackTheme.surfaceGlass,
               border: Border.all(color: VidstackTheme.borderSubtle),
               tooltip: 'Lock Controls',
-              onTap: widget.controller.toggleLock,
+              onTap: () {
+                _revealUnlockButton();
+                widget.controller.toggleLock();
+              },
               child: VidstackIcon.lock(size: 17, color: Colors.white),
             ),
           ],
@@ -497,6 +563,8 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
               onSeek: (pos) => widget.controller.seekTo(pos),
             ),
 
+            const SizedBox(height: 2),
+
             // 2. Vidstack Controls Row
             Row(
               children: [
@@ -508,24 +576,6 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                   child: widget.controller.isPlaying
                       ? VidstackIcon.pause(size: 20)
                       : VidstackIcon.play(size: 20),
-                ),
-
-                const SizedBox(width: 4),
-
-                // Mini Skip Backward 10s
-                VidstackButton(
-                  tooltip: 'Seek -10s (j)',
-                  onTap: widget.controller.skipBackward,
-                  child: VidstackIcon.seekBackward10(size: 19),
-                ),
-
-                const SizedBox(width: 4),
-
-                // Mini Skip Forward 10s
-                VidstackButton(
-                  tooltip: 'Seek +10s (l)',
-                  onTap: widget.controller.skipForward,
-                  child: VidstackIcon.seekForward10(size: 19),
                 ),
 
                 const SizedBox(width: 4),
@@ -571,11 +621,11 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
                 const Spacer(),
 
                 // ─── RIGHT CLUSTER ───────────────────────────────────────
-                // Subtitles / Captions Button
+                // Subtitles / Captions Button (opens sleek popover directly to subtitles tab)
                 VidstackButton(
                   tooltip: 'Subtitles (c)',
                   isActive: widget.controller.isSubtitleActive,
-                  onTap: widget.onSubtitleTap ?? () => _toggleSettingsPopover(VidstackSettingsSubmenu.subtitles),
+                  onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.subtitles),
                   child: VidstackIcon.captions(
                     size: 20,
                     isActive: widget.controller.isSubtitleActive,
@@ -584,10 +634,10 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay> {
 
                 const SizedBox(width: 2),
 
-                // Audio Tracks Button
+                // Audio Tracks Button (opens sleek popover directly to audio tab)
                 VidstackButton(
                   tooltip: 'Audio Track',
-                  onTap: widget.onAudioTap ?? () => _toggleSettingsPopover(VidstackSettingsSubmenu.audio),
+                  onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.audio),
                   child: VidstackIcon.audio(size: 20),
                 ),
 

@@ -246,11 +246,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   ),
                 ),
 
-              // 2. Subtitle Cue Overlay (native decoded cues)
-              if (isReady)
-                _buildSubtitleOverlay(),
-
-              // 3. Gesture Controls (VLC style) + Player Overlay
+              // 2. Gesture Controls (VLC style) + Vidstack Player Overlay
               if (isReady)
                 Positioned.fill(
                   child: PlayerGestures(
@@ -259,11 +255,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                       controller: _controller,
                       onBack: _handleBack,
                       onPipTap: _handlePip,
-                      onSourceTap: _showSourceSelector,
-                      onSettingsTap: _showSettings,
-                      onAudioTap: _showAudioSelector,
-                      onSubtitleTap: _showSubtitleSelector,
-                      onSpeedTap: _showSpeedSelector,
                     ),
                   ),
                 ),

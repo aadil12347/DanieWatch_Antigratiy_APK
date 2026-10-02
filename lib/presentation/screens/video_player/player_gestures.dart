@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:volume_controller/volume_controller.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -48,6 +49,14 @@ class _PlayerGesturesState extends State<PlayerGestures>
   bool _showVolumeIndicator = false;
   bool _showBrightnessIndicator = false;
 
+  // ─── Pinch-to-zoom (YouTube style: Zoomed to fill vs Original) ───────────
+  final Map<int, Offset> _pointerPositions = {};
+  double? _initialPinchDistance;
+  bool _pinchTriggered = false;
+  bool _showPinchToast = false;
+  bool _pinchToastIsFill = false;
+  Timer? _pinchToastTimer;
+
   // ─── Animations ────────────────────────────────────────────────────────
   late AnimationController _leftSeekAnim;
   late AnimationController _rightSeekAnim;
@@ -78,6 +87,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   @override
   void dispose() {
+    _pinchToastTimer?.cancel();
     _seekResetTimer?.cancel();
     _leftSeekAnim.dispose();
     _rightSeekAnim.dispose();
@@ -91,22 +101,90 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
     return Stack(
       children: [
-        // Video layer + gesture detector
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _onTap,
-          onDoubleTapDown: (details) => _onDoubleTapDown(details, context),
-          onDoubleTap: () {},
-          onLongPressStart: _onLongPressStart,
-          onLongPressEnd: _onLongPressEnd,
-          onVerticalDragStart: _onVerticalDragStart,
-          onVerticalDragUpdate: _onVerticalDragUpdate,
-          onVerticalDragEnd: _onVerticalDragEnd,
-          onHorizontalDragStart: _onHorizontalDragStart,
-          onHorizontalDragUpdate: _onHorizontalDragUpdate,
-          onHorizontalDragEnd: _onHorizontalDragEnd,
-          child: widget.child,
+        // Video layer + gesture detector wrapped with raw multi-touch listener for pinch
+        Listener(
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerCancel,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _onTap,
+            onDoubleTapDown: (details) => _onDoubleTapDown(details, context),
+            onDoubleTap: () {},
+            onLongPressStart: _onLongPressStart,
+            onLongPressEnd: _onLongPressEnd,
+            onVerticalDragStart: _onVerticalDragStart,
+            onVerticalDragUpdate: _onVerticalDragUpdate,
+            onVerticalDragEnd: _onVerticalDragEnd,
+            onHorizontalDragStart: _onHorizontalDragStart,
+            onHorizontalDragUpdate: _onHorizontalDragUpdate,
+            onHorizontalDragEnd: _onHorizontalDragEnd,
+            child: widget.child,
+          ),
         ),
+
+        // YouTube-style Pinch-to-Zoom Toast Pill (Top Center)
+        if (_showPinchToast)
+          Positioned(
+            top: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                builder: (context, val, child) {
+                  return Opacity(
+                    opacity: val,
+                    child: Transform.scale(
+                      scale: 0.90 + (0.10 * val),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xE614151F),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.20),
+                      width: 1.0,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black87,
+                        blurRadius: 18,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _pinchToastIsFill ? Icons.fullscreen_rounded : Icons.fit_screen_rounded,
+                        color: _pinchToastIsFill ? const Color(0xFFE50914) : Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _pinchToastIsFill ? 'Zoomed to fill' : 'Original',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
 
         // Left double-tap seek ripple
         if (_showLeftSeek)
@@ -287,10 +365,91 @@ class _PlayerGesturesState extends State<PlayerGestures>
     widget.controller.toggleControls();
   }
 
+  // ─── Pinch-to-zoom Pointer Handlers (YouTube style) ──────────────────────
+
+  void _onPointerDown(PointerDownEvent event) {
+    _pointerPositions[event.pointer] = event.position;
+    if (_pointerPositions.length == 2) {
+      final pts = _pointerPositions.values.toList();
+      _initialPinchDistance = (pts[0] - pts[1]).distance;
+      _pinchTriggered = false;
+      // Abort any ongoing vertical / horizontal drag so it doesn't conflict with pinch
+      if (_isVerticalDrag) {
+        _isVerticalDrag = false;
+        _showVolumeIndicator = false;
+        _showBrightnessIndicator = false;
+      }
+      if (_isHorizontalDrag) {
+        _isHorizontalDrag = false;
+        _showSeekPreview = false;
+      }
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    _pointerPositions[event.pointer] = event.position;
+    if (_pointerPositions.length >= 2 &&
+        _initialPinchDistance != null &&
+        _initialPinchDistance! > 20) {
+      final pts = _pointerPositions.values.toList();
+      final currentDistance = (pts[0] - pts[1]).distance;
+      final scale = currentDistance / _initialPinchDistance!;
+
+      if (!_pinchTriggered) {
+        if (scale >= 1.15) {
+          // Pinch Zoom Out / Spread fingers -> Zoomed to fill (BoxFit.cover)
+          _pinchTriggered = true;
+          _triggerPinch(fill: true);
+        } else if (scale <= 0.85) {
+          // Pinch Zoom In / Contract fingers -> Original / Fit screen (BoxFit.contain)
+          _pinchTriggered = true;
+          _triggerPinch(fill: false);
+        }
+      }
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _pointerPositions.remove(event.pointer);
+    if (_pointerPositions.length < 2) {
+      _initialPinchDistance = null;
+      _pinchTriggered = false;
+    }
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _pointerPositions.remove(event.pointer);
+    if (_pointerPositions.length < 2) {
+      _initialPinchDistance = null;
+      _pinchTriggered = false;
+    }
+  }
+
+  void _triggerPinch({required bool fill}) {
+    if (widget.controller.isLocked) return;
+    HapticFeedback.mediumImpact();
+
+    final targetMode = fill ? VideoResizeMode.fill : VideoResizeMode.fit;
+    widget.controller.setResizeMode(targetMode);
+    widget.controller.hideControls();
+
+    _pinchToastTimer?.cancel();
+    setState(() {
+      _pinchToastIsFill = fill;
+      _showPinchToast = true;
+    });
+
+    _pinchToastTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() => _showPinchToast = false);
+      }
+    });
+  }
+
   // ─── Double-tap seek ────────────────────────────────────────────────────
 
   void _onDoubleTapDown(TapDownDetails details, BuildContext context) {
-    if (widget.controller.isLocked) return;
+    if (widget.controller.isLocked || _pointerPositions.length >= 2) return;
     final screenWidth = MediaQuery.of(context).size.width;
     final tapX = details.globalPosition.dx;
     final isLeft = tapX < screenWidth / 2;
@@ -327,7 +486,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Long-press 2x speed ───────────────────────────────────────────────
 
   void _onLongPressStart(LongPressStartDetails details) {
-    if (widget.controller.isLocked) return;
+    if (widget.controller.isLocked || _pointerPositions.length >= 2) return;
     _savedSpeed = widget.controller.playbackSpeed;
     widget.controller.setPlaybackSpeed(2.0);
     setState(() => _isLongPressing = true);
@@ -344,7 +503,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Vertical drag (volume/brightness) ──────────────────────────────────
 
   void _onVerticalDragStart(DragStartDetails details) {
-    if (widget.controller.isLocked) return;
+    if (widget.controller.isLocked || _pointerPositions.length >= 2) return;
     final screenWidth = MediaQuery.of(context).size.width;
     _isLeftSide = details.globalPosition.dx < screenWidth / 2;
     _isVerticalDrag = true;
@@ -359,7 +518,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
-    if (!_isVerticalDrag || widget.controller.isLocked) return;
+    if (!_isVerticalDrag || widget.controller.isLocked || _pointerPositions.length >= 2) return;
 
     final screenHeight = MediaQuery.of(context).size.height;
     final delta = -details.delta.dy / (screenHeight * 0.55);
@@ -395,7 +554,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Horizontal drag (swipe seek) ───────────────────────────────────────
 
   void _onHorizontalDragStart(DragStartDetails details) {
-    if (widget.controller.isLocked) return;
+    if (widget.controller.isLocked || _pointerPositions.length >= 2) return;
     _isHorizontalDrag = true;
     _seekStartPosition = widget.controller.position;
     _seekPreviewPosition = widget.controller.position;
@@ -403,7 +562,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!_isHorizontalDrag || widget.controller.isLocked) return;
+    if (!_isHorizontalDrag || widget.controller.isLocked || _pointerPositions.length >= 2) return;
 
     final screenWidth = MediaQuery.of(context).size.width;
     final delta = details.delta.dx / screenWidth;
