@@ -145,8 +145,8 @@ class _MorphingSearchHeaderRowState
     _glowAnim = Tween<double>(begin: 0.15, end: 0.4)
         .animate(CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut));
 
-    // If already has text, open immediately
-    if (widget.searchController.text.isNotEmpty) {
+    // If title is 'Search' or already has text, open immediately
+    if (widget.title == 'Search' || widget.searchController.text.isNotEmpty) {
       _isOpen = true;
       _morphCtrl.value = 1.0;
       _expandCtrl.value = 1.0;
@@ -156,6 +156,14 @@ class _MorphingSearchHeaderRowState
       });
     }
     widget.searchFocus.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant MorphingSearchHeaderRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.title == 'Search' && !_isOpen) {
+      _openSearch();
+    }
   }
 
   @override
@@ -177,8 +185,8 @@ class _MorphingSearchHeaderRowState
       _glowCtrl.stop();
       _glowCtrl.value = 0;
     }
-    // Auto-close when unfocused and empty
-    if (!widget.searchFocus.hasFocus && _isOpen) {
+    // Auto-close when unfocused and empty (unless title is 'Search')
+    if (!widget.searchFocus.hasFocus && _isOpen && widget.title != 'Search') {
       if (widget.searchController.text.isEmpty) {
         _closeSearch();
       }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/clients/tmdb_client.dart';
+import '../../services/extraction/movie_site_scraper_service.dart';
 import 'manifest_provider.dart';
 
 /// Comprehensive filter state
@@ -120,6 +121,25 @@ class SearchNotifier extends StateNotifier<SearchState> {
       state = state.copyWith(isSearching: true);
 
       try {
+        final localMap = ref.read(localManifestMapProvider);
+        // Live search across both Vegamovies and Rogmovies sorted latest to oldest by date/time
+        final liveResults = await MovieSiteScraperService.instance.searchBothSites(
+          query.trim(),
+          localMap: localMap,
+        );
+
+        if (!mounted) return;
+
+        if (liveResults.isNotEmpty) {
+          _unfilteredResults = liveResults;
+          state = state.copyWith(
+            results: liveResults,
+            isSearching: false,
+          );
+          return;
+        }
+
+        // Fallback: local index search if live search had 0 hits or offline
         final sortedItems = await ref.read(sortedManifestItemsProvider.future);
         final q = query.trim().toLowerCase();
         
@@ -155,24 +175,32 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   void setNavCategory(String? category) {
-    if (category == null || category == 'Explore') {
+    if (category == null || category == 'Explore' || category == 'Search') {
       state = state.copyWith(
         filters: const SearchFilters(),
         navCategoryOverride: () => null,
       );
     } else {
       const categoryMap = {
+        'Search': 'Search',
+        'Indian': 'Indian',
+        'Dual Audio': 'Dual Audio',
         'Korean': 'Korean',
         'K-Drama': 'Korean',
         'Chinese': 'Chinese',
         'Anime': 'Anime',
         'Action': 'Action',
+        'Sci-Fi': 'Sci-Fi',
         'Comedy': 'Comedy',
         'Thriller': 'Thriller',
         'Horror': 'Horror',
-        'Sci-Fi': 'Sci-Fi',
         'Romance': 'Romance',
-        'Indian': 'Indian',
+        'Adventure': 'Adventure',
+        'Crime': 'Crime',
+        'Drama': 'Drama',
+        'Mystery': 'Mystery',
+        'Fantasy': 'Fantasy',
+        'Animation': 'Animation',
         'Bollywood': 'Indian',
         'Hollywood': 'Hollywood',
         'Punjabi': 'Punjabi',

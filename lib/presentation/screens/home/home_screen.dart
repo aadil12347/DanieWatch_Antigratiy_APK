@@ -166,6 +166,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ContentRow(
                           items: section.items,
                           isRanked: section.isRanked,
+                          categorySlug: section.categorySlug,
                         ),
                       ],
                     ),

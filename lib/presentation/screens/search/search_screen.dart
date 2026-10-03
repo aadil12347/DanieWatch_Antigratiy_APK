@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
@@ -134,6 +135,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   void _onSearchChanged(String query) {
+    if (query.trim().isNotEmpty && _tabController.index != 0) {
+      _isProgrammatic = true;
+      _tabController.animateTo(0);
+      _lastSyncedTabIndex = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _isProgrammatic = false;
+      });
+    }
     ref.read(searchProvider('explore').notifier).search(query);
   }
 
@@ -150,11 +159,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final activeCategories = searchState.filters.categories;
 
     // Determine the active title
-    final activeTitle = activeCategories.isNotEmpty
-        ? activeCategories.first
-        : searchState.filters.genres.isNotEmpty
-            ? searchState.filters.genres.first
-            : 'Explore';
+    final activeTitle = _tabController.index == 0
+        ? 'Search'
+        : (activeCategories.isNotEmpty
+            ? activeCategories.first
+            : searchState.filters.genres.isNotEmpty
+                ? searchState.filters.genres.first
+                : TopNavbar.items[_tabController.index]);
 
     // NOTE: We do NOT call _syncTabToFilters here in build() anymore.
     // That was causing the tab to fight user swipes. External sync is
@@ -284,6 +295,57 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
     final searchState = ref.watch(searchProvider('explore'));
+
+    // ── Dedicated Search Tab Landing & Results ──
+    if (widget.categoryLabel == 'Search') {
+      final hasSearch = searchState.query.trim().isNotEmpty;
+
+      if (searchState.isSearching) {
+        return CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [_buildShimmerGrid()],
+        );
+      }
+
+      if (!hasSearch) {
+        // Landing state: clean empty landing with search prompt & quick suggestion tags
+        return CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _SearchLandingView(
+                onTagSelected: (tag) {
+                  widget.searchController.text = tag;
+                  widget.onSearchChanged(tag);
+                },
+              ),
+            ),
+          ],
+        );
+      }
+
+      if (searchState.results.isEmpty) {
+        return const CustomScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptyResultsView(),
+            ),
+          ],
+        );
+      }
+
+      return CustomScrollView(
+        key: const PageStorageKey('scroll_search_results'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          _buildResultsGrid(searchState.results),
+        ],
+      );
+    }
+
     final paginatedState = ref.watch(paginatedCategoryProvider(_slug));
 
     final hasSearch = searchState.query.trim().isNotEmpty;
@@ -486,6 +548,144 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
             ),
           ),
           childCount: 9,
+        ),
+      ),
+    );
+  }
+}
+
+/// Clean, elegant landing state when user opens the Search tab with an empty query.
+class _SearchLandingView extends StatelessWidget {
+  final ValueChanged<String> onTagSelected;
+
+  const _SearchLandingView({required this.onTagSelected});
+
+  static const _popularTags = [
+    'Korean',
+    'Dual Audio',
+    'Chinese',
+    'Anime',
+    'Action',
+    'Sci-Fi',
+    'Bollywood',
+    'Comedy',
+    'Thriller',
+    'Horror',
+    '2026',
+    'Romance',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Glowing circular icon container
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppColors.primary.withValues(alpha: 0.25),
+                    Colors.transparent,
+                  ],
+                ),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.35),
+                  width: 1.5,
+                ),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.search_rounded,
+                  size: 36,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Search Movies & Series',
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Search across Vegamovies & Rogmovies in real-time',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 28),
+            // Quick search tags section
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  'QUICK SEARCH',
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 10,
+              children: _popularTags.map((tag) {
+                return InkWell(
+                  onTap: () => onTagSelected(tag),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.trending_up_rounded,
+                          size: 14,
+                          color: AppColors.primary.withValues(alpha: 0.8),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          tag,
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ),
       ),
     );

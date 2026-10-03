@@ -14,19 +14,24 @@ class TopNavbar extends StatefulWidget {
   final TabController tabController;
 
   static const List<String> items = [
-    'Explore',
-    'Action',
+    'Search',
+    'Indian',
+    'Dual Audio',
     'Korean',
     'Chinese',
     'Anime',
+    'Action',
+    'Sci-Fi',
     'Comedy',
     'Thriller',
     'Horror',
-    'Sci-Fi',
     'Romance',
-    'Indian',
-    'Hollywood',
-    'Punjabi',
+    'Adventure',
+    'Crime',
+    'Drama',
+    'Mystery',
+    'Fantasy',
+    'Animation',
   ];
 
   @override
@@ -102,22 +107,37 @@ class _TopNavbarState extends State<TopNavbar> {
         ),
         tabs: List.generate(TopNavbar.items.length, (index) {
           final isSelected = _currentIndex == index;
+          final label = TopNavbar.items[index];
+          final isSearch = label == 'Search';
           return Tab(
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              style: isSelected
-                  ? GoogleFonts.inter(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    )
-                  : GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white.withValues(alpha: 0.5),
-                    ),
-              child: Text(TopNavbar.items[index]),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSearch) ...[
+                  Icon(
+                    Icons.search_rounded,
+                    size: isSelected ? 18 : 16,
+                    color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 5),
+                ],
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  style: isSelected
+                      ? GoogleFonts.inter(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        )
+                      : GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                  child: Text(label),
+                ),
+              ],
             ),
           );
         }),

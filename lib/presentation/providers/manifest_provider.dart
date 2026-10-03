@@ -143,10 +143,12 @@ class ContentSection {
   final String title;
   final List<ManifestItem> items;
   final bool isRanked;
+  final String? categorySlug;
   const ContentSection({
     required this.title,
     required this.items,
     this.isRanked = false,
+    this.categorySlug,
   });
 }
 
@@ -393,21 +395,21 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   }
 
   const categoryDefs = [
-    ('korean', 'K-Drama'),
+    ('korean', 'Korean'),
     ('chinese', 'Chinese'),
     ('anime', 'Anime'),
     ('action', 'Action'),
+    ('sci-fi', 'Sci-Fi'),
     ('comedy', 'Comedy'),
     ('thriller', 'Thriller'),
     ('horror', 'Horror'),
-    ('sci-fi', 'Sci-Fi'),
     ('romance', 'Romance'),
   ];
 
   for (final def in categoryDefs) {
     final cached = scraper.getCachedCategory(def.$1);
     if (cached != null && cached.isNotEmpty) {
-      initialSections.add(ContentSection(title: def.$2, items: cached));
+      initialSections.add(ContentSection(title: def.$2, items: cached, categorySlug: def.$1));
     }
   }
 
@@ -442,9 +444,9 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   }
 
   // 3. Fetch categories in 3 small batches of 3 to avoid choking network sockets
-  // Batch 1: High-interest (K-Drama, Chinese, Anime)
-  // Batch 2: Popular genres (Action, Comedy, Thriller)
-  // Batch 3: Remaining (Horror, Sci-Fi, Romance)
+  // Batch 1: High-interest (Korean, Chinese, Anime)
+  // Batch 2: Popular genres (Action, Sci-Fi, Comedy)
+  // Batch 3: Remaining (Thriller, Horror, Romance)
   final currentSectionsMap = <String, ContentSection>{};
 
   final batches = [
@@ -466,9 +468,11 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
       }),
     );
 
-    for (final res in batchResults) {
+    for (int i = 0; i < batch.length; i++) {
+      final def = batch[i];
+      final res = batchResults[i];
       if (res.$2.isNotEmpty) {
-        currentSectionsMap[res.$1] = ContentSection(title: res.$1, items: res.$2);
+        currentSectionsMap[res.$1] = ContentSection(title: res.$1, items: res.$2, categorySlug: def.$1);
       }
     }
 
@@ -543,7 +547,10 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       final results = await _fetchLocalPage(1);
       final cat = category.toLowerCase().trim();
       const liveCategories = {
-        'action', 'korean', 'chinese', 'anime', 'comedy', 'thriller', 'horror', 'sci-fi', 'romance'
+        'all', 'explore', 'search', 'indian', 'dual-audio', 'korean', 'chinese', 'anime',
+        'action', 'sci-fi', 'comedy', 'thriller', 'horror', 'romance',
+        'adventure', 'crime', 'drama', 'mystery', 'fantasy', 'animation',
+        'bollywood', 'hollywood', 'punjabi', 'pakistani'
       };
       final minPageSize = liveCategories.contains(cat) ? 10 : 30;
 
@@ -573,7 +580,10 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
 
       final cat = category.toLowerCase().trim();
       const liveCategories = {
-        'action', 'korean', 'chinese', 'anime', 'comedy', 'thriller', 'horror', 'sci-fi', 'romance'
+        'all', 'explore', 'search', 'indian', 'dual-audio', 'korean', 'chinese', 'anime',
+        'action', 'sci-fi', 'comedy', 'thriller', 'horror', 'romance',
+        'adventure', 'crime', 'drama', 'mystery', 'fantasy', 'animation',
+        'bollywood', 'hollywood', 'punjabi', 'pakistani'
       };
       final minPageSize = liveCategories.contains(cat) ? 10 : 30;
 
@@ -599,8 +609,11 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     const liveCategories = {
       'all',
       'explore',
+      'search',
       'action',
       'indian',
+      'dual-audio',
+      'dualaudio',
       'bollywood',
       'hollywood',
       'anime',
@@ -661,22 +674,30 @@ final paginatedCategoryProvider = StateNotifierProvider.family<
 
 String categoryLabelToSlug(String label) {
   const map = {
-    'Explore': 'all',
-    'Action': 'action',
+    'Search': 'search',
+    'Explore': 'search',
     'Indian': 'indian',
-    'Bollywood': 'bollywood',
-    'Hollywood': 'hollywood',
-    'Anime': 'anime',
+    'Dual Audio': 'dual-audio',
     'Korean': 'korean',
     'K-Drama': 'korean',
     'Chinese': 'chinese',
-    'Punjabi': 'punjabi',
-    'Pakistani': 'pakistani',
+    'Anime': 'anime',
+    'Action': 'action',
+    'Sci-Fi': 'sci-fi',
     'Comedy': 'comedy',
     'Thriller': 'thriller',
     'Horror': 'horror',
-    'Sci-Fi': 'sci-fi',
     'Romance': 'romance',
+    'Adventure': 'adventure',
+    'Crime': 'crime',
+    'Drama': 'drama',
+    'Mystery': 'mystery',
+    'Fantasy': 'fantasy',
+    'Animation': 'animation',
+    'Bollywood': 'indian',
+    'Hollywood': 'hollywood',
+    'Punjabi': 'punjabi',
+    'Pakistani': 'pakistani',
   };
   return map[label] ?? label.toLowerCase();
 }
