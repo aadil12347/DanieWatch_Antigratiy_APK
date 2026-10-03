@@ -1972,10 +1972,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       if (!mounted) return;
 
       if (downloadUrl != null && downloadUrl.isNotEmpty) {
-        final seasonStr = _selectedSeason.toString().padLeft(2, '0');
         final item = await DownloadManager.instance.startDownload(
           url: downloadUrl,
-          title: '${content.title} S$seasonStr ${episode.title}',
+          title: '${content.title} ${episode.title}',
           season: _selectedSeason,
           episode: episode.episodeNumber ?? episode.index,
           posterUrl: episode.thumbnailUrl ?? content.posterUrl,
@@ -2293,9 +2292,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         // Close modal
         ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
 
-        final downloadTitle = content.isMovie
-            ? '${content.title} $chosenRes DanieWatch'
-            : '${content.title} S${_selectedSeason.toString().padLeft(2, '0')}E${episodeNumber.toString().padLeft(2, '0')} $chosenRes DanieWatch';
+        final downloadTitle = '${content.title} $chosenRes DanieWatch';
 
         try {
           final item = await DownloadManager.instance.startDownload(

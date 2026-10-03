@@ -161,7 +161,11 @@ class DownloadItem {
     if (season > 0 && episode > 0) {
       final s = season.toString().padLeft(2, '0');
       final e = episode.toString().padLeft(2, '0');
-      return 'S$s E$e $title';
+      final cleanTitle = title
+          .replaceAll(RegExp(r'\s*S0*' + season.toString() + r'[\s._-]*E0*' + episode.toString() + r'\b', caseSensitive: false), '')
+          .replaceAll(RegExp(r'\bS0*' + season.toString() + r'[\s._-]*E0*' + episode.toString() + r'\s*', caseSensitive: false), '')
+          .trim();
+      return 'S$s E$e $cleanTitle';
     }
     return title;
   }
@@ -171,7 +175,11 @@ class DownloadItem {
     final ext =
         fileExtension.startsWith('.') ? fileExtension : '.$fileExtension';
     if (season > 0 && episode > 0) {
-      return '$title S${season.toString().padLeft(2, '0')} E${episode.toString().padLeft(2, '0')}$ext';
+      final cleanTitle = title
+          .replaceAll(RegExp(r'\s*S0*' + season.toString() + r'[\s._-]*E0*' + episode.toString() + r'\b', caseSensitive: false), '')
+          .replaceAll(RegExp(r'\bS0*' + season.toString() + r'[\s._-]*E0*' + episode.toString() + r'\s*', caseSensitive: false), '')
+          .trim();
+      return '$cleanTitle S${season.toString().padLeft(2, '0')} E${episode.toString().padLeft(2, '0')}$ext';
     }
     return '$title$ext';
   }
@@ -1048,7 +1056,14 @@ class DownloadManager {
 
   String _buildSafeTitle(
       String title, int season, int episode, String? quality) {
-    final parts = <String>[title];
+    var cleanTitle = title;
+    if (season > 0 && episode > 0) {
+      cleanTitle = cleanTitle
+          .replaceAll(RegExp(r'\s*S0*' + season.toString() + r'[\s._-]*E0*' + episode.toString() + r'\b', caseSensitive: false), '')
+          .replaceAll(RegExp(r'\bS0*' + season.toString() + r'[\s._-]*E0*' + episode.toString() + r'\s*', caseSensitive: false), '')
+          .trim();
+    }
+    final parts = <String>[cleanTitle];
     if (season > 0 && episode > 0) {
       parts.add(
           'S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}');
