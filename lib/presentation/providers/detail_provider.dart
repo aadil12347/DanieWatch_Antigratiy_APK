@@ -7,6 +7,7 @@ import '../../domain/models/manifest_item.dart';
 import '../../services/streaming_links_season_service.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
 import '../../services/extraction/site_post_extractor.dart';
+import '../../services/extraction/series_vcloud_repository.dart';
 
 // ─── Param Classes ───────────────────────────────────────────────────────────
 
@@ -184,6 +185,29 @@ final nextdriveEpisodesProvider =
       return [];
     }
 
+    // Trigger universal series crawling across all seasons and all qualities in the background
+    SeriesVcloudRepository.instance.crawlAllSeasonsVcloud(
+      postUrl: postUrl,
+      prioritySeason: params.seasonNumber,
+      posterUrl: params.posterUrl,
+    ).catchError((e) {
+      debugPrint('[detailProvider] Background series crawl error: $e');
+    });
+
+    // Fast-path: Check if SeriesVcloudRepository already has episodes for this season in memory!
+    if (SeriesVcloudRepository.instance.hasSeason(postUrl, params.seasonNumber)) {
+      final cached = SeriesVcloudRepository.instance
+          .getEpisodesForSeason(postUrl, params.seasonNumber);
+      if (cached.isNotEmpty) {
+        debugPrint('[detailProvider] Returning ${cached.length} cached episodes for S${params.seasonNumber} in 0ms');
+        final episodes = cached.map((e) => e.toNextdriveEpisode()).toList();
+        SitePostExtractor.instance.preResolveSeasonEpisodes(episodes).catchError((e) {
+          debugPrint('[detailProvider] Background pre-resolve error: $e');
+        });
+        return episodes;
+      }
+    }
+
     // 2. Extract buttons from the post page
     final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
     if (buttons.isEmpty) return [];
@@ -195,6 +219,21 @@ final nextdriveEpisodesProvider =
     // 4. Extract episodes from Nextdrive selector page
     final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(bestBtn.href);
     if (episodes.isEmpty) return [];
+
+    // Store extracted episodes in SeriesVcloudRepository
+    for (final ep in episodes) {
+      final epNum = ep.episodeNumber ?? ep.index;
+      SeriesVcloudRepository.instance.storeEpisodeLink(
+        postKey: postUrl,
+        seasonNumber: params.seasonNumber,
+        episodeNumber: epNum,
+        title: ep.title,
+        quality: bestBtn.quality,
+        vcloudUrl: ep.vcloudUrl,
+        alternativeUrls: ep.alternativeUrls,
+        thumbnailUrl: ep.thumbnailUrl ?? params.posterUrl,
+      );
+    }
 
     // 5. Fetch TMDB season details ONLY for stills/thumbnails (NEVER for titles!)
     Map<int, String?> stillMap = {};
@@ -219,6 +258,11 @@ final nextdriveEpisodesProvider =
         ep.thumbnailUrl = stillMap[ep.rangeStart];
       } else {
         ep.thumbnailUrl = params.posterUrl;
+      }
+      final epNum = ep.episodeNumber ?? ep.index;
+      final vEp = SeriesVcloudRepository.instance.getEpisode(postUrl, params.seasonNumber, epNum);
+      if (vEp != null && ep.thumbnailUrl != null) {
+        vEp.thumbnailUrl = ep.thumbnailUrl;
       }
     }
 

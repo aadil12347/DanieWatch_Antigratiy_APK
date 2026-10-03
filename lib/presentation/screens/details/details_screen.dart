@@ -37,6 +37,7 @@ import '../../providers/manifest_provider.dart';
 import '../../providers/batch_zip_modal_provider.dart';
 import '../../../services/extraction/site_post_extractor.dart';
 import '../../../services/extraction/movie_site_scraper_service.dart';
+import '../../../services/extraction/series_vcloud_repository.dart';
 
 class DetailsScreen extends ConsumerStatefulWidget {
   final int tmdbId;
@@ -56,6 +57,38 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   int _selectedSeason = 1;
   int _tabIndex = 0; // 0 = Episodes/Similars, 1 = Similars/Reviews, 2 = Reviews/Share, 3 = Share
   String _episodeSearch = '';
+  bool _crawlerInitiated = false;
+
+  void _triggerSeriesCrawl(ContentDetail content) {
+    if (_crawlerInitiated || !content.isTv) return;
+    _crawlerInitiated = true;
+    final postUrl = content.postUrl ??
+        MovieSiteScraperService.instance.getPostUrl(content.id) ??
+        MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+        '';
+    if (postUrl.isNotEmpty) {
+      SeriesVcloudRepository.instance.crawlAllSeasonsVcloud(
+        postUrl: postUrl,
+        prioritySeason: _selectedSeason,
+        posterUrl: content.posterUrl,
+      );
+    } else {
+      SitePostExtractor.instance.findPostUrl(
+        title: content.title,
+        tmdbId: widget.tmdbId,
+        year: content.releaseYear,
+        imdbId: content.imdbId,
+      ).then((pUrl) {
+        if (pUrl != null && pUrl.isNotEmpty) {
+          SeriesVcloudRepository.instance.crawlAllSeasonsVcloud(
+            postUrl: pUrl,
+            prioritySeason: _selectedSeason,
+            posterUrl: content.posterUrl,
+          );
+        }
+      });
+    }
+  }
 
   DetailParams get _detailParams =>
       DetailParams(tmdbId: widget.tmdbId, mediaType: widget.mediaType);
@@ -99,6 +132,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   Widget _buildDetailPage(ContentDetail content, bool isInWatchlist) {
+    _triggerSeriesCrawl(content);
     return Scaffold(
       backgroundColor: Colors.black,
       body: CustomAppBar(
@@ -1860,6 +1894,25 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               return episode.preResolvedStream!.onlineStreamUrl!;
             }
 
+            var postUrl = content.postUrl ??
+                MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+                '';
+            final epNum = episode.episodeNumber ?? episode.index;
+
+            // Query SeriesVcloudRepository for cached/on-demand stream
+            if (postUrl.isNotEmpty) {
+              final vStream = await SeriesVcloudRepository.instance.resolvePlaybackStream(
+                postKey: postUrl,
+                seasonNumber: _selectedSeason,
+                episodeNumber: epNum,
+                preferredQuality: '720p',
+              );
+              if (vStream != null && vStream.isNotEmpty) {
+                return vStream;
+              }
+            }
+
             var res = await SitePostExtractor.instance.resolveVcloudStream(
               episode.vcloudUrl,
               alternativeUrls: episode.alternativeUrls,
@@ -1874,10 +1927,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
             // Fallback: If primary had no playable stream, check companion buttons (G-Direct, etc.)
             try {
-              var postUrl = content.postUrl ??
-                  MovieSiteScraperService.instance.getPostUrl(content.id) ??
-                  MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
-                  '';
               if (postUrl.isEmpty) {
                 postUrl = await SitePostExtractor.instance.findPostUrl(
                   title: content.title,
@@ -1890,7 +1939,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 final buttons =
                     await SitePostExtractor.instance.extractPostButtons(postUrl);
                 final sNum = _selectedSeason;
-                final epNum = episode.episodeNumber ?? episode.index;
                 final altButtons = buttons
                     .where((b) =>
                         b.seasonNumber == sNum &&
@@ -1922,10 +1970,25 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           },
           initialResolutionMap: {
             '720p': episode.vcloudUrl,
+            if (episode.otherResolutions != null) ...episode.otherResolutions!,
           },
           resolutionMapResolver: () async {
             final epNum = episode.episodeNumber ?? episode.index;
-            // 1. Try fast GitHub DB (~200ms)
+            var postUrl = content.postUrl ??
+                MovieSiteScraperService.instance.getPostUrl(content.id) ??
+                MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+                '';
+            // 1. Instant check in SeriesVcloudRepository
+            if (postUrl.isNotEmpty) {
+              final vEp = SeriesVcloudRepository.instance.getEpisode(postUrl, _selectedSeason, epNum);
+              if (vEp != null && vEp.vcloudUrls.isNotEmpty) {
+                return Map<String, String>.from(vEp.vcloudUrls);
+              }
+            }
+            if (episode.otherResolutions != null && episode.otherResolutions!.isNotEmpty) {
+              return {'720p': episode.vcloudUrl, ...episode.otherResolutions!};
+            }
+            // 2. Try fast GitHub DB (~200ms)
             try {
               final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
                 tmdbId: widget.tmdbId,
@@ -1937,12 +2000,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               if (dbMap.isNotEmpty) return dbMap;
             } catch (_) {}
 
-            // 2. Fallback to SitePostExtractor across season buttons
+            // 3. Fallback to SitePostExtractor across season buttons
             try {
-              var postUrl = content.postUrl ??
-                  MovieSiteScraperService.instance.getPostUrl(content.id) ??
-                  MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
-                  '';
               if (postUrl.isEmpty) {
                 postUrl = await SitePostExtractor.instance.findPostUrl(
                   title: content.title,
@@ -2111,11 +2170,27 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     final actualRuntime = episodeRuntime ?? content.runtime;
 
+    // Look up in SeriesVcloudRepository if available
+    final postUrl = content.postUrl ??
+        MovieSiteScraperService.instance.getPostUrl(content.id) ??
+        MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+        '';
+    final targetSeason = content.isMovie ? 1 : _selectedSeason;
+    final targetEpNum = (episodeNumber > 0) ? episodeNumber : (episode?.episodeNumber ?? episode?.index ?? 1);
+
+    SeriesVcloudEpisode? vcloudEp;
+    if (content.isTv && postUrl.isNotEmpty) {
+      vcloudEp = SeriesVcloudRepository.instance.getEpisode(postUrl, targetSeason, targetEpNum);
+    }
+
     // 1. Seed resolutions map & sizes directly if episode or URL is provided
     Map<String, String> resMap = {};
     Map<String, String> initialSizes = {};
 
-    if (episode != null) {
+    if (vcloudEp != null && vcloudEp.hasAnyVcloudUrl) {
+      resMap.addAll(vcloudEp.vcloudUrls);
+      initialSizes.addAll(vcloudEp.exactSizes);
+    } else if (episode != null) {
       if (episode.vcloudUrl.isNotEmpty) {
         resMap['720p'] = episode.vcloudUrl;
       }
@@ -2165,7 +2240,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         onSelectResolution: (chosenRes) => _executeDownloadResolution(
           chosenRes: chosenRes,
           content: content,
-          episodeNumber: episodeNumber,
+          episodeNumber: targetEpNum,
           actualRuntime: actualRuntime,
           nextdriveVcloudUrl: nextdriveVcloudUrl,
           nextdriveAltUrls: nextdriveAltUrls,
@@ -2173,30 +2248,39 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         ),
       ));
 
-      // Asynchronously fetch missing exact size for 720p if not yet populated
-      if (!initialSizes.containsKey('720p') && resMap.containsKey('720p')) {
-        SitePostExtractor.instance
-            .extractExactFileSizeFromVcloud(resMap['720p']!)
-            .then((sz) {
-          if (sz != null && sz.isNotEmpty && mounted) {
-            final cur = Map<String, String>.from(
-              ref.read(downloadModalProvider).resolutionSizes ?? {},
-            );
-            cur['720p'] = sz;
-            if (episode != null) episode.exactSize = sz;
-            ref.read(downloadModalProvider.notifier).update(
-                  (s) => s.copyWith(resolutionSizes: cur),
-                );
-          }
-        });
+      // Asynchronously fetch missing exact sizes for all seeded qualities in parallel
+      for (final entry in resMap.entries) {
+        if (!initialSizes.containsKey(entry.key)) {
+          SitePostExtractor.instance
+              .extractExactFileSizeFromVcloud(entry.value)
+              .then((sz) {
+            if (sz != null && sz.isNotEmpty && mounted) {
+              final cur = Map<String, String>.from(
+                ref.read(downloadModalProvider).resolutionSizes ?? {},
+              );
+              cur[entry.key] = sz;
+              if (episode != null) {
+                if (entry.key == '720p') episode.exactSize = sz;
+                episode.otherResolutionSizes ??= {};
+                episode.otherResolutionSizes![entry.key] = sz;
+              }
+              if (vcloudEp != null) {
+                vcloudEp.exactSizes[entry.key] = sz;
+              }
+              ref.read(downloadModalProvider.notifier).update(
+                    (s) => s.copyWith(resolutionSizes: cur),
+                  );
+            }
+          });
+        }
       }
 
-      // Asynchronously fetch other resolutions (1080p, 480p) for TV series
-      if (content.isTv) {
+      // Asynchronously fetch any missing resolutions (1080p, 480p) for TV series
+      if (content.isTv && (!resMap.containsKey('1080p') || !resMap.containsKey('480p'))) {
         _asyncFetchOtherResolutions(
           content: content,
           seasonNumber: _selectedSeason,
-          episodeNumber: episodeNumber,
+          episodeNumber: targetEpNum,
           actualRuntime: actualRuntime,
           nextdriveVcloudUrl: nextdriveVcloudUrl,
           nextdriveAltUrls: nextdriveAltUrls,

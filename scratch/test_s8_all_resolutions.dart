@@ -79,8 +79,8 @@ Future<ResolutionTestResult> testResolution(
     referer: 'https://vegamovies.gallery/',
   );
 
-  // Extract VCloud and FastDL links
-  final vcloudRegex = RegExp(r'href=["\x27](https://vcloud\.fit/[^"\x27]+)["\x27]', caseSensitive: false);
+  // Extract VCloud and HubCloud links (domain-agnostic: matches any TLD)
+  final vcloudRegex = RegExp(r'href=["\x27](https?://[^"\x27]*(?:vcloud|hubcloud)[^"\x27]*)["\x27]', caseSensitive: false);
   final vcloudMatches = vcloudRegex.allMatches(ndHtml).map((m) => m.group(1)!).toList();
   print('  ✔ Extracted ${vcloudMatches.length} VCloud episode links on selector page');
 

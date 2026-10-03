@@ -97,7 +97,7 @@ String? extractDownloadButton(String html) {
 
   // Try anchor with class containing btn and href containing vcloud/hubcloud
   final btnRegex = RegExp(
-      r'''<a\s+[^>]*href=["'](https?://[^"']*(?:vcloud\.zip|vcloud\.fit|hubcloud)[^"']*)["'][^>]*class=["'][^"']*btn[^"']*["']''',
+      r'''<a\s+[^>]*href=["'](https?://[^"']*(?:vcloud|hubcloud)[^"']*)["'][^>]*class=["'][^"']*btn[^"']*["']''',
       caseSensitive: false);
   final btnMatch = btnRegex.firstMatch(html);
   if (btnMatch != null) return btnMatch.group(1);

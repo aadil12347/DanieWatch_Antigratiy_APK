@@ -72,8 +72,8 @@ void main() async {
     final landHtml = await landResp.transform(utf8.decoder).join();
     print('  Landing page size: ${landHtml.length}');
     
-    // Find vcloud links for episodes
-    final vcloudRegex = RegExp(r'href="(https://vcloud\.fit/[^"]+)"', caseSensitive: false);
+    // Find vcloud links for episodes (domain-agnostic: matches any TLD)
+    final vcloudRegex = RegExp(r'href="(https?://[^"]*(?:vcloud|hubcloud)[^"]*)"', caseSensitive: false);
     final fastdlRegex = RegExp(r'href="(https://fastdl\.zip/[^"]+)"', caseSensitive: false);
     
     final vcloudLinks = vcloudRegex.allMatches(landHtml).map((m) => m.group(1)!).toList();
