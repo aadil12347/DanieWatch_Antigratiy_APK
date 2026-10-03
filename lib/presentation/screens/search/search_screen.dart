@@ -25,12 +25,14 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   final ScrollController _outerScrollController = ScrollController();
 
   late TabController _tabController;
+  late AnimationController _glowCtrl;
+  late Animation<double> _glowAnim;
 
   /// Tracks whether we are programmatically changing tabs (to avoid circular updates)
   bool _isProgrammatic = false;
@@ -54,6 +56,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       animationDuration: const Duration(milliseconds: 300), // Smooth red line slide
     );
 
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _glowAnim = Tween<double>(begin: 0.15, end: 0.35).animate(
+      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
+    );
+
     // Sync tab changes → update search provider filters & rebuild header
     _tabController.addListener(_onTabChanged);
     _tabController.animation?.addListener(() {
@@ -65,6 +75,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       _searchController.text = currentQuery;
     }
     _searchFocus.addListener(_onFocusChange);
+    if (_searchFocus.hasFocus) {
+      _glowCtrl.repeat(reverse: true);
+    }
 
     // Register outer scroll controller for scroll-to-top (Explore = bottom nav index 1)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -181,6 +194,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (mounted) {
       setState(() {});
       ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
+      if (_searchFocus.hasFocus) {
+        _glowCtrl.repeat(reverse: true);
+      } else {
+        _glowCtrl.stop();
+        _glowCtrl.value = 0;
+      }
     }
   }
 
@@ -188,6 +207,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   void dispose() {
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _glowCtrl.dispose();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
     ref.read(searchFocusProvider.notifier).state = false;
@@ -210,96 +230,146 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   Widget _buildDedicatedSearchBar(Responsive r) {
-    final focused = _searchFocus.hasFocus;
-    return Container(
-      padding: EdgeInsets.fromLTRB(r.w(16), r.h(8), r.w(16), r.h(4)),
-      child: Container(
-        height: r.h(48).clamp(44.0, 52.0),
-        decoration: BoxDecoration(
-          color: const Color(0xFF191A20),
-          borderRadius: BorderRadius.circular(r.w(12)),
-          border: Border.all(
-            color: focused
-                ? AppColors.primary.withValues(alpha: 0.6)
-                : Colors.white.withValues(alpha: 0.08),
-            width: focused ? 1.2 : 0.8,
-          ),
-          boxShadow: focused
-              ? [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.2),
-                    blurRadius: 16,
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+    final isFocused = _searchFocus.hasFocus;
+    final hasText = _searchController.text.isNotEmpty;
+    final barHeight = r.h(44).clamp(38.0, 52.0);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(6), r.w(16), r.h(10)),
+      child: AnimatedBuilder(
+        animation: _glowAnim,
+        builder: (context, child) {
+          return Container(
+            height: barHeight,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF1E1E22),
+                  const Color(0xFF1A1A1E),
+                  isFocused
+                      ? AppColors.primary.withValues(alpha: 0.05)
+                      : const Color(0xFF18181C),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(r.w(14)),
+              border: Border.all(
+                color: isFocused
+                    ? AppColors.primary.withValues(alpha: 0.55)
+                    : Colors.white.withValues(alpha: 0.06),
+                width: isFocused ? 1.2 : 0.8,
+              ),
+              boxShadow: isFocused
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary
+                            .withValues(alpha: _glowAnim.value),
+                        blurRadius: 20,
+                        spreadRadius: -2,
+                      ),
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.06),
+                        blurRadius: 40,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+            ),
+            child: child,
+          );
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(r.w(14)),
+          child: TextField(
+            controller: _searchController,
+            focusNode: _searchFocus,
+            expands: true,
+            maxLines: null,
+            minLines: null,
+            textAlignVertical: TextAlignVertical.center,
+            showCursor: true,
+            cursorColor: AppColors.primary,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: r.f(14).clamp(13.0, 17.0),
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.1,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Search movies, shows...',
+              hintStyle: GoogleFonts.inter(
+                color: Colors.white.withValues(alpha: 0.28),
+                fontSize: r.f(14).clamp(12.0, 16.0),
+                fontWeight: FontWeight.w400,
+                letterSpacing: 0.2,
+              ),
+              filled: true,
+              fillColor: Colors.transparent,
+              contentPadding: EdgeInsets.only(left: r.w(18), right: r.w(8)),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              isDense: true,
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasText)
+                    GestureDetector(
+                      onTap: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                        if (mounted) setState(() {});
+                      },
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        margin: EdgeInsets.only(right: r.w(4)),
+                        padding: const EdgeInsets.all(6),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.close_rounded,
+                            color: Colors.white.withValues(alpha: 0.55),
+                            size: r.d(14).clamp(12.0, 18.0),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: EdgeInsets.only(right: r.w(16), left: r.w(4)),
+                    child: Icon(
+                      Icons.search_rounded,
+                      color: isFocused
+                          ? AppColors.primary.withValues(alpha: 0.9)
+                          : Colors.white.withValues(alpha: 0.3),
+                      size: r.d(20).clamp(18.0, 24.0),
+                    ),
                   ),
                 ],
-        ),
-        child: Row(
-          children: [
-            SizedBox(width: r.w(14)),
-            Icon(
-              Icons.search_rounded,
-              color: focused
-                  ? AppColors.primary
-                  : Colors.white.withValues(alpha: 0.35),
-              size: r.d(20).clamp(18.0, 22.0),
-            ),
-            SizedBox(width: r.w(10)),
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocus,
-                textInputAction: TextInputAction.search,
-                onSubmitted: (val) {
-                  _saveRecentSearch(val);
-                  _onSearchChanged(val);
-                },
-                onChanged: _onSearchChanged,
-                cursorColor: AppColors.primary,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: r.f(14.5).clamp(13.0, 16.0),
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.1,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Search movies, series, anime...',
-                  hintStyle: GoogleFonts.inter(
-                    color: Colors.white.withValues(alpha: 0.3),
-                    fontSize: r.f(14).clamp(12.0, 15.0),
-                    fontWeight: FontWeight.w400,
-                  ),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
               ),
+              suffixIconConstraints:
+                  const BoxConstraints(minWidth: 0, minHeight: 0),
             ),
-            if (_searchController.text.isNotEmpty)
-              GestureDetector(
-                onTap: () {
-                  _searchController.clear();
-                  _onSearchChanged('');
-                  if (mounted) setState(() {});
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: r.w(12)),
-                  child: Icon(
-                    Icons.close_rounded,
-                    color: Colors.white.withValues(alpha: 0.5),
-                    size: r.d(18).clamp(16.0, 20.0),
-                  ),
-                ),
-              )
-            else
-              SizedBox(width: r.w(14)),
-          ],
+            onSubmitted: (val) {
+              _saveRecentSearch(val);
+              _onSearchChanged(val);
+              _searchFocus.unfocus();
+            },
+            onChanged: (val) {
+              _onSearchChanged(val);
+              if (mounted) setState(() {});
+            },
+          ),
         ),
       ),
     );
@@ -338,32 +408,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             onTap: () => _searchFocus.unfocus(),
             child: Column(
               children: [
-                // Top header: Removed completely from all category tabs (no title, no search/filter icons).
-                // Only on Search tab (index 0), show the opened dedicated search bar.
-                if (isSearchTab) ...[
-                  _buildDedicatedSearchBar(r),
-                  Container(
-                    height: 6,
-                    color: AppColors.background,
-                  ),
-                ],
-                // ── Scrollable content: TopNavbar scrolls away, content stays ──
+                // ── Scrollable content: TopNavbar slider at top, search bar below it on Search tab ──
                 Expanded(
                   child: NestedScrollView(
                     controller: _outerScrollController,
                     headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                      // Top navbar — scrolls with content (NOT pinned)
+                      // Top navbar slider — at the top
                       SliverToBoxAdapter(
                         child: TopNavbar(tabController: _tabController),
                       ),
-                      // Filter chips — scrolls with content (hidden on dedicated Search tab)
+                      // Dedicated search bar on Search tab — BELOW the top tab slider!
+                      if (isSearchTab)
+                        SliverToBoxAdapter(
+                          child: _buildDedicatedSearchBar(r),
+                        ),
+                      // Filter chips — on category tabs (hidden on dedicated Search tab)
                       if (!isSearchTab)
                         const SliverToBoxAdapter(
                           child: CategoryFilterChips(),
                         ),
                       // Small gap between navbar area and grid content
                       const SliverToBoxAdapter(
-                        child: SizedBox(height: 8),
+                        child: SizedBox(height: 6),
                       ),
                     ],
                     // Instant tab switch — no slide animation, pages kept alive
