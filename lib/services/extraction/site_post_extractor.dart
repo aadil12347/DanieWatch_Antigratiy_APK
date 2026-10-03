@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html_parser;
@@ -41,6 +42,10 @@ class NextdriveEpisode {
   final int? rangeEnd;
   final bool isComplete;
   String? thumbnailUrl; // Set from TMDB still or poster fallback
+  String? exactSize; // Cached exact file size e.g. "477.72 MB"
+  VcloudStreamResult? preResolvedStream; // Pre-resolved direct stream result
+  Map<String, String>? otherResolutions; // Map of quality -> vcloudUrl
+  Map<String, String>? otherResolutionSizes; // Map of quality -> exactSize
 
   NextdriveEpisode({
     required this.title,
@@ -52,6 +57,10 @@ class NextdriveEpisode {
     this.rangeEnd,
     this.isComplete = false,
     this.thumbnailUrl,
+    this.exactSize,
+    this.preResolvedStream,
+    this.otherResolutions,
+    this.otherResolutionSizes,
   }) : alternativeUrls = alternativeUrls ?? [];
 
   NextdriveEpisode copyWith({
@@ -64,6 +73,10 @@ class NextdriveEpisode {
     int? rangeEnd,
     bool? isComplete,
     String? thumbnailUrl,
+    String? exactSize,
+    VcloudStreamResult? preResolvedStream,
+    Map<String, String>? otherResolutions,
+    Map<String, String>? otherResolutionSizes,
   }) {
     return NextdriveEpisode(
       title: title ?? this.title,
@@ -76,12 +89,22 @@ class NextdriveEpisode {
       rangeEnd: rangeEnd ?? this.rangeEnd,
       isComplete: isComplete ?? this.isComplete,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      exactSize: exactSize ?? this.exactSize,
+      preResolvedStream: preResolvedStream ?? this.preResolvedStream,
+      otherResolutions: otherResolutions ??
+          (this.otherResolutions != null
+              ? Map<String, String>.from(this.otherResolutions!)
+              : null),
+      otherResolutionSizes: otherResolutionSizes ??
+          (this.otherResolutionSizes != null
+              ? Map<String, String>.from(this.otherResolutionSizes!)
+              : null),
     );
   }
 
   @override
   String toString() =>
-      'NextdriveEpisode(index: $index, title: "$title", epNum: $episodeNumber, range: $rangeStart-$rangeEnd, isComplete: $isComplete, url: "$vcloudUrl", alts: ${alternativeUrls.length})';
+      'NextdriveEpisode(index: $index, title: "$title", epNum: $episodeNumber, range: $rangeStart-$rangeEnd, isComplete: $isComplete, url: "$vcloudUrl", size: $exactSize, preResolved: ${preResolvedStream != null})';
 }
 
 /// Resolved stream URLs from VCloud.
@@ -112,7 +135,7 @@ class VcloudStreamResult {
     if (pixeldrainUrl != null && pixeldrainUrl!.isNotEmpty) {
       if (pixeldrainUrl!.contains('/u/')) {
         final id = pixeldrainUrl!.split('/u/').last.split('?').first.trim();
-        return 'https://pixeldrain.dev/api/file/$id';
+        return 'https://pixeldrain.com/api/file/$id';
       }
       return pixeldrainUrl;
     }
@@ -205,6 +228,48 @@ class SitePostExtractor {
     }
   }
 
+  /// Fast, code-only stream fetcher with early socket termination.
+  /// Bypasses downloading heavy HTML/JS once required content (e.g. size or token) is found.
+  Future<String> fastFetchStream(
+    String url, {
+    String? referer,
+    bool Function(String text)? stopCondition,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    try {
+      final uri = Uri.parse(url);
+      final req = await client.getUrl(uri).timeout(timeout);
+      req.headers.set(HttpHeaders.userAgentHeader,
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36');
+      req.headers.set(HttpHeaders.acceptHeader,
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+      if (referer != null && referer.isNotEmpty) {
+        req.headers.set(HttpHeaders.refererHeader, referer);
+      } else {
+        req.headers.set(HttpHeaders.refererHeader, '${uri.scheme}://${uri.host}/');
+      }
+
+      final resp = await req.close().timeout(timeout);
+      final buffer = StringBuffer();
+
+      await for (final chunk in resp.transform(utf8.decoder)) {
+        buffer.write(chunk);
+        if (stopCondition != null && stopCondition(buffer.toString())) {
+          resp.detachSocket().then((s) => s.destroy()).catchError((_) {});
+          break;
+        }
+      }
+
+      return buffer.toString();
+    } catch (e) {
+      debugPrint('[SitePostExtractor] fastFetchStream error for $url: $e');
+      return '';
+    } finally {
+      client.close();
+    }
+  }
+
   /// Extracts the exact file size from a VCloud page or landing URL.
   Future<String?> extractExactFileSizeFromVcloud(String vcloudUrl) async {
     if (vcloudUrl.isEmpty) return null;
@@ -226,7 +291,15 @@ class SitePostExtractor {
         }
       }
 
-      final html = await fetchHtml(targetUrl);
+      String html = await fastFetchStream(
+        targetUrl,
+        stopCondition: (text) =>
+            text.contains('id="size"') &&
+            (text.contains('atob(atob(') || text.contains('atob(') || text.contains('var url')),
+      );
+      if (html.isEmpty) {
+        html = await fetchHtml(targetUrl);
+      }
       String? size = parseExactSizeFromHtml(html);
 
       // If not on initial page, check if there's a tokenUrl or redirect
@@ -252,7 +325,17 @@ class SitePostExtractor {
             final p = Uri.parse(targetUrl);
             tokenUrl = '${p.scheme}://${p.host}${tokenUrl.startsWith('/') ? '' : '/'}$tokenUrl';
           }
-          final dlHtml = await fetchHtml(tokenUrl, referer: targetUrl);
+          String dlHtml = await fastFetchStream(
+            tokenUrl,
+            referer: targetUrl,
+            stopCondition: (text) =>
+                text.contains('id="size"') ||
+                text.contains('[FSLv2 Server]') ||
+                text.contains('id="s3"'),
+          );
+          if (dlHtml.isEmpty) {
+            dlHtml = await fetchHtml(tokenUrl, referer: targetUrl);
+          }
           size = parseExactSizeFromHtml(dlHtml);
         }
       }
@@ -720,6 +803,160 @@ class SitePostExtractor {
     return resMap;
   }
 
+  /// Pre-resolves 720p direct stream and exact size for all episodes of the given season.
+  /// Runs in background without blocking UI, prioritizing the first episode.
+  Future<void> preResolveSeasonEpisodes(
+    List<NextdriveEpisode> episodes, {
+    int? priorityIndex,
+  }) async {
+    if (episodes.isEmpty) return;
+
+    debugPrint('[SitePostExtractor] Starting background pre-resolution for ${episodes.length} episodes...');
+
+    // Prioritize the requested episode (or Episode 1)
+    final pIdx = (priorityIndex != null &&
+            priorityIndex >= 0 &&
+            priorityIndex < episodes.length)
+        ? priorityIndex
+        : 0;
+
+    final orderedIndices = <int>[pIdx];
+    for (int i = 0; i < episodes.length; i++) {
+      if (i != pIdx) orderedIndices.add(i);
+    }
+
+    // Resolve in small batches (e.g. 2 concurrent) so connection is not saturated
+    const batchSize = 2;
+    for (int i = 0; i < orderedIndices.length; i += batchSize) {
+      final chunk = orderedIndices.skip(i).take(batchSize).toList();
+      await Future.wait(chunk.map((idx) async {
+        final ep = episodes[idx];
+        if (ep.preResolvedStream != null && ep.exactSize != null) return;
+
+        try {
+          final res = await resolveVcloudStream(
+            ep.vcloudUrl,
+            alternativeUrls: ep.alternativeUrls,
+          );
+          ep.preResolvedStream = res;
+          if (res.fileSize != null && res.fileSize!.isNotEmpty) {
+            ep.exactSize = res.fileSize;
+            _vcloudSizeCache[ep.vcloudUrl] = res.fileSize!;
+          }
+          debugPrint(
+              '[SitePostExtractor] Pre-resolved Ep ${ep.episodeNumber ?? ep.index} (720p): '
+              'stream=${res.onlineStreamUrl != null}, size=${res.fileSize}');
+        } catch (e) {
+          debugPrint(
+              '[SitePostExtractor] Failed pre-resolving Ep ${ep.episodeNumber ?? ep.index}: $e');
+        }
+      }));
+    }
+  }
+
+  /// Fetches other resolutions (e.g. 480p, 1080p) for a specific episode in a season.
+  /// Parallelizes extraction across buttons and enriches the target episode with pre-cached links and sizes.
+  Future<Map<String, String>> fetchOtherResolutionsForEpisode({
+    required String postUrl,
+    required int seasonNumber,
+    required int episodeNumber,
+    required String currentQuality,
+    NextdriveEpisode? targetEpisode,
+  }) async {
+    final Map<String, String> resMap = {};
+
+    // If targetEpisode already has cached otherResolutions, return immediately!
+    if (targetEpisode?.otherResolutions != null &&
+        targetEpisode!.otherResolutions!.isNotEmpty) {
+      return Map<String, String>.from(targetEpisode.otherResolutions!);
+    }
+
+    try {
+      final buttons = await extractPostButtons(postUrl);
+      if (buttons.isEmpty) return resMap;
+
+      final seasonButtons = buttons
+          .where((b) =>
+              b.seasonNumber == seasonNumber &&
+              !b.isBatchZip &&
+              b.quality.toLowerCase() != currentQuality.toLowerCase())
+          .toList();
+
+      if (seasonButtons.isEmpty) return resMap;
+
+      // Group buttons by quality, picking best button per quality
+      final Map<String, SitePostButton> bestPerQuality = {};
+      for (final b in seasonButtons) {
+        final q = b.quality.toLowerCase();
+        if (!bestPerQuality.containsKey(q)) {
+          bestPerQuality[q] = b;
+        } else {
+          final bt = b.text.toLowerCase();
+          if (bt.contains('v-cloud') ||
+              bt.contains('vcloud') ||
+              bt.contains('resumable')) {
+            bestPerQuality[q] = b;
+          }
+        }
+      }
+
+      // Fetch each quality in parallel
+      await Future.wait(bestPerQuality.entries.map((entry) async {
+        final q = entry.key;
+        final b = entry.value;
+        final lh = b.href.toLowerCase();
+
+        try {
+          if (lh.contains('nexdrive') ||
+              lh.contains('vgmlink') ||
+              lh.contains('fastdl') ||
+              lh.contains('gdflix') ||
+              lh.contains('filebee')) {
+            final episodes = await extractNextdriveEpisodes(b.href);
+            if (episodes.isNotEmpty) {
+              final match = episodes.firstWhere(
+                (e) => (e.episodeNumber ?? e.index) == episodeNumber,
+                orElse: () => (episodeNumber <= episodes.length
+                    ? episodes[episodeNumber - 1]
+                    : episodes.first),
+              );
+              if (match.vcloudUrl.isNotEmpty) {
+                resMap[q] = match.vcloudUrl;
+                extractExactFileSizeFromVcloud(match.vcloudUrl).then((size) {
+                  if (size != null && size.isNotEmpty && targetEpisode != null) {
+                    targetEpisode.otherResolutionSizes ??= {};
+                    targetEpisode.otherResolutionSizes![q] = size;
+                  }
+                });
+              }
+            }
+          } else if (lh.contains('vcloud') || lh.contains('hubcloud')) {
+            resMap[q] = b.href;
+            extractExactFileSizeFromVcloud(b.href).then((size) {
+              if (size != null && size.isNotEmpty && targetEpisode != null) {
+                targetEpisode.otherResolutionSizes ??= {};
+                targetEpisode.otherResolutionSizes![q] = size;
+              }
+            });
+          }
+        } catch (e) {
+          debugPrint(
+              '[SitePostExtractor] Error fetching $q for Ep $episodeNumber: $e');
+        }
+      }));
+
+      if (targetEpisode != null && resMap.isNotEmpty) {
+        targetEpisode.otherResolutions ??= {};
+        targetEpisode.otherResolutions!.addAll(resMap);
+      }
+    } catch (e) {
+      debugPrint(
+          '[SitePostExtractor] Error in fetchOtherResolutionsForEpisode: $e');
+    }
+
+    return resMap;
+  }
+
   /// Helper to extract first VCloud anchor from a movie Nexdrive/G-Direct landing page
   Future<String?> _extractVcloudFromLanding(String landingUrl) async {
     try {
@@ -966,6 +1203,27 @@ class SitePostExtractor {
         ));
       }
 
+      // Final pass: ensure vcloudUrl is strictly a V-Cloud / HubCloud link if one is available
+      for (int i = 0; i < episodes.length; i++) {
+        final ep = episodes[i];
+        final isPrimaryVcloud = ep.vcloudUrl.toLowerCase().contains('vcloud') ||
+            ep.vcloudUrl.toLowerCase().contains('hubcloud');
+        if (!isPrimaryVcloud) {
+          final vcloudAltIdx = ep.alternativeUrls.indexWhere((u) =>
+              u.toLowerCase().contains('vcloud') ||
+              u.toLowerCase().contains('hubcloud'));
+          if (vcloudAltIdx >= 0) {
+            final vcloudLink = ep.alternativeUrls.removeAt(vcloudAltIdx);
+            final updatedAlts = [ep.vcloudUrl, ...ep.alternativeUrls];
+            episodes[i] = ep.copyWith(
+              vcloudUrl: vcloudLink,
+              alternativeUrls: updatedAlts,
+            );
+            debugPrint('[SitePostExtractor] Re-prioritized Ep ${ep.episodeNumber ?? ep.index} primary to VCloud: $vcloudLink');
+          }
+        }
+      }
+
       debugPrint('[SitePostExtractor] Extracted ${episodes.length} Nextdrive episodes from $nextdriveUrl');
       return episodes;
     } catch (e) {
@@ -975,38 +1233,48 @@ class SitePostExtractor {
   }
 
   /// Resolve a VCloud landing URL or FastDL / GoogleUserContent / Pixeldrain direct stream link.
+  /// Strictly prioritizes V-Cloud / HubCloud servers (FSLv2, FSL, 10Gbps, Pixeldrain) over FastDL.
   Future<VcloudStreamResult> resolveVcloudStream(
     String vcloudUrl, {
     String? referer,
     List<String>? alternativeUrls,
   }) async {
-    // 1. Try primary link
-    final primaryRes =
-        await _resolveSingleStreamLink(vcloudUrl, referer: referer);
-    if (primaryRes.canStreamOnline) {
-      return primaryRes;
-    }
-
-    // 2. Fallback to alternative links (e.g. FastDL, Vegadrive, companion links)
-    if (alternativeUrls != null && alternativeUrls.isNotEmpty) {
+    // 1. Collect all candidate URLs, prioritizing V-Cloud / HubCloud first over FastDL
+    final candidates = <String>[];
+    if (vcloudUrl.isNotEmpty) candidates.add(vcloudUrl);
+    if (alternativeUrls != null) {
       for (final alt in alternativeUrls) {
-        if (alt.isEmpty || alt == vcloudUrl) continue;
-        try {
-          final altRes =
-              await _resolveSingleStreamLink(alt, referer: referer);
-          if (altRes.canStreamOnline) {
-            debugPrint(
-                '[SitePostExtractor] Successfully resolved online stream from alternative: $alt');
-            return altRes;
-          }
-        } catch (e) {
-          debugPrint(
-              '[SitePostExtractor] Error resolving alternative $alt: $e');
+        if (alt.isNotEmpty && !candidates.contains(alt)) {
+          candidates.add(alt);
         }
       }
     }
 
-    return primaryRes;
+    // Sort candidates: vcloud/hubcloud strictly first!
+    candidates.sort((a, b) {
+      final aIsVcloud = a.toLowerCase().contains('vcloud') || a.toLowerCase().contains('hubcloud');
+      final bIsVcloud = b.toLowerCase().contains('vcloud') || b.toLowerCase().contains('hubcloud');
+      if (aIsVcloud && !bIsVcloud) return -1;
+      if (!aIsVcloud && bIsVcloud) return 1;
+      return 0;
+    });
+
+    VcloudStreamResult? fallbackRes;
+    for (final candidate in candidates) {
+      try {
+        final res = await _resolveSingleStreamLink(candidate, referer: referer);
+        if (res.canStreamOnline ||
+            (res.tenGbpsUrl != null && res.tenGbpsUrl!.isNotEmpty) ||
+            (res.pixeldrainUrl != null && res.pixeldrainUrl!.isNotEmpty)) {
+          return res;
+        }
+        fallbackRes ??= res;
+      } catch (e) {
+        debugPrint('[SitePostExtractor] Error resolving stream candidate $candidate: $e');
+      }
+    }
+
+    return fallbackRes ?? VcloudStreamResult();
   }
 
   Future<VcloudStreamResult> _resolveSingleStreamLink(String url,
@@ -1064,7 +1332,16 @@ class SitePostExtractor {
       }
 
       // Case D: Standard V-Cloud
-      final vHtml = await fetchHtml(url, referer: referer);
+      String vHtml = await fastFetchStream(
+        url,
+        referer: referer,
+        stopCondition: (text) =>
+            text.contains('id="size"') &&
+            (text.contains('atob(atob(') || text.contains('atob(') || text.contains('var url')),
+      );
+      if (vHtml.isEmpty) {
+        vHtml = await fetchHtml(url, referer: referer);
+      }
       String? exactFileSize = parseExactSizeFromHtml(vHtml);
 
       // 1. Look for double atob
@@ -1099,17 +1376,104 @@ class SitePostExtractor {
         }
       }
 
+      // 4. Check for intermediate VCloud / HubCloud landing page (e.g. vcloud.fit/api/index.php?link=...)
+      String effectiveReferer = url;
+      if (tokenUrl == null) {
+        String? intermediateUrl;
+        final vDoc = html_parser.parse(vHtml);
+        for (final a in vDoc.querySelectorAll('a[href]')) {
+          final href = a.attributes['href']?.trim() ?? '';
+          final text = a.text.trim().toLowerCase();
+          final lh = href.toLowerCase();
+          if (href.isEmpty || href == '#' || lh.startsWith('javascript:')) continue;
+          if (lh.contains('telegram') || lh.contains('t.me') || lh.contains('facebook')) continue;
+
+          if (text.contains('direct download') ||
+              text.contains('resume') ||
+              text.contains('download [resume]') ||
+              lh.contains('vcloud.zip') ||
+              (lh.contains('vcloud') && !lh.contains('index.php')) ||
+              (lh.contains('hubcloud') && !lh.contains('index.php'))) {
+            intermediateUrl = href;
+            break;
+          }
+        }
+
+        if (intermediateUrl != null && intermediateUrl.isNotEmpty) {
+          if (!intermediateUrl.startsWith('http')) {
+            final p = Uri.parse(url);
+            intermediateUrl =
+                '${p.scheme}://${p.host}${intermediateUrl.startsWith('/') ? '' : '/'}$intermediateUrl';
+          }
+          debugPrint('[SitePostExtractor] Following intermediate VCloud link: $intermediateUrl');
+          try {
+            final intermediateHtml = await fetchHtml(intermediateUrl, referer: url);
+            exactFileSize ??= parseExactSizeFromHtml(intermediateHtml);
+
+            // Double atob on intermediate page
+            final m2 = RegExp(
+                    r'atob\(\s*atob\(\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]\s*\)\s*\)')
+                .firstMatch(intermediateHtml);
+            if (m2 != null) {
+              try {
+                final s1 = utf8.decode(base64.decode(m2.group(1)!));
+                tokenUrl = utf8.decode(base64.decode(s1));
+              } catch (_) {}
+            }
+
+            // Single atob on intermediate page
+            if (tokenUrl == null) {
+              final m1 = RegExp(
+                      r'atob\(\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]\s*\)')
+                  .firstMatch(intermediateHtml);
+              if (m1 != null) {
+                try {
+                  final s1 = utf8.decode(base64.decode(m1.group(1)!));
+                  if (s1.contains('/') || s1.startsWith('http')) {
+                    tokenUrl = s1;
+                  }
+                } catch (_) {}
+              }
+            }
+
+            // var url = '...' on intermediate page
+            if (tokenUrl == null) {
+              final varUrlMatch = RegExp(
+                      r'''(?:location\.href|window\.location|var\s+url)\s*=\s*['"]([^'"]+)['"]''',
+                      caseSensitive: false)
+                  .firstMatch(intermediateHtml);
+              if (varUrlMatch != null) {
+                tokenUrl = varUrlMatch.group(1);
+              }
+            }
+
+            effectiveReferer = intermediateUrl;
+          } catch (e) {
+            debugPrint('[SitePostExtractor] Error fetching intermediate link: $e');
+          }
+        }
+      }
+
       if (tokenUrl == null) {
         return VcloudStreamResult(fileSize: exactFileSize);
       }
 
       if (!tokenUrl.startsWith('http')) {
-        final p = Uri.parse(url);
+        final p = Uri.parse(effectiveReferer);
         tokenUrl =
             '${p.scheme}://${p.host}${tokenUrl.startsWith('/') ? '' : '/'}$tokenUrl';
       }
 
-      final dlHtml = await fetchHtml(tokenUrl, referer: url);
+      String dlHtml = await fastFetchStream(
+        tokenUrl,
+        referer: effectiveReferer,
+        stopCondition: (text) =>
+            (text.contains('[FSLv2 Server]') || text.contains('id="s3"') || text.contains('fslv2')) &&
+            (text.contains('[FSL Server]') || text.contains('id="fsl"') || text.contains('fsl')),
+      );
+      if (dlHtml.isEmpty) {
+        dlHtml = await fetchHtml(tokenUrl, referer: effectiveReferer);
+      }
       exactFileSize ??= parseExactSizeFromHtml(dlHtml);
       if (exactFileSize != null && exactFileSize.isNotEmpty) {
         _vcloudSizeCache[url] = exactFileSize;
@@ -1120,6 +1484,7 @@ class SitePostExtractor {
       String? fslUrl;
       String? tenGbpsUrl;
       String? pixeldrainUrl;
+      String? fastDlUrl;
 
       for (final el in dlDoc.querySelectorAll('a[href]')) {
         var href = el.attributes['href'] ?? '';
@@ -1152,6 +1517,8 @@ class SitePostExtractor {
             lh.contains('pixeldrain') ||
             lh.contains('sriflix')) {
           pixeldrainUrl ??= href;
+        } else if (lt.contains('gofile') || lh.contains('gofile.io')) {
+          fastDlUrl ??= href;
         }
       }
 
@@ -1164,7 +1531,7 @@ class SitePostExtractor {
 
       if (pixeldrainUrl != null && pixeldrainUrl.contains('/u/')) {
         final id = pixeldrainUrl.split('/u/').last.split('?').first.trim();
-        pixeldrainUrl = 'https://pixeldrain.dev/api/file/$id';
+        pixeldrainUrl = 'https://pixeldrain.com/api/file/$id';
       }
 
       return VcloudStreamResult(
@@ -1172,6 +1539,7 @@ class SitePostExtractor {
         fslUrl: fslUrl,
         tenGbpsUrl: tenGbpsUrl,
         pixeldrainUrl: pixeldrainUrl,
+        fastDlUrl: fastDlUrl,
         fileSize: exactFileSize,
       );
     } catch (e) {

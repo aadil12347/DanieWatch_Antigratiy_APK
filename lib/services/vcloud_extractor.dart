@@ -615,7 +615,7 @@ class VcloudExtractorService {
 
       // Try 3c: Extract and decode double Base64 from atob(atob(...))
       if (tokenUrl == null) {
-        final atob2UrlRegExp = RegExp(r'''atob\(atob\(['"]([A-Za-z0-9+/=]{10,})['"]\)\)''', caseSensitive: false);
+        final atob2UrlRegExp = RegExp(r"""atob\s*\(\s*atob\s*\(\s*['"]([A-Za-z0-9+/=]{10,})['"]\s*\)\s*\)""", caseSensitive: false);
         final atob2UrlMatch = atob2UrlRegExp.firstMatch(html);
         if (atob2UrlMatch != null) {
           try {
@@ -687,11 +687,31 @@ class VcloudExtractorService {
 
       final doubleAtobUrl2 = eu.extractDoubleAtob(html2);
       if (doubleAtobUrl2 != null && doubleAtobUrl2.isNotEmpty && doubleAtobUrl2.startsWith('http')) {
-        debugPrint('[VcloudExtractor] Found double-atob URL on token page: $doubleAtobUrl2');
-        final finalUrl2 = await eu.resolveFinalUrl(doubleAtobUrl2);
-        resolved['Server 1'] = finalUrl2 ?? doubleAtobUrl2;
-        client.close();
-        return resolved;
+        debugPrint('[VcloudExtractor] Found double-atob URL on page 2: $doubleAtobUrl2');
+        if (doubleAtobUrl2.contains('token=')) {
+          // doubleAtobUrl2 is the actual token page containing direct download buttons!
+          try {
+            final req3 = await client.getUrl(Uri.parse(doubleAtobUrl2));
+            headers.forEach((k, v) => req3.headers.set(k, v));
+            req3.headers.set('Referer', tokenUrl);
+            final resp3 = await req3.close();
+            if (resp3.statusCode == 200) {
+              final html3 = await resp3.transform(utf8.decoder).join();
+              final tokenServers = _parseServerLinks(html3);
+              if (tokenServers.isNotEmpty) {
+                client.close();
+                return tokenServers;
+              }
+            }
+          } catch (e) {
+            debugPrint('[VcloudExtractor] Error fetching token page 3: $e');
+          }
+        } else {
+          final finalUrl2 = await eu.resolveFinalUrl(doubleAtobUrl2);
+          resolved['Server 1'] = finalUrl2 ?? doubleAtobUrl2;
+          client.close();
+          return resolved;
+        }
       }
 
       // Step 5: Parse server links from token page HTML

@@ -926,17 +926,6 @@ class _QualitySelectorContentState
                       letterSpacing: 0.2,
                     ),
                   ),
-                  if (!isExact) ...[
-                    const SizedBox(width: 5),
-                    const SizedBox(
-                      width: 8,
-                      height: 8,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: Colors.white24,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

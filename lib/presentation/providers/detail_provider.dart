@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/clients/tmdb_client.dart';
 import '../../data/repositories/content_repository.dart';
@@ -220,6 +221,11 @@ final nextdriveEpisodesProvider =
         ep.thumbnailUrl = params.posterUrl;
       }
     }
+
+    // 7. Background pre-resolve 720p direct links & exact file sizes for all episodes of this season
+    SitePostExtractor.instance.preResolveSeasonEpisodes(episodes).catchError((e) {
+      debugPrint('[detailProvider] Background pre-resolve error: $e');
+    });
 
     return episodes;
   },

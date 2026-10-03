@@ -1784,6 +1784,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     episode.episodeNumber ?? episode.index,
                     content,
                     episodeRuntime: content.runtime,
+                    nextdriveVcloudUrl: episode.vcloudUrl,
+                    nextdriveAltUrls: episode.alternativeUrls,
+                    episode: episode,
                   ),
                   child: Container(
                     width: 44,
@@ -1849,10 +1852,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           logoUrl: content.logoUrl ?? content.tmdbLogoUrl,
           description: content.overview,
           streamResolver: () async {
+            // Instant 0ms playback if 720p direct stream is already pre-resolved!
+            if (episode.preResolvedStream?.canStreamOnline == true &&
+                episode.preResolvedStream?.onlineStreamUrl != null) {
+              debugPrint(
+                  '[Play] Using pre-resolved 720p direct link for Ep ${episode.episodeNumber ?? episode.index}');
+              return episode.preResolvedStream!.onlineStreamUrl!;
+            }
+
             var res = await SitePostExtractor.instance.resolveVcloudStream(
               episode.vcloudUrl,
               alternativeUrls: episode.alternativeUrls,
             );
+            episode.preResolvedStream = res;
+            if (res.fileSize != null && res.fileSize!.isNotEmpty) {
+              episode.exactSize = res.fileSize;
+            }
             if (res.canStreamOnline && res.onlineStreamUrl != null) {
               return res.onlineStreamUrl!;
             }
@@ -2082,20 +2097,50 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   }
 
   // ─── Download Logic ────────────────────────────────────────────────────────
-  void _startDownload(int episodeNumber, ContentDetail content, {int? episodeRuntime}) async {
+  void _startDownload(
+    int episodeNumber,
+    ContentDetail content, {
+    int? episodeRuntime,
+    String? nextdriveVcloudUrl,
+    List<String>? nextdriveAltUrls,
+    NextdriveEpisode? episode,
+  }) async {
     HapticFeedback.mediumImpact();
 
     if (!mounted) return;
 
     final actualRuntime = episodeRuntime ?? content.runtime;
 
-    // 1. Immediately morph navbar to loading modal
+    // 1. Seed resolutions map & sizes directly if episode or URL is provided
+    Map<String, String> resMap = {};
+    Map<String, String> initialSizes = {};
+
+    if (episode != null) {
+      if (episode.vcloudUrl.isNotEmpty) {
+        resMap['720p'] = episode.vcloudUrl;
+      }
+      if (episode.exactSize != null && episode.exactSize!.isNotEmpty) {
+        initialSizes['720p'] = episode.exactSize!;
+      }
+      if (episode.otherResolutions != null) {
+        resMap.addAll(episode.otherResolutions!);
+      }
+      if (episode.otherResolutionSizes != null) {
+        initialSizes.addAll(episode.otherResolutionSizes!);
+      }
+    } else if (nextdriveVcloudUrl != null && nextdriveVcloudUrl.isNotEmpty) {
+      resMap['720p'] = nextdriveVcloudUrl;
+    }
+
+    final hasDirectSeed = resMap.isNotEmpty;
+
+    // 2. Open quality selector sheet: IMMEDIATELY isLoading: false if we have 720p seeded!
     showQualitySelectorSheet(
       context: context,
       ref: ref,
       m3u8Url: '',
       title: content.title,
-      isLoading: true,
+      isLoading: !hasDirectSeed,
       season: content.isMovie ? null : _selectedSeason,
       episode: content.isMovie ? null : episodeNumber,
       isMovie: content.isMovie,
@@ -2104,27 +2149,93 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       runtime: actualRuntime,
     );
 
-    // 2. Fetch available resolution links map quickly from GitHub database (~200ms)
-    Map<String, String> resMap = {};
+    if (hasDirectSeed) {
+      final sortedRes = resMap.keys.toList()
+        ..sort((a, b) {
+          final aNum = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          final bNum = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          return bNum.compareTo(aNum);
+        });
+
+      ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
+        isLoading: false,
+        availableResolutions: sortedRes,
+        resolutionUrls: resMap,
+        resolutionSizes: initialSizes,
+        onSelectResolution: (chosenRes) => _executeDownloadResolution(
+          chosenRes: chosenRes,
+          content: content,
+          episodeNumber: episodeNumber,
+          actualRuntime: actualRuntime,
+          nextdriveVcloudUrl: nextdriveVcloudUrl,
+          nextdriveAltUrls: nextdriveAltUrls,
+          episode: episode,
+        ),
+      ));
+
+      // Asynchronously fetch missing exact size for 720p if not yet populated
+      if (!initialSizes.containsKey('720p') && resMap.containsKey('720p')) {
+        SitePostExtractor.instance
+            .extractExactFileSizeFromVcloud(resMap['720p']!)
+            .then((sz) {
+          if (sz != null && sz.isNotEmpty && mounted) {
+            final cur = Map<String, String>.from(
+              ref.read(downloadModalProvider).resolutionSizes ?? {},
+            );
+            cur['720p'] = sz;
+            if (episode != null) episode.exactSize = sz;
+            ref.read(downloadModalProvider.notifier).update(
+                  (s) => s.copyWith(resolutionSizes: cur),
+                );
+          }
+        });
+      }
+
+      // Asynchronously fetch other resolutions (1080p, 480p) for TV series
+      if (content.isTv) {
+        _asyncFetchOtherResolutions(
+          content: content,
+          seasonNumber: _selectedSeason,
+          episodeNumber: episodeNumber,
+          actualRuntime: actualRuntime,
+          nextdriveVcloudUrl: nextdriveVcloudUrl,
+          nextdriveAltUrls: nextdriveAltUrls,
+          targetEpisode: episode,
+        );
+      }
+      return;
+    }
+
+    // Fallback if not seeded (e.g. Movies or non-Nextdrive TV)
     try {
-      resMap = await VcloudExtractorService().fetchResolutionLinksMap(
+      final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
         tmdbId: widget.tmdbId,
         mediaType: widget.mediaType,
         title: content.title,
         season: content.isMovie ? null : _selectedSeason,
         episode: content.isMovie ? null : episodeNumber,
-      );
+      ).timeout(const Duration(seconds: 2), onTimeout: () => {});
+      if (dbMap.isNotEmpty) {
+        resMap.addAll(dbMap);
+      }
     } catch (e) {
       debugPrint('[Download] Error fetching VCloud resolution map: $e');
     }
 
-    // 2a. Fallback to SitePostExtractor post buttons / episode links if GitHub DB has no entries
     if (resMap.isEmpty) {
       try {
-        final postUrl = content.postUrl ??
+        var postUrl = content.postUrl ??
             MovieSiteScraperService.instance.getPostUrl(content.id) ??
             MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
             '';
+        if (postUrl.isEmpty) {
+          postUrl = await SitePostExtractor.instance.findPostUrl(
+            title: content.title,
+            tmdbId: widget.tmdbId,
+            year: content.releaseYear,
+            imdbId: content.imdbId,
+          ) ?? '';
+        }
         if (postUrl.isNotEmpty) {
           final fetched = await SitePostExtractor.instance.getAvailableResolutionsForContent(
             postUrl: postUrl,
@@ -2134,87 +2245,10 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           );
           if (fetched.isNotEmpty) {
             resMap.addAll(fetched);
-          } else {
-            final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
-            for (final b in buttons) {
-              if (b.isBatchZip) continue;
-              if (content.isMovie || b.seasonNumber == _selectedSeason) {
-                if (!resMap.containsKey(b.quality)) {
-                  final lh = b.href.toLowerCase();
-                  // Resolve landing pages (nexdrive/fastdl/vgmlink) to vcloud URLs
-                  if (lh.contains('nexdrive') ||
-                      lh.contains('vgmlink') ||
-                      lh.contains('fastdl') ||
-                      lh.contains('gdflix') ||
-                      lh.contains('filebee')) {
-                    try {
-                      if (content.isMovie) {
-                        // For movies: extract vcloud link from landing page
-                        final vcloud = await SitePostExtractor.instance.extractVcloudFromLandingPublic(b.href);
-                        if (vcloud != null && vcloud.isNotEmpty) {
-                          resMap[b.quality] = vcloud;
-                        }
-                      } else {
-                        // For TV: extract episodes list, find matching episode
-                        final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(b.href);
-                        if (episodes.isNotEmpty) {
-                          final epNum = episodeNumber;
-                          final match = episodes.firstWhere(
-                            (e) => (e.episodeNumber ?? e.index) == epNum,
-                            orElse: () => (epNum <= episodes.length ? episodes[epNum - 1] : episodes.first),
-                          );
-                          if (match.vcloudUrl.isNotEmpty) {
-                            resMap[b.quality] = match.vcloudUrl;
-                          }
-                        }
-                      }
-                    } catch (e) {
-                      debugPrint('[Download] Error resolving landing for ${b.quality}: $e');
-                    }
-                  } else {
-                    // Already a vcloud or direct URL
-                    resMap[b.quality] = b.href;
-                  }
-                }
-              }
-            }
           }
         }
       } catch (e) {
-        debugPrint('[Download] Error extracting post buttons: $e');
-      }
-    }
-
-    // 2b. Fallback to Nextdrive episode VCloud URL for TV series if still empty
-    if (resMap.isEmpty && content.isTv) {
-      try {
-        final postUrl = content.postUrl ??
-            MovieSiteScraperService.instance.getPostUrl(content.id) ??
-            MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
-            '';
-        final epParams = NextdriveEpisodeParams(
-          tmdbId: content.id,
-          title: content.title,
-          seasonNumber: _selectedSeason,
-          postUrl: postUrl,
-          posterUrl: content.posterUrl,
-        );
-        List<NextdriveEpisode> episodes =
-            ref.read(nextdriveEpisodesProvider(epParams)).valueOrNull ?? [];
-        if (episodes.isEmpty) {
-          episodes = await ref.read(nextdriveEpisodesProvider(epParams).future);
-        }
-        if (episodes.isNotEmpty) {
-          final targetEp = episodes.firstWhere(
-            (e) => (e.episodeNumber ?? e.index) == episodeNumber,
-            orElse: () => episodes.first,
-          );
-          if (targetEp.vcloudUrl.isNotEmpty) {
-            resMap['720p'] = targetEp.vcloudUrl;
-          }
-        }
-      } catch (e) {
-        debugPrint('[Download] Nextdrive episode lookup error: $e');
+        debugPrint('[Download] Error getting resolutions: $e');
       }
     }
 
@@ -2227,7 +2261,6 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       return;
     }
 
-    // 3. Sort resolutions: 1080p (or 4k) > 720p > 480p
     final sortedRes = resMap.keys.toList()
       ..sort((a, b) {
         final aNum = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
@@ -2235,109 +2268,23 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         return bNum.compareTo(aNum);
       });
 
-    // 4. Update morphed navbar modal with resolutions list and callback
     ref.read(downloadModalProvider.notifier).update((state) => state.copyWith(
       isLoading: false,
       availableResolutions: sortedRes,
       resolutionUrls: resMap,
       resolutionSizes: const {},
-      onSelectResolution: (chosenRes) async {
-        ref.read(downloadModalProvider.notifier).update(
-          (s) => s.copyWith(extractingResolution: chosenRes),
-        );
-
-        final targetUrl = resMap[chosenRes];
-        if (targetUrl == null || targetUrl.isEmpty) {
-          if (mounted) {
-            ref.read(downloadModalProvider.notifier).update(
-              (s) => s.copyWith(extractingResolution: null),
-            );
-            _showToastError('No link available for $chosenRes');
-          }
-          return;
-        }
-
-        String? downloadUrl;
-        String providerName = 'V-Cloud';
-        String? extractedSize;
-
-        try {
-          // Use the EXACT same extraction as the online player
-          final streamRes = await SitePostExtractor.instance.resolveVcloudStream(targetUrl);
-          extractedSize = streamRes.fileSize;
-
-          if (streamRes.fslv2Url != null && streamRes.fslv2Url!.isNotEmpty) {
-            downloadUrl = streamRes.fslv2Url;
-            providerName = 'FSLv2 Server';
-          } else if (streamRes.fslUrl != null && streamRes.fslUrl!.isNotEmpty) {
-            downloadUrl = streamRes.fslUrl;
-            providerName = 'FSL Server';
-          } else if (streamRes.fastDlUrl != null && streamRes.fastDlUrl!.isNotEmpty) {
-            downloadUrl = streamRes.fastDlUrl;
-            providerName = 'FastDL Server';
-          } else if (streamRes.tenGbpsUrl != null && streamRes.tenGbpsUrl!.isNotEmpty) {
-            downloadUrl = streamRes.tenGbpsUrl;
-            providerName = '10Gbps Server';
-          } else if (streamRes.pixeldrainUrl != null && streamRes.pixeldrainUrl!.isNotEmpty) {
-            downloadUrl = streamRes.pixeldrainUrl;
-            providerName = 'PixelDrain Server';
-          }
-        } catch (e) {
-          debugPrint('[Download] Error extracting direct link for $chosenRes: $e');
-        }
-
-        if (!mounted) return;
-
-        if (downloadUrl == null || downloadUrl.isEmpty) {
-          ref.read(downloadModalProvider.notifier).update(
-            (s) => s.copyWith(extractingResolution: null),
-          );
-          _showToastError('Could not extract download link for $chosenRes.');
-          return;
-        }
-
-        final exactSize = ref.read(downloadModalProvider).resolutionSizes?[chosenRes] ?? extractedSize;
-        final fileSizeBytes = SitePostExtractor.parseBytesFromSizeString(exactSize);
-
-        // Close modal
-        ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
-
-        final downloadTitle = '${content.title} $chosenRes DanieWatch';
-
-        try {
-          final item = await DownloadManager.instance.startDownload(
-            url: downloadUrl,
-            title: downloadTitle,
-            season: content.isMovie ? 0 : _selectedSeason,
-            episode: content.isMovie ? 0 : episodeNumber,
-            posterUrl: content.posterUrl,
-            context: context,
-            fileExtension: downloadUrl.contains('.zip') ? 'zip' : 'mkv',
-            runtime: actualRuntime,
-            qualityLabel: chosenRes,
-            tmdbId: widget.tmdbId,
-            mediaType: widget.mediaType,
-            providerName: providerName,
-            originalEmbedUrl: targetUrl,
-            fileSizeBytes: fileSizeBytes,
-          );
-          if (item != null && mounted) {
-            CustomToast.show(
-              context,
-              'Download started',
-              type: ToastType.info,
-              icon: Icons.download_done_rounded,
-            );
-          }
-        } catch (e) {
-          if (mounted) {
-            _showToastError('Failed to start download: $e');
-          }
-        }
-      },
+      onSelectResolution: (chosenRes) => _executeDownloadResolution(
+        chosenRes: chosenRes,
+        content: content,
+        episodeNumber: episodeNumber,
+        actualRuntime: actualRuntime,
+        nextdriveVcloudUrl: nextdriveVcloudUrl,
+        nextdriveAltUrls: nextdriveAltUrls,
+        episode: episode,
+      ),
     ));
 
-    // 5. Asynchronously fetch exact file sizes in parallel from VCloud pages
+    // Asynchronously fetch exact file sizes
     for (final entry in resMap.entries) {
       SitePostExtractor.instance
           .extractExactFileSizeFromVcloud(entry.value)
@@ -2352,6 +2299,245 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               );
         }
       });
+    }
+  }
+
+  void _asyncFetchOtherResolutions({
+    required ContentDetail content,
+    required int seasonNumber,
+    required int episodeNumber,
+    int? actualRuntime,
+    String? nextdriveVcloudUrl,
+    List<String>? nextdriveAltUrls,
+    NextdriveEpisode? targetEpisode,
+  }) async {
+    try {
+      var postUrl = content.postUrl ??
+          MovieSiteScraperService.instance.getPostUrl(content.id) ??
+          MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
+          '';
+      if (postUrl.isEmpty) {
+        postUrl = await SitePostExtractor.instance.findPostUrl(
+          title: content.title,
+          tmdbId: widget.tmdbId,
+          year: content.releaseYear,
+          imdbId: content.imdbId,
+        ) ?? '';
+      }
+      if (postUrl.isEmpty) return;
+
+      final otherMap = await SitePostExtractor.instance.fetchOtherResolutionsForEpisode(
+        postUrl: postUrl,
+        seasonNumber: seasonNumber,
+        episodeNumber: episodeNumber,
+        currentQuality: '720p',
+        targetEpisode: targetEpisode,
+      );
+
+      if (otherMap.isNotEmpty && mounted) {
+        final curResMap = Map<String, String>.from(
+          ref.read(downloadModalProvider).resolutionUrls ?? {},
+        );
+        curResMap.addAll(otherMap);
+
+        final sortedRes = curResMap.keys.toList()
+          ..sort((a, b) {
+            final aNum = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
+            final bNum = int.tryParse(b.replaceAll(RegExp(r'\D'), '')) ?? 0;
+            return bNum.compareTo(aNum);
+          });
+
+        final curSizes = Map<String, String>.from(
+          ref.read(downloadModalProvider).resolutionSizes ?? {},
+        );
+        if (targetEpisode?.otherResolutionSizes != null) {
+          curSizes.addAll(targetEpisode!.otherResolutionSizes!);
+        }
+
+        ref.read(downloadModalProvider.notifier).update((s) => s.copyWith(
+          availableResolutions: sortedRes,
+          resolutionUrls: curResMap,
+          resolutionSizes: curSizes,
+        ));
+
+        // Asynchronously fetch any missing sizes for newly added resolutions
+        for (final entry in otherMap.entries) {
+          if (!curSizes.containsKey(entry.key)) {
+            SitePostExtractor.instance
+                .extractExactFileSizeFromVcloud(entry.value)
+                .then((sz) {
+              if (sz != null && sz.isNotEmpty && mounted) {
+                final updated = Map<String, String>.from(
+                  ref.read(downloadModalProvider).resolutionSizes ?? {},
+                );
+                updated[entry.key] = sz;
+                if (targetEpisode != null) {
+                  targetEpisode.otherResolutionSizes ??= {};
+                  targetEpisode.otherResolutionSizes![entry.key] = sz;
+                }
+                ref.read(downloadModalProvider.notifier).update(
+                  (s) => s.copyWith(resolutionSizes: updated),
+                );
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[Download] Error async fetching other resolutions: $e');
+    }
+  }
+
+  Future<void> _executeDownloadResolution({
+    required String chosenRes,
+    required ContentDetail content,
+    required int episodeNumber,
+    int? actualRuntime,
+    String? nextdriveVcloudUrl,
+    List<String>? nextdriveAltUrls,
+    NextdriveEpisode? episode,
+  }) async {
+    ref.read(downloadModalProvider.notifier).update(
+      (s) => s.copyWith(extractingResolution: chosenRes),
+    );
+
+    final modalState = ref.read(downloadModalProvider);
+    final targetUrl = modalState.resolutionUrls?[chosenRes] ??
+        (chosenRes == '720p' ? (episode?.vcloudUrl ?? nextdriveVcloudUrl) : null);
+
+    if (targetUrl == null || targetUrl.isEmpty) {
+      if (mounted) {
+        ref.read(downloadModalProvider.notifier).update(
+          (s) => s.copyWith(extractingResolution: null),
+        );
+        _showToastError('No link available for $chosenRes');
+      }
+      return;
+    }
+
+    String? downloadUrl;
+    String providerName = 'V-Cloud';
+    String? extractedSize;
+
+    // Fast-path: if 720p was chosen and already pre-resolved, use it in 0ms!
+    if (chosenRes == '720p' && episode?.preResolvedStream != null) {
+      final pre = episode!.preResolvedStream!;
+      if (pre.bestDownloadUrl != null && pre.bestDownloadUrl!.isNotEmpty) {
+        downloadUrl = pre.bestDownloadUrl;
+        extractedSize = pre.fileSize ?? episode.exactSize;
+        if (pre.fslv2Url != null && pre.fslv2Url!.isNotEmpty) {
+          providerName = 'FSLv2 Server';
+        } else if (pre.fslUrl != null && pre.fslUrl!.isNotEmpty) {
+          providerName = 'FSL Server';
+        } else if (pre.fastDlUrl != null && pre.fastDlUrl!.isNotEmpty) {
+          providerName = 'FastDL Server';
+        } else if (pre.tenGbpsUrl != null && pre.tenGbpsUrl!.isNotEmpty) {
+          providerName = '10Gbps Server';
+        } else if (pre.pixeldrainUrl != null && pre.pixeldrainUrl!.isNotEmpty) {
+          providerName = 'PixelDrain Server';
+        }
+        debugPrint('[Download] Instant 0ms pre-resolved download link for 720p: $downloadUrl');
+      }
+    }
+
+    if (downloadUrl == null) {
+      try {
+        final altUrls = (targetUrl == (episode?.vcloudUrl ?? nextdriveVcloudUrl))
+            ? (episode?.alternativeUrls ?? nextdriveAltUrls)
+            : null;
+        final streamRes = await SitePostExtractor.instance.resolveVcloudStream(
+          targetUrl,
+          alternativeUrls: altUrls,
+        );
+        extractedSize = streamRes.fileSize;
+
+        if (streamRes.fslv2Url != null && streamRes.fslv2Url!.isNotEmpty) {
+          downloadUrl = streamRes.fslv2Url;
+          providerName = 'FSLv2 Server';
+        } else if (streamRes.fslUrl != null && streamRes.fslUrl!.isNotEmpty) {
+          downloadUrl = streamRes.fslUrl;
+          providerName = 'FSL Server';
+        } else if (streamRes.fastDlUrl != null && streamRes.fastDlUrl!.isNotEmpty) {
+          downloadUrl = streamRes.fastDlUrl;
+          providerName = 'FastDL Server';
+        } else if (streamRes.tenGbpsUrl != null && streamRes.tenGbpsUrl!.isNotEmpty) {
+          downloadUrl = streamRes.tenGbpsUrl;
+          providerName = '10Gbps Server';
+        } else if (streamRes.pixeldrainUrl != null && streamRes.pixeldrainUrl!.isNotEmpty) {
+          downloadUrl = streamRes.pixeldrainUrl;
+          providerName = 'PixelDrain Server';
+        }
+      } catch (e) {
+        debugPrint('[Download] Error extracting direct link for $chosenRes: $e');
+      }
+    }
+
+    if (!mounted) return;
+
+    // Fallback to VcloudExtractorService if SitePostExtractor didn't yield a link
+    if (downloadUrl == null || downloadUrl.isEmpty) {
+      try {
+        final servers = await VcloudExtractorService().extractVcloud(targetUrl);
+        if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+          downloadUrl = servers['Server 2'];
+          providerName = 'FSLv2 Server';
+        } else if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+          downloadUrl = servers['Server 1'];
+          providerName = 'FSL Server';
+        } else if (servers.containsKey('PixelServer') && servers['PixelServer']!.isNotEmpty) {
+          downloadUrl = servers['PixelServer'];
+          providerName = 'PixelDrain Server';
+        }
+      } catch (e) {
+        debugPrint('[Download] Fallback extractVcloud error: $e');
+      }
+    }
+
+    if (downloadUrl == null || downloadUrl.isEmpty) {
+      ref.read(downloadModalProvider.notifier).update(
+        (s) => s.copyWith(extractingResolution: null),
+      );
+      _showToastError('Could not extract download link for $chosenRes.');
+      return;
+    }
+
+    final exactSize = ref.read(downloadModalProvider).resolutionSizes?[chosenRes] ?? extractedSize;
+    final fileSizeBytes = SitePostExtractor.parseBytesFromSizeString(exactSize);
+
+    // Close modal
+    ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
+
+    final downloadTitle = '${content.title} $chosenRes DanieWatch';
+
+    try {
+      final item = await DownloadManager.instance.startDownload(
+        url: downloadUrl,
+        title: downloadTitle,
+        season: content.isMovie ? 0 : _selectedSeason,
+        episode: content.isMovie ? 0 : episodeNumber,
+        posterUrl: content.posterUrl,
+        context: context,
+        fileExtension: downloadUrl.contains('.zip') ? 'zip' : 'mkv',
+        runtime: actualRuntime,
+        qualityLabel: chosenRes,
+        tmdbId: widget.tmdbId,
+        mediaType: widget.mediaType,
+        providerName: providerName,
+        originalEmbedUrl: targetUrl,
+        fileSizeBytes: fileSizeBytes,
+      );
+      if (item != null && mounted) {
+        CustomToast.show(
+          context,
+          'Download started',
+          type: ToastType.info,
+          icon: Icons.download_done_rounded,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showToastError('Failed to start download: $e');
+      }
     }
   }
 
@@ -2627,10 +2813,22 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                         orElse: () => episodes.first)
                     : episodes.first;
 
+                // 0ms instant playback if pre-resolved!
+                if (targetEp.preResolvedStream?.canStreamOnline == true &&
+                    targetEp.preResolvedStream?.onlineStreamUrl != null) {
+                  debugPrint(
+                      '[Play] Using pre-resolved 720p direct link for Ep ${targetEp.episodeNumber ?? targetEp.index}');
+                  return targetEp.preResolvedStream!.onlineStreamUrl!;
+                }
+
                 final res = await SitePostExtractor.instance.resolveVcloudStream(
                   targetEp.vcloudUrl,
                   alternativeUrls: targetEp.alternativeUrls,
                 );
+                targetEp.preResolvedStream = res;
+                if (res.fileSize != null && res.fileSize!.isNotEmpty) {
+                  targetEp.exactSize = res.fileSize;
+                }
                 if (res.canStreamOnline && res.onlineStreamUrl != null) {
                   return res.onlineStreamUrl!;
                 }

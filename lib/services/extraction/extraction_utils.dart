@@ -37,8 +37,9 @@ String? extractPxlUrl(String html) {
 ///
 /// Many VCloud/HubCloud pages encode the URL in nested base64.
 String? extractDoubleAtob(String html) {
+  // Match both 'var url = atob(atob(...))' and bare 'atob(atob(...))'
   final regex = RegExp(
-      r"""var\s+url\s*=\s*atob\s*\(\s*atob\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\)""");
+      r"""(?:var\s+url\s*=\s*)?atob\s*\(\s*atob\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\)""");
   final match = regex.firstMatch(html);
   if (match == null) return null;
 
@@ -74,7 +75,7 @@ String? extractVarUrl(String html) {
   return regex.firstMatch(html)?.group(1)?.trim();
 }
 
-/// Extract download button href (id="download" or text "generate").
+/// Extract download button href (id="download", text "generate", "direct download", or "resume").
 String? extractDownloadButton(String html) {
   // Try id="download"
   final idRegex = RegExp(
@@ -86,13 +87,20 @@ String? extractDownloadButton(String html) {
     if (href.startsWith('http')) return href;
   }
 
-  // Try text containing "generate"
+  // Try text containing "generate", "direct download", or "resume"
   final genRegex = RegExp(
-      r'''<a\s+[^>]*href=["'](https?://[^"']+)["'][^>]*>.*?generate.*?</a>''',
+      r'''<a\s+[^>]*href=["'](https?://[^"']+)["'][^>]*>.*?(?:generate|direct\s+download|download\s+\[resume\]|resume).*?</a>''',
       caseSensitive: false,
       dotAll: true);
   final genMatch = genRegex.firstMatch(html);
   if (genMatch != null) return genMatch.group(1);
+
+  // Try anchor with class containing btn and href containing vcloud/hubcloud
+  final btnRegex = RegExp(
+      r'''<a\s+[^>]*href=["'](https?://[^"']*(?:vcloud\.zip|vcloud\.fit|hubcloud)[^"']*)["'][^>]*class=["'][^"']*btn[^"']*["']''',
+      caseSensitive: false);
+  final btnMatch = btnRegex.firstMatch(html);
+  if (btnMatch != null) return btnMatch.group(1);
 
   return null;
 }
