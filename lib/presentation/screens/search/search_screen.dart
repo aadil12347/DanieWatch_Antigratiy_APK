@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
@@ -15,7 +16,6 @@ import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../widgets/top_navbar.dart';
 import '../../providers/scroll_provider.dart';
-import '../../widgets/morphing_search.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -38,11 +38,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// Tracks the last tab index we synced to filters, to avoid redundant updates
   int _lastSyncedTabIndex = 0;
 
-
+  /// Persisted recent searches (up to 6)
+  List<String> _recentSearches = [];
 
   @override
   void initState() {
     super.initState();
+
+    _loadRecentSearches();
 
     _tabController = TabController(
       length: TopNavbar.items.length,
@@ -51,8 +54,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       animationDuration: const Duration(milliseconds: 300), // Smooth red line slide
     );
 
-    // Sync tab changes → update search provider filters
+    // Sync tab changes → update search provider filters & rebuild header
     _tabController.addListener(_onTabChanged);
+    _tabController.animation?.addListener(() {
+      if (mounted) setState(() {});
+    });
 
     final currentQuery = ref.read(searchProvider('explore')).query;
     if (currentQuery.isNotEmpty) {
@@ -66,6 +72,62 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       // Handle initial sync from external navigation (e.g. Home "See All")
       _syncTabToFiltersOnce();
     });
+  }
+
+  Future<void> _loadRecentSearches() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('recent_searches_list') ?? [];
+      if (mounted) {
+        setState(() {
+          _recentSearches = list;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveRecentSearch(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('recent_searches_list') ?? [];
+      list.remove(q);
+      list.insert(0, q);
+      final capped = list.take(6).toList();
+      await prefs.setStringList('recent_searches_list', capped);
+      if (mounted) {
+        setState(() {
+          _recentSearches = capped;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _removeRecentSearch(String query) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('recent_searches_list') ?? [];
+      list.remove(query);
+      await prefs.setStringList('recent_searches_list', list);
+      if (mounted) {
+        setState(() {
+          _recentSearches = list;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearAllRecentSearches() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('recent_searches_list');
+      if (mounted) {
+        setState(() {
+          _recentSearches = [];
+        });
+      }
+    } catch (_) {}
   }
 
   /// One-time sync on init for external filter changes (e.g. Home "See All")
@@ -96,6 +158,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   void _onTabChanged() {
+    if (mounted) setState(() {});
     if (_isProgrammatic) return;
 
     // Only sync when the tab has settled (animation complete)
@@ -146,8 +209,106 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     ref.read(searchProvider('explore').notifier).search(query);
   }
 
+  Widget _buildDedicatedSearchBar(Responsive r) {
+    final focused = _searchFocus.hasFocus;
+    return Container(
+      padding: EdgeInsets.fromLTRB(r.w(16), r.h(8), r.w(16), r.h(4)),
+      child: Container(
+        height: r.h(48).clamp(44.0, 52.0),
+        decoration: BoxDecoration(
+          color: const Color(0xFF191A20),
+          borderRadius: BorderRadius.circular(r.w(12)),
+          border: Border.all(
+            color: focused
+                ? AppColors.primary.withValues(alpha: 0.6)
+                : Colors.white.withValues(alpha: 0.08),
+            width: focused ? 1.2 : 0.8,
+          ),
+          boxShadow: focused
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.2),
+                    blurRadius: 16,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Row(
+          children: [
+            SizedBox(width: r.w(14)),
+            Icon(
+              Icons.search_rounded,
+              color: focused
+                  ? AppColors.primary
+                  : Colors.white.withValues(alpha: 0.35),
+              size: r.d(20).clamp(18.0, 22.0),
+            ),
+            SizedBox(width: r.w(10)),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocus,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (val) {
+                  _saveRecentSearch(val);
+                  _onSearchChanged(val);
+                },
+                onChanged: _onSearchChanged,
+                cursorColor: AppColors.primary,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: r.f(14.5).clamp(13.0, 16.0),
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.1,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search movies, series, anime...',
+                  hintStyle: GoogleFonts.inter(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    fontSize: r.f(14).clamp(12.0, 15.0),
+                    fontWeight: FontWeight.w400,
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+            if (_searchController.text.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _searchController.clear();
+                  _onSearchChanged('');
+                  if (mounted) setState(() {});
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: r.w(12)),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withValues(alpha: 0.5),
+                    size: r.d(18).clamp(16.0, 20.0),
+                  ),
+                ),
+              )
+            else
+              SizedBox(width: r.w(14)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = Responsive(context);
+
     // Listen for external filter updates (e.g. from Home See All)
     ref.listen(searchProvider('explore'), (previous, next) {
       if (previous?.filters != next.filters) {
@@ -155,26 +316,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       }
     });
 
-    final searchState = ref.watch(searchProvider('explore'));
-    final activeCategories = searchState.filters.categories;
-
-    // Determine the active title
-    final activeTitle = _tabController.index == 0
-        ? 'Search'
-        : (activeCategories.isNotEmpty
-            ? activeCategories.first
-            : searchState.filters.genres.isNotEmpty
-                ? searchState.filters.genres.first
-                : TopNavbar.items[_tabController.index]);
-
-    // NOTE: We do NOT call _syncTabToFilters here in build() anymore.
-    // That was causing the tab to fight user swipes. External sync is
-    // handled once in initState via _syncTabToFiltersOnce().
-
-    final bool isSearchBarOpen = ref.watch(searchBarOpenProvider);
-    final bool isSearchActive = isSearchBarOpen ||
-        _searchFocus.hasFocus ||
-        _searchController.text.isNotEmpty;
+    final isSearchTab = _tabController.index == 0;
+    final bool isSearchActive = isSearchTab &&
+        (_searchFocus.hasFocus || _searchController.text.isNotEmpty);
 
     return PopScope(
       canPop: !isSearchActive,
@@ -194,20 +338,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             onTap: () => _searchFocus.unfocus(),
             child: Column(
               children: [
-                // ── Pinned header — always visible ──
-                MorphingSearchHeaderRow(
-                  title: activeTitle,
-                  searchController: _searchController,
-                  searchFocus: _searchFocus,
-                  onSearchChanged: _onSearchChanged,
-                  contextId: 'explore',
-                  showFilterButton: true,
-                ),
-                // Extra padding so cards don't appear too close behind the header
-                Container(
-                  height: 6,
-                  color: AppColors.background,
-                ),
+                // Top header: Removed completely from all category tabs (no title, no search/filter icons).
+                // Only on Search tab (index 0), show the opened dedicated search bar.
+                if (isSearchTab) ...[
+                  _buildDedicatedSearchBar(r),
+                  Container(
+                    height: 6,
+                    color: AppColors.background,
+                  ),
+                ],
                 // ── Scrollable content: TopNavbar scrolls away, content stays ──
                 Expanded(
                   child: NestedScrollView(
@@ -217,10 +356,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                       SliverToBoxAdapter(
                         child: TopNavbar(tabController: _tabController),
                       ),
-                      // Filter chips — scrolls with content
-                      const SliverToBoxAdapter(
-                        child: CategoryFilterChips(),
-                      ),
+                      // Filter chips — scrolls with content (hidden on dedicated Search tab)
+                      if (!isSearchTab)
+                        const SliverToBoxAdapter(
+                          child: CategoryFilterChips(),
+                        ),
                       // Small gap between navbar area and grid content
                       const SliverToBoxAdapter(
                         child: SizedBox(height: 8),
@@ -237,6 +377,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                           searchController: _searchController,
                           searchFocus: _searchFocus,
                           onSearchChanged: _onSearchChanged,
+                          recentSearches: _recentSearches,
+                          onSaveRecentSearch: _saveRecentSearch,
+                          onRemoveRecentSearch: _removeRecentSearch,
+                          onClearAllRecentSearches: _clearAllRecentSearches,
                         );
                       }).toList(),
                     ),
@@ -258,6 +402,10 @@ class _CategoryPage extends ConsumerStatefulWidget {
   final TextEditingController searchController;
   final FocusNode searchFocus;
   final Function(String) onSearchChanged;
+  final List<String> recentSearches;
+  final Function(String) onSaveRecentSearch;
+  final Function(String) onRemoveRecentSearch;
+  final VoidCallback onClearAllRecentSearches;
 
   const _CategoryPage({
     super.key,
@@ -265,6 +413,10 @@ class _CategoryPage extends ConsumerStatefulWidget {
     required this.searchController,
     required this.searchFocus,
     required this.onSearchChanged,
+    required this.recentSearches,
+    required this.onSaveRecentSearch,
+    required this.onRemoveRecentSearch,
+    required this.onClearAllRecentSearches,
   });
 
   @override
@@ -308,17 +460,21 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
       }
 
       if (!hasSearch) {
-        // Landing state: clean empty landing with search prompt & quick suggestion tags
+        // Landing state: clean empty landing matching save & download empty pages with recent searches
         return CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverFillRemaining(
               hasScrollBody: false,
               child: _SearchLandingView(
+                recentSearches: widget.recentSearches,
                 onTagSelected: (tag) {
                   widget.searchController.text = tag;
                   widget.onSearchChanged(tag);
+                  widget.onSaveRecentSearch(tag);
                 },
+                onRemoveRecent: widget.onRemoveRecentSearch,
+                onClearAll: widget.onClearAllRecentSearches,
               ),
             ),
           ],
@@ -513,8 +669,11 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
             return MovieCard(
               key: ValueKey('result_${items[idx].id}_$idx'),
               item: items[idx],
-              onTap: () => context
-                  .push('/details/${items[idx].mediaType}/${items[idx].id}'),
+              onTap: () {
+                widget.onSaveRecentSearch(widget.searchController.text);
+                context
+                    .push('/details/${items[idx].mediaType}/${items[idx].id}');
+              },
             );
           },
           childCount: items.length,
@@ -555,137 +714,176 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 }
 
 /// Clean, elegant landing state when user opens the Search tab with an empty query.
+/// Matches the design of the watchlist (save) and download empty pages.
 class _SearchLandingView extends StatelessWidget {
+  final List<String> recentSearches;
   final ValueChanged<String> onTagSelected;
+  final ValueChanged<String> onRemoveRecent;
+  final VoidCallback onClearAll;
 
-  const _SearchLandingView({required this.onTagSelected});
-
-  static const _popularTags = [
-    'Korean',
-    'Dual Audio',
-    'Chinese',
-    'Anime',
-    'Action',
-    'Sci-Fi',
-    'Bollywood',
-    'Comedy',
-    'Thriller',
-    'Horror',
-    '2026',
-    'Romance',
-  ];
+  const _SearchLandingView({
+    required this.recentSearches,
+    required this.onTagSelected,
+    required this.onRemoveRecent,
+    required this.onClearAll,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Glowing circular icon container
-            Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.primary.withValues(alpha: 0.25),
-                    Colors.transparent,
-                  ],
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Subtle circular icon matching Watchlist & Downloads EmptyResultsView
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.03),
+                  shape: BoxShape.circle,
                 ),
-                border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.35),
-                  width: 1.5,
-                ),
-              ),
-              child: const Center(
                 child: Icon(
                   Icons.search_rounded,
-                  size: 36,
-                  color: AppColors.primary,
+                  size: 64,
+                  color: Colors.white.withValues(alpha: 0.15),
                 ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'Search Movies & Series',
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Search across Vegamovies & Rogmovies in real-time',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-            const SizedBox(height: 28),
-            // Quick search tags section
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Text(
-                  'QUICK SEARCH',
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.1,
-                  ),
+              const SizedBox(height: 32),
+
+              // Title matching Watchlist / Downloads empty state
+              Text(
+                'Search Movies & Series',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.lora(
+                  color: AppColors.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.5,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 10,
-              children: _popularTags.map((tag) {
-                return InkWell(
-                  onTap: () => onTagSelected(tag),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.trending_up_rounded,
-                          size: 14,
-                          color: AppColors.primary.withValues(alpha: 0.8),
+              const SizedBox(height: 12),
+
+              // Subtitle
+              Text(
+                'Search across Vegamovies & Rogmovies in real-time',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 14,
+                  height: 1.6,
+                  letterSpacing: 0.1,
+                ),
+              ),
+
+              // Minimalist Red Accent Dash
+              const SizedBox(height: 32),
+              Container(
+                width: 24,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              ),
+
+              // Recent Searches: Up to 6 recent searches. If none, show NOTHING!
+              if (recentSearches.isNotEmpty) ...[
+                const SizedBox(height: 36),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'RECENT SEARCHES',
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          tag,
+                      ),
+                      GestureDetector(
+                        onTap: onClearAll,
+                        behavior: HitTestBehavior.opaque,
+                        child: Text(
+                          'Clear all',
                           style: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.3),
+                            fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                );
-              }).toList(),
-            ),
-          ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: recentSearches.take(6).map((term) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => onTagSelected(term),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 7),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.history_rounded,
+                                    size: 14,
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    term,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white.withValues(alpha: 0.85),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    onTap: () => onRemoveRecent(term),
+                                    behavior: HitTestBehavior.opaque,
+                                    child: Icon(
+                                      Icons.close_rounded,
+                                      size: 14,
+                                      color: Colors.white.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

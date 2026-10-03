@@ -162,7 +162,9 @@ class _MorphingSearchHeaderRowState
   void didUpdateWidget(covariant MorphingSearchHeaderRow oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.title == 'Search' && !_isOpen) {
-      _openSearch();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isOpen) _openSearch();
+      });
     }
   }
 

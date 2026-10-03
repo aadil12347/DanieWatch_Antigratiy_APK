@@ -641,51 +641,6 @@ class _QualitySelectorContentState
                                 ],
                               ),
                             ),
-                          // Accurate file size badge when variant selected
-                          if (_selectedVariant != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: AppColors.primary.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.sd_storage_rounded,
-                                      size: 12,
-                                      color: AppColors.primary,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      _fetchedSizeText ?? _selectedVariant!.estimatedSizeForDuration(modalState.runtime),
-                                      style: GoogleFonts.outfit(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    if (_fetchingSize) ...[
-                                      const SizedBox(width: 6),
-                                      const SizedBox(
-                                        width: 8,
-                                        height: 8,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 1.5,
-                                          color: Colors.white54,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -1178,16 +1133,6 @@ class _QualitySelectorContentState
 
         const SizedBox(height: 16),
 
-        // Quality/Resolution
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: Text('SELECT QUALITY',
-              style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1)),
-        ),
         SizedBox(
           height: 48,
           child: ListView.builder(

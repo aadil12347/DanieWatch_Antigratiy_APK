@@ -2142,7 +2142,11 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 if (!resMap.containsKey(b.quality)) {
                   final lh = b.href.toLowerCase();
                   // Resolve landing pages (nexdrive/fastdl/vgmlink) to vcloud URLs
-                  if (lh.contains('nexdrive') || lh.contains('vgmlink') || lh.contains('fastdl')) {
+                  if (lh.contains('nexdrive') ||
+                      lh.contains('vgmlink') ||
+                      lh.contains('fastdl') ||
+                      lh.contains('gdflix') ||
+                      lh.contains('filebee')) {
                     try {
                       if (content.isMovie) {
                         // For movies: extract vcloud link from landing page
@@ -2418,29 +2422,29 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 // Filter non-batch buttons
                 final nonBatch = buttons.where((b) => !b.isBatchZip).toList();
                 if (nonBatch.isNotEmpty) {
-                  // Prefer buttons with V-Cloud / Vcloud / Resumable in text or href
-                  final vcloudButtons = nonBatch.where((b) {
-                    final t = b.text.toLowerCase();
-                    final h = b.href.toLowerCase();
-                    return t.contains('v-cloud') ||
-                        t.contains('vcloud') ||
-                        t.contains('resumable') ||
-                        h.contains('vcloud');
-                  }).toList();
+                  SitePostButton? pickMovieQuality(String q) {
+                    final matches = nonBatch
+                        .where((b) => b.quality.toLowerCase() == q.toLowerCase())
+                        .toList();
+                    if (matches.isEmpty) return null;
+                    return matches.firstWhere(
+                      (b) {
+                        final t = b.text.toLowerCase();
+                        final h = b.href.toLowerCase();
+                        return t.contains('v-cloud') ||
+                            t.contains('vcloud') ||
+                            t.contains('resumable') ||
+                            h.contains('vcloud');
+                      },
+                      orElse: () => matches.first,
+                    );
+                  }
 
-                  final candidateList = vcloudButtons.isNotEmpty ? vcloudButtons : nonBatch;
-
-                  // Prioritize 720p > 480p > 1080p > any
-                  final bestBtn = candidateList.firstWhere(
-                    (b) => b.quality == '720p',
-                    orElse: () => candidateList.firstWhere(
-                      (b) => b.quality == '480p',
-                      orElse: () => candidateList.firstWhere(
-                        (b) => b.quality == '1080p',
-                        orElse: () => candidateList.first,
-                      ),
-                    ),
-                  );
+                  final bestBtn = pickMovieQuality('720p') ??
+                      pickMovieQuality('480p') ??
+                      pickMovieQuality('1080p') ??
+                      pickMovieQuality('2160p') ??
+                      nonBatch.first;
 
                   String targetVcloudUrl = bestBtn.href;
                   List<String> altUrls = [];
@@ -2449,12 +2453,21 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   final lowerHref = bestBtn.href.toLowerCase();
                   if (lowerHref.contains('nexdrive') ||
                       lowerHref.contains('vgmlink') ||
-                      lowerHref.contains('fastdl')) {
+                      lowerHref.contains('fastdl') ||
+                      lowerHref.contains('gdflix') ||
+                      lowerHref.contains('filebee')) {
                     try {
-                      final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(bestBtn.href);
-                      if (episodes.isNotEmpty) {
-                        targetVcloudUrl = episodes.first.vcloudUrl;
-                        altUrls = episodes.first.alternativeUrls;
+                      final landingVcloud = await SitePostExtractor.instance
+                          .extractVcloudFromLandingPublic(bestBtn.href);
+                      if (landingVcloud != null && landingVcloud.isNotEmpty) {
+                        targetVcloudUrl = landingVcloud;
+                      } else {
+                        final episodes = await SitePostExtractor.instance
+                            .extractNextdriveEpisodes(bestBtn.href);
+                        if (episodes.isNotEmpty) {
+                          targetVcloudUrl = episodes.first.vcloudUrl;
+                          altUrls = episodes.first.alternativeUrls;
+                        }
                       }
                     } catch (e) {
                       debugPrint('[DetailsScreen] Movie Nextdrive extract error: $e');

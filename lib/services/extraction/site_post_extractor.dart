@@ -54,6 +54,31 @@ class NextdriveEpisode {
     this.thumbnailUrl,
   }) : alternativeUrls = alternativeUrls ?? [];
 
+  NextdriveEpisode copyWith({
+    String? title,
+    String? vcloudUrl,
+    List<String>? alternativeUrls,
+    int? index,
+    int? episodeNumber,
+    int? rangeStart,
+    int? rangeEnd,
+    bool? isComplete,
+    String? thumbnailUrl,
+  }) {
+    return NextdriveEpisode(
+      title: title ?? this.title,
+      vcloudUrl: vcloudUrl ?? this.vcloudUrl,
+      alternativeUrls:
+          alternativeUrls ?? List<String>.from(this.alternativeUrls),
+      index: index ?? this.index,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      rangeStart: rangeStart ?? this.rangeStart,
+      rangeEnd: rangeEnd ?? this.rangeEnd,
+      isComplete: isComplete ?? this.isComplete,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+    );
+  }
+
   @override
   String toString() =>
       'NextdriveEpisode(index: $index, title: "$title", epNum: $episodeNumber, range: $rangeStart-$rangeEnd, isComplete: $isComplete, url: "$vcloudUrl", alts: ${alternativeUrls.length})';
@@ -190,7 +215,11 @@ class SitePostExtractor {
     try {
       String targetUrl = vcloudUrl;
       final lh = targetUrl.toLowerCase();
-      if (lh.contains('nexdrive') || lh.contains('vgmlink') || lh.contains('fastdl')) {
+      if (lh.contains('nexdrive') ||
+          lh.contains('vgmlink') ||
+          lh.contains('fastdl') ||
+          lh.contains('gdflix') ||
+          lh.contains('filebee')) {
         final resolved = await extractVcloudFromLandingPublic(targetUrl);
         if (resolved != null && resolved.isNotEmpty) {
           targetUrl = resolved;
@@ -451,7 +480,10 @@ class SitePostExtractor {
 
         final isEpisodeList = lowerText.contains('episode') ||
             lowerText.contains('v-cloud') ||
+            lowerText.contains('vcloud') ||
             lowerText.contains('g-direct') ||
+            lowerText.contains('instant') ||
+            lowerText.contains('direct') ||
             (!isBatchZip && lowerText.contains('resumable'));
 
         // Extract size label e.g. [3.4GB] or [1.5GB]
@@ -544,7 +576,7 @@ class SitePostExtractor {
   }
 
   /// Get the best Nextdrive episode landing URL for a given season.
-  /// Priority: V-Cloud buttons with 720p > 480p > 1080p fallback.
+  /// Priority: 720p > 480p > 1080p fallback, checking Nextdrive pages from G-Direct / Instant buttons as well.
   SitePostButton? getBestEpisodeButton(
       List<SitePostButton> buttons, int seasonNumber) {
     var seasonButtons = buttons
@@ -558,27 +590,29 @@ class SitePostExtractor {
 
     if (seasonButtons.isEmpty) return null;
 
-    // Filter to V-Cloud buttons if available (user requirement)
-    final vcloudButtons = seasonButtons
-        .where((b) =>
+    // Preference: 720p > 480p > 1080p > others.
+    // For each quality, prefer a button with V-Cloud/Resumable in text, but accept G-Direct/Instant
+    // if that quality only has G-Direct (as Nextdrive pages contain VCloud links).
+    SitePostButton? pickForQuality(String q) {
+      final matches = seasonButtons
+          .where((b) => b.quality.toLowerCase() == q.toLowerCase())
+          .toList();
+      if (matches.isEmpty) return null;
+      final vcloud = matches.firstWhere(
+        (b) =>
             b.text.toLowerCase().contains('v-cloud') ||
             b.text.toLowerCase().contains('vcloud') ||
-            b.text.toLowerCase().contains('resumable'))
-        .toList();
+            b.text.toLowerCase().contains('resumable'),
+        orElse: () => matches.first,
+      );
+      return vcloud;
+    }
 
-    final targetList = vcloudButtons.isNotEmpty ? vcloudButtons : seasonButtons;
-
-    // Prioritize 720p > 480p > 1080p > others
-    return targetList.firstWhere(
-      (b) => b.quality == '720p',
-      orElse: () => targetList.firstWhere(
-        (b) => b.quality == '480p',
-        orElse: () => targetList.firstWhere(
-          (b) => b.quality == '1080p',
-          orElse: () => targetList.first,
-        ),
-      ),
-    );
+    return pickForQuality('720p') ??
+        pickForQuality('480p') ??
+        pickForQuality('1080p') ??
+        pickForQuality('2160p') ??
+        seasonButtons.first;
   }
 
   /// Get all unique season numbers found in post buttons.
@@ -622,19 +656,20 @@ class SitePostExtractor {
           if (resMap.containsKey(q)) continue;
 
           final lh = b.href.toLowerCase();
-          if (lh.contains('nexdrive') ||
-              lh.contains('vgmlink') ||
-              lh.contains('fastdl')) {
+          if (lh.contains('vcloud') || lh.contains('hubcloud')) {
+            resMap[q] = b.href;
+          } else {
             try {
               final vcloud = await _extractVcloudFromLanding(b.href);
               if (vcloud != null && vcloud.isNotEmpty) {
                 resMap[q] = vcloud;
+              } else {
+                resMap[q] = b.href;
               }
             } catch (e) {
               debugPrint('[SitePostExtractor] Error resolving landing for $q: $e');
+              resMap[q] = b.href;
             }
-          } else if (lh.contains('vcloud')) {
-            resMap[q] = b.href;
           }
         }
       } else {
@@ -657,7 +692,9 @@ class SitePostExtractor {
           final lh = b.href.toLowerCase();
           if (lh.contains('nexdrive') ||
               lh.contains('vgmlink') ||
-              lh.contains('fastdl')) {
+              lh.contains('fastdl') ||
+              lh.contains('gdflix') ||
+              lh.contains('filebee')) {
             try {
               final episodes = await extractNextdriveEpisodes(b.href);
               if (episodes.isNotEmpty) {
@@ -672,7 +709,7 @@ class SitePostExtractor {
             } catch (e) {
               debugPrint('[SitePostExtractor] Error extracting episodes for quality $q: $e');
             }
-          } else if (lh.contains('vcloud')) {
+          } else if (lh.contains('vcloud') || lh.contains('hubcloud')) {
             resMap[q] = b.href;
           }
         }
@@ -683,17 +720,46 @@ class SitePostExtractor {
     return resMap;
   }
 
-  /// Helper to extract first VCloud anchor from a movie Nexdrive landing page
+  /// Helper to extract first VCloud anchor from a movie Nexdrive/G-Direct landing page
   Future<String?> _extractVcloudFromLanding(String landingUrl) async {
     try {
+      final lhUrl = landingUrl.toLowerCase();
+      if (lhUrl.contains('vcloud') || lhUrl.contains('hubcloud')) {
+        return landingUrl;
+      }
       final html = await fetchHtml(landingUrl);
       final doc = html_parser.parse(html);
+      String? fallbackUrl;
+
       for (final a in doc.querySelectorAll('a[href]')) {
-        final href = a.attributes['href'] ?? '';
-        if (href.toLowerCase().contains('vcloud')) {
+        var href = a.attributes['href'] ?? '';
+        if (href.isEmpty) continue;
+        try {
+          href = Uri.parse(landingUrl).resolve(href).toString();
+        } catch (_) {}
+        final lh = href.toLowerCase();
+        if (lh.contains('telegram') ||
+            lh.contains('facebook') ||
+            lh.contains('twitter') ||
+            lh.contains('t.me') ||
+            lh.contains('.fans') ||
+            lh.contains('whatsapp')) {
+          continue;
+        }
+        // First priority: VCloud or HubCloud link
+        if (lh.contains('vcloud') || lh.contains('hubcloud')) {
           return href;
         }
+        // Backup: FastDL, Vegadrive, Filebee, Pixeldrain
+        if (fallbackUrl == null &&
+            (lh.contains('fastdl') ||
+                lh.contains('vegadrive') ||
+                lh.contains('filebee') ||
+                lh.contains('pixeldrain'))) {
+          fallbackUrl = href;
+        }
       }
+      return fallbackUrl;
     } catch (e) {
       debugPrint('[SitePostExtractor] _extractVcloudFromLanding error: $e');
     }
@@ -734,6 +800,7 @@ class SitePostExtractor {
 
         final lhref = href.toLowerCase();
         final isSupported = lhref.contains('vcloud') ||
+            lhref.contains('hubcloud') ||
             lhref.contains('fastdl') ||
             lhref.contains('vegadrive') ||
             lhref.contains('filebee');
@@ -861,8 +928,28 @@ class SitePostExtractor {
             (epNum != null && e.episodeNumber == epNum) ||
             e.title.toLowerCase() == formattedTitle.toLowerCase());
         if (existingIdx >= 0) {
-          if (!episodes[existingIdx].alternativeUrls.contains(href)) {
-            episodes[existingIdx].alternativeUrls.add(href);
+          final existing = episodes[existingIdx];
+          final isNewVcloud = href.toLowerCase().contains('vcloud') ||
+              href.toLowerCase().contains('hubcloud');
+          final isOldVcloud = existing.vcloudUrl.toLowerCase().contains('vcloud') ||
+              existing.vcloudUrl.toLowerCase().contains('hubcloud');
+
+          if (isNewVcloud && !isOldVcloud) {
+            // Priority upgrade: V-Cloud is preferred over FastDL/others as the primary vcloudUrl!
+            final oldPrimary = existing.vcloudUrl;
+            final updatedAlts = List<String>.from(existing.alternativeUrls);
+            if (!updatedAlts.contains(oldPrimary)) {
+              updatedAlts.add(oldPrimary);
+            }
+            episodes[existingIdx] = existing.copyWith(
+              vcloudUrl: href,
+              alternativeUrls: updatedAlts,
+            );
+            debugPrint('[SitePostExtractor] Upgraded Ep ${existing.episodeNumber ?? existing.index} primary to VCloud: $href (was $oldPrimary)');
+          } else {
+            if (!existing.alternativeUrls.contains(href)) {
+              existing.alternativeUrls.add(href);
+            }
           }
           continue;
         }
