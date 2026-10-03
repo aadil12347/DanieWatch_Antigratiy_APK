@@ -2236,6 +2236,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       isLoading: false,
       availableResolutions: sortedRes,
       resolutionUrls: resMap,
+      resolutionSizes: const {},
       onSelectResolution: (chosenRes) async {
         ref.read(downloadModalProvider.notifier).update(
           (s) => s.copyWith(extractingResolution: chosenRes),
@@ -2254,10 +2255,12 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
         String? downloadUrl;
         String providerName = 'V-Cloud';
+        String? extractedSize;
 
         try {
           // Use the EXACT same extraction as the online player
           final streamRes = await SitePostExtractor.instance.resolveVcloudStream(targetUrl);
+          extractedSize = streamRes.fileSize;
 
           if (streamRes.fslv2Url != null && streamRes.fslv2Url!.isNotEmpty) {
             downloadUrl = streamRes.fslv2Url;
@@ -2289,6 +2292,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           return;
         }
 
+        final exactSize = ref.read(downloadModalProvider).resolutionSizes?[chosenRes] ?? extractedSize;
+        final fileSizeBytes = SitePostExtractor.parseBytesFromSizeString(exactSize);
+
         // Close modal
         ref.read(downloadModalProvider.notifier).state = const DownloadModalState();
 
@@ -2309,6 +2315,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
             mediaType: widget.mediaType,
             providerName: providerName,
             originalEmbedUrl: targetUrl,
+            fileSizeBytes: fileSizeBytes,
           );
           if (item != null && mounted) {
             CustomToast.show(
@@ -2325,6 +2332,23 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         }
       },
     ));
+
+    // 5. Asynchronously fetch exact file sizes in parallel from VCloud pages
+    for (final entry in resMap.entries) {
+      SitePostExtractor.instance
+          .extractExactFileSizeFromVcloud(entry.value)
+          .then((exactSize) {
+        if (exactSize != null && exactSize.isNotEmpty && mounted) {
+          final cur = Map<String, String>.from(
+            ref.read(downloadModalProvider).resolutionSizes ?? {},
+          );
+          cur[entry.key] = exactSize;
+          ref.read(downloadModalProvider.notifier).update(
+                (s) => s.copyWith(resolutionSizes: cur),
+              );
+        }
+      });
+    }
   }
 
   void _showDownloadStartedToast(DownloadItem item) {

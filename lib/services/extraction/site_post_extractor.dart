@@ -66,6 +66,7 @@ class VcloudStreamResult {
   final String? tenGbpsUrl;
   final String? pixeldrainUrl;
   final String? fastDlUrl;
+  final String? fileSize;
 
   VcloudStreamResult({
     this.fslv2Url,
@@ -73,6 +74,7 @@ class VcloudStreamResult {
     this.tenGbpsUrl,
     this.pixeldrainUrl,
     this.fastDlUrl,
+    this.fileSize,
   });
 
   /// Online playback policy:
@@ -101,7 +103,7 @@ class VcloudStreamResult {
 
   @override
   String toString() =>
-      'VcloudStreamResult(FSLv2: $fslv2Url, FSL: $fslUrl, FastDL: $fastDlUrl, 10Gbps: $tenGbpsUrl, PXL: $pixeldrainUrl)';
+      'VcloudStreamResult(FSLv2: $fslv2Url, FSL: $fslUrl, FastDL: $fastDlUrl, 10Gbps: $tenGbpsUrl, PXL: $pixeldrainUrl, Size: $fileSize)';
 }
 
 /// Unified extractor for Vegamovies & Rogmovies detail posts, Nextdrive episode pages,
@@ -117,6 +119,124 @@ class SitePostExtractor {
         'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
   };
+
+  /// Cache of exact file sizes parsed from VCloud pages (vcloudUrl -> "394.05 MB")
+  final Map<String, String> _vcloudSizeCache = {};
+
+  /// Parses the exact file size string from VCloud/HubCloud page HTML
+  static String? parseExactSizeFromHtml(String html) {
+    if (html.isEmpty) return null;
+    // Pattern 1: id="size" attribute (e.g. <i id="size">394.05 MB</i>)
+    final idMatch = RegExp(r'''id=["\']size["\'][^>]*>([^<]+)<''', caseSensitive: false).firstMatch(html);
+    if (idMatch != null) {
+      final s = idMatch.group(1)?.trim();
+      if (s != null && s.isNotEmpty && s.toUpperCase() != 'NAN' && !s.startsWith('{')) {
+        return s;
+      }
+    }
+
+    // Pattern 2: Size element (e.g. Size<i id="...">394.05 MB</i> or Size: 394.05 MB)
+    final sizeMatch = RegExp(
+      r'''Size\s*(?:<[^>]+>|\s|:)*\s*([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|KB|GiB|MiB|KiB|Bytes|B))\b''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (sizeMatch != null) {
+      final s = sizeMatch.group(1)?.trim();
+      if (s != null && s.isNotEmpty && s.toUpperCase() != 'NAN') {
+        return s;
+      }
+    }
+
+    // Pattern 3: File Size
+    final fsMatch = RegExp(
+      r'''(?:File\s*Size|FileSize)\s*[:\-]?\s*([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|KB|GiB|MiB|KiB))\b''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (fsMatch != null) {
+      final s = fsMatch.group(1)?.trim();
+      if (s != null && s.isNotEmpty) {
+        return s;
+      }
+    }
+    return null;
+  }
+
+  /// Parses exact bytes integer from a size string like "394.05 MB" or "1.45 GB"
+  static int? parseBytesFromSizeString(String? sizeStr) {
+    if (sizeStr == null || sizeStr.isEmpty) return null;
+    final match = RegExp(r'([0-9]+(?:\.[0-9]+)?)\s*(GB|MB|KB|Bytes|B)', caseSensitive: false).firstMatch(sizeStr);
+    if (match == null) return null;
+    final val = double.tryParse(match.group(1)!);
+    if (val == null) return null;
+    final unit = match.group(2)!.toUpperCase();
+    if (unit.contains('GB')) {
+      return (val * 1024 * 1024 * 1024).round();
+    } else if (unit.contains('MB')) {
+      return (val * 1024 * 1024).round();
+    } else if (unit.contains('KB')) {
+      return (val * 1024).round();
+    } else {
+      return val.round();
+    }
+  }
+
+  /// Extracts the exact file size from a VCloud page or landing URL.
+  Future<String?> extractExactFileSizeFromVcloud(String vcloudUrl) async {
+    if (vcloudUrl.isEmpty) return null;
+    if (_vcloudSizeCache.containsKey(vcloudUrl)) {
+      return _vcloudSizeCache[vcloudUrl];
+    }
+
+    try {
+      String targetUrl = vcloudUrl;
+      final lh = targetUrl.toLowerCase();
+      if (lh.contains('nexdrive') || lh.contains('vgmlink') || lh.contains('fastdl')) {
+        final resolved = await extractVcloudFromLandingPublic(targetUrl);
+        if (resolved != null && resolved.isNotEmpty) {
+          targetUrl = resolved;
+        }
+      }
+
+      final html = await fetchHtml(targetUrl);
+      String? size = parseExactSizeFromHtml(html);
+
+      // If not on initial page, check if there's a tokenUrl or redirect
+      if (size == null) {
+        String? tokenUrl;
+        final doubleAtobMatch = RegExp(
+                r'atob\(\s*atob\(\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]\s*\)\s*\)')
+            .firstMatch(html);
+        if (doubleAtobMatch != null) {
+          final s1 = utf8.decode(base64.decode(doubleAtobMatch.group(1)!));
+          tokenUrl = utf8.decode(base64.decode(s1));
+        } else {
+          final varUrlMatch = RegExp(
+                  r'''(?:location\.href|window\.location|var\s+url)\s*=\s*['"]([^'"]+)['"]''',
+                  caseSensitive: false)
+              .firstMatch(html);
+          if (varUrlMatch != null) {
+            tokenUrl = varUrlMatch.group(1);
+          }
+        }
+        if (tokenUrl != null) {
+          if (!tokenUrl.startsWith('http')) {
+            final p = Uri.parse(targetUrl);
+            tokenUrl = '${p.scheme}://${p.host}${tokenUrl.startsWith('/') ? '' : '/'}$tokenUrl';
+          }
+          final dlHtml = await fetchHtml(tokenUrl, referer: targetUrl);
+          size = parseExactSizeFromHtml(dlHtml);
+        }
+      }
+
+      if (size != null && size.isNotEmpty) {
+        _vcloudSizeCache[vcloudUrl] = size;
+        return size;
+      }
+    } catch (e) {
+      debugPrint('[SitePostExtractor] Error extracting file size from vcloud: $e');
+    }
+    return null;
+  }
 
   /// Fetch HTML with appropriate Referer, auto-retrying with active mirror domains on failure.
   Future<String> fetchHtml(String url, {String? referer}) async {
@@ -858,6 +978,7 @@ class SitePostExtractor {
 
       // Case D: Standard V-Cloud
       final vHtml = await fetchHtml(url, referer: referer);
+      String? exactFileSize = parseExactSizeFromHtml(vHtml);
 
       // 1. Look for double atob
       String? tokenUrl;
@@ -892,7 +1013,7 @@ class SitePostExtractor {
       }
 
       if (tokenUrl == null) {
-        return VcloudStreamResult();
+        return VcloudStreamResult(fileSize: exactFileSize);
       }
 
       if (!tokenUrl.startsWith('http')) {
@@ -902,6 +1023,10 @@ class SitePostExtractor {
       }
 
       final dlHtml = await fetchHtml(tokenUrl, referer: url);
+      exactFileSize ??= parseExactSizeFromHtml(dlHtml);
+      if (exactFileSize != null && exactFileSize.isNotEmpty) {
+        _vcloudSizeCache[url] = exactFileSize;
+      }
       final dlDoc = html_parser.parse(dlHtml);
 
       String? fslv2Url;
@@ -960,6 +1085,7 @@ class SitePostExtractor {
         fslUrl: fslUrl,
         tenGbpsUrl: tenGbpsUrl,
         pixeldrainUrl: pixeldrainUrl,
+        fileSize: exactFileSize,
       );
     } catch (e) {
       debugPrint('[SitePostExtractor] Error resolving stream link: $e');

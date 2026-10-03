@@ -620,26 +620,69 @@ class _QualitySelectorContentState
                               modalState.episode != null &&
                               modalState.season! > 0)
                             Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text(
-                                'Season ${modalState.season} · Episode ${modalState.episode}',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'S${modalState.season} · E${modalState.episode}',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          // Accurate file size using actual runtime
+                          // Accurate file size badge when variant selected
                           if (_selectedVariant != null)
                             Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text(
-                                'Size: ${_fetchedSizeText ?? _selectedVariant!.estimatedSizeForDuration(modalState.runtime)}',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white.withValues(alpha: 0.7),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: AppColors.primary.withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.sd_storage_rounded,
+                                      size: 12,
+                                      color: AppColors.primary,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      _fetchedSizeText ?? _selectedVariant!.estimatedSizeForDuration(modalState.runtime),
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    if (_fetchingSize) ...[
+                                      const SizedBox(width: 6),
+                                      const SizedBox(
+                                        width: 8,
+                                        height: 8,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                          color: Colors.white54,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ),
@@ -676,37 +719,22 @@ class _QualitySelectorContentState
   Widget _buildSkeleton() {
     return Shimmer.fromColors(
       baseColor: Colors.white.withValues(alpha: 0.05),
-      highlightColor: Colors.white.withValues(alpha: 0.1),
+      highlightColor: Colors.white.withValues(alpha: 0.12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
-          children: [
-            Row(
-              children: List.generate(
-                  3,
-                  (i) => Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        width: 80,
-                        height: 45,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      )),
+          children: List.generate(
+            3,
+            (i) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              height: 68,
             ),
-            const SizedBox(height: 24),
-            ...List.generate(
-                2,
-                (i) => Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  width: double.infinity,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                )),
-          ],
+          ),
         ),
       ),
     );
@@ -838,97 +866,179 @@ class _QualitySelectorContentState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: Text(
-            'SELECT DOWNLOAD RESOLUTION',
-            style: TextStyle(
-              color: Colors.white38,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1,
-            ),
-          ),
-        ),
-        ...resolutions.map((res) {
-          final isExtracting = modalState.extractingResolution == res;
-          final sizeEstimate = _estimateSizeForResolution(res, modalState.runtime);
+        const SizedBox(height: 6),
+        ...resolutions.map((res) => _buildResolutionCard(res, modalState)),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
 
-          return GestureDetector(
-            onTap: isExtracting
-                ? null
-                : () {
-                    HapticFeedback.mediumImpact();
-                    modalState.onSelectResolution?.call(res);
-                  },
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+  Widget _buildResolutionCard(String res, DownloadModalState modalState) {
+    final isExtracting = modalState.extractingResolution == res;
+    final exactSize = modalState.resolutionSizes?[res];
+    final isExact = exactSize != null && exactSize.isNotEmpty;
+    final sizeEstimate = _estimateSizeForResolution(res, modalState.runtime);
+    final displaySize = isExact ? exactSize : sizeEstimate;
+
+    // Clean label: e.g. "1080p", "720p", "480p", "4K"
+    final rLower = res.toLowerCase();
+    String qualityLabel;
+    if (rLower.contains('2160') || rLower.contains('4k')) {
+      qualityLabel = '4K';
+    } else if (rLower.contains('1080')) {
+      qualityLabel = '1080p';
+    } else if (rLower.contains('720')) {
+      qualityLabel = '720p';
+    } else if (rLower.contains('480')) {
+      qualityLabel = '480p';
+    } else {
+      qualityLabel = res;
+    }
+
+    return GestureDetector(
+      onTap: isExtracting
+          ? null
+          : () {
+              HapticFeedback.mediumImpact();
+              modalState.onSelectResolution?.call(res);
+            },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isExtracting
+              ? AppColors.primary.withValues(alpha: 0.12)
+              : const Color(0xFF181A22),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isExtracting
+                ? AppColors.primary
+                : Colors.white.withValues(alpha: 0.08),
+            width: isExtracting ? 1.5 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Quality (e.g. 480p, 720p, 1080p)
+            Text(
+              qualityLabel,
+              style: GoogleFonts.outfit(
+                color: isExtracting ? AppColors.primary : Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+            ),
+            const Spacer(),
+            // Exact Size Pill
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: isExtracting
-                    ? AppColors.primary.withValues(alpha: 0.15)
-                    : AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(14),
+                color: isExact
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isExtracting
-                      ? AppColors.primary
-                      : AppColors.border,
-                  width: isExtracting ? 1.5 : 1.0,
+                  color: isExact
+                      ? AppColors.primary.withValues(alpha: 0.35)
+                      : Colors.white.withValues(alpha: 0.06),
+                  width: 1,
                 ),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: Text(
-                      isExtracting
-                          ? '$res · Extracting...'
-                          : '$res · $sizeEstimate',
-                      style: TextStyle(
-                        color: isExtracting ? AppColors.primary : Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
+                  Icon(
+                    isExact ? Icons.sd_storage_rounded : Icons.data_usage_rounded,
+                    color: isExact ? AppColors.primary : Colors.white38,
+                    size: 13,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    displaySize,
+                    style: GoogleFonts.outfit(
+                      color: isExact ? Colors.white : Colors.white60,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
                     ),
                   ),
-                  if (isExtracting)
+                  if (!isExact) ...[
+                    const SizedBox(width: 5),
                     const SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 8,
+                      height: 8,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.primary,
+                        strokeWidth: 1.5,
+                        color: Colors.white24,
                       ),
-                    )
-                  else
-                    const Icon(
-                      Icons.download_rounded,
-                      color: Colors.white70,
-                      size: 20,
                     ),
+                  ],
                 ],
               ),
             ),
-          );
-        }),
-        const SizedBox(height: 8),
-      ],
+            const SizedBox(width: 12),
+            // Action indicator (Download Icon or Progress Spinner)
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isExtracting
+                    ? AppColors.primary.withValues(alpha: 0.15)
+                    : Colors.white.withValues(alpha: 0.06),
+                border: Border.all(
+                  color: isExtracting
+                      ? AppColors.primary.withValues(alpha: 0.4)
+                      : Colors.white.withValues(alpha: 0.1),
+                  width: 1,
+                ),
+              ),
+              child: Center(
+                child: isExtracting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.arrow_downward_rounded,
+                        color: Colors.white,
+                        size: 17,
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildStreamsList(List<PeachifyStream> streams) {
     if (streams.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 32),
         child: Column(
           children: [
-            const Icon(Icons.info_outline_rounded, color: Colors.white30, size: 48),
-            const SizedBox(height: 16),
-            const Text(
+            Icon(Icons.info_outline_rounded, color: Colors.white30, size: 48),
+            SizedBox(height: 16),
+            Text(
               'No active servers available',
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            const SizedBox(height: 8),
-            const Text(
+            SizedBox(height: 8),
+            Text(
               'All server links have expired or failed. Please close this modal and try extracting again.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white38, fontSize: 13),
@@ -1097,7 +1207,7 @@ class _QualitySelectorContentState
                       _fetchedSizeText = 'Fetching size...';
                       _fileSizeBytes = null;
                     });
-                    if (v != null && !v.url.contains('.m3u8')) {
+                    if (!v.url.contains('.m3u8')) {
                       _fetchActualFileSize(v.url, headers: _selectedStream?.headers);
                     }
                   }

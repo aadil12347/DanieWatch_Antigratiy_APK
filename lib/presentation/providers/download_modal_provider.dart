@@ -16,6 +16,7 @@ class DownloadModalState {
   final List<PeachifyStream>? streams;
   final List<String>? availableResolutions;
   final Map<String, String>? resolutionUrls;
+  final Map<String, String>? resolutionSizes;
   final String? extractingResolution;
   final void Function(String resolution)? onSelectResolution;
   final void Function(DownloadSelection)? onSelected;
@@ -35,6 +36,7 @@ class DownloadModalState {
     this.streams,
     this.availableResolutions,
     this.resolutionUrls,
+    this.resolutionSizes,
     this.extractingResolution,
     this.onSelectResolution,
     this.onSelected,
@@ -55,6 +57,7 @@ class DownloadModalState {
     List<PeachifyStream>? streams,
     List<String>? availableResolutions,
     Map<String, String>? resolutionUrls,
+    Map<String, String>? resolutionSizes,
     String? extractingResolution,
     void Function(String resolution)? onSelectResolution,
     void Function(DownloadSelection)? onSelected,
@@ -74,6 +77,7 @@ class DownloadModalState {
       streams: streams ?? this.streams,
       availableResolutions: availableResolutions ?? this.availableResolutions,
       resolutionUrls: resolutionUrls ?? this.resolutionUrls,
+      resolutionSizes: resolutionSizes ?? this.resolutionSizes,
       extractingResolution: extractingResolution ?? this.extractingResolution,
       onSelectResolution: onSelectResolution ?? this.onSelectResolution,
       onSelected: onSelected ?? this.onSelected,
