@@ -72,6 +72,92 @@ class MovieSiteScraperService {
   final Map<int, int> _resolvedTmdbIds = {};
   final Map<int, String> _resolvedMediaTypes = {};
 
+  final Map<String, int> _categoryTotalPages = {
+    'dual-audio': 778,
+    'dualaudio': 778,
+    'indian': 392,
+    'bollywood': 392,
+    'all': 778,
+    'explore': 778,
+    'search': 778,
+    'korean': 160,
+    'k-drama': 160,
+    'kdrama': 160,
+    'chinese': 80,
+    'anime': 95,
+    'hollywood': 350,
+    'punjabi': 45,
+    'pakistani': 35,
+    'action': 320,
+    'sci-fi': 180,
+    'scifi': 180,
+    'comedy': 260,
+    'thriller': 290,
+    'horror': 170,
+    'romance': 190,
+    'adventure': 210,
+    'crime': 180,
+    'drama': 350,
+    'mystery': 140,
+    'fantasy': 160,
+    'animation': 120,
+  };
+
+  /// Returns total pagination pages for a category tab (defaults to verified baseline)
+  int getTotalPages(String categorySlug) {
+    final key = categorySlug.toLowerCase().trim();
+    return _categoryTotalPages[key] ?? 100;
+  }
+
+  /// Live fetches total page counts from Typesense instantly on app startup
+  Future<void> fetchLiveTotalPages() async {
+    try {
+      final results = await Future.wait([
+        _dio
+            .get<String>(
+              '$vegaBaseUrl/ts-search.php?q=&page=1',
+              options: Options(responseType: ResponseType.plain),
+            )
+            .then((r) => r.data)
+            .catchError((_) => null),
+        _dio
+            .get<String>(
+              '$rogBaseUrl/ts-search.php?q=&page=1',
+              options: Options(responseType: ResponseType.plain),
+            )
+            .then((r) => r.data)
+            .catchError((_) => null),
+      ]);
+
+      if (results[0] != null && results[0]!.isNotEmpty) {
+        final data = jsonDecode(results[0]!) as Map<String, dynamic>;
+        final found = (data['found'] as num?)?.toInt() ?? 0;
+        if (found > 0) {
+          final pages = (found / 18).ceil();
+          _categoryTotalPages['dual-audio'] = pages;
+          _categoryTotalPages['dualaudio'] = pages;
+          _categoryTotalPages['all'] = pages;
+          _categoryTotalPages['explore'] = pages;
+          _categoryTotalPages['search'] = pages;
+          dev.log('[MovieSiteScraperService] Live Vega total pages: $pages ($found posts)');
+        }
+      }
+
+      if (results[1] != null && results[1]!.isNotEmpty) {
+        final data = jsonDecode(results[1]!) as Map<String, dynamic>;
+        final found = (data['found'] as num?)?.toInt() ?? 0;
+        if (found > 0) {
+          final pages = (found / 20).ceil();
+          _categoryTotalPages['indian'] = pages;
+          _categoryTotalPages['bollywood'] = pages;
+          dev.log('[MovieSiteScraperService] Live Rog total pages: $pages ($found posts)');
+        }
+      }
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Error live fetching total pages: $e');
+    }
+  }
+
   void registerResolvedTmdb(int fastId, int tmdbId, String mediaType) {
     _resolvedTmdbIds[fastId] = tmdbId;
     _resolvedMediaTypes[fastId] = mediaType;

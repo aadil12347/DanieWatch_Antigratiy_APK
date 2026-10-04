@@ -604,6 +604,44 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     }
   }
 
+  /// Jumps directly to a specific page number selected via the page slider.
+  Future<void> jumpToPage(int targetPage) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    if (targetPage == current.currentPage && current.items.isNotEmpty) return;
+
+    state = const AsyncValue.loading();
+
+    try {
+      final results = await _fetchLocalPage(targetPage);
+      if (!mounted) return;
+
+      final cat = category.toLowerCase().trim();
+      const liveCategories = {
+        'all', 'explore', 'search', 'indian', 'dual-audio', 'korean', 'chinese', 'anime',
+        'action', 'sci-fi', 'comedy', 'thriller', 'horror', 'romance',
+        'adventure', 'crime', 'drama', 'mystery', 'fantasy', 'animation',
+        'bollywood', 'hollywood', 'punjabi', 'pakistani'
+      };
+      final minPageSize = liveCategories.contains(cat) ? 10 : 30;
+
+      state = AsyncValue.data(PaginatedCategoryState(
+        items: results,
+        currentPage: targetPage,
+        isLoadingMore: false,
+        hasMore: results.length >= minPageSize,
+      ));
+    } catch (e, stack) {
+      dev.log('[PaginatedCategory] $category jump to page $targetPage error: $e', stackTrace: stack);
+      if (mounted) {
+        state = AsyncValue.data(current.copyWith(
+          isLoadingMore: false,
+          errorOverride: () => e.toString(),
+        ));
+      }
+    }
+  }
+
   Future<List<ManifestItem>> _fetchLocalPage(int page) async {
     final cat = category.toLowerCase().trim();
     const liveCategories = {

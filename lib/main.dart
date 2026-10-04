@@ -138,6 +138,7 @@ Future<void> main() async {
         DeepLinkService.instance.initialize();
         AppUpdateService.instance.cleanupIfNeeded();
         DatabaseSyncService.instance.syncIndex();
+        MovieSiteScraperService.instance.fetchLiveTotalPages();
       } catch (e) {
         debugPrint('[Startup] Background service init warning: $e');
         if (!supabaseReady.isCompleted) supabaseReady.completeError(e);

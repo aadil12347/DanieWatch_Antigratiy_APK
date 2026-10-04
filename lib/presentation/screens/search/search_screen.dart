@@ -16,6 +16,8 @@ import '../../widgets/movie_card.dart';
 import '../../widgets/category_header.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../widgets/top_navbar.dart';
+import '../../widgets/page_drawer_scrubber.dart';
+import '../../../services/extraction/movie_site_scraper_service.dart';
 import '../../providers/scroll_provider.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -651,19 +653,39 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           itemsToDisplay = effectiveItems;
         }
 
+        final totalPages = MovieSiteScraperService.instance.getTotalPages(_slug);
+
         return NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,
-          child: CustomScrollView(
-            key: PageStorageKey('scroll_${widget.categoryLabel}'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: _buildContentSlivers(
-              searchState,
-              hasSearch,
-              showResults,
-              itemsToDisplay,
-              effectiveItems,
-              pagState,
-            ),
+          child: Stack(
+            children: [
+              CustomScrollView(
+                key: PageStorageKey('scroll_${widget.categoryLabel}'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: _buildContentSlivers(
+                  searchState,
+                  hasSearch,
+                  showResults,
+                  itemsToDisplay,
+                  effectiveItems,
+                  pagState,
+                ),
+              ),
+              // Android app drawer fast page scrubber on the right edge
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: PageDrawerScrubber(
+                  totalPages: totalPages,
+                  currentPage: pagState.currentPage,
+                  isVisible: !showResults && effectiveItems.isNotEmpty && totalPages > 1,
+                  onPageSelected: (selectedPage) {
+                    ref.read(paginatedCategoryProvider(_slug).notifier).jumpToPage(selectedPage);
+                  },
+                ),
+              ),
+            ],
           ),
         );
       },
