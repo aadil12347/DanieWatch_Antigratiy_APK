@@ -532,6 +532,20 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   /// The catalog slug for this category tab.
   String get _slug => categoryLabelToSlug(widget.categoryLabel);
 
+  @override
+  void initState() {
+    super.initState();
+    // Trigger lazy load only when this content tab is first built (visited).
+    // Dedicated Search tab uses search bar & landing, not category pagination.
+    if (widget.categoryLabel != 'Search') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(paginatedCategoryProvider(_slug).notifier).ensureInitialized();
+        }
+      });
+    }
+  }
+
   /// Trigger loading the next page when scroll is near the bottom,
   /// or previous page when scroll is near the top (e.g. from page 100 -> 99).
   bool _onScrollNotification(ScrollNotification notification) {

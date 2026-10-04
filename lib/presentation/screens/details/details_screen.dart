@@ -3693,6 +3693,15 @@ class _HeroSectionState extends State<_HeroSection> {
     }
   }
 
+  @override
+  void dispose() {
+    try {
+      _webViewController?.stopLoading();
+      _webViewController = null;
+    } catch (_) {}
+    super.dispose();
+  }
+
   void _extractVideoId() {
     final url = widget.content.trailerUrl;
     if (url != null && url.isNotEmpty) {
@@ -3859,11 +3868,6 @@ class _HeroSectionState extends State<_HeroSection> {
     HapticFeedback.selectionClick();
   }
 
-  @override
-  void dispose() {
-    _webViewController = null;
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -3903,7 +3907,7 @@ class _HeroSectionState extends State<_HeroSection> {
                             allowsInlineMediaPlayback: true,
                             transparentBackground: true,
                             javaScriptEnabled: true,
-                            useHybridComposition: false,
+                            useHybridComposition: true,
                             disableVerticalScroll: true,
                             disableHorizontalScroll: true,
                             supportZoom: false,

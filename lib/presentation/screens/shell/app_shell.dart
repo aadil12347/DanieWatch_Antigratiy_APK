@@ -3,7 +3,7 @@ import '../../../core/utils/responsive.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/physics.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,9 +31,9 @@ import '../../providers/support_provider.dart';
 import '../../../domain/models/support_ticket.dart';
 import '../../widgets/support_fab.dart';
 import '../../providers/app_update_provider.dart';
-import '../../providers/app_init_provider.dart';
+
 import '../../widgets/force_update_modal.dart';
-import '../../widgets/app_init_overlay.dart';
+
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -493,17 +493,8 @@ class _AppShellState extends ConsumerState<AppShell>
                 return const ForceUpdateModal();
               },
             ),
-
-            // ── First-time setup overlay (topmost layer) ──
-            // Shows a premium loading screen while DB, cache, and Supabase init.
-            // Once complete, fades out and is removed from the tree.
-            Consumer(
-              builder: (context, ref, _) {
-                final isComplete = ref.watch(appInitCompleteProvider);
-                if (isComplete) return const SizedBox.shrink();
-                return const AppInitOverlay();
-              },
-            ),
+            // NOTE: Init overlay removed — homepage shows shimmer sections
+            // that progressively fill in as data loads, avoiding any blocking.
           ],
         ),
       ),

@@ -127,6 +127,7 @@ flutter:
     - assets/index_seed.json
     - assets/rog_index.json
     - assets/vega_index.json
+    - assets/base_home.json
     - poster/
 
 dependency_overrides:

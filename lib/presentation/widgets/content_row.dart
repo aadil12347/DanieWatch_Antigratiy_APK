@@ -73,7 +73,12 @@ class _ContentRowState extends ConsumerState<ContentRow> {
       }
     }
 
-    final totalCount = displayItems.length + (isLoadingMore ? 1 : 0);
+    // SHELL-FIRST: Show empty placeholder cards when no data yet
+    final bool showPlaceholders = displayItems.isEmpty;
+    final int placeholderCount = 5;
+    final totalCount = showPlaceholders 
+        ? placeholderCount 
+        : displayItems.length + (isLoadingMore ? 1 : 0);
 
     return SizedBox(
       height: rowHeight,
@@ -82,7 +87,6 @@ class _ContentRowState extends ConsumerState<ContentRow> {
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
         physics: const AlwaysScrollableScrollPhysics(),
-        // PERF: Pre-build cards 500px offscreen so fast swipes don't cause jank
         cacheExtent: 500,
         addRepaintBoundaries: true,
         padding: EdgeInsets.only(
@@ -92,6 +96,19 @@ class _ContentRowState extends ConsumerState<ContentRow> {
         itemCount: totalCount,
         separatorBuilder: (_, __) => SizedBox(width: spacing),
         itemBuilder: (context, index) {
+          // Empty placeholder card — dark rounded rectangle
+          if (showPlaceholders) {
+            return Container(
+              width: cardWidth,
+              height: rowHeight - 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.04)),
+              ),
+            );
+          }
+
           if (index >= displayItems.length) {
             return Center(
               child: Padding(
@@ -108,13 +125,17 @@ class _ContentRowState extends ConsumerState<ContentRow> {
             );
           }
 
-          // PERF: RepaintBoundary isolates each card's paint
+          // Real card with fade-in animation
           return RepaintBoundary(
-            child: MovieCard(
-              item: displayItems[index],
-              width: cardWidth,
-              height: rowHeight,
-              rank: widget.isRanked ? index + 1 : null,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: MovieCard(
+                key: ValueKey(displayItems[index].id),
+                item: displayItems[index],
+                width: cardWidth,
+                height: rowHeight,
+                rank: widget.isRanked ? index + 1 : null,
+              ),
             ),
           );
         },

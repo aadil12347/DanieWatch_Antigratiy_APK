@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:collection';
 import 'dart:developer' as dev;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/clients/tmdb_client.dart';
@@ -58,6 +60,35 @@ class MovieSiteScraperService {
   /// Set by the provider layer to trigger UI rebuilds.
   void Function()? onHomeRefreshed;
   void Function()? onCategoriesRefreshed;
+  void Function(String category, List<ManifestItem> items)? onSingleCategoryRefreshed;
+
+  final Map<String, DateTime> _lastCategoryRefreshTimes = {};
+  static const Duration _categoryCooldown = Duration(minutes: 30);
+
+  bool shouldRefreshCategory(String key) {
+    final lastTime = _lastCategoryRefreshTimes[key.toLowerCase().trim()];
+    if (lastTime == null) return true;
+    return DateTime.now().difference(lastTime) > _categoryCooldown;
+  }
+
+  Map<String, ManifestItem>? _titleIndexMap;
+  int _lastIndexedMapLength = 0;
+
+  Map<String, ManifestItem> _getTitleIndex(Map<String, ManifestItem> localMap) {
+    if (_titleIndexMap != null && _lastIndexedMapLength == localMap.length) {
+      return _titleIndexMap!;
+    }
+    final index = <String, ManifestItem>{};
+    for (final item in localMap.values) {
+      final clean = item.cleanTitle.toLowerCase().trim();
+      if (clean.isNotEmpty) {
+        index[clean] = item;
+      }
+    }
+    _lastIndexedMapLength = localMap.length;
+    _titleIndexMap = index;
+    return index;
+  }
 
   // Cache in-memory for live session
   List<ManifestItem>? _cachedCarousel;
@@ -237,89 +268,228 @@ class MovieSiteScraperService {
 
   static bool isExcludedIndianShow(String title) => isExcludedShow(title);
 
-  /// Loads cached home sections from local disk into memory in <2ms.
+  /// Loads cached home sections from local disk into memory.
+  /// Falls back to bundled `assets/base_home.json` on fresh launch or cache clear.
   Future<void> loadDiskCache() async {
     if (_isDiskCacheLoaded) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final rawHome = prefs.getString(_diskCacheKeyHome);
-      if (rawHome != null && rawHome.isNotEmpty) {
-        final data = jsonDecode(rawHome) as Map<String, dynamic>;
-        if (data['top10Indian'] is List) {
-          _cachedTop10Indian = (data['top10Indian'] as List)
-              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-              .toList();
-          for (final item in _cachedTop10Indian!) {
-            _itemMap[item.id.toString()] = item;
+      String? rawHome = prefs.getString(_diskCacheKeyHome);
+      String? rawCats = prefs.getString(_diskCacheKeyCategories);
+
+      // ── BUNDLED BASE JSON FALLBACK ──────────────────────────────────────────
+      // If either rawHome or rawCats is missing/empty, load from bundled assets/base_home.json.
+      // This gives the app instant 0ms startup without any network calls on fresh launch.
+      if (rawHome == null || rawHome.isEmpty || rawHome == '{}' ||
+          rawCats == null || rawCats.isEmpty || rawCats == '{}') {
+        try {
+          dev.log('[MovieSiteScraperService] SharedPreferences cache empty — reading bundled assets/base_home.json');
+          final baseAsset = await rootBundle.loadString('assets/base_home.json');
+          if (baseAsset.isNotEmpty) {
+            final baseJson = jsonDecode(baseAsset) as Map<String, dynamic>;
+            if ((rawHome == null || rawHome.isEmpty || rawHome == '{}') && baseJson['home'] != null) {
+              rawHome = jsonEncode(baseJson['home']);
+              await prefs.setString(_diskCacheKeyHome, rawHome);
+            }
+            if ((rawCats == null || rawCats.isEmpty || rawCats == '{}') && baseJson['cats'] != null) {
+              rawCats = jsonEncode(baseJson['cats']);
+              await prefs.setString(_diskCacheKeyCategories, rawCats);
+            }
+            dev.log('[MovieSiteScraperService] ✅ Loaded initial base data from assets/base_home.json');
           }
+        } catch (e) {
+          dev.log('[MovieSiteScraperService] ⚠️ Error loading bundled base_home.json: $e');
         }
-        if (data['top10HindiDub'] is List) {
-          _cachedTop10HindiDub = (data['top10HindiDub'] as List)
-              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-              .toList();
-          for (final item in _cachedTop10HindiDub!) {
-            _itemMap[item.id.toString()] = item;
-          }
+      }
+
+      // Direct JSON decode — compute() has 500ms+ isolate overhead in debug
+      var parsed = _parseDiskCacheIsolate({
+        'home': rawHome,
+        'cats': rawCats,
+      });
+
+      // Secondary safety check: if parsed results are still empty, force re-load bundled asset
+      if (parsed['top10Indian'] == null || (parsed['top10Indian'] as List).isEmpty) {
+        try {
+          final baseAsset = await rootBundle.loadString('assets/base_home.json');
+          final baseJson = jsonDecode(baseAsset) as Map<String, dynamic>;
+          rawHome = jsonEncode(baseJson['home']);
+          rawCats = jsonEncode(baseJson['cats']);
+          await prefs.setString(_diskCacheKeyHome, rawHome);
+          await prefs.setString(_diskCacheKeyCategories, rawCats);
+          parsed = _parseDiskCacheIsolate({
+            'home': rawHome,
+            'cats': rawCats,
+          });
+        } catch (_) {}
+      }
+
+      await Future<void>.delayed(Duration.zero); // Yield to UI
+
+      // Apply parsed results to in-memory caches (fast, just pointer copies)
+      if (parsed['top10Indian'] != null) {
+        _cachedTop10Indian = parsed['top10Indian'] as List<ManifestItem>;
+        for (final item in _cachedTop10Indian!) {
+          _itemMap[item.id.toString()] = item;
         }
-        if (data['carousel'] is List) {
-          _cachedCarousel = (data['carousel'] as List)
-              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-              .toList();
-          for (final item in _cachedCarousel!) {
+      }
+      if (parsed['top10HindiDub'] != null) {
+        _cachedTop10HindiDub = parsed['top10HindiDub'] as List<ManifestItem>;
+        for (final item in _cachedTop10HindiDub!) {
+          _itemMap[item.id.toString()] = item;
+        }
+      }
+      if (parsed['carousel'] != null) {
+        _cachedCarousel = parsed['carousel'] as List<ManifestItem>;
+        for (final item in _cachedCarousel!) {
+          _itemMap[item.id.toString()] = item;
+        }
+      }
+      if (parsed['categories'] != null) {
+        final cats = parsed['categories'] as Map<String, List<ManifestItem>>;
+        for (final entry in cats.entries) {
+          _categoryPageCache['${entry.key}_page_1'] = entry.value;
+          for (final item in entry.value) {
             _itemMap[item.id.toString()] = item;
           }
         }
       }
 
-      final rawCats = prefs.getString(_diskCacheKeyCategories);
-      if (rawCats != null && rawCats.isNotEmpty) {
-        final data = jsonDecode(rawCats) as Map<String, dynamic>;
-        for (final entry in data.entries) {
-          if (entry.value is List) {
-            final items = (entry.value as List)
-                .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-                .toList();
-            _categoryPageCache['${entry.key}_page_1'] = items;
-            for (final item in items) {
-              _itemMap[item.id.toString()] = item;
-            }
-          }
-        }
-      }
+      // Ensure explore & search tabs have initial data
+      _categoryPageCache['search_page_1'] ??= _categoryPageCache['all_page_1'] ?? _categoryPageCache['dual-audio_page_1'] ?? [];
+      _categoryPageCache['explore_page_1'] ??= _categoryPageCache['all_page_1'] ?? _categoryPageCache['dual-audio_page_1'] ?? [];
+
       _isDiskCacheLoaded = true;
-      dev.log('[MovieSiteScraperService] Loaded disk cache (instant 0ms ready)');
+      dev.log('[MovieSiteScraperService] Loaded disk cache (instant base)');
     } catch (e) {
       dev.log('[MovieSiteScraperService] Error reading disk cache: $e');
     }
   }
 
+  /// Returns cached category items synchronously (0ms) if already loaded in memory
+  List<ManifestItem>? getCategoryPageSync(String categoryOrGenre, {int page = 1}) {
+    final key = categoryOrGenre.toLowerCase().trim();
+    final cacheKey = '${key}_page_$page';
+    final items = _categoryPageCache[cacheKey];
+    if (items != null && items.isNotEmpty) return items;
+    // Fallback: if page 1, check alias keys
+    if (page == 1) {
+      if (key == 'search' || key == 'explore') {
+        return _categoryPageCache['all_page_1'] ?? _categoryPageCache['dual-audio_page_1'];
+      }
+      if (key == 'indian') {
+        return _categoryPageCache['bollywood_page_1'];
+      }
+      if (key == 'bollywood') {
+        return _categoryPageCache['indian_page_1'];
+      }
+      if (key == 'dual-audio' || key == 'dualaudio') {
+        return _categoryPageCache['all_page_1'];
+      }
+    }
+    return null;
+  }
+
+  /// Background isolate function for JSON parsing — runs off main thread.
+  static Map<String, dynamic> _parseDiskCacheIsolate(Map<String, String?> raw) {
+    final result = <String, dynamic>{};
+
+    final rawHome = raw['home'];
+    if (rawHome != null && rawHome.isNotEmpty) {
+      final data = jsonDecode(rawHome) as Map<String, dynamic>;
+      if (data['top10Indian'] is List) {
+        result['top10Indian'] = (data['top10Indian'] as List)
+            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      if (data['top10HindiDub'] is List) {
+        result['top10HindiDub'] = (data['top10HindiDub'] as List)
+            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      if (data['carousel'] is List) {
+        result['carousel'] = (data['carousel'] as List)
+            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+    }
+
+    final rawCats = raw['cats'];
+    if (rawCats != null && rawCats.isNotEmpty) {
+      final data = jsonDecode(rawCats) as Map<String, dynamic>;
+      final categories = <String, List<ManifestItem>>{};
+      for (final entry in data.entries) {
+        if (entry.value is List) {
+          categories[entry.key] = (entry.value as List)
+              .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      result['categories'] = categories;
+    }
+
+    return result;
+  }
+
   /// Saves current scraped items to local disk for 0ms startup on next launch.
+  /// JSON encoding runs in a background isolate to avoid blocking the UI thread.
   Future<void> saveDiskCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Prepare data maps for isolate serialization
+      final homeItems = <String, List<Map<String, dynamic>>>{};
       if (_cachedTop10Indian != null && _cachedTop10HindiDub != null) {
-        final homeData = {
-          'top10Indian': _cachedTop10Indian!.map((e) => e.toJson()).toList(),
-          'top10HindiDub': _cachedTop10HindiDub!.map((e) => e.toJson()).toList(),
-          'carousel': (_cachedCarousel ?? _cachedTop10Indian!).map((e) => e.toJson()).toList(),
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-        await prefs.setString(_diskCacheKeyHome, jsonEncode(homeData));
+        homeItems['top10Indian'] = _cachedTop10Indian!.map((e) => e.toJson()).toList();
+        homeItems['top10HindiDub'] = _cachedTop10HindiDub!.map((e) => e.toJson()).toList();
+        homeItems['carousel'] = (_cachedCarousel ?? _cachedTop10Indian!).map((e) => e.toJson()).toList();
       }
 
-      if (_categoryPageCache.isNotEmpty) {
-        final catData = <String, dynamic>{};
-        for (final entry in _categoryPageCache.entries) {
-          if (entry.key.endsWith('_page_1')) {
-            final catName = entry.key.replaceAll('_page_1', '');
-            catData[catName] = entry.value.map((e) => e.toJson()).toList();
-          }
+      final catItems = <String, List<Map<String, dynamic>>>{};
+      for (final entry in _categoryPageCache.entries) {
+        if (entry.key.endsWith('_page_1')) {
+          final catName = entry.key.replaceAll('_page_1', '');
+          catItems[catName] = entry.value.map((e) => e.toJson()).toList();
         }
-        await prefs.setString(_diskCacheKeyCategories, jsonEncode(catData));
+      }
+
+      // Direct JSON encode — compute() has 500ms+ isolate overhead in debug
+      final encoded = _encodeDiskCacheIsolate({
+        'home': homeItems,
+        'cats': catItems,
+      });
+      await Future<void>.delayed(Duration.zero); // Yield to UI
+
+      if (encoded['home'] != null) {
+        await prefs.setString(_diskCacheKeyHome, encoded['home']!);
+      }
+      if (encoded['cats'] != null) {
+        await prefs.setString(_diskCacheKeyCategories, encoded['cats']!);
       }
     } catch (e) {
       dev.log('[MovieSiteScraperService] Error saving disk cache: $e');
     }
+  }
+
+  /// Background isolate function for JSON encoding — runs off main thread.
+  static Map<String, String?> _encodeDiskCacheIsolate(Map<String, dynamic> data) {
+    final result = <String, String?>{};
+
+    final homeItems = data['home'] as Map<String, List<Map<String, dynamic>>>?;
+    if (homeItems != null && homeItems.isNotEmpty) {
+      final homeData = <String, dynamic>{
+        ...homeItems,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+      result['home'] = jsonEncode(homeData);
+    }
+
+    final catItems = data['cats'] as Map<String, List<Map<String, dynamic>>>?;
+    if (catItems != null && catItems.isNotEmpty) {
+      result['cats'] = jsonEncode(catItems);
+    }
+
+    return result;
   }
 
   void clearCache() {
@@ -336,6 +506,7 @@ class MovieSiteScraperService {
     _resolvedMediaTypes.clear();
     _lastHomeFetchTime = null;
     _lastCategoryFetchTime = null;
+    _isDiskCacheLoaded = false;
   }
 
   /// Clears both in-memory AND on-disk caches so next launch fetches fresh.
@@ -344,6 +515,7 @@ class MovieSiteScraperService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_diskCacheKeyHome);
       await prefs.remove(_diskCacheKeyCategories);
+      _isDiskCacheLoaded = false;
     } catch (e) {
       dev.log('[MovieSiteScraperService] Error clearing disk cache: $e');
     }
@@ -459,6 +631,8 @@ class MovieSiteScraperService {
 
     return cards;
   }
+
+
 
   /// Parse Typesense JSON hits from VegaMovies / RogMovies
   static List<ScrapedSiteCard> parseTsCards(String? jsonStr, String site, String baseUrl) {
@@ -585,25 +759,23 @@ class MovieSiteScraperService {
       title = title.substring(9).trim();
     }
 
-    // 1. Instant match in local database index if available (0ms)
+    // 1. Instant match in local database index if available (0ms O(1) lookup)
     if (localMap != null && localMap.isNotEmpty) {
       final cardClean = ManifestItem.cleanPostTitle(card.title).toLowerCase().trim();
       if (cardClean.isNotEmpty) {
-        for (final item in localMap.values) {
-          final itemClean = item.cleanTitle.toLowerCase().trim();
-          // Must match exact clean title (e.g. "breaking bad" == "breaking bad", not partial single word)
-          if (cardClean == itemClean) {
-            final enriched = item.copyWith(
-              rawTitle: card.title,
-              posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
-              postUrl: card.postUrl,
-              isTrending: isTrending,
-              trendingRank: trendingRank,
-            );
-            _itemMap[enriched.id.toString()] = enriched;
-            _postUrlMap[enriched.id.toString()] = card.postUrl;
-            return enriched;
-          }
+        final titleIndex = _getTitleIndex(localMap);
+        final item = titleIndex[cardClean];
+        if (item != null) {
+          final enriched = item.copyWith(
+            rawTitle: card.title,
+            posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
+            postUrl: card.postUrl,
+            isTrending: isTrending,
+            trendingRank: trendingRank,
+          );
+          _itemMap[enriched.id.toString()] = enriched;
+          _postUrlMap[enriched.id.toString()] = card.postUrl;
+          return enriched;
         }
       }
     }
@@ -784,6 +956,8 @@ class MovieSiteScraperService {
 
   Future<void> _doBackgroundRefreshHome({Map<String, ManifestItem>? localMap}) async {
     try {
+      // Gentle initial delay (3s) so startup UI rendering is completely finished
+      await Future<void>.delayed(const Duration(seconds: 3));
       dev.log('[MovieSiteScraperService] Background refresh started...');
 
       if (edgeWorkerUrl.isNotEmpty) {
@@ -909,9 +1083,14 @@ class MovieSiteScraperService {
     final vegaHtml = results[2] ?? '';
     final rogHtml = results[3] ?? '';
 
+    // Direct parsing — compute() has 500ms+ isolate spawn overhead in debug mode
+    // parseCards processes ~20 cards in ~10-50ms, not worth isolate cost
     final rog2026Cards1 = parseCards(rog2026Html1, 'rogmovies');
+    await Future<void>.delayed(Duration.zero); // Yield to UI
     final vegaCards = parseCards(vegaHtml, 'vegamovies');
+    await Future<void>.delayed(Duration.zero); // Yield to UI
     final rogCards = parseCards(rogHtml, 'rogmovies');
+    await Future<void>.delayed(Duration.zero); // Yield to UI
 
     final usedUrls = <String>{};
     final usedTitles = <String>{};
@@ -988,82 +1167,8 @@ class MovieSiteScraperService {
     _cachedTop10Indian = top10IndianItems;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. Carousel Items (Top 5 featured from VegaMovies homepage)
-    // Directly enrich with real TMDB IDs, pure titles, and logos in parallel
-    // ─────────────────────────────────────────────────────────────────────────
-    final carouselCards = <ScrapedSiteCard>[];
-    for (final card in vegaCards) {
-      if (isExcludedShow(card.title)) continue;
-      carouselCards.add(card);
-      if (carouselCards.length >= 5) break;
-    }
-
-    final carouselItems = await Future.wait(carouselCards.map((card) async {
-      markUsed(card);
-      final pureTitle = extractPureTitle(card.title);
-      String? imdbId = await fetchImdbIdFromPostUrl(card.postUrl);
-      int? tmdbId;
-      String mediaType = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show', caseSensitive: false).hasMatch(card.title) ||
-              card.postUrl.contains('series') ||
-              card.postUrl.contains('season')
-          ? 'tv'
-          : 'movie';
-
-      if (imdbId != null && imdbId.isNotEmpty) {
-        final findData = await TmdbClient.instance.findByImdbId(imdbId);
-        if (findData != null) {
-          tmdbId = findData['id'] as int?;
-          final type = findData['media_type']?.toString();
-          if (type == 'tv' || type == 'movie') {
-            mediaType = type!;
-          }
-        }
-      }
-
-      if (tmdbId == null) {
-        final searchResults = await TmdbClient.instance.searchMulti(pureTitle);
-        if (searchResults.isNotEmpty) {
-          final firstMatch = searchResults.first;
-          tmdbId = firstMatch['id'] as int?;
-          final type = firstMatch['media_type']?.toString();
-          if (type == 'tv' || type == 'movie') {
-            mediaType = type!;
-          }
-        }
-      }
-
-      String? logoUrl;
-      if (tmdbId != null) {
-        registerResolvedTmdb(tmdbId, tmdbId, mediaType);
-        logoUrl = await TmdbClient.instance.fetchTmdbLogo(tmdbId, mediaType);
-      }
-
-      final fastId = tmdbId ?? ((card.postUrl.hashCode.abs() % 9000000) + 1000000);
-      registerResolvedTmdb(fastId, tmdbId ?? fastId, mediaType);
-
-      final meta = ManifestItem.parsePostTitle(card.title);
-      final item = ManifestItem(
-        id: fastId,
-        mediaType: mediaType,
-        title: meta.cleanTitle,
-        rawTitle: card.title,
-        posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
-        postUrl: card.postUrl,
-        logoUrl: logoUrl,
-        imdbId: imdbId,
-        releaseYear: meta.year ?? (card.datePublished?.year ?? DateTime.now().year),
-        releaseDate: card.datePublished?.toIso8601String(),
-        voteAverage: card.rating,
-        isTrending: true,
-      );
-      _itemMap[item.id.toString()] = item;
-      _postUrlMap[item.id.toString()] = card.postUrl;
-      return item;
-    }));
-    _cachedCarousel = carouselItems;
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 3. Top 10 Hindi Dub Today (VegaMovies only - strictly excluding reality/competition shows)
+    // 2. Top 10 Hindi Dub Today (VegaMovies only) — FAST, no TMDB needed
+    // Do this BEFORE carousel so we can return quickly
     // ─────────────────────────────────────────────────────────────────────────
     final top10HindiDubCards = <ScrapedSiteCard>[];
     for (final card in vegaCards) {
@@ -1104,17 +1209,117 @@ class MovieSiteScraperService {
     _cachedTop10HindiDub = top10HindiDubItems;
 
     dev.log(
-      '[MovieSiteScraperService] Ready: Top 10 Indian (${top10IndianItems.length}), '
-      'Top 10 Hindi Dub (${top10HindiDubItems.length}), Carousel (${carouselItems.length})',
+      '[MovieSiteScraperService] FAST RETURN: Top 10 Indian (${top10IndianItems.length}), '
+      'Top 10 Hindi Dub (${top10HindiDubItems.length}) — carousel enriching in background',
     );
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. Carousel Items — SLOW TMDB enrichment, runs in BACKGROUND
+    // Fire-and-forget: don't block the caller. Use top10Indian as fallback.
+    // When carousel finishes, it updates _cachedCarousel and notifies UI.
+    // ─────────────────────────────────────────────────────────────────────────
+    final carouselCards = <ScrapedSiteCard>[];
+    for (final card in vegaCards) {
+      if (isExcludedShow(card.title)) continue;
+      carouselCards.add(card);
+      if (carouselCards.length >= 5) break;
+    }
+
+    // Fire carousel enrichment in background — does NOT block return
+    _enrichCarouselInBackground(carouselCards, localMap: localMap);
+
+    // Return immediately with top10Indian as carousel fallback
     return {
-      'carousel': carouselItems,
+      'carousel': top10IndianItems, // Fallback until real carousel loads
       'top10Indian': top10IndianItems,
       'top10HindiDub': top10HindiDubItems,
-      'top5': carouselItems,
+      'top5': top10IndianItems,
       'top10': top10HindiDubItems,
     };
+  }
+
+  /// Enriches carousel items with TMDB data in the background.
+  /// Does NOT block the caller. Updates _cachedCarousel and notifies UI when done.
+  void _enrichCarouselInBackground(
+    List<ScrapedSiteCard> carouselCards, {
+    Map<String, ManifestItem>? localMap,
+  }) {
+    Future<void>(() async {
+      try {
+        final carouselItems = <ManifestItem>[];
+        for (final card in carouselCards) {
+          // Yield to UI thread between each enrichment
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+
+          final pureTitle = extractPureTitle(card.title);
+          String? imdbId = await fetchImdbIdFromPostUrl(card.postUrl);
+          int? tmdbId;
+          String mediaType = RegExp(r'season|\bs\d+\b|series|k-drama|episode|tv-show', caseSensitive: false).hasMatch(card.title) ||
+                  card.postUrl.contains('series') ||
+                  card.postUrl.contains('season')
+              ? 'tv'
+              : 'movie';
+
+          if (imdbId != null && imdbId.isNotEmpty) {
+            final findData = await TmdbClient.instance.findByImdbId(imdbId);
+            if (findData != null) {
+              tmdbId = findData['id'] as int?;
+              final type = findData['media_type']?.toString();
+              if (type == 'tv' || type == 'movie') {
+                mediaType = type!;
+              }
+            }
+          }
+
+          if (tmdbId == null) {
+            final searchResults = await TmdbClient.instance.searchMulti(pureTitle);
+            if (searchResults.isNotEmpty) {
+              final firstMatch = searchResults.first;
+              tmdbId = firstMatch['id'] as int?;
+              final type = firstMatch['media_type']?.toString();
+              if (type == 'tv' || type == 'movie') {
+                mediaType = type!;
+              }
+            }
+          }
+
+          String? logoUrl;
+          if (tmdbId != null) {
+            registerResolvedTmdb(tmdbId, tmdbId, mediaType);
+            logoUrl = await TmdbClient.instance.fetchTmdbLogo(tmdbId, mediaType);
+          }
+
+          final fastId = tmdbId ?? ((card.postUrl.hashCode.abs() % 9000000) + 1000000);
+          registerResolvedTmdb(fastId, tmdbId ?? fastId, mediaType);
+
+          final meta = ManifestItem.parsePostTitle(card.title);
+          final item = ManifestItem(
+            id: fastId,
+            mediaType: mediaType,
+            title: meta.cleanTitle,
+            rawTitle: card.title,
+            posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : null,
+            postUrl: card.postUrl,
+            logoUrl: logoUrl,
+            imdbId: imdbId,
+            releaseYear: meta.year ?? (card.datePublished?.year ?? DateTime.now().year),
+            releaseDate: card.datePublished?.toIso8601String(),
+            voteAverage: card.rating,
+            isTrending: true,
+          );
+          _itemMap[item.id.toString()] = item;
+          _postUrlMap[item.id.toString()] = card.postUrl;
+          carouselItems.add(item);
+        }
+
+        _cachedCarousel = carouselItems;
+        await saveDiskCache();
+        onHomeRefreshed?.call(); // Notify UI to update carousel
+        dev.log('[MovieSiteScraperService] ✅ Carousel enrichment done (${carouselItems.length} items)');
+      } catch (e) {
+        dev.log('[MovieSiteScraperService] Carousel enrichment error: $e');
+      }
+    });
   }
 
   /// Fetch Chinese drama posts strictly via /chinese-series/ on Vegamovies
@@ -1331,13 +1536,26 @@ class MovieSiteScraperService {
     final key = categoryOrGenre.toLowerCase().trim();
     final cacheKey = '${key}_page_$page';
 
-    // Return cache immediately if available, but schedule background refresh if stale
-    if (_categoryPageCache.containsKey(cacheKey) && _categoryPageCache[cacheKey]!.isNotEmpty) {
-      if (isCategoryCacheStale && page == 1) {
-        // Background refresh for page 1 only
+    // 1. Instant return from cache (0ms)
+    final cached = getCategoryPageSync(categoryOrGenre, page: page);
+    if (cached != null && cached.isNotEmpty) {
+      if (page == 1 && shouldRefreshCategory(key)) {
+        // Enqueue background refresh "slowly and gracefully"
         _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
       }
-      return _categoryPageCache[cacheKey]!;
+      return cached;
+    }
+
+    // 2. If disk cache wasn't loaded yet, try loading it now
+    if (!_isDiskCacheLoaded) {
+      await loadDiskCache();
+      final diskLoaded = getCategoryPageSync(categoryOrGenre, page: page);
+      if (diskLoaded != null && diskLoaded.isNotEmpty) {
+        if (page == 1 && shouldRefreshCategory(key)) {
+          _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
+        }
+        return diskLoaded;
+      }
     }
 
     if (_pendingCategoryPages.containsKey(cacheKey)) {
@@ -1348,36 +1566,66 @@ class MovieSiteScraperService {
     _pendingCategoryPages[cacheKey] = future;
     try {
       final res = await future;
-      if (page == 1) _lastCategoryFetchTime = DateTime.now();
+      if (page == 1) {
+        _lastCategoryFetchTime = DateTime.now();
+        _lastCategoryRefreshTimes[key] = DateTime.now();
+      }
       return res;
     } finally {
       _pendingCategoryPages.remove(cacheKey);
     }
   }
 
-  /// Background refresh for a single category page 1
-  final Set<String> _pendingBgCategoryRefreshes = {};
+  /// Background refresh queue for category pages — processes "slowly slowly"
+  /// one category at a time with delays so CPU/network never spike.
+  final Queue<String> _bgCategoryQueue = Queue<String>();
+  final Set<String> _queuedBgCategories = {};
+  bool _isProcessingBgQueue = false;
+
   void _backgroundRefreshCategory(String categoryOrGenre, {Map<String, ManifestItem>? localMap}) {
     final key = categoryOrGenre.toLowerCase().trim();
-    if (_pendingBgCategoryRefreshes.contains(key)) return;
-    _pendingBgCategoryRefreshes.add(key);
+    if (_queuedBgCategories.contains(key)) return;
+    _queuedBgCategories.add(key);
+    _bgCategoryQueue.add(key);
+    _processBgCategoryQueue(localMap: localMap);
+  }
 
-    () async {
-      try {
-        dev.log('[MovieSiteScraperService] Background category refresh: $key');
-        // Clear old cache for this key so _doFetchCategoryPage re-fetches
-        _categoryPageCache.remove('${key}_page_1');
-        await _doFetchCategoryPage(categoryOrGenre, page: 1, localMap: localMap);
-        _lastCategoryFetchTime = DateTime.now();
-        await saveDiskCache();
-        onCategoriesRefreshed?.call();
-        dev.log('[MovieSiteScraperService] Background category refresh done: $key');
-      } catch (e) {
-        dev.log('[MovieSiteScraperService] Background category refresh error ($key): $e');
-      } finally {
-        _pendingBgCategoryRefreshes.remove(key);
+  Future<void> _processBgCategoryQueue({Map<String, ManifestItem>? localMap}) async {
+    if (_isProcessingBgQueue) return;
+    _isProcessingBgQueue = true;
+
+    try {
+      // Gentle initial delay (5 seconds) so startup UI rendering has settled completely
+      await Future<void>.delayed(const Duration(seconds: 5));
+
+      while (_bgCategoryQueue.isNotEmpty) {
+        final key = _bgCategoryQueue.removeFirst();
+        try {
+          dev.log('[MovieSiteScraperService] ⏳ Slow background category update: $key');
+          final newItems = await _doFetchCategoryPage(key, page: 1, localMap: localMap);
+          if (newItems.isNotEmpty) {
+            _categoryPageCache['${key}_page_1'] = newItems;
+            for (final it in newItems) {
+              _itemMap[it.id.toString()] = it;
+            }
+            _lastCategoryRefreshTimes[key] = DateTime.now();
+            _lastCategoryFetchTime = DateTime.now();
+            await saveDiskCache();
+            onCategoriesRefreshed?.call();
+            onSingleCategoryRefreshed?.call(key, newItems);
+            dev.log('[MovieSiteScraperService] ✅ Category $key slowly updated in background');
+          }
+        } catch (e) {
+          dev.log('[MovieSiteScraperService] Category bg refresh error ($key): $e');
+        } finally {
+          _queuedBgCategories.remove(key);
+        }
+        // Gentle 2.5 second breath between category fetches
+        await Future<void>.delayed(const Duration(milliseconds: 2500));
       }
-    }();
+    } finally {
+      _isProcessingBgQueue = false;
+    }
   }
 
   Future<List<ManifestItem>> _doFetchCategoryPage(

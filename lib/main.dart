@@ -108,8 +108,10 @@ Future<void> main() async {
       ),
     );
 
-    // ── PHASE 2: Background init — Supabase + services AFTER UI renders ──
-    Future.microtask(() async {
+    // ── PHASE 2: Background init — Supabase + services AFTER FIRST FRAME ──
+    // addPostFrameCallback guarantees the first frame has rendered before
+    // any heavy background work starts — prevents ANR on low-end devices.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         // Supabase is the heaviest — network-bound 1-2.5s.
         // UI is already visible, so this runs in parallel.

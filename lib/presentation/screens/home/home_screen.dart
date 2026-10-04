@@ -79,29 +79,108 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.dispose();
   }
 
+  /// All expected section titles in display order — used to show shimmer
+  /// placeholders for sections that haven't loaded yet.
+  static const _expectedSectionTitles = [
+    'Top 10 Indian Today',
+    'Top 10 Hindi Dub Today',
+    'Korean',
+    'Chinese',
+    'Anime',
+    'Action',
+    'Sci-Fi',
+    'Comedy',
+    'Thriller',
+    'Horror',
+    'Romance',
+  ];
+
+  /// Builds the list of slivers for home sections.
+  /// Shows loaded sections as real content, and only up to 2 shimmer
+  /// placeholders for not-yet-loaded sections to keep GPU usage low.
+  List<Widget> _buildProgressiveSections(
+    List<ContentSection> sections,
+    Set<String> loadedTitles,
+  ) {
+    final slivers = <Widget>[];
+    int shimmerCount = 0;
+    const maxShimmers = 2; // Only show 2 shimmer sections at a time
+
+    for (final title in _expectedSectionTitles) {
+      final loadedSection = loadedTitles.contains(title)
+          ? sections.firstWhere((s) => s.title == title)
+          : null;
+
+      final isTop10Indian = title == 'Top 10 Indian Today';
+      final isTop10HindiDub = title == 'Top 10 Hindi Dub Today';
+      final isRankedSection = isTop10Indian || isTop10HindiDub;
+
+      if (loadedSection != null) {
+        // Real content — section has loaded
+        Widget? headerTitleWidget;
+        if (isTop10Indian) {
+          headerTitleWidget = const TopTenTitle(topText: 'INDIAN', bottomText: 'TODAY');
+        } else if (isTop10HindiDub) {
+          headerTitleWidget = const TopTenTitle(topText: 'HINDI DUB', bottomText: 'TODAY');
+        }
+
+        slivers.add(SliverToBoxAdapter(
+          child: RepaintBoundary(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SectionHeader(
+                  title: loadedSection.title,
+                  titleWidget: headerTitleWidget,
+                  showSeeAll: !isRankedSection,
+                  onSeeAll: () => _handleSeeAll(loadedSection.title),
+                ),
+                ContentRow(
+                  items: loadedSection.items,
+                  isRanked: loadedSection.isRanked,
+                  // Don't pass categorySlug on home — avoids triggering
+                  // paginatedCategoryProvider which fires eager HTTP requests
+                ),
+              ],
+            ),
+          ),
+        ));
+      } else if (shimmerCount < maxShimmers) {
+        // Only show a limited number of shimmer placeholders
+        shimmerCount++;
+        slivers.add(SliverToBoxAdapter(
+          child: _ShimmerSection(
+            title: isRankedSection ? null : title,
+            isRanked: isRankedSection,
+            rankedTopText: isTop10Indian ? 'INDIAN' : (isTop10HindiDub ? 'HINDI DUB' : null),
+          ),
+        ));
+      }
+      // Sections beyond maxShimmers that haven't loaded yet are simply not shown
+    }
+
+    return slivers;
+  }
+
   @override
   Widget build(BuildContext context) {
     final homeSectionsAsync = ref.watch(homeSectionsProvider);
     final carouselAsync = ref.watch(mergedCarouselProvider);
 
-    return homeSectionsAsync.when(
-      loading: () => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value!, carouselAsync.valueOrNull ?? []) : const _LoadingHome(),
-      error: (e, _) => homeSectionsAsync.hasValue ? _buildHomeContent(homeSectionsAsync.value!, carouselAsync.valueOrNull ?? []) : _ErrorHome(error: e.toString()),
-      data: (sections) {
-        final carouselItems = carouselAsync.valueOrNull ?? [];
-        if (sections.isEmpty && carouselItems.isEmpty) {
-          return const _EmptyHome();
-        }
-        return _buildHomeContent(sections, carouselItems);
-      },
-    );
+    // Always render the scaffold — show shimmer placeholders for missing sections.
+    // As the StreamProvider yields more data, sections replace shimmers one by one.
+    final sections = homeSectionsAsync.valueOrNull ?? [];
+    final carouselItems = carouselAsync.valueOrNull ?? [];
+
+    return _buildHomeContent(sections, carouselItems);
   }
 
   Widget _buildHomeContent(
     List<ContentSection> sections,
     List<ManifestItem> carouselItems
   ) {
-
+    // Build a lookup of loaded section titles for O(1) check
+    final loadedTitles = <String>{for (final s in sections) s.title};
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -121,6 +200,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             backgroundColor: AppColors.surfaceElevated,
             onRefresh: () async {
               MovieSiteScraperService.instance.clearCache();
+              await MovieSiteScraperService.instance.loadDiskCache();
               ref.invalidate(mergedCarouselProvider);
               ref.invalidate(top10IndianProvider);
               ref.invalidate(top10HindiDubProvider);
@@ -130,65 +210,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: CustomScrollView(
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
-              // PERF: Pre-build sections 800px before they scroll into view
-              cacheExtent: 800,
+              // PERF: Reduced from 800 to avoid pre-building off-screen shimmers
+              cacheExtent: 200,
               slivers: [
-                // Hero section: Header + Carousel with gradient emitting from active card
+                // Hero section: Header + Carousel (shimmer if empty)
+                // RepaintBoundary prevents expensive gradient repaints
+                // from cascading to the rest of the scroll view
                 SliverToBoxAdapter(
-                  child: _HeroGradientSection(
-                    carouselItems: carouselItems,
+                  child: RepaintBoundary(
+                    child: _HeroGradientSection(
+                      carouselItems: carouselItems,
+                    ),
                   ),
                 ),
 
-                // Content sections with Continue Watching inserted ABOVE Top 10
-                ...sections.expand((section) {
-                  final isTop10Indian = section.title == 'Top 10 Indian Today';
-                  final isTop10HindiDub = section.title == 'Top 10 Hindi Dub Today';
-                  final isRankedSection = isTop10Indian || isTop10HindiDub;
+                // Continue Watching row (always above Top 10)
+                if (ref.watch(continueWatchingSettingsProvider))
+                  const SliverToBoxAdapter(
+                    child: ContinueWatchingRow(),
+                  ),
 
-                  Widget? headerTitleWidget;
-                  if (isTop10Indian) {
-                    headerTitleWidget = const TopTenTitle(topText: 'INDIAN', bottomText: 'TODAY');
-                  } else if (isTop10HindiDub) {
-                    headerTitleWidget = const TopTenTitle(topText: 'HINDI DUB', bottomText: 'TODAY');
-                  }
-                  
-                  final sectionWidget = SliverToBoxAdapter(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SectionHeader(
-                          title: section.title,
-                          titleWidget: headerTitleWidget,
-                          showSeeAll: !isRankedSection,
-                          onSeeAll: () => _handleSeeAll(section.title),
-                        ),
-                        ContentRow(
-                          items: section.items,
-                          isRanked: section.isRanked,
-                          categorySlug: section.categorySlug,
-                        ),
-                      ],
-                    ),
-                  );
-
-                  // Insert Continue Watching row right ABOVE first ranked section
-                  final isFirstRankedSection = isTop10Indian || (isTop10HindiDub && !sections.any((s) => s.title == 'Top 10 Indian Today'));
-                  if (isFirstRankedSection) {
-                    final historyEnabled = ref.watch(continueWatchingSettingsProvider);
-                    if (historyEnabled) {
-                      return [
-                        const SliverToBoxAdapter(
-                          child: ContinueWatchingRow(),
-                        ),
-                        sectionWidget,
-                      ];
-                    } else {
-                      return [sectionWidget];
-                    }
-                  }
-                  return [sectionWidget];
-                }),
+                // Progressive sections: show loaded data OR shimmer placeholder
+                // Only show shimmer for the first few unloaded sections to avoid
+                // overwhelming the GPU with 50+ shimmer widgets at once.
+                ..._buildProgressiveSections(sections, loadedTitles),
 
                 const SliverToBoxAdapter(
                   child: SizedBox(height: 80),
@@ -237,252 +282,115 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 
-class _LoadingHome extends StatelessWidget {
-  const _LoadingHome();
+// NOTE: _LoadingHome, _ErrorHome, _EmptyHome removed — the progressive
+// shimmer layout in _buildHomeContent now handles all loading states
+// by showing shimmer placeholders that replace themselves with real content.
+
+/// Shimmer placeholder for a section that hasn't loaded yet.
+/// Shows a section header shimmer and a row of card-shaped shimmers.
+class _ShimmerSection extends StatelessWidget {
+  final String? title;
+  final bool isRanked;
+  final String? rankedTopText;
+
+  const _ShimmerSection({
+    this.title,
+    this.isRanked = false,
+    this.rankedTopText,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 60),
-            // Hero shimmer
-            const ShimmerBox(width: double.infinity, height: 220),
-            const SizedBox(height: 24),
-            // Section shimmers
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const ShimmerBox(width: 120, height: 18),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 180,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: 5,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
-                      itemBuilder: (_, __) =>
-                          const ShimmerBox(width: 120, height: 180),
-                    ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header shimmer
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: title != null
+                ? ShimmerBox(width: title!.length * 9.0 + 20, height: 18)
+                : Row(
+                    children: [
+                      const ShimmerBox(width: 30, height: 28),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ShimmerBox(width: (rankedTopText?.length ?? 6) * 10.0, height: 11),
+                          const SizedBox(height: 3),
+                          const ShimmerBox(width: 44, height: 11),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
+          ),
+          // Card row shimmer
+          SizedBox(
+            height: isRanked ? 180 : 170,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: 5,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, __) => ShimmerBox(
+                width: isRanked ? 130 : 115,
+                height: isRanked ? 180 : 170,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shimmer placeholder for the hero carousel area while it loads.
+class _CarouselShimmer extends StatelessWidget {
+  const _CarouselShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: AspectRatio(
+        aspectRatio: 2 / 2.6,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Background card shimmers (slightly offset)
+            Positioned(
+              left: 30,
+              right: 30,
+              top: 20,
+              bottom: 10,
+              child: ShimmerBox(
+                width: double.infinity,
+                height: double.infinity,
+                borderRadius: 16,
+              ),
+            ),
+            Positioned(
+              left: 15,
+              right: 15,
+              top: 10,
+              bottom: 5,
+              child: ShimmerBox(
+                width: double.infinity,
+                height: double.infinity,
+                borderRadius: 18,
+              ),
+            ),
+            // Front card shimmer
+            ShimmerBox(
+              width: double.infinity,
+              height: double.infinity,
+              borderRadius: 20,
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ErrorHome extends StatelessWidget {
-  final String error;
-  const _ErrorHome({required this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.cloud_off_rounded,
-                  size: 64, color: AppColors.textMuted),
-              const SizedBox(height: 16),
-              Text(
-                'Something went wrong',
-                style: GoogleFonts.lora(
-                  color: AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                error,
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(color: AppColors.textMuted, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyHome extends ConsumerWidget {
-  const _EmptyHome();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final homeSections = ref.watch(homeSectionsProvider);
-    final isStillLoading = homeSections.isLoading;
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          // Skeleton shimmer cards underneath
-          SafeArea(
-            child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 60),
-                  // Hero shimmer
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: ShimmerBox(width: double.infinity, height: 220),
-                  ),
-                  const SizedBox(height: 28),
-                  // Section 1 shimmer
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const ShimmerBox(width: 140, height: 18),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 180,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: 5,
-                            separatorBuilder: (_, __) => const SizedBox(width: 10),
-                            itemBuilder: (_, __) =>
-                                const ShimmerBox(width: 120, height: 180),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Section 2 shimmer
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const ShimmerBox(width: 100, height: 18),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 180,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: 5,
-                            separatorBuilder: (_, __) => const SizedBox(width: 10),
-                            itemBuilder: (_, __) =>
-                                const ShimmerBox(width: 120, height: 180),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Centered loading overlay on top of skeleton
-          if (isStillLoading)
-            Positioned.fill(
-              child: Container(
-                color: AppColors.background.withValues(alpha: 0.6),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE91E63)),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Please wait',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Loading content...',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: Colors.white60,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // If loading finished but still empty — show retry
-          if (!isStillLoading)
-            Positioned.fill(
-              child: Container(
-                color: AppColors.background.withValues(alpha: 0.7),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_download_outlined,
-                          size: 56, color: Colors.white38),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Content loading...',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Fetching latest catalog',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: Colors.white60,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          MovieSiteScraperService.instance.clearCache();
-                          ref.invalidate(homeSectionsProvider);
-                        },
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Retry'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFE91E63),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -620,9 +528,11 @@ class _HeroGradientSection extends ConsumerWidget {
                 ],
               ),
             ),
-            // Carousel
+            // Carousel (or shimmer placeholder while loading)
             if (carouselItems.isNotEmpty)
-              StackedCarousel(items: carouselItems),
+              StackedCarousel(items: carouselItems)
+            else
+              const _CarouselShimmer(),
             // Extra padding so gradient extends a bit below carousel
             const SizedBox(height: 12),
           ],
@@ -688,46 +598,22 @@ class _CarouselGradientBgState extends State<_CarouselGradientBg>
       builder: (context, _) {
         final color = _colorTween.evaluate(_curve) ?? widget.palette.primary;
 
-        return Stack(
-          children: [
-            // Layer 1: Full vertical gradient — strong color at top, fading to black
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      color.withValues(alpha: 0.7),
-                      color.withValues(alpha: 0.45),
-                      color.withValues(alpha: 0.2),
-                      color.withValues(alpha: 0.05),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
-                  ),
-                ),
+        // Single gradient layer — much cheaper than 2 stacked gradients
+        return RepaintBoundary(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  color.withValues(alpha: 0.65),
+                  color.withValues(alpha: 0.25),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.45, 1.0],
               ),
             ),
-            // Layer 2: Radial glow emitting from carousel center
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0.0, 0.35),
-                    radius: 1.0,
-                    colors: [
-                      color.withValues(alpha: 0.6),
-                      color.withValues(alpha: 0.3),
-                      color.withValues(alpha: 0.08),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.3, 0.6, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         );
       },
     );

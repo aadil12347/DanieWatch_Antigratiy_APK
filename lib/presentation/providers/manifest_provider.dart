@@ -266,7 +266,7 @@ final topPicksSyncProvider = FutureProvider<bool>((ref) async {
 
 /// Featured content for the Carousel (Top 5 from VegaMovies homepage)
 final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final localMap = ref.watch(localManifestMapProvider);
+  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
   try {
     final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
@@ -294,7 +294,7 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
 
 /// Top 10 Indian Today provider (2026 Indian releases from RogMovies)
 final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final localMap = ref.watch(localManifestMapProvider);
+  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
   try {
     final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
@@ -314,7 +314,7 @@ final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
 
 /// Top 10 Hindi Dub Today provider (5 from RogMovies + 5 from VegaMovies, distinct from Indian Today)
 final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final localMap = ref.watch(localManifestMapProvider);
+  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
   try {
     final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
@@ -346,26 +346,25 @@ final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
 /// Backward compatibility alias
 final mergedTop10Provider = top10HindiDubProvider;
 
+/// Trigger to rebuild home sections when a background category finishes updating
+final categoryRefreshTriggerProvider = StateProvider<int>((ref) => 0);
+
 /// Home screen sections compiled live from VegaMovies and RogMovies with 0ms disk cache and batched streaming.
-/// Always fetches fresh data on every app start — shows cached data instantly, then replaces with live data.
+/// Always loads instant base JSON on startup, then slowly updates in the background.
 final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
-  final localMap = ref.watch(localManifestMapProvider);
+  ref.watch(categoryRefreshTriggerProvider);
+  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
 
   // Register background-refresh callbacks so that when the scraper finishes
   // a background refresh, it invalidates these providers → UI rebuilds.
-  // NOTE: We do NOT invalidate homeSectionsProvider itself (circular reference).
-  // Instead, invalidating the carousel/top10 providers is sufficient since
-  // the home screen watches those separately.
   scraper.onHomeRefreshed = () {
     ref.invalidate(mergedCarouselProvider);
     ref.invalidate(top10IndianProvider);
     ref.invalidate(top10HindiDubProvider);
   };
   scraper.onCategoriesRefreshed = () {
-    // Categories are fetched inline by homeSectionsProvider, so we just
-    // need to invalidate the carousel/top10 to trigger a rebuild cycle.
-    ref.invalidate(mergedCarouselProvider);
+    ref.read(categoryRefreshTriggerProvider.notifier).state++;
   };
 
   // Clean up callbacks when provider is disposed
@@ -373,17 +372,6 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
     scraper.onHomeRefreshed = null;
     scraper.onCategoriesRefreshed = null;
   });
-
-  // 1. FAST PATH (0ms startup): Ensure disk cache is loaded and yield immediately if available
-  await scraper.loadDiskCache();
-
-  final initialSections = <ContentSection>[];
-  if (scraper.cachedTop10Indian != null && scraper.cachedTop10Indian!.isNotEmpty) {
-    initialSections.add(ContentSection(title: 'Top 10 Indian Today', items: scraper.cachedTop10Indian!, isRanked: true));
-  }
-  if (scraper.cachedTop10HindiDub != null && scraper.cachedTop10HindiDub!.isNotEmpty) {
-    initialSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: scraper.cachedTop10HindiDub!, isRanked: true));
-  }
 
   const categoryDefs = [
     ('korean', 'Korean'),
@@ -397,20 +385,41 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
     ('romance', 'Romance'),
   ];
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FAST PATH: Load base disk cache / bundled assets/base_home.json (0ms)
+  // ═══════════════════════════════════════════════════════════════════════════
+  await scraper.loadDiskCache();
+  await Future<void>.delayed(Duration.zero); // Yield to UI
+
+  final cachedSections = <ContentSection>[];
+  if (scraper.cachedTop10Indian != null && scraper.cachedTop10Indian!.isNotEmpty) {
+    cachedSections.add(ContentSection(title: 'Top 10 Indian Today', items: scraper.cachedTop10Indian!, isRanked: true));
+  }
+  if (scraper.cachedTop10HindiDub != null && scraper.cachedTop10HindiDub!.isNotEmpty) {
+    cachedSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: scraper.cachedTop10HindiDub!, isRanked: true));
+  }
   for (final def in categoryDefs) {
     final cached = scraper.getCachedCategory(def.$1);
     if (cached != null && cached.isNotEmpty) {
-      initialSections.add(ContentSection(title: def.$2, items: cached, categorySlug: def.$1));
+      cachedSections.add(ContentSection(title: def.$2, items: cached, categorySlug: def.$1));
     }
   }
 
-  if (initialSections.isNotEmpty) {
-    yield List<ContentSection>.unmodifiable(initialSections);
+  // YIELD REAL CONTENT IMMEDIATELY — NO BLANK SHIMMER WAIT!
+  if (cachedSections.isNotEmpty) {
+    yield List<ContentSection>.unmodifiable(cachedSections);
+  } else {
+    // Only fallback to placeholders if literally zero data is available
+    final emptySections = <ContentSection>[
+      const ContentSection(title: 'Top 10 Indian Today', items: [], isRanked: true),
+      const ContentSection(title: 'Top 10 Hindi Dub Today', items: [], isRanked: true),
+      ...categoryDefs.map((d) => ContentSection(title: d.$2, items: [], categorySlug: d.$1)),
+    ];
+    yield List<ContentSection>.unmodifiable(emptySections);
   }
 
   // 2. LIVE FETCH: fetchHomeTopLists returns cache instantly if available,
-  // and automatically kicks off a background refresh when stale.
-  // The bg refresh callback (onHomeRefreshed) will invalidate carousel/top10 providers.
+  // and automatically schedules a gentle background refresh when stale.
   List<ManifestItem> liveIndian = scraper.cachedTop10Indian ?? [];
   List<ManifestItem> liveHindiDub = scraper.cachedTop10HindiDub ?? [];
 
@@ -422,66 +431,38 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
     dev.log('[homeSectionsProvider] Top lists fetch error: $e');
   }
 
-  // If we had no cache before, yield the top 10 immediately so user can start browsing!
-  if (initialSections.isEmpty && (liveIndian.isNotEmpty || liveHindiDub.isNotEmpty)) {
-    final immediateTop10 = <ContentSection>[];
-    if (liveIndian.isNotEmpty) {
-      immediateTop10.add(ContentSection(title: 'Top 10 Indian Today', items: liveIndian, isRanked: true));
-    }
-    if (liveHindiDub.isNotEmpty) {
-      immediateTop10.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: liveHindiDub, isRanked: true));
-    }
-    yield List<ContentSection>.unmodifiable(immediateTop10);
-  }
-
-  // 3. Fetch categories in 3 small batches of 3 to avoid choking network sockets
-  // Batch 1: High-interest (Korean, Chinese, Anime)
-  // Batch 2: Popular genres (Action, Sci-Fi, Comedy)
-  // Batch 3: Remaining (Thriller, Horror, Romance)
+  // 3. CATEGORY LOADING: Returns cached category items instantly and queues
+  // gentle sequential background refresh ("slowly slowly").
   final currentSectionsMap = <String, ContentSection>{};
 
-  final batches = [
-    [categoryDefs[0], categoryDefs[1], categoryDefs[2]],
-    [categoryDefs[3], categoryDefs[4], categoryDefs[5]],
-    [categoryDefs[6], categoryDefs[7], categoryDefs[8]],
-  ];
-
-  for (final batch in batches) {
-    final batchResults = await Future.wait(
-      batch.map((def) async {
-        try {
-          final items = await scraper.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
-          return (def.$2, items);
-        } catch (e) {
-          dev.log('[homeSectionsProvider] Category ${def.$2} fetch error: $e');
-          return (def.$2, <ManifestItem>[]);
-        }
-      }),
-    );
-
-    for (int i = 0; i < batch.length; i++) {
-      final def = batch[i];
-      final res = batchResults[i];
-      if (res.$2.isNotEmpty) {
-        currentSectionsMap[res.$1] = ContentSection(title: res.$1, items: res.$2, categorySlug: def.$1);
+  for (final def in categoryDefs) {
+    try {
+      final items = await scraper.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
+      if (items.isNotEmpty) {
+        currentSectionsMap[def.$2] = ContentSection(title: def.$2, items: items, categorySlug: def.$1);
       }
+    } catch (e) {
+      dev.log('[homeSectionsProvider] Category ${def.$2} fetch error: $e');
     }
+  }
 
-    // Reconstruct list in canonical order
-    final emittedSections = <ContentSection>[];
-    if (liveIndian.isNotEmpty) {
-      emittedSections.add(ContentSection(title: 'Top 10 Indian Today', items: liveIndian, isRanked: true));
+  final fullSections = <ContentSection>[];
+  if (liveIndian.isNotEmpty) {
+    fullSections.add(ContentSection(title: 'Top 10 Indian Today', items: liveIndian, isRanked: true));
+  }
+  if (liveHindiDub.isNotEmpty) {
+    fullSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: liveHindiDub, isRanked: true));
+  }
+  for (final catDef in categoryDefs) {
+    if (currentSectionsMap.containsKey(catDef.$2)) {
+      fullSections.add(currentSectionsMap[catDef.$2]!);
+    } else if (scraper.getCachedCategory(catDef.$1) != null) {
+      fullSections.add(ContentSection(title: catDef.$2, items: scraper.getCachedCategory(catDef.$1)!, categorySlug: catDef.$1));
     }
-    if (liveHindiDub.isNotEmpty) {
-      emittedSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: liveHindiDub, isRanked: true));
-    }
-    for (final def in categoryDefs) {
-      if (currentSectionsMap.containsKey(def.$2)) {
-        emittedSections.add(currentSectionsMap[def.$2]!);
-      }
-    }
+  }
 
-    yield List<ContentSection>.unmodifiable(emittedSections);
+  if (fullSections.isNotEmpty) {
+    yield List<ContentSection>.unmodifiable(fullSections);
   }
 
   // Save full cache to disk for next instant startup
@@ -548,9 +529,67 @@ class PaginatedCategoryState {
 class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCategoryState>> {
   final String category;
   final Ref ref;
+  bool _initialized = false;
 
-  PaginatedCategoryNotifier(this.category, this.ref) : super(const AsyncValue.loading()) {
+  PaginatedCategoryNotifier(this.category, this.ref) : super(_getInitialState(category)) {
+    if (state.hasValue && state.value!.items.isNotEmpty) {
+      _initialized = true;
+    }
+    _listenToBackgroundRefresh();
+  }
+
+  static AsyncValue<PaginatedCategoryState> _getInitialState(String category) {
+    final cat = category.toLowerCase().trim();
+    final cached = MovieSiteScraperService.instance.getCategoryPageSync(cat, page: 1);
+    if (cached != null && cached.isNotEmpty) {
+      return AsyncValue.data(PaginatedCategoryState(
+        items: cached,
+        currentPage: 1,
+        minPage: 1,
+        maxPage: 1,
+        hasMore: cached.length >= 10,
+        hasPrevious: false,
+      ));
+    }
+    return const AsyncValue.loading();
+  }
+
+  void _listenToBackgroundRefresh() {
+    final originalCb = MovieSiteScraperService.instance.onSingleCategoryRefreshed;
+    MovieSiteScraperService.instance.onSingleCategoryRefreshed = (catKey, newItems) {
+      originalCb?.call(catKey, newItems);
+      if (!mounted) return;
+      final thisCat = category.toLowerCase().trim();
+      if (catKey == thisCat && newItems.isNotEmpty) {
+        final current = state.valueOrNull;
+        if (current != null && current.currentPage == 1) {
+          state = AsyncValue.data(current.copyWith(items: newItems));
+        }
+      }
+    };
+  }
+
+  /// Call this to trigger the first page load or check background refresh.
+  void ensureInitialized() {
+    if (_initialized) {
+      _backgroundCheck();
+      return;
+    }
+    _initialized = true;
     _loadFirstPage();
+  }
+
+  Future<void> _backgroundCheck() async {
+    try {
+      final results = await _fetchLocalPage(1);
+      if (!mounted) return;
+      if (results.isNotEmpty) {
+        final current = state.valueOrNull;
+        if (current != null && current.currentPage == 1) {
+          state = AsyncValue.data(current.copyWith(items: results));
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadFirstPage() async {
@@ -575,7 +614,19 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page 1 error: $e', stackTrace: stack);
-      state = AsyncValue.error(e, stack);
+      final fallback = MovieSiteScraperService.instance.getCategoryPageSync(category, page: 1);
+      if (fallback != null && fallback.isNotEmpty) {
+        state = AsyncValue.data(PaginatedCategoryState(
+          items: fallback,
+          currentPage: 1,
+          minPage: 1,
+          maxPage: 1,
+          hasMore: true,
+          hasPrevious: false,
+        ));
+      } else {
+        state = AsyncValue.error(e, stack);
+      }
     }
   }
 
@@ -739,6 +790,12 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
         }
       } catch (e) {
         dev.log('[_fetchLocalPage] Error fetching live $cat page $page: $e');
+      }
+      if (page == 1) {
+        final syncFallback = MovieSiteScraperService.instance.getCategoryPageSync(cat, page: 1);
+        if (syncFallback != null && syncFallback.isNotEmpty) {
+          return syncFallback;
+        }
       }
       return [];
     }
