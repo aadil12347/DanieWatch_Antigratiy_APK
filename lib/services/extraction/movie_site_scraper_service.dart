@@ -378,20 +378,23 @@ class MovieSiteScraperService {
 
     // 1. Instant match in local database index if available (0ms)
     if (localMap != null && localMap.isNotEmpty) {
-      final normTitle = title.toLowerCase();
-      for (final item in localMap.values) {
-        final itemNorm = item.cleanTitle.toLowerCase();
-        if (itemNorm.length > 4 && normTitle.contains(itemNorm)) {
-          final enriched = item.copyWith(
-            rawTitle: card.title,
-            posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
-            postUrl: card.postUrl,
-            isTrending: isTrending,
-            trendingRank: trendingRank,
-          );
-          _itemMap[enriched.id.toString()] = enriched;
-          _postUrlMap[enriched.id.toString()] = card.postUrl;
-          return enriched;
+      final cardClean = ManifestItem.cleanPostTitle(card.title).toLowerCase().trim();
+      if (cardClean.isNotEmpty) {
+        for (final item in localMap.values) {
+          final itemClean = item.cleanTitle.toLowerCase().trim();
+          // Must match exact clean title (e.g. "breaking bad" == "breaking bad", not partial single word)
+          if (cardClean == itemClean) {
+            final enriched = item.copyWith(
+              rawTitle: card.title,
+              posterUrl: card.posterUrl.isNotEmpty ? card.posterUrl : item.posterUrl,
+              postUrl: card.postUrl,
+              isTrending: isTrending,
+              trendingRank: trendingRank,
+            );
+            _itemMap[enriched.id.toString()] = enriched;
+            _postUrlMap[enriched.id.toString()] = card.postUrl;
+            return enriched;
+          }
         }
       }
     }

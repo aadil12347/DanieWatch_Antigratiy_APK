@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import '../../domain/models/content_detail.dart';
 import '../../domain/models/entry.dart';
+import '../../domain/models/manifest_item.dart';
 import '../clients/tmdb_client.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
 import '../../services/extraction/site_post_extractor.dart';
@@ -251,6 +252,27 @@ class ContentRepository {
     return 'https://www.youtube.com/watch?v=$key';
   }
 
+  /// Validates whether a TMDB search/find title is consistent with the scraped post title.
+  /// Protects against cases where site uploaders copy-paste wrong IMDb links in posts.
+  static bool _isTitleMatchSane(String tmdbTitle, String postTitle) {
+    if (tmdbTitle.isEmpty || postTitle.isEmpty) return true;
+    final t1 = tmdbTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), ' ').trim();
+    final t2 = postTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), ' ').trim();
+    if (t1 == t2) return true;
+    if (t1.contains(t2) || t2.contains(t1)) return true;
+
+    const stopWords = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'};
+    final words1 = t1.split(RegExp(r'\s+')).where((w) => w.length > 2 && !stopWords.contains(w)).toSet();
+    final words2 = t2.split(RegExp(r'\s+')).where((w) => w.length > 2 && !stopWords.contains(w)).toSet();
+    if (words1.isEmpty || words2.isEmpty) return true;
+
+    final common = words1.intersection(words2);
+    if (words2.length >= 2) {
+      return common.length >= 2 || (common.length / words2.length) >= 0.5;
+    }
+    return common.isNotEmpty;
+  }
+
   // ─── Skip .avif poster URLs ────────────────────────────────────────────────
   static String? _sanitizePosterForAvif(String? url, String? tmdbPath, {String size = 'w342'}) {
     if (url != null && url.isNotEmpty && !url.toLowerCase().endsWith('.avif')) {
@@ -294,15 +316,23 @@ class ContentRepository {
         if (imdbId != null && imdbId.isNotEmpty) {
           final findData = await TmdbClient.instance.findByImdbId(imdbId);
           if (findData != null) {
-            final realId = findData['id'] as int?;
-            final realType = findData['media_type']?.toString();
-            if (realId != null) {
-              effectiveTmdbId = realId;
-              if (realType == 'tv' || realType == 'movie') {
-                effectiveMediaType = realType!;
+            final tmdbTitle = (findData['title'] ?? findData['name'] ?? '').toString();
+            final postClean = scraped?.cleanTitle ?? ManifestItem.cleanPostTitle(postUrl);
+
+            // Validate that IMDb result title is actually related to the post (guards against copy-pasted wrong IMDb links)
+            if (_isTitleMatchSane(tmdbTitle, postClean)) {
+              final realId = findData['id'] as int?;
+              final realType = findData['media_type']?.toString();
+              if (realId != null) {
+                effectiveTmdbId = realId;
+                if (realType == 'tv' || realType == 'movie') {
+                  effectiveMediaType = realType!;
+                }
+                MovieSiteScraperService.instance.registerResolvedTmdb(tmdbId, realId, effectiveMediaType);
+                MovieSiteScraperService.instance.registerResolvedTmdb(realId, realId, effectiveMediaType);
               }
-              MovieSiteScraperService.instance.registerResolvedTmdb(tmdbId, realId, effectiveMediaType);
-              MovieSiteScraperService.instance.registerResolvedTmdb(realId, realId, effectiveMediaType);
+            } else {
+              dev.log('[ContentRepository] Rejecting IMDb ID $imdbId: TMDB title "$tmdbTitle" does not match post "$postClean". Falling back to title search.');
             }
           }
         }
