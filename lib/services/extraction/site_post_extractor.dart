@@ -819,10 +819,15 @@ class SitePostExtractor {
           .toList();
       if (matches.isEmpty) return null;
       final vcloud = matches.firstWhere(
-        (b) =>
-            b.text.toLowerCase().contains('v-cloud') ||
-            b.text.toLowerCase().contains('vcloud') ||
-            b.text.toLowerCase().contains('resumable'),
+        (b) {
+          final t = b.text.toLowerCase();
+          final h = b.href.toLowerCase();
+          return t.contains('v-cloud') ||
+              t.contains('vcloud') ||
+              t.contains('resumable') ||
+              h.contains('vcloud') ||
+              h.contains('hubcloud');
+        },
         orElse: () => matches.first,
       );
       return vcloud;
@@ -850,11 +855,17 @@ class SitePostExtractor {
           .where((b) => b.quality.toLowerCase() == q.toLowerCase())
           .toList();
       if (matches.isNotEmpty) {
+        // STRICT V-CLOUD ONLY: Prioritize buttons containing V-Cloud, VCloud, or Resumable
         final chosen = matches.firstWhere(
-          (b) =>
-              b.text.toLowerCase().contains('v-cloud') ||
-              b.text.toLowerCase().contains('vcloud') ||
-              b.text.toLowerCase().contains('resumable'),
+          (b) {
+            final t = b.text.toLowerCase();
+            final h = b.href.toLowerCase();
+            return t.contains('v-cloud') ||
+                t.contains('vcloud') ||
+                t.contains('resumable') ||
+                h.contains('vcloud') ||
+                h.contains('hubcloud');
+          },
           orElse: () => matches.first,
         );
         result[q] = chosen;

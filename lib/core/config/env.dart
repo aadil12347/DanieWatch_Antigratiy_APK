@@ -32,6 +32,12 @@ class Env {
     defaultValue: '',
   );
 
+  // ── Google Sheets API / Catalog ───────────────────────────
+  static const googleSheetsCatalogUrl = String.fromEnvironment(
+    'GOOGLE_SHEETS_CATALOG_URL',
+    defaultValue: '',
+  );
+
   // ── TMDB ──────────────────────────────────────────────────
   static const tmdbApiKey = String.fromEnvironment(
     'TMDB_API_KEY',

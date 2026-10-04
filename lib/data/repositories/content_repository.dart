@@ -5,6 +5,7 @@ import '../../domain/models/entry.dart';
 import '../clients/tmdb_client.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
 import '../../services/extraction/site_post_extractor.dart';
+import '../../services/google_sheets_catalog_service.dart';
 
 class ContentRepository {
   ContentRepository._();
@@ -333,9 +334,12 @@ class ContentRepository {
         MovieSiteScraperService.instance.setPostUrl(effectiveTmdbId, postUrl);
       }
 
-      // 4. Extract site seasons from Vegamovies/Rogmovies post page download buttons
+      // 4. Check Google Sheets Catalog first for instant multi-season series info
+      final catalog = await GoogleSheetsCatalogService.instance.getSeriesData(effectiveTmdbId);
       List<int>? siteSeasons;
-      if (postUrl != null && postUrl.isNotEmpty) {
+      if (catalog != null && catalog.availableSeasons.isNotEmpty) {
+        siteSeasons = catalog.availableSeasons;
+      } else if (postUrl != null && postUrl.isNotEmpty) {
         try {
           final postButtons = await SitePostExtractor.instance.extractPostButtons(postUrl);
           final seasonsFromButtons = SitePostExtractor.instance.getAvailableSeasons(postButtons);

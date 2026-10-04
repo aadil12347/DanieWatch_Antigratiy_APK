@@ -7,6 +7,7 @@ import '../../core/utils/toast_utils.dart';
 import '../../data/local/download_manager.dart';
 import '../../domain/models/content_detail.dart';
 import '../../services/extraction/site_post_extractor.dart';
+import '../../services/google_sheets_catalog_service.dart';
 import '../providers/batch_zip_modal_provider.dart';
 import 'pressable_scale.dart';
 
@@ -54,6 +55,31 @@ class _BatchZipSelectorContentState
     });
 
     try {
+      // 0. Check Google Sheets Catalog first for instant Batch/Zip archives!
+      final catalog = await GoogleSheetsCatalogService.instance.getSeriesData(widget.content.id);
+      if (catalog != null) {
+        var batchButtons = catalog.getBatchButtonsForSeason(widget.seasonNumber);
+        if (batchButtons.isEmpty) {
+          batchButtons = catalog.allBatchZips.map((bz) => SitePostButton(
+            text: bz.label.isNotEmpty ? bz.label : '⚡ Batch/Zip [${bz.size}]',
+            href: bz.vcloudUrl,
+            quality: bz.quality,
+            seasonNumber: bz.season,
+            isBatchZip: true,
+            sizeLabel: bz.size,
+          )).toList();
+        }
+        if (batchButtons.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _options = batchButtons;
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      }
+
       var postUrl = widget.postUrl;
       if (postUrl == null || postUrl.isEmpty) {
         postUrl = await SitePostExtractor.instance.findPostUrl(

@@ -8,6 +8,7 @@ import '../../services/streaming_links_season_service.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
 import '../../services/extraction/site_post_extractor.dart';
 import '../../services/extraction/series_vcloud_repository.dart';
+import '../../services/google_sheets_catalog_service.dart';
 
 // ─── Param Classes ───────────────────────────────────────────────────────────
 
@@ -173,6 +174,19 @@ final sitePostButtonsProvider =
 final nextdriveEpisodesProvider =
     FutureProvider.family<List<NextdriveEpisode>, NextdriveEpisodeParams>(
   (ref, params) async {
+    // 0. Fast-path: Check Google Sheets Catalog first for instant 0ms episodes!
+    final catalog = await GoogleSheetsCatalogService.instance.getSeriesData(params.tmdbId);
+    if (catalog != null && catalog.hasSeason(params.seasonNumber)) {
+      debugPrint('[detailProvider] Serving S${params.seasonNumber} from Google Sheets catalog instantly!');
+      final episodes = catalog.getEpisodesForSeason(params.seasonNumber, posterUrl: params.posterUrl);
+      if (episodes.isNotEmpty) {
+        SitePostExtractor.instance.preResolveSeasonEpisodes(episodes).catchError((e) {
+          debugPrint('[detailProvider] Background pre-resolve error: $e');
+        });
+        return episodes;
+      }
+    }
+
     // 1. Locate the post URL
     var postUrl = params.postUrl;
     if (postUrl == null || postUrl.isEmpty) {
