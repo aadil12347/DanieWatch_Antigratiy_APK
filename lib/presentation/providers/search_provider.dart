@@ -227,7 +227,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       );
     }
 
-    if (state.query.trim().isNotEmpty) {
+    if (category == 'Search' && state.query.trim().isNotEmpty) {
       search(state.query);
     }
   }

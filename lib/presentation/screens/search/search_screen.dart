@@ -496,8 +496,8 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
       final metrics = notification.metrics;
-      // Trigger when within 400px of the bottom
-      if (metrics.pixels >= metrics.maxScrollExtent - 400) {
+      // Trigger when within 600px of the bottom
+      if (metrics.pixels >= metrics.maxScrollExtent - 600) {
         ref.read(paginatedCategoryProvider(_slug).notifier).loadNextPage();
       }
     }
@@ -565,11 +565,11 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 
     final paginatedState = ref.watch(paginatedCategoryProvider(_slug));
 
-    final hasSearch = searchState.query.trim().isNotEmpty;
+    final isSearchTab = widget.categoryLabel == 'Search';
+    final hasSearch = isSearchTab && searchState.query.trim().isNotEmpty;
     // Check for user-applied filters BEYOND the nav category.
     // The nav category alone should NOT trigger FilterUtils re-sorting,
     // because category providers already supply correctly filtered + sorted data
-    // (with posting-record priority order preserved).
     final f = searchState.filters;
     final hasUserFilters = f.regions.isNotEmpty ||
         f.originalLanguages.isNotEmpty ||
@@ -580,23 +580,59 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     final showResults = hasSearch || hasUserFilters;
 
     return paginatedState.when(
-      loading: () => CustomScrollView(
-        slivers: [_buildShimmerGrid()],
-      ),
-      error: (err, _) => CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(child: Center(child: Text('Error: $err'))),
-        ],
-      ),
+      loading: () {
+        final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
+        final categoryFallback = _slug == 'all' || _slug == 'search'
+            ? allSortedItems
+            : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
+        if (categoryFallback.isNotEmpty) {
+          return CustomScrollView(
+            key: PageStorageKey('scroll_${widget.categoryLabel}'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildResultsGrid(categoryFallback),
+            ],
+          );
+        }
+        return CustomScrollView(
+          slivers: [_buildShimmerGrid()],
+        );
+      },
+      error: (err, _) {
+        final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
+        final categoryFallback = _slug == 'all' || _slug == 'search'
+            ? allSortedItems
+            : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
+        if (categoryFallback.isNotEmpty) {
+          return CustomScrollView(
+            key: PageStorageKey('scroll_${widget.categoryLabel}'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildResultsGrid(categoryFallback),
+            ],
+          );
+        }
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: Center(child: Text('Error: $err'))),
+          ],
+        );
+      },
       data: (pagState) {
         final rawItems = pagState.items;
+        final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
+        final categoryFallback = _slug == 'all' || _slug == 'search'
+            ? allSortedItems
+            : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
+        final effectiveItems = rawItems.isNotEmpty ? rawItems : categoryFallback;
 
         // Determine enforced category for FilterUtils
         String? enforceCategory;
         const categoryPages = {
           'Action', 'Korean', 'K-Drama', 'Chinese', 'Anime', 'Comedy',
           'Thriller', 'Horror', 'Sci-Fi', 'Romance', 'Indian', 'Bollywood',
-          'Hollywood', 'Punjabi', 'Pakistani',
+          'Hollywood', 'Punjabi', 'Pakistani', 'Dual Audio', 'Adventure',
+          'Crime', 'Drama', 'Mystery', 'Fantasy', 'Animation',
         };
         final filterCat = searchState.filters.categories;
         if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
@@ -606,26 +642,18 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         // Apply filters across category list if search or custom filter is active
         final List<ManifestItem> itemsToDisplay;
         if (showResults) {
-          final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
-          final categoryItems = _slug == 'all'
-              ? (allSortedItems.isNotEmpty ? allSortedItems : rawItems)
-              : (rawItems.isNotEmpty
-                  ? rawItems
-                  : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList());
           itemsToDisplay = FilterUtils.getFilteredItems(
-            allItems: categoryItems,
+            allItems: effectiveItems,
             searchState: searchState,
             enforceCategory: enforceCategory,
           );
         } else {
-          itemsToDisplay = rawItems;
+          itemsToDisplay = effectiveItems;
         }
-
 
         return NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,
           child: CustomScrollView(
-            // Let NestedScrollView manage the scroll controller
             key: PageStorageKey('scroll_${widget.categoryLabel}'),
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: _buildContentSlivers(
@@ -633,7 +661,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
               hasSearch,
               showResults,
               itemsToDisplay,
-              rawItems,
+              effectiveItems,
               pagState,
             ),
           ),
@@ -666,14 +694,25 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     }
 
     // Active search or filter with results → show ONLY filtered items
-    // (no infinite scroll for filtered results — filters apply on loaded data)
     if (showResults && itemsToDisplay.isNotEmpty) {
       return [_buildResultsGrid(itemsToDisplay)];
     }
 
-    // No search or filter active → grid of all items + loading indicator
+    if (itemsToDisplay.isEmpty) {
+      if (pagState.isLoadingMore) {
+        return [_buildShimmerGrid()];
+      }
+      return [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyResultsView(),
+        ),
+      ];
+    }
+
+    // No search or filter active → grid of items + loading indicator
     return [
-      _buildResultsGrid(allItems),
+      _buildResultsGrid(itemsToDisplay),
       // Loading indicator for infinite scroll
       if (pagState.isLoadingMore)
         const SliverToBoxAdapter(
@@ -692,7 +731,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           ),
         ),
       // "No more items" indicator
-      if (!pagState.hasMore && allItems.isNotEmpty && !pagState.isLoadingMore)
+      if (!pagState.hasMore && itemsToDisplay.isNotEmpty && !pagState.isLoadingMore)
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 24),

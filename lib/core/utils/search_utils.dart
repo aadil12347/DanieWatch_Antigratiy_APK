@@ -207,6 +207,8 @@ class FilterUtils {
 
     bool fallbackLang(String name) => !hasOrigLang && hasLang(name);
 
+    final tLower = '${item.rawTitle ?? ''} ${item.title} ${item.overview ?? ''}'.toLowerCase();
+
     switch (cat) {
       case 'Movie':
         return item.mediaType == 'movie';
@@ -217,17 +219,25 @@ class FilterUtils {
             item.genres.any((g) {
               final gl = g.toLowerCase();
               return gl == 'animation' || gl == 'anime';
-            });
+            }) ||
+            tLower.contains('anime') ||
+            (item.originCountry.contains('JP') &&
+                (item.mediaType == 'tv' || item.mediaType == 'series'));
       case 'K-Drama' || 'Korean':
         return item.originCountry.contains('KR') ||
             ['ko', 'kr', 'korean'].contains(item.originalLanguage?.toLowerCase()) ||
-            fallbackLang('Korean');
+            fallbackLang('Korean') ||
+            hasLang('Korean') ||
+            tLower.contains('korean') ||
+            tLower.contains('k-drama') ||
+            tLower.contains('kdrama');
       case 'Indian':
       case 'Bollywood':
         return item.originCountry.contains('IN') ||
             ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'gu', 'bh', 'pa', 'punjabi', 'ur', 'urdu']
                 .contains(item.originalLanguage?.toLowerCase()) ||
             fallbackLang('Hindi') ||
+            hasLang('Hindi') ||
             fallbackLang('Tamil') ||
             fallbackLang('Telugu') ||
             fallbackLang('Malayalam') ||
@@ -237,7 +247,37 @@ class FilterUtils {
             fallbackLang('Gujarati') ||
             fallbackLang('Bhojpuri') ||
             fallbackLang('Punjabi') ||
-            fallbackLang('Urdu');
+            fallbackLang('Urdu') ||
+            tLower.contains('hindi') ||
+            tLower.contains('bollywood') ||
+            tLower.contains('tollywood') ||
+            tLower.contains('kollywood') ||
+            tLower.contains('punjabi') ||
+            tLower.contains('indian') ||
+            tLower.contains('jiohotstar') ||
+            tLower.contains('hotstar') ||
+            tLower.contains('zee5') ||
+            tLower.contains('sonyliv');
+      case 'Dual Audio':
+        return tLower.contains('dual audio') ||
+            tLower.contains('dual-audio') ||
+            tLower.contains('hindi dubbed') ||
+            tLower.contains('hindi-dubbed') ||
+            tLower.contains('hindi dub') ||
+            tLower.contains('org dubbed') ||
+            tLower.contains('org. dubbed') ||
+            tLower.contains('dubbed') ||
+            tLower.contains('multi audio') ||
+            tLower.contains('multi-audio') ||
+            tLower.contains('hindi-english') ||
+            tLower.contains('{hindi') ||
+            item.language.length > 1 ||
+            item.language.any((l) => [
+                  'dual audio',
+                  'hindi dubbed',
+                  'dubbed',
+                  'multi audio',
+                ].contains(l.toLowerCase()));
       case 'Hollywood':
         final excludedLangs = {
           'hi', 'hindi',
@@ -256,39 +296,102 @@ class FilterUtils {
           'zh', 'cn', 'chinese', 'mandarin', 'cantonese'
         };
         final excludedCountries = {'IN', 'KR', 'JP', 'PK', 'CN', 'HK', 'TW'};
-        
+
         if (item.originCountry.any((c) => excludedCountries.contains(c))) return false;
-        
+
         final origLangLower = item.originalLanguage?.toLowerCase();
         if (origLangLower != null && excludedLangs.contains(origLangLower)) return false;
-        
+
         final excludedDisplayLangs = {
           'hindi', 'tamil', 'telugu', 'malayalam', 'kannada', 'bengali',
           'marathi', 'gujarati', 'bhojpuri', 'punjabi', 'urdu',
           'japanese', 'korean', 'chinese', 'mandarin', 'cantonese'
         };
         if (item.language.any((l) => excludedDisplayLangs.contains(l.toLowerCase()))) return false;
-        
+
         final countries = item.originCountry.map((c) => c.toUpperCase()).toSet();
         const hwCountries = {'US', 'GB', 'UK', 'AU', 'CA'};
         final isHwCountry = countries.intersection(hwCountries).isNotEmpty;
-        final isEnglish = ['en', 'english'].contains(origLangLower) || hasLang('English');
-        
+        final isEnglish = ['en', 'english'].contains(origLangLower) ||
+            hasLang('English') ||
+            tLower.contains('english');
+
         return isHwCountry || isEnglish;
       case 'Chinese':
         return item.originCountry.contains('CN') ||
             item.originCountry.contains('HK') ||
             item.originCountry.contains('TW') ||
-            ['zh', 'cn', 'chinese', 'mandarin', 'cantonese'].contains(item.originalLanguage?.toLowerCase()) ||
-            fallbackLang('Chinese');
+            ['zh', 'cn', 'chinese', 'mandarin', 'cantonese']
+                .contains(item.originalLanguage?.toLowerCase()) ||
+            fallbackLang('Chinese') ||
+            hasLang('Chinese') ||
+            tLower.contains('chinese') ||
+            tLower.contains('c-drama') ||
+            tLower.contains('cdrama');
       case 'Punjabi':
         return ['pa', 'punjabi'].contains(item.originalLanguage?.toLowerCase()) ||
-            hasLang('Punjabi');
+            hasLang('Punjabi') ||
+            tLower.contains('punjabi');
       case 'Pakistani':
         return item.originCountry.contains('PK') ||
             ['ur', 'urdu'].contains(item.originalLanguage?.toLowerCase()) ||
             fallbackLang('Urdu') ||
-            fallbackLang('Pakistani');
+            fallbackLang('Pakistani') ||
+            hasLang('Urdu') ||
+            tLower.contains('pakistani');
+      case 'Action':
+        return item.genreIds.any((id) => [28, 12, 10759].contains(id)) ||
+            item.genres.any((g) => g.toLowerCase().contains('action')) ||
+            tLower.contains('action');
+      case 'Sci-Fi' || 'Science Fiction':
+        return item.genreIds.any((id) => [878, 14, 10765].contains(id)) ||
+            item.genres.any((g) {
+              final gl = g.toLowerCase();
+              return gl.contains('sci-fi') || gl.contains('science fiction');
+            }) ||
+            tLower.contains('sci-fi') ||
+            tLower.contains('science fiction');
+      case 'Comedy':
+        return item.genreIds.contains(35) ||
+            item.genres.any((g) => g.toLowerCase().contains('comedy')) ||
+            tLower.contains('comedy');
+      case 'Thriller':
+        return item.genreIds.contains(53) ||
+            item.genres.any((g) => g.toLowerCase().contains('thriller')) ||
+            tLower.contains('thriller');
+      case 'Horror':
+        return item.genreIds.contains(27) ||
+            item.genres.any((g) => g.toLowerCase().contains('horror')) ||
+            tLower.contains('horror');
+      case 'Romance':
+        return item.genreIds.contains(10749) ||
+            item.genres.any((g) => g.toLowerCase().contains('romance')) ||
+            tLower.contains('romance') ||
+            tLower.contains('romantic');
+      case 'Adventure':
+        return item.genreIds.any((id) => [12, 10759].contains(id)) ||
+            item.genres.any((g) => g.toLowerCase().contains('adventure')) ||
+            tLower.contains('adventure');
+      case 'Crime':
+        return item.genreIds.contains(80) ||
+            item.genres.any((g) => g.toLowerCase().contains('crime')) ||
+            tLower.contains('crime');
+      case 'Drama':
+        return item.genreIds.contains(18) ||
+            item.genres.any((g) => g.toLowerCase().contains('drama')) ||
+            tLower.contains('drama');
+      case 'Mystery':
+        return item.genreIds.contains(9648) ||
+            item.genres.any((g) => g.toLowerCase().contains('mystery')) ||
+            tLower.contains('mystery');
+      case 'Fantasy':
+        return item.genreIds.any((id) => [14, 10765].contains(id)) ||
+            item.genres.any((g) => g.toLowerCase().contains('fantasy')) ||
+            tLower.contains('fantasy');
+      case 'Animation':
+        return item.genreIds.contains(16) ||
+            item.genres.any((g) => g.toLowerCase().contains('animation')) ||
+            tLower.contains('animation');
       default:
         return false;
     }
@@ -298,12 +401,29 @@ class FilterUtils {
     const slugToCategory = {
       'indian': 'Indian',
       'bollywood': 'Bollywood',
+      'dual-audio': 'Dual Audio',
+      'dualaudio': 'Dual Audio',
       'korean': 'Korean',
+      'k-drama': 'Korean',
+      'kdrama': 'Korean',
+      'chinese': 'Chinese',
       'anime': 'Anime',
       'hollywood': 'Hollywood',
-      'chinese': 'Chinese',
       'punjabi': 'Punjabi',
       'pakistani': 'Pakistani',
+      'action': 'Action',
+      'sci-fi': 'Sci-Fi',
+      'scifi': 'Sci-Fi',
+      'comedy': 'Comedy',
+      'thriller': 'Thriller',
+      'horror': 'Horror',
+      'romance': 'Romance',
+      'adventure': 'Adventure',
+      'crime': 'Crime',
+      'drama': 'Drama',
+      'mystery': 'Mystery',
+      'fantasy': 'Fantasy',
+      'animation': 'Animation',
     };
     final cat = slugToCategory[slug];
     if (cat == null) return true;

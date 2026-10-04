@@ -32,8 +32,8 @@ class MovieSiteScraperService {
   static const String rogBaseUrl = 'https://rogmovies.best';
 
   static final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 8),
-    receiveTimeout: const Duration(seconds: 12),
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 20),
     headers: {
       'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -347,6 +347,83 @@ class MovieSiteScraperService {
     return cards;
   }
 
+  /// Parse Typesense JSON hits from VegaMovies / RogMovies
+  static List<ScrapedSiteCard> parseTsCards(String? jsonStr, String site, String baseUrl) {
+    final cards = <ScrapedSiteCard>[];
+    if (jsonStr == null || jsonStr.isEmpty) return cards;
+    try {
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final hits = data['hits'] as List?;
+      if (hits != null) {
+        for (final hit in hits) {
+          final doc = hit['document'] as Map<String, dynamic>?;
+          if (doc != null) {
+            final title = doc['post_title']?.toString() ?? '';
+            final permalink = doc['permalink']?.toString() ?? '';
+            final thumb =
+                (doc['post_thumbnail'] ?? doc['thumb'])?.toString() ?? '';
+            final fullUrl = permalink.startsWith('http')
+                ? permalink
+                : '$baseUrl$permalink';
+
+            DateTime? datePublished;
+            final sortByDate = doc['sort_by_date'];
+            if (sortByDate is num && sortByDate > 0) {
+              datePublished = DateTime.fromMillisecondsSinceEpoch(
+                  sortByDate.toInt() * 1000);
+            } else if (doc['post_date'] != null) {
+              datePublished = DateTime.tryParse(doc['post_date'].toString());
+            }
+
+            if (title.isNotEmpty &&
+                fullUrl.isNotEmpty &&
+                !isExcludedIndianShow(title)) {
+              cards.add(ScrapedSiteCard(
+                site: site,
+                postUrl: fullUrl,
+                posterUrl: thumb,
+                title: cleanTitle(title),
+                datePublished: datePublished,
+              ));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[MovieSiteScraperService] TS parse error ($site): $e');
+    }
+    return cards;
+  }
+
+  /// Query Typesense search across Vegamovies and Rogmovies
+  Future<List<ScrapedSiteCard>> _fetchTypesenseCards(String query, {int page = 1}) async {
+    final cleanQ = Uri.encodeComponent(query);
+    final cards = <ScrapedSiteCard>[];
+    try {
+      final results = await Future.wait([
+        _dio
+            .get<String>(
+              '$vegaBaseUrl/ts-search.php?q=$cleanQ&page=$page',
+              options: Options(responseType: ResponseType.plain),
+            )
+            .then((r) => r.data)
+            .catchError((_) => null),
+        _dio
+            .get<String>(
+              '$rogBaseUrl/ts-search.php?q=$cleanQ&page=$page',
+              options: Options(responseType: ResponseType.plain),
+            )
+            .then((r) => r.data)
+            .catchError((_) => null),
+      ]);
+      if (results[0] != null) cards.addAll(parseTsCards(results[0], 'vegamovies', vegaBaseUrl));
+      if (results[1] != null) cards.addAll(parseTsCards(results[1], 'rogmovies', rogBaseUrl));
+    } catch (e) {
+      debugPrint('[MovieSiteScraperService] TS fetch error ($query): $e');
+    }
+    return cards;
+  }
+
   /// Fetch HTML with direct fetch first (fast, ~400-1200ms)
   static Future<String?> fetchHtml(String url) async {
     try {
@@ -370,6 +447,7 @@ class MovieSiteScraperService {
     bool isTrending = false,
     int? trendingRank,
     Map<String, ManifestItem>? localMap,
+    String? categoryTag,
   }) {
     String title = card.title;
     if (title.toLowerCase().startsWith('download ')) {
@@ -417,6 +495,73 @@ class MovieSiteScraperService {
 
     final fastId = (card.postUrl.hashCode.abs() % 9000000) + 1000000;
 
+    final langSet = <String>{};
+    final countrySet = <String>{};
+    final genreSet = <String>{};
+    final genreIdSet = <int>{};
+    String? origLang;
+
+    // Infer from categoryTag if provided
+    if (categoryTag != null && categoryTag.isNotEmpty) {
+      final tag = categoryTag.toLowerCase().trim();
+      if (tag == 'korean' || tag == 'k-drama' || tag == 'kdrama') {
+        langSet.add('Korean');
+        countrySet.add('KR');
+        origLang = 'ko';
+      } else if (tag == 'chinese') {
+        langSet.add('Chinese');
+        countrySet.add('CN');
+        origLang = 'zh';
+      } else if (tag == 'anime') {
+        genreSet.addAll(['Animation', 'Anime']);
+        genreIdSet.add(16);
+        countrySet.add('JP');
+      } else if (tag == 'indian' || tag == 'bollywood') {
+        langSet.add('Hindi');
+        countrySet.add('IN');
+        origLang = 'hi';
+      } else if (tag == 'dual-audio' || tag == 'dualaudio') {
+        langSet.addAll(['Hindi', 'English', 'Dual Audio']);
+      } else if (tag == 'punjabi') {
+        langSet.add('Punjabi');
+        countrySet.add('IN');
+        origLang = 'pa';
+      } else if (tag == 'pakistani') {
+        langSet.add('Urdu');
+        countrySet.add('PK');
+        origLang = 'ur';
+      } else if (tag == 'hollywood') {
+        langSet.add('English');
+        countrySet.add('US');
+        origLang = 'en';
+      } else if (tag != 'all' && tag != 'explore' && tag != 'search') {
+        final capitalized = tag.substring(0, 1).toUpperCase() + tag.substring(1);
+        genreSet.add(capitalized);
+      }
+    }
+
+    // Infer from title text
+    final lowerTitle = card.title.toLowerCase();
+    if (lowerTitle.contains('hindi')) langSet.add('Hindi');
+    if (lowerTitle.contains('english')) langSet.add('English');
+    if (lowerTitle.contains('korean') || lowerTitle.contains('k-drama')) {
+      langSet.add('Korean');
+      countrySet.add('KR');
+      origLang ??= 'ko';
+    }
+    if (lowerTitle.contains('chinese') || lowerTitle.contains('c-drama')) {
+      langSet.add('Chinese');
+      countrySet.add('CN');
+      origLang ??= 'zh';
+    }
+    if (lowerTitle.contains('anime')) {
+      genreSet.addAll(['Animation', 'Anime']);
+      genreIdSet.add(16);
+    }
+    if (lowerTitle.contains('dual audio') || lowerTitle.contains('dubbed')) {
+      langSet.addAll(['Dual Audio', 'Hindi']);
+    }
+
     final item = ManifestItem(
       id: fastId,
       mediaType: meta.mediaType,
@@ -429,6 +574,11 @@ class MovieSiteScraperService {
       voteAverage: card.rating,
       isTrending: isTrending,
       trendingRank: trendingRank,
+      language: langSet.toList(),
+      originCountry: countrySet.toList(),
+      originalLanguage: origLang,
+      genres: genreSet.toList(),
+      genreIds: genreIdSet.toList(),
     );
 
     _itemMap[item.id.toString()] = item;
@@ -878,55 +1028,18 @@ class MovieSiteScraperService {
         fetchHtml('$vegaBaseUrl/?s=$cleanQ'),
       ]);
 
-      void parseTsJson(String? jsonStr, String site, String baseUrl) {
-        if (jsonStr == null || jsonStr.isEmpty) return;
-        try {
-          final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-          final hits = data['hits'] as List?;
-          if (hits != null) {
-            for (final hit in hits) {
-              final doc = hit['document'] as Map<String, dynamic>?;
-              if (doc != null) {
-                final title = doc['post_title']?.toString() ?? '';
-                final permalink = doc['permalink']?.toString() ?? '';
-                final thumb =
-                    (doc['post_thumbnail'] ?? doc['thumb'])?.toString() ?? '';
-                final fullUrl = permalink.startsWith('http')
-                    ? permalink
-                    : '$baseUrl$permalink';
-
-                DateTime? datePublished;
-                final sortByDate = doc['sort_by_date'];
-                if (sortByDate is num && sortByDate > 0) {
-                  datePublished = DateTime.fromMillisecondsSinceEpoch(
-                      sortByDate.toInt() * 1000);
-                } else if (doc['post_date'] != null) {
-                  datePublished = DateTime.tryParse(doc['post_date'].toString());
-                }
-
-                if (title.isNotEmpty &&
-                    fullUrl.isNotEmpty &&
-                    !seenUrls.contains(fullUrl) &&
-                    !isExcludedShow(title)) {
-                  seenUrls.add(fullUrl);
-                  cards.add(ScrapedSiteCard(
-                    site: site,
-                    postUrl: fullUrl,
-                    posterUrl: thumb,
-                    title: cleanTitle(title),
-                    datePublished: datePublished,
-                  ));
-                }
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('[MovieSiteScraperService] TS parse error ($site): $e');
+      for (final c in parseTsCards(results[0], 'vegamovies', vegaBaseUrl)) {
+        if (!seenUrls.contains(c.postUrl) && !isExcludedShow(c.title)) {
+          seenUrls.add(c.postUrl);
+          cards.add(c);
         }
       }
-
-      parseTsJson(results[0], 'vegamovies', vegaBaseUrl);
-      parseTsJson(results[1], 'rogmovies', rogBaseUrl);
+      for (final c in parseTsCards(results[1], 'rogmovies', rogBaseUrl)) {
+        if (!seenUrls.contains(c.postUrl) && !isExcludedShow(c.title)) {
+          seenUrls.add(c.postUrl);
+          cards.add(c);
+        }
+      }
 
       // Parse Rogmovies HTML search cards
       if (results[2] != null && results[2]!.isNotEmpty) {
@@ -1154,59 +1267,84 @@ class MovieSiteScraperService {
       if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
       if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
     } else if (key == 'korean' || key == 'k-drama' || key == 'kdrama') {
-      // Strictly Vegamovies Korean series
       final pageUrl = page == 1
           ? '$vegaBaseUrl/korean-series/'
           : '$vegaBaseUrl/korean-series/page/$page/';
-      final html = await fetchHtml(pageUrl);
-      if (html != null) cards.addAll(parseCards(html, 'vegamovies'));
+      final results = await Future.wait([
+        fetchHtml(pageUrl),
+        _fetchTypesenseCards('Korean', page: page),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
+      cards.addAll(results[1] as List<ScrapedSiteCard>);
     } else if (key == 'chinese') {
-      // Strictly Vegamovies Chinese series
-      cards.addAll(await _fetchChineseCards(page: page));
+      final results = await Future.wait([
+        _fetchChineseCards(page: page),
+        _fetchTypesenseCards('Chinese', page: page),
+      ]);
+      cards.addAll(results[0]);
+      cards.addAll(results[1]);
     } else if (key == 'anime') {
-      // Strictly Vegamovies Anime series
       final pageUrl = page == 1
           ? '$vegaBaseUrl/anime-series/'
           : '$vegaBaseUrl/anime-series/page/$page/';
-      final html = await fetchHtml(pageUrl);
-      if (html != null) cards.addAll(parseCards(html, 'vegamovies'));
+      final results = await Future.wait([
+        fetchHtml(pageUrl),
+        _fetchTypesenseCards('Anime', page: page),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
+      cards.addAll(results[1] as List<ScrapedSiteCard>);
     } else if (key == 'indian' || key == 'bollywood') {
-      // Rogmovies homepage feed as requested
       final pageUrl = page == 1 ? rogBaseUrl : '$rogBaseUrl/page/$page/';
-      final html = await fetchHtml(pageUrl);
-      if (html != null) cards.addAll(parseCards(html, 'rogmovies'));
+      final results = await Future.wait([
+        fetchHtml(pageUrl),
+        _fetchTypesenseCards('Hindi', page: page),
+      ]);
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'rogmovies'));
+      cards.addAll(results[1] as List<ScrapedSiteCard>);
     } else if (key == 'dual-audio' || key == 'dualaudio') {
-      // Rogmovies homepage feed as requested
-      final pageUrl = page == 1 ? rogBaseUrl : '$rogBaseUrl/page/$page/';
+      // Vegamovies homepage feed and pagination as requested
+      final pageUrl = page == 1 ? vegaBaseUrl : '$vegaBaseUrl/page/$page/';
       final html = await fetchHtml(pageUrl);
-      if (html != null) cards.addAll(parseCards(html, 'rogmovies'));
+      if (html != null && html.isNotEmpty) {
+        cards.addAll(parseCards(html, 'vegamovies'));
+      }
+      if (cards.isEmpty) {
+        // Fallback to Typesense if direct HTML failed
+        cards.addAll(await _fetchTypesenseCards('Dual Audio', page: page));
+      }
     } else if (key == 'hollywood') {
       final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Hollywood' : '$vegaBaseUrl/page/$page/?s=Hollywood';
       final rogUrl = page == 1 ? '$rogBaseUrl/?s=Hollywood' : '$rogBaseUrl/page/$page/?s=Hollywood';
       final results = await Future.wait([
         fetchHtml(vegaUrl),
         fetchHtml(rogUrl),
+        _fetchTypesenseCards('English', page: page),
       ]);
-      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
-      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]! as String, 'rogmovies'));
+      cards.addAll(results[2] as List<ScrapedSiteCard>);
     } else if (key == 'punjabi') {
       final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Punjabi' : '$vegaBaseUrl/page/$page/?s=Punjabi';
       final rogUrl = page == 1 ? '$rogBaseUrl/?s=Punjabi' : '$rogBaseUrl/page/$page/?s=Punjabi';
       final results = await Future.wait([
         fetchHtml(vegaUrl),
         fetchHtml(rogUrl),
+        _fetchTypesenseCards('Punjabi', page: page),
       ]);
-      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
-      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]! as String, 'rogmovies'));
+      cards.addAll(results[2] as List<ScrapedSiteCard>);
     } else if (key == 'pakistani') {
       final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Pakistani' : '$vegaBaseUrl/page/$page/?s=Pakistani';
       final rogUrl = page == 1 ? '$rogBaseUrl/?s=Pakistani' : '$rogBaseUrl/page/$page/?s=Pakistani';
       final results = await Future.wait([
         fetchHtml(vegaUrl),
         fetchHtml(rogUrl),
+        _fetchTypesenseCards('Pakistani', page: page),
       ]);
-      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
-      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]! as String, 'rogmovies'));
+      cards.addAll(results[2] as List<ScrapedSiteCard>);
     } else {
       // All other genres: Action, Sci-Fi, Comedy, Thriller, Horror, Romance, Adventure, Crime, Drama, Mystery, Fantasy, Animation
       final genreSlug = key;
@@ -1220,22 +1358,26 @@ class MovieSiteScraperService {
       final results = await Future.wait([
         fetchHtml(vegaGenreUrl),
         fetchHtml(rogGenreUrl),
+        _fetchTypesenseCards(key, page: page),
       ]);
 
-      if (results[0] != null) cards.addAll(parseCards(results[0]!, 'vegamovies'));
-      if (results[1] != null) cards.addAll(parseCards(results[1]!, 'rogmovies'));
+      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
+      if (results[1] != null) cards.addAll(parseCards(results[1]! as String, 'rogmovies'));
+      cards.addAll(results[2] as List<ScrapedSiteCard>);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Dynamically sort posts chronologically descending by actual upload date
     // (Latest uploaded posts at the top, seamless dynamic flow from both sites)
     // ─────────────────────────────────────────────────────────────────────────
-    cards.sort((a, b) {
-      if (a.datePublished == null && b.datePublished == null) return 0;
-      if (a.datePublished == null) return 1;
-      if (b.datePublished == null) return -1;
-      return b.datePublished!.compareTo(a.datePublished!);
-    });
+    if (key != 'dual-audio' && key != 'dualaudio') {
+      cards.sort((a, b) {
+        if (a.datePublished == null && b.datePublished == null) return 0;
+        if (a.datePublished == null) return 1;
+        if (b.datePublished == null) return -1;
+        return b.datePublished!.compareTo(a.datePublished!);
+      });
+    }
 
     final items = <ManifestItem>[];
     final seenUrls = <String>{};
@@ -1244,7 +1386,11 @@ class MovieSiteScraperService {
       if (seenUrls.contains(card.postUrl)) continue;
       seenUrls.add(card.postUrl);
 
-      final item = createFastManifestItem(card, localMap: localMap);
+      final item = createFastManifestItem(
+        card,
+        localMap: localMap,
+        categoryTag: key,
+      );
       items.add(item);
     }
 
