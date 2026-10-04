@@ -18,18 +18,8 @@ import '../../services/extraction/movie_site_scraper_service.dart';
 /// On success, invalidates localManifestItemsProvider so the UI refreshes
 /// with the latest sorted data from the newly downloaded index.
 final databaseSyncProvider = FutureProvider<bool>((ref) async {
-  dev.log('[DatabaseSyncProvider] Starting background database sync...');
-
-  // Only sync main index (3rd party index DEACTIVATED)
-  final mainSuccess = await DatabaseSyncService.instance.syncIndex();
-
-  dev.log('[DatabaseSyncProvider] Sync finished. Main=$mainSuccess');
-
-  if (mainSuccess) {
-    // Refresh all manifest-derived providers with new data
-    ref.invalidate(localManifestItemsProvider);
-  }
-  return mainSuccess;
+  dev.log('[DatabaseSyncProvider] Remote GitHub database sync disabled.');
+  return true;
 });
 
 /// Exposes all ManifestItems loaded from the locally cached database file.
@@ -749,6 +739,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       } catch (e) {
         dev.log('[_fetchLocalPage] Error fetching live $cat page $page: $e');
       }
+      return [];
     }
 
     final sorted = await ref.read(sortedManifestItemsProvider.future);

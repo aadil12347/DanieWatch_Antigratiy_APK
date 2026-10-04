@@ -403,50 +403,88 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         body: SafeArea(
           child: GestureDetector(
             onTap: () => _searchFocus.unfocus(),
-            child: Column(
+            child: Stack(
               children: [
-                // ── Scrollable content: TopNavbar slider at top, search bar below it on Search tab ──
-                Expanded(
-                  child: NestedScrollView(
-                    controller: _outerScrollController,
-                    headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                      // Top navbar slider — at the top
-                      SliverToBoxAdapter(
-                        child: TopNavbar(tabController: _tabController),
-                      ),
-                      // Dedicated search bar on Search tab — BELOW the top tab slider!
-                      if (isSearchTab)
-                        SliverToBoxAdapter(
-                          child: _buildDedicatedSearchBar(r),
+                Column(
+                  children: [
+                    // ── Scrollable content: TopNavbar slider at top, search bar below it on Search tab ──
+                    Expanded(
+                      child: NestedScrollView(
+                        controller: _outerScrollController,
+                        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                          // Top navbar slider — at the top
+                          SliverToBoxAdapter(
+                            child: TopNavbar(tabController: _tabController),
+                          ),
+                          // Dedicated search bar on Search tab — BELOW the top tab slider!
+                          if (isSearchTab)
+                            SliverToBoxAdapter(
+                              child: _buildDedicatedSearchBar(r),
+                            ),
+                          // Filter chips — on category tabs (hidden on dedicated Search tab)
+                          if (!isSearchTab)
+                            const SliverToBoxAdapter(
+                              child: CategoryFilterChips(),
+                            ),
+                          // Small gap between navbar area and grid content
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 6),
+                          ),
+                        ],
+                        // Smooth tab swipe enabled
+                        body: TabBarView(
+                          controller: _tabController,
+                          physics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics(),
+                          ),
+                          children: TopNavbar.items.map((label) {
+                            return _CategoryPage(
+                              key: PageStorageKey('cat_$label'),
+                              categoryLabel: label,
+                              searchController: _searchController,
+                              searchFocus: _searchFocus,
+                              onSearchChanged: _onSearchChanged,
+                              recentSearches: _recentSearches,
+                              onSaveRecentSearch: _saveRecentSearch,
+                              onRemoveRecentSearch: _removeRecentSearch,
+                              onClearAllRecentSearches: _clearAllRecentSearches,
+                            );
+                          }).toList(),
                         ),
-                      // Filter chips — on category tabs (hidden on dedicated Search tab)
-                      if (!isSearchTab)
-                        const SliverToBoxAdapter(
-                          child: CategoryFilterChips(),
-                        ),
-                      // Small gap between navbar area and grid content
-                      const SliverToBoxAdapter(
-                        child: SizedBox(height: 6),
                       ),
-                    ],
-                    // Instant tab switch — no slide animation, pages kept alive
-                    body: TabBarView(
-                      controller: _tabController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: TopNavbar.items.map((label) {
-                        return _CategoryPage(
-                          key: PageStorageKey('cat_$label'),
-                          categoryLabel: label,
-                          searchController: _searchController,
-                          searchFocus: _searchFocus,
-                          onSearchChanged: _onSearchChanged,
-                          recentSearches: _recentSearches,
-                          onSaveRecentSearch: _saveRecentSearch,
-                          onRemoveRecentSearch: _removeRecentSearch,
-                          onClearAllRecentSearches: _clearAllRecentSearches,
-                        );
-                      }).toList(),
                     ),
+                  ],
+                ),
+
+                // Fast page scrubber on the right edge of SearchScreen (visible on content tabs)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 48,
+                  child: Consumer(
+                    builder: (context, ref, _) {
+                      final isSearchTab = _tabController.index == 0;
+                      if (isSearchTab) return const SizedBox.shrink();
+
+                      final activeLabel = TopNavbar.items[_tabController.index];
+                      final slug = categoryLabelToSlug(activeLabel);
+                      final totalPages = MovieSiteScraperService.instance.getTotalPages(slug);
+                      final pagState = ref.watch(paginatedCategoryProvider(slug)).valueOrNull;
+                      final currentPage = pagState?.currentPage ?? 1;
+
+                      if (totalPages <= 1) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return PageDrawerScrubber(
+                        totalPages: totalPages,
+                        currentPage: currentPage,
+                        onPageSelected: (selectedPage) {
+                          ref.read(paginatedCategoryProvider(slug).notifier).jumpToPage(selectedPage);
+                        },
+                      );
+                    },
                   ),
                 ),
               ],
@@ -593,50 +631,33 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 
     return paginatedState.when(
       loading: () {
-        final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
-        final categoryFallback = _slug == 'all' || _slug == 'search'
-            ? allSortedItems
-            : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
-        if (categoryFallback.isNotEmpty) {
-          return CustomScrollView(
-            key: PageStorageKey('scroll_${widget.categoryLabel}'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              _buildResultsGrid(categoryFallback),
-            ],
-          );
-        }
         return CustomScrollView(
+          key: PageStorageKey('scroll_${widget.categoryLabel}'),
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [_buildShimmerGrid()],
         );
       },
       error: (err, _) {
-        final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
-        final categoryFallback = _slug == 'all' || _slug == 'search'
-            ? allSortedItems
-            : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
-        if (categoryFallback.isNotEmpty) {
-          return CustomScrollView(
-            key: PageStorageKey('scroll_${widget.categoryLabel}'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              _buildResultsGrid(categoryFallback),
-            ],
-          );
-        }
         return CustomScrollView(
+          key: PageStorageKey('scroll_${widget.categoryLabel}'),
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            SliverToBoxAdapter(child: Center(child: Text('Error: $err'))),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Text(
+                    'Unable to load items: $err',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  ),
+                ),
+              ),
+            ),
           ],
         );
       },
       data: (pagState) {
-        final rawItems = pagState.items;
-        final allSortedItems = ref.watch(sortedManifestItemsProvider).valueOrNull ?? [];
-        final categoryFallback = _slug == 'all' || _slug == 'search'
-            ? allSortedItems
-            : allSortedItems.where((item) => FilterUtils.matchesCategorySlug(item, _slug)).toList();
-        final effectiveItems = rawItems.isNotEmpty ? rawItems : categoryFallback;
+        final effectiveItems = pagState.items;
 
         // Determine enforced category for FilterUtils
         String? enforceCategory;
@@ -663,44 +684,19 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           itemsToDisplay = effectiveItems;
         }
 
-        final totalPages = MovieSiteScraperService.instance.getTotalPages(_slug);
-
         return NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,
-          child: Stack(
-            children: [
-              CustomScrollView(
-                key: PageStorageKey('scroll_${widget.categoryLabel}'),
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: _buildContentSlivers(
-                  searchState,
-                  hasSearch,
-                  showResults,
-                  itemsToDisplay,
-                  effectiveItems,
-                  pagState,
-                ),
-              ),
-              // Android app drawer fast page scrubber on the right edge
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                child: PageDrawerScrubber(
-                  totalPages: totalPages,
-                  currentPage: pagState.currentPage,
-                  isVisible: !showResults && effectiveItems.isNotEmpty && totalPages > 1,
-                  onPageSelected: (selectedPage) {
-                    ref.read(paginatedCategoryProvider(_slug).notifier).jumpToPage(selectedPage);
-                    PrimaryScrollController.maybeOf(context)?.animateTo(
-                      0,
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeOutCubic,
-                    );
-                  },
-                ),
-              ),
-            ],
+          child: CustomScrollView(
+            key: PageStorageKey('scroll_${widget.categoryLabel}'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: _buildContentSlivers(
+              searchState,
+              hasSearch,
+              showResults,
+              itemsToDisplay,
+              effectiveItems,
+              pagState,
+            ),
           ),
         );
       },

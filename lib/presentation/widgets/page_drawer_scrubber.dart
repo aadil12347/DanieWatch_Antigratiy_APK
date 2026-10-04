@@ -1,16 +1,22 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 
 /// Android App Drawer style fast-page scrubber on the right edge.
-/// When user drags vertically:
-/// 1. An OverlayEntry is dynamically mounted to the root Navigator Overlay (above ALL scaffolds,
+/// When resting:
+/// - Displays a refined vertical hairline track and a glowing neon thumb handle with grip bars.
+/// When user touches or drags:
+/// 1. An OverlayEntry is mounted to the root Navigator Overlay (above ALL scaffolds,
 ///    bottom navigation bars, and floating support buttons).
-/// 2. The entire device screen darkens with a cinematic vignette effect smoothly fading in.
-/// 3. The vertical scrubber line gracefully deforms away from the screen edge at the touch point into a liquid curve.
-/// 4. A glowing capsule pops out at the peak of the curve displaying the target page number.
-/// 5. When the user lifts their finger, it immediately navigates to that page and fades out smoothly.
+/// 2. The resting rail is immediately hidden to prevent any duplicate/ghost slider.
+/// 3. The entire screen smoothly darkens with a cinematic radial vignette emerging from the slider
+///    at the user's finger touch point (NO blur filter, preventing screen freeze/caching).
+/// 4. The vertical scrubber line deforms slightly away from the screen edge at the touch point
+///    into a subtle minor curve.
+/// 5. A glowing capsule pops out at the curve displaying the target page number (with zero yellow underlines).
+/// 6. When the user lifts their finger, it navigates to that page and fades out smoothly.
 class PageDrawerScrubber extends StatefulWidget {
   final int totalPages;
   final int currentPage;
@@ -37,6 +43,7 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
 
   OverlayEntry? _overlayEntry;
   bool _isDragging = false;
+  bool _isAnimatingOut = false;
   double _globalY = 0.0;
   int _highlightedPage = 1;
   int _lastHapticPage = 1;
@@ -49,8 +56,8 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
 
     _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 260),
-      reverseDuration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 220),
+      reverseDuration: const Duration(milliseconds: 180),
     );
 
     _vignetteFade = CurvedAnimation(
@@ -61,7 +68,7 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
 
     _curveProgress = CurvedAnimation(
       parent: _animCtrl,
-      curve: Curves.easeOutBack,
+      curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
   }
@@ -82,164 +89,184 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
   }
 
   void _showOverlay(BuildContext context) {
-    _removeOverlay();
-    final overlayState = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlayState == null) return;
+    _animCtrl.stop();
+    if (_overlayEntry == null) {
+      final overlayState = Overlay.maybeOf(context, rootOverlay: true);
+      if (overlayState == null) return;
 
-    _overlayEntry = OverlayEntry(
-      builder: (context) {
-        final mediaQuery = MediaQuery.of(context);
-        final screenHeight = mediaQuery.size.height;
+      _overlayEntry = OverlayEntry(
+        builder: (context) {
+          final mediaQuery = MediaQuery.of(context);
+          final screenHeight = mediaQuery.size.height;
 
-        final topSafe = mediaQuery.padding.top + 72.0;
-        // Padded by 95px above bottom safe area so the scrubber and popped-out pill NEVER
-        // intersect, touch, or go behind the bottom navbar or floating support button!
-        final bottomSafe = mediaQuery.padding.bottom + 95.0;
-        final clampedTouchY = _globalY.clamp(topSafe, screenHeight - bottomSafe);
+          final topSafe = mediaQuery.padding.top + 70.0;
+          // Padded by 95px above bottom safe area so the scrubber and popped-out pill NEVER
+          // intersect, touch, or go behind the bottom navbar or floating support button!
+          final bottomSafe = mediaQuery.padding.bottom + 95.0;
+          final clampedTouchY = _globalY.clamp(topSafe, screenHeight - bottomSafe);
+          final normalizedY = screenHeight > 0
+              ? ((clampedTouchY / screenHeight) * 2.0 - 1.0).clamp(-1.0, 1.0)
+              : 0.0;
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            // ── 1. Full-Screen Cinematic Vignette Overlay (above everything) ──
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _vignetteFade,
-                  builder: (context, child) {
-                    if (_vignetteFade.value <= 0.001) return const SizedBox.shrink();
-                    return Opacity(
-                      opacity: _vignetteFade.value.clamp(0.0, 1.0),
-                      child: child,
-                    );
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment.center,
-                        radius: 1.15,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.15),
-                          Colors.black.withValues(alpha: 0.85),
-                        ],
-                        stops: const [0.30, 1.0],
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // ── 1. Full-Screen Cinematic Dark Vignette Emerging from Finger Touch Point ──
+              // No BackdropFilter blur is used so the screen is never frozen or raster-cached!
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _vignetteFade,
+                    builder: (context, _) {
+                      if (_vignetteFade.value <= 0.001) return const SizedBox.shrink();
+                      return Opacity(
+                        opacity: _vignetteFade.value.clamp(0.0, 1.0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: RadialGradient(
+                              center: Alignment(1.0, normalizedY),
+                              radius: 1.5,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.20),
+                                Colors.black.withValues(alpha: 0.65),
+                                Colors.black.withValues(alpha: 0.88),
+                              ],
+                              stops: const [0.0, 0.45, 1.0],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // ── 2. Subtle Minor Curved Liquid Rail at Touch Point ─────────────
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: 140,
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _curveProgress,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: _LiquidCurvedRailPainter(
+                          trackTop: topSafe,
+                          trackBottom: screenHeight - bottomSafe,
+                          touchY: clampedTouchY,
+                          curveProgress: _curveProgress.value,
+                          railColor: Colors.white.withValues(alpha: 0.22),
+                          activeColor: AppColors.primary,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // ── 3. Popped-out Capsule at the Peak of the Curve ────────────────
+              // Wrapped in Material to eliminate default yellow double underlines
+              Positioned(
+                right: 50,
+                top: (clampedTouchY - 24).clamp(topSafe, screenHeight - bottomSafe - 48),
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _curveProgress,
+                    builder: (context, child) {
+                      if (_curveProgress.value <= 0.001) return const SizedBox.shrink();
+                      return Transform.scale(
+                        scale: _curveProgress.value,
+                        alignment: Alignment.centerRight,
+                        child: Opacity(
+                          opacity: _curveProgress.value.clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141419).withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.85),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.35),
+                              blurRadius: 18,
+                              spreadRadius: 1,
+                              offset: const Offset(-2, 2),
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.85),
+                              blurRadius: 16,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.20),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                'PAGE',
+                                style: GoogleFonts.inter(
+                                  color: AppColors.primary,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.1,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '$_highlightedPage',
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                            Text(
+                              ' / ${widget.totalPages}',
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withValues(alpha: 0.55),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
+          );
+        },
+      );
 
-            // ── 2. Curved Liquid Rail deformed away from screen edge ──────────
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 180,
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _curveProgress,
-                  builder: (context, _) {
-                    return CustomPaint(
-                      painter: _LiquidCurvedRailPainter(
-                        trackTop: topSafe,
-                        trackBottom: screenHeight - bottomSafe,
-                        touchY: clampedTouchY,
-                        curveProgress: _curveProgress.value,
-                        railColor: Colors.white.withValues(alpha: 0.22),
-                        activeColor: AppColors.primary,
-                        isDragging: _isDragging,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            // ── 3. Popped-out Capsule at the Peak of the Curve ────────────────
-            // Positioned at right: 70 (away from screen edge) and clamped safely above bottom navbar
-            Positioned(
-              right: 70,
-              top: (clampedTouchY - 26).clamp(topSafe, screenHeight - bottomSafe - 52),
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _curveProgress,
-                  builder: (context, child) {
-                    if (_curveProgress.value <= 0.001) return const SizedBox.shrink();
-                    return Transform.scale(
-                      scale: _curveProgress.value,
-                      alignment: Alignment.centerRight,
-                      child: Opacity(
-                        opacity: _curveProgress.value.clamp(0.0, 1.0),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1B1B20).withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 1.8,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.55),
-                          blurRadius: 24,
-                          spreadRadius: 2,
-                          offset: const Offset(-2, 2),
-                        ),
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.85),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          'PAGE ',
-                          style: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                        Text(
-                          '$_highlightedPage',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        Text(
-                          ' / ${widget.totalPages}',
-                          style: GoogleFonts.inter(
-                            color: AppColors.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    overlayState.insert(_overlayEntry!);
+      overlayState.insert(_overlayEntry!);
+    } else {
+      _overlayEntry?.markNeedsBuild();
+    }
   }
 
   void _removeOverlay() {
@@ -253,13 +280,15 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
 
   void _onDragStart(DragStartDetails details, BuildContext context) {
     if (widget.totalPages <= 1) return;
-    _isDragging = true;
-    _globalY = details.globalPosition.dy;
+    setState(() {
+      _isDragging = true;
+      _isAnimatingOut = false;
+      _globalY = details.globalPosition.dy;
+    });
     _updatePageFromY(context);
     _showOverlay(context);
-    _animCtrl.forward();
+    _animCtrl.forward(from: 0.0);
     HapticFeedback.mediumImpact();
-    setState(() {});
   }
 
   void _onDragUpdate(DragUpdateDetails details, BuildContext context) {
@@ -271,7 +300,7 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
 
   void _updatePageFromY(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    final topSafe = mediaQuery.padding.top + 72.0;
+    final topSafe = mediaQuery.padding.top + 70.0;
     final bottomSafe = mediaQuery.padding.bottom + 95.0;
     final screenHeight = mediaQuery.size.height;
     final trackHeight = (screenHeight - topSafe - bottomSafe).clamp(100.0, screenHeight);
@@ -292,15 +321,21 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
   void _onDragEnd() {
     if (!_isDragging) return;
     final targetPage = _highlightedPage;
-    _isDragging = false;
-    _animCtrl.reverse().then((_) {
-      if (!_isDragging) {
-        _removeOverlay();
-      }
+    setState(() {
+      _isDragging = false;
+      _isAnimatingOut = true;
     });
     HapticFeedback.mediumImpact();
     widget.onPageSelected(targetPage);
-    if (mounted) setState(() {});
+
+    _animCtrl.reverse().then((_) {
+      if (!_isDragging && mounted) {
+        _removeOverlay();
+        setState(() {
+          _isAnimatingOut = false;
+        });
+      }
+    });
   }
 
   @override
@@ -310,68 +345,66 @@ class _PageDrawerScrubberState extends State<PageDrawerScrubber>
     }
 
     final mediaQuery = MediaQuery.of(context);
-    final topSafe = mediaQuery.padding.top + 72.0;
+    final topSafe = mediaQuery.padding.top + 70.0;
     final bottomSafe = mediaQuery.padding.bottom + 95.0;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screenHeight = constraints.maxHeight;
-        final trackHeight = (screenHeight - topSafe - bottomSafe).clamp(100.0, screenHeight);
+    return SizedBox(
+      width: 48,
+      height: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final screenHeight = constraints.maxHeight;
+          final trackHeight = (screenHeight - topSafe - bottomSafe).clamp(100.0, screenHeight);
 
-        // Thumb position along the track
-        final currentRatio = widget.totalPages > 1
-            ? ((_isDragging ? _highlightedPage : widget.currentPage) - 1) /
-                (widget.totalPages - 1)
-            : 0.0;
-        final thumbY = topSafe + (currentRatio.clamp(0.0, 1.0) * trackHeight);
+          // Thumb position along the track
+          final currentRatio = widget.totalPages > 1
+              ? ((_isDragging ? _highlightedPage : widget.currentPage) - 1) /
+                  (widget.totalPages - 1)
+              : 0.0;
+          final thumbY = topSafe + (currentRatio.clamp(0.0, 1.0) * trackHeight);
 
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // Resting subtle rail on the right edge when not dragging
-            if (!_isDragging)
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: 24,
-                child: CustomPaint(
+          return Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              // Resting visible thumb handle & track line on the right edge ONLY when NOT dragging
+              if (!_isDragging && !_isAnimatingOut)
+                CustomPaint(
+                  size: Size(48, screenHeight),
                   painter: _RestingRailPainter(
                     trackTop: topSafe,
                     trackBottom: screenHeight - bottomSafe,
                     touchY: thumbY,
-                    railColor: Colors.white.withValues(alpha: 0.15),
-                    activeColor: AppColors.primary.withValues(alpha: 0.8),
+                    railColor: Colors.white.withValues(alpha: 0.22),
+                    activeColor: AppColors.primary,
                   ),
                 ),
-              ),
 
-            // Touch gesture target area on the right edge
-            Positioned(
-              right: 0,
-              top: topSafe,
-              height: trackHeight,
-              width: 44,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onVerticalDragStart: (d) => _onDragStart(d, context),
-                onVerticalDragUpdate: (d) => _onDragUpdate(d, context),
-                onVerticalDragEnd: (_) => _onDragEnd(),
-                onVerticalDragCancel: _onDragEnd,
-                onTapDown: (d) => _onDragStart(DragStartDetails(globalPosition: d.globalPosition), context),
-                onTapUp: (_) => _onDragEnd(),
-                child: const SizedBox.expand(),
+              // Touch gesture target area (48px wide along right edge)
+              Positioned(
+                right: 0,
+                top: topSafe,
+                height: trackHeight,
+                width: 48,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragStart: (d) => _onDragStart(d, context),
+                  onVerticalDragUpdate: (d) => _onDragUpdate(d, context),
+                  onVerticalDragEnd: (_) => _onDragEnd(),
+                  onVerticalDragCancel: _onDragEnd,
+                  child: const SizedBox.expand(),
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
 /// Custom painter that draws the straight vertical rail and smoothly deforms it
-/// into a liquid curved arc that pops out away from the side of the screen at the user's touch point!
+/// into a minor, subtle curved arc that bows gently away from the side of the screen at the user's touch point.
 class _LiquidCurvedRailPainter extends CustomPainter {
   final double trackTop;
   final double trackBottom;
@@ -379,7 +412,6 @@ class _LiquidCurvedRailPainter extends CustomPainter {
   final double curveProgress;
   final Color railColor;
   final Color activeColor;
-  final bool isDragging;
 
   _LiquidCurvedRailPainter({
     required this.trackTop,
@@ -388,18 +420,17 @@ class _LiquidCurvedRailPainter extends CustomPainter {
     required this.curveProgress,
     required this.railColor,
     required this.activeColor,
-    required this.isDragging,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rightEdgeX = size.width - 6.0;
+    final rightEdgeX = size.width - 4.0;
 
-    // Normal straight rail line
+    // Normal straight rail line if curveProgress is near 0
     if (curveProgress <= 0.001) {
       final basePaint = Paint()
         ..color = railColor
-        ..strokeWidth = 3.5
+        ..strokeWidth = 2.5
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
 
@@ -408,17 +439,13 @@ class _LiquidCurvedRailPainter extends CustomPainter {
         Offset(rightEdgeX, trackBottom),
         basePaint,
       );
-
-      final pipPaint = Paint()
-        ..color = activeColor
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(rightEdgeX, touchY.clamp(trackTop, trackBottom)), 4.0, pipPaint);
       return;
     }
 
-    // ── Curved Wave Rail (deformed away from the screen edge at touch point) ─
-    final maxDisplacement = 56.0 * curveProgress;
-    const curveSpan = 115.0; // Vertical span of the curve above and below touchY
+    // ── Curved Wave Rail (deformed subtly away from the screen edge at touch point) ─
+    // Subtle, gentle minor curve: 18px maximum displacement
+    final maxDisplacement = 18.0 * curveProgress;
+    const curveSpan = 72.0; // Vertical span of the curve above and below touchY
 
     final clampedTouchY = touchY.clamp(trackTop, trackBottom);
     final topCurveY = (clampedTouchY - curveSpan).clamp(trackTop, trackBottom);
@@ -429,7 +456,7 @@ class _LiquidCurvedRailPainter extends CustomPainter {
     path.moveTo(rightEdgeX, trackTop);
     path.lineTo(rightEdgeX, topCurveY);
 
-    // Smooth cubic Bezier from straight rail to curved apex away from edge
+    // Smooth cubic Bezier with natural minor curvature
     path.cubicTo(
       rightEdgeX,
       topCurveY + (clampedTouchY - topCurveY) * 0.45,
@@ -439,7 +466,6 @@ class _LiquidCurvedRailPainter extends CustomPainter {
       clampedTouchY,
     );
 
-    // Smooth cubic Bezier from apex back to straight rail
     path.cubicTo(
       apexX,
       clampedTouchY + (bottomCurveY - clampedTouchY) * 0.45,
@@ -451,35 +477,45 @@ class _LiquidCurvedRailPainter extends CustomPainter {
 
     path.lineTo(rightEdgeX, trackBottom);
 
-    // Outer glow for the curved line
+    // 1. Soft atmospheric glow behind the curve
     final glowPaint = Paint()
-      ..color = activeColor.withValues(alpha: 0.45 * curveProgress)
-      ..strokeWidth = 9.0
+      ..color = activeColor.withValues(alpha: 0.28 * curveProgress)
+      ..strokeWidth = 6.0
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
     canvas.drawPath(path, glowPaint);
 
-    // Main vibrant neon line
+    // 2. Vibrant neon curve line
     final curvePaint = Paint()
-      ..color = Color.lerp(railColor, activeColor, curveProgress)!
-      ..strokeWidth = 3.5 + (1.5 * curveProgress)
+      ..shader = ui.Gradient.linear(
+        Offset(rightEdgeX, topCurveY),
+        Offset(apexX, clampedTouchY),
+        [
+          railColor,
+          activeColor,
+        ],
+      )
+      ..strokeWidth = 2.8
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     canvas.drawPath(path, curvePaint);
 
-    // Apex glow behind indicator dot
-    final apexGlowPaint = Paint()
-      ..color = activeColor.withValues(alpha: 0.8)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
+    // 3. Concentric glowing apex rings
+    final outerRingPaint = Paint()
+      ..color = activeColor.withValues(alpha: 0.35)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(apexX, clampedTouchY), 7.0, apexGlowPaint);
+    canvas.drawCircle(Offset(apexX, clampedTouchY), 6.5, outerRingPaint);
 
-    // Apex indicator dot at the peak of the curve
-    final apexDotPaint = Paint()
+    final innerRingPaint = Paint()
+      ..color = activeColor
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(apexX, clampedTouchY), 4.0, innerRingPaint);
+
+    final centerDotPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(apexX, clampedTouchY), 4.5, apexDotPaint);
+    canvas.drawCircle(Offset(apexX, clampedTouchY), 2.0, centerDotPaint);
   }
 
   @override
@@ -487,12 +523,11 @@ class _LiquidCurvedRailPainter extends CustomPainter {
     return oldDelegate.trackTop != trackTop ||
         oldDelegate.trackBottom != trackBottom ||
         oldDelegate.touchY != touchY ||
-        oldDelegate.curveProgress != curveProgress ||
-        oldDelegate.isDragging != isDragging;
+        oldDelegate.curveProgress != curveProgress;
   }
 }
 
-/// Resting vertical rail drawn on right edge when not dragging
+/// Resting vertical rail and handle drawn on right edge when not dragging
 class _RestingRailPainter extends CustomPainter {
   final double trackTop;
   final double trackBottom;
@@ -510,11 +545,13 @@ class _RestingRailPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rightEdgeX = size.width - 6.0;
+    final rightEdgeX = size.width - 4.0;
+    final clampedTouchY = touchY.clamp(trackTop, trackBottom);
 
+    // 1. Sleek vertical track line
     final basePaint = Paint()
       ..color = railColor
-      ..strokeWidth = 3.0
+      ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
@@ -524,22 +561,57 @@ class _RestingRailPainter extends CustomPainter {
       basePaint,
     );
 
-    final pipGlowPaint = Paint()
-      ..color = activeColor.withValues(alpha: 0.4)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(rightEdgeX, touchY.clamp(trackTop, trackBottom)), 6.0, pipGlowPaint);
+    // 2. Visible floating handle on the track
+    const handleWidth = 9.0;
+    const handleHeight = 32.0;
+    final handleRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(rightEdgeX - 2.0, clampedTouchY),
+        width: handleWidth,
+        height: handleHeight,
+      ),
+      const Radius.circular(4.5),
+    );
 
-    final pipPaint = Paint()
-      ..color = activeColor
+    // Glow aura behind thumb
+    final thumbGlowPaint = Paint()
+      ..color = activeColor.withValues(alpha: 0.40)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(rightEdgeX, touchY.clamp(trackTop, trackBottom)), 3.5, pipPaint);
+    canvas.drawRRect(handleRect, thumbGlowPaint);
+
+    // Solid dark handle body
+    final thumbBodyPaint = Paint()
+      ..color = const Color(0xFF1E1E26)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(handleRect, thumbBodyPaint);
+
+    // Neon accent border
+    final thumbBorderPaint = Paint()
+      ..color = activeColor
+      ..strokeWidth = 1.3
+      ..style = PaintingStyle.stroke;
+    canvas.drawRRect(handleRect, thumbBorderPaint);
+
+    // Mini grip lines inside thumb
+    final gripPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.8)
+      ..strokeWidth = 1.2
+      ..strokeCap = StrokeCap.round;
+
+    final centerY = clampedTouchY;
+    final centerX = rightEdgeX - 2.0;
+    canvas.drawLine(Offset(centerX - 2, centerY - 3), Offset(centerX + 2, centerY - 3), gripPaint);
+    canvas.drawLine(Offset(centerX - 2, centerY), Offset(centerX + 2, centerY), gripPaint);
+    canvas.drawLine(Offset(centerX - 2, centerY + 3), Offset(centerX + 2, centerY + 3), gripPaint);
   }
 
   @override
   bool shouldRepaint(covariant _RestingRailPainter oldDelegate) {
     return oldDelegate.trackTop != trackTop ||
         oldDelegate.trackBottom != trackBottom ||
-        oldDelegate.touchY != touchY;
+        oldDelegate.touchY != touchY ||
+        oldDelegate.railColor != railColor ||
+        oldDelegate.activeColor != activeColor;
   }
 }

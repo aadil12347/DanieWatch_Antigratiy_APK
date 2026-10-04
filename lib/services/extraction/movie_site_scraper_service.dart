@@ -384,50 +384,77 @@ class MovieSiteScraperService {
     final cards = <ScrapedSiteCard>[];
     final seenUrls = <String>{};
 
+    // Robust card regex: matches each <div class="poster-card" block cleanly
     final cardRegex = RegExp(
-      r'<div class="poster-card"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>',
+      r'<div class="poster-card"[^>]*>([\s\S]*?)(?=<div class="poster-card"|<\/section>|<\/main>|<nav class="pagination"|$)',
       caseSensitive: false,
     );
 
-    final urlRegex = RegExp(r'<meta itemprop="url" content="([^"]+)"|<a\s+[^>]*href="([^"]+)"', caseSensitive: false);
-    final imgRegex = RegExp(r'<img[^>]+(?:src|data-src)="([^"]+)"', caseSensitive: false);
-    final altRegex = RegExp(r'alt="([^"]+)"', caseSensitive: false);
-    final titleRegex = RegExp(r'class="poster-title"[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>', caseSensitive: false);
-    final rateRegex = RegExp(r'<meta itemprop="ratingValue" content="([^"]+)"', caseSensitive: false);
-    final timeRegex = RegExp(r'<time[^>]*datetime="([^"]+)"', caseSensitive: false);
+    final urlRegex = RegExp(
+      r'<meta itemprop="url" content="([^"]+)"|href="([^"]+)"',
+      caseSensitive: false,
+    );
+    final imgRegex = RegExp(
+      r'<img[^>]+(?:src|data-src)="([^"]+)"',
+      caseSensitive: false,
+    );
+    final altRegex = RegExp(
+      r'alt="([^"]+)"',
+      caseSensitive: false,
+    );
+    final titleTagRegex = RegExp(
+      r'class="poster-title"[^>]*>([\s\S]*?)<\/(?:p|div|h\d)>',
+      caseSensitive: false,
+    );
+    final rateRegex = RegExp(
+      r'itemprop="ratingValue" content="([^"]+)"|imdb-score[^>]*>[^\d]*(\d+\.?\d*)',
+      caseSensitive: false,
+    );
+    final timeRegex = RegExp(
+      r'<time[^>]*datetime="([^"]+)"',
+      caseSensitive: false,
+    );
 
     for (final match in cardRegex.allMatches(html)) {
       final block = match.group(1) ?? '';
       final urlM = urlRegex.firstMatch(block);
       final postUrl = urlM?.group(1) ?? urlM?.group(2);
-      if (postUrl == null || seenUrls.contains(postUrl)) continue;
+      if (postUrl == null || postUrl.isEmpty || seenUrls.contains(postUrl)) continue;
 
       final imgM = imgRegex.firstMatch(block);
       final altM = altRegex.firstMatch(block);
-      final titleM = titleRegex.firstMatch(block);
+      final titleTagM = titleTagRegex.firstMatch(block);
       final rateM = rateRegex.firstMatch(block);
       final timeM = timeRegex.firstMatch(block);
 
-      final rawTitle = altM?.group(1) ?? (titleM?.group(1) ?? '');
+      String rawTitle = '';
+      if (titleTagM != null) {
+        rawTitle = titleTagM.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+      }
+      if (rawTitle.isEmpty && altM != null) {
+        rawTitle = altM.group(1)!;
+      }
       final title = cleanTitle(rawTitle);
+      if (title.length < 2) continue;
+
       final poster = imgM?.group(1) ?? '';
-      final rating = rateM != null ? double.tryParse(rateM.group(1) ?? '') ?? 7.2 : 7.2;
+      final ratingVal = rateM?.group(1) ?? rateM?.group(2);
+      final rating = ratingVal != null ? double.tryParse(ratingVal) ?? 7.2 : 7.2;
+
       DateTime? datePublished;
       if (timeM != null) {
         datePublished = DateTime.tryParse(timeM.group(1)!);
       }
 
-      if (title.length > 2) {
-        seenUrls.add(postUrl);
-        cards.add(ScrapedSiteCard(
-          site: site,
-          postUrl: postUrl,
-          posterUrl: poster,
-          title: title,
-          rating: rating,
-          datePublished: datePublished,
-        ));
-      }
+      seenUrls.add(postUrl);
+      cards.add(ScrapedSiteCard(
+        site: site,
+        postUrl: postUrl,
+        posterUrl: poster,
+        title: title,
+        rating: rating,
+        datePublished: datePublished,
+      ));
     }
 
     return cards;
@@ -928,6 +955,17 @@ class MovieSiteScraperService {
     if (top10IndianCards.length < 10 && rog2026Html2.isNotEmpty) {
       final rog2026Cards2 = parseCards(rog2026Html2, 'rogmovies');
       for (final card in rog2026Cards2) {
+        if (isExcludedIndianShow(card.title)) continue;
+        if (!isUsed(card)) {
+          top10IndianCards.add(card);
+          markUsed(card);
+          if (top10IndianCards.length >= 10) break;
+        }
+      }
+    }
+
+    if (top10IndianCards.length < 10) {
+      for (final card in rogCards) {
         if (isExcludedIndianShow(card.title)) continue;
         if (!isUsed(card)) {
           top10IndianCards.add(card);

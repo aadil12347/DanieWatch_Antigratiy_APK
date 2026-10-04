@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,7 +11,6 @@ import 'app.dart';
 import 'core/config/env.dart';
 import 'data/local/database.dart';
 import 'data/local/download_manager.dart';
-import 'data/services/database_sync_service.dart';
 import 'core/utils/restart_widget.dart';
 import 'pip/pip_controller.dart';
 import 'core/services/notification_service.dart';
@@ -137,7 +134,6 @@ Future<void> main() async {
         NotificationService.instance.initialize();
         DeepLinkService.instance.initialize();
         AppUpdateService.instance.cleanupIfNeeded();
-        DatabaseSyncService.instance.syncIndex();
         MovieSiteScraperService.instance.fetchLiveTotalPages();
       } catch (e) {
         debugPrint('[Startup] Background service init warning: $e');
