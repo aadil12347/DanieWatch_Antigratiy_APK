@@ -8,6 +8,7 @@ import '../../data/clients/omdb_client.dart';
 import '../../data/services/database_sync_service.dart';
 import '../../data/repositories/posting_record_repository.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
+import 'app_init_provider.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Local Database Synchronizer & Loader Providers
@@ -27,6 +28,12 @@ final databaseSyncProvider = FutureProvider<bool>((ref) async {
 /// Does NOT block on network sync — the sync runs in background and will
 /// invalidate this provider when a new index is ready.
 final localManifestItemsProvider = FutureProvider<List<ManifestItem>>((ref) async {
+  // Wait for app initialization (DB + cache) to complete before loading
+  final initState = await ref.watch(appInitProvider.future);
+  if (!initState.isComplete) {
+    return []; // Still initializing — return empty, will rebuild when ready
+  }
+
   // Load main index only (3rd party index DEACTIVATED)
   final items = await DatabaseSyncService.instance.loadLocalIndex();
 
@@ -250,17 +257,11 @@ final _tmdbDailyTrendingProvider = FutureProvider<List<Map<String, dynamic>>>((r
   return merged;
 });
 
-/// Top picks sync provider — triggers sync during app startup
+/// Top picks sync provider — DISABLED (no longer fetches from GitHub).
+/// Homepage content comes exclusively from VegaMovies/RogMovies live scraping.
 final topPicksSyncProvider = FutureProvider<bool>((ref) async {
-  dev.log('[TopPicksSync] Starting top picks sync...');
-  final result = await DatabaseSyncService.instance.syncTopPicks();
-  if (result) {
-    // Refresh carousel and top10 providers after sync completes
-    ref.invalidate(mergedCarouselProvider);
-    ref.invalidate(top10IndianProvider);
-    ref.invalidate(top10HindiDubProvider);
-  }
-  return result;
+  dev.log('[TopPicksSync] GitHub top picks sync disabled — using live scraper data only.');
+  return true;
 });
 
 /// Featured content for the Carousel (Top 5 from VegaMovies homepage)

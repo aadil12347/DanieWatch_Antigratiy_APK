@@ -31,7 +31,9 @@ import '../../providers/support_provider.dart';
 import '../../../domain/models/support_ticket.dart';
 import '../../widgets/support_fab.dart';
 import '../../providers/app_update_provider.dart';
+import '../../providers/app_init_provider.dart';
 import '../../widgets/force_update_modal.dart';
+import '../../widgets/app_init_overlay.dart';
 
 /// App shell with custom glassmorphism bottom navigation bar
 class AppShell extends ConsumerStatefulWidget {
@@ -479,7 +481,7 @@ class _AppShellState extends ConsumerState<AppShell>
                 );
               }),
 
-            // ── Force Update Modal (topmost layer — blocks all interaction) ──
+            // ── Force Update Modal (blocks all interaction when update needed) ──
             Consumer(
               builder: (context, ref, _) {
                 final updateState = ref.watch(appUpdateStateProvider);
@@ -489,6 +491,17 @@ class _AppShellState extends ConsumerState<AppShell>
                   return const SizedBox.shrink();
                 }
                 return const ForceUpdateModal();
+              },
+            ),
+
+            // ── First-time setup overlay (topmost layer) ──
+            // Shows a premium loading screen while DB, cache, and Supabase init.
+            // Once complete, fades out and is removed from the tree.
+            Consumer(
+              builder: (context, ref, _) {
+                final isComplete = ref.watch(appInitCompleteProvider);
+                if (isComplete) return const SizedBox.shrink();
+                return const AppInitOverlay();
               },
             ),
           ],

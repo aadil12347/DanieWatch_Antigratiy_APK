@@ -324,8 +324,8 @@ class _EmptyHome extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final syncState = ref.watch(databaseSyncProvider);
-    final isStillSyncing = syncState.isLoading;
+    final homeSections = ref.watch(homeSectionsProvider);
+    final isStillLoading = homeSections.isLoading;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -394,7 +394,7 @@ class _EmptyHome extends ConsumerWidget {
           ),
 
           // Centered loading overlay on top of skeleton
-          if (isStillSyncing)
+          if (isStillLoading)
             Positioned.fill(
               child: Container(
                 color: AppColors.background.withValues(alpha: 0.6),
@@ -433,8 +433,8 @@ class _EmptyHome extends ConsumerWidget {
               ),
             ),
 
-          // If sync finished but still empty — show retry
-          if (!isStillSyncing)
+          // If loading finished but still empty — show retry
+          if (!isStillLoading)
             Positioned.fill(
               child: Container(
                 color: AppColors.background.withValues(alpha: 0.7),
@@ -464,7 +464,8 @@ class _EmptyHome extends ConsumerWidget {
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
                         onPressed: () {
-                          ref.invalidate(databaseSyncProvider);
+                          MovieSiteScraperService.instance.clearCache();
+                          ref.invalidate(homeSectionsProvider);
                         },
                         icon: const Icon(Icons.refresh, size: 18),
                         label: const Text('Retry'),

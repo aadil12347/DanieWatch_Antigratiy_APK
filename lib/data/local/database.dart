@@ -91,6 +91,7 @@ class AppDatabase {
   }
 
   Future<String?> getCachedTmdbResponse(String key, {Duration maxAge = const Duration(days: 1)}) async {
+    if (_db == null) return null; // DB not yet initialized — skip cache
     try {
       final List<Map<String, dynamic>> maps = await db.query(
         'tmdb_cache',
@@ -112,6 +113,7 @@ class AppDatabase {
   }
 
   Future<void> cacheTmdbResponse(String key, String jsonStr) async {
+    if (_db == null) return; // DB not yet initialized — skip caching
     try {
       await db.insert(
         'tmdb_cache',

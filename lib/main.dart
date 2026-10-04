@@ -88,16 +88,14 @@ Future<void> main() async {
       ),
     );
 
-    // ── PHASE 1: ONLY instant local work before UI (<200ms) ──────────────
+    // ── PHASE 1: ONLY instant local work before UI (<100ms) ──────────────
     // Read session flag synchronously so we know whether to skip splash.
+    // PERF: Database init and disk cache are NO LONGER blocking here.
+    // They are deferred to appInitProvider which runs post-UI with progress.
     final prefs = await SharedPreferences.getInstance();
     hasPersistedSession = prefs.getBool('has_session') ?? false;
 
-    await Future.wait([
-      Env.loadAppVersion(),
-      AppDatabase.instance.initialize(),
-      MovieSiteScraperService.instance.loadDiskCache(),
-    ]);
+    await Env.loadAppVersion();
 
     // Remove native splash immediately — launch UI NOW!
     FlutterNativeSplash.remove();

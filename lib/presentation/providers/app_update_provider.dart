@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/app_update_service.dart';
-import '../../core/config/env.dart';
 import '../../domain/models/app_update_info.dart';
 import '../../main.dart' show supabaseReady;
 
@@ -151,6 +150,8 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
       if (!supabaseReady.isCompleted) {
         await supabaseReady.future.timeout(const Duration(seconds: 8));
       }
+
+      final supabase = Supabase.instance.client;
       _realtimeChannel = supabase
           .channel('app_config_updates')
           .onPostgresChanges(
