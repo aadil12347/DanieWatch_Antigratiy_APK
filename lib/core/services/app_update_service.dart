@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Headers;
 
 import '../../domain/models/app_update_info.dart';
+import '../../main.dart' show supabaseReady;
 import '../config/env.dart';
 
 /// Singleton service for checking, downloading, and installing app updates.
@@ -64,6 +65,12 @@ class AppUpdateService {
   Future<AppUpdateInfo?> checkForUpdate() async {
     try {
       debugPrint('🔄 AppUpdate: Checking for updates via Supabase...');
+
+      if (!supabaseReady.isCompleted) {
+        try {
+          await supabaseReady.future.timeout(const Duration(seconds: 8));
+        } catch (_) {}
+      }
 
       final supabase = Supabase.instance.client;
       final response = await supabase

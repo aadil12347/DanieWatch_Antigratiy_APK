@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/app_update_service.dart';
 import '../../core/config/env.dart';
 import '../../domain/models/app_update_info.dart';
+import '../../main.dart' show supabaseReady;
 
 // ─────────────────────────────────────────────────────────
 // UPDATE STATE
@@ -95,6 +96,15 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
     state = const AppUpdateChecking();
     debugPrint('🔄 AppUpdateProvider: Initializing...');
 
+    // Await Supabase initialization since it runs in parallel background
+    if (!supabaseReady.isCompleted) {
+      try {
+        await supabaseReady.future.timeout(const Duration(seconds: 8));
+      } catch (e) {
+        debugPrint('🔄 AppUpdateProvider: Timeout waiting for Supabase ready: $e');
+      }
+    }
+
     // 1. Check if an update is available
     final updateInfo = await _service.checkForUpdate();
 
@@ -134,11 +144,13 @@ class AppUpdateStateNotifier extends StateNotifier<AppUpdateState> {
 
   /// Subscribe to Supabase Realtime on the `app_config` table.
   /// When the `app_update` row is updated, re-check for updates instantly.
-  void _subscribeToRealtime() {
+  void _subscribeToRealtime() async {
     try {
       _realtimeChannel?.unsubscribe();
 
-      final supabase = Supabase.instance.client;
+      if (!supabaseReady.isCompleted) {
+        await supabaseReady.future.timeout(const Duration(seconds: 8));
+      }
       _realtimeChannel = supabase
           .channel('app_config_updates')
           .onPostgresChanges(
