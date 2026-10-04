@@ -185,6 +185,9 @@ final nextdriveEpisodesProvider =
       return [];
     }
 
+    // Register postUrl in scraper service for subsequent playback and download lookups
+    MovieSiteScraperService.instance.setPostUrl(params.tmdbId, postUrl);
+
     // Trigger universal series crawling across all seasons and all qualities in the background
     SeriesVcloudRepository.instance.crawlAllSeasonsVcloud(
       postUrl: postUrl,
@@ -212,27 +215,78 @@ final nextdriveEpisodesProvider =
     final buttons = await SitePostExtractor.instance.extractPostButtons(postUrl);
     if (buttons.isEmpty) return [];
 
-    // 3. Find the best episode link button for this season (720p > 480p > 1080p)
-    final bestBtn = SitePostExtractor.instance.getBestEpisodeButton(buttons, params.seasonNumber);
-    if (bestBtn == null) return [];
+    // 3. Find all available quality buttons for this season (480p, 720p, 1080p, 2160p)
+    final qualityButtons = SitePostExtractor.instance.getSeasonQualityButtons(buttons, params.seasonNumber);
+    if (qualityButtons.isEmpty) {
+      final fallbackBtn = SitePostExtractor.instance.getBestEpisodeButton(buttons, params.seasonNumber);
+      if (fallbackBtn != null) {
+        qualityButtons[fallbackBtn.quality.toLowerCase()] = fallbackBtn;
+      }
+    }
+    if (qualityButtons.isEmpty) return [];
 
-    // 4. Extract episodes from Nextdrive selector page
-    final episodes = await SitePostExtractor.instance.extractNextdriveEpisodes(bestBtn.href);
-    if (episodes.isEmpty) return [];
+    // 4. Extract episodes from Nextdrive selector pages for all available qualities in parallel
+    final Map<String, List<NextdriveEpisode>> qualityEpisodes = {};
+    await Future.wait(qualityButtons.entries.map((entry) async {
+      try {
+        final eps = await SitePostExtractor.instance.extractNextdriveEpisodes(entry.value.href);
+        if (eps.isNotEmpty) {
+          qualityEpisodes[entry.key] = eps;
+        }
+      } catch (e) {
+        debugPrint('[detailProvider] Error extracting ${entry.key}: $e');
+      }
+    }));
 
-    // Store extracted episodes in SeriesVcloudRepository
-    for (final ep in episodes) {
+    if (qualityEpisodes.isEmpty) return [];
+
+    // Primary list of episodes: prefer 720p > 480p > 1080p > first available
+    final primaryQuality = qualityEpisodes.containsKey('720p')
+        ? '720p'
+        : (qualityEpisodes.containsKey('480p')
+            ? '480p'
+            : (qualityEpisodes.containsKey('1080p')
+                ? '1080p'
+                : qualityEpisodes.keys.first));
+    final episodes = qualityEpisodes[primaryQuality]!;
+
+    // Store in SeriesVcloudRepository and link all resolutions
+    for (int i = 0; i < episodes.length; i++) {
+      final ep = episodes[i];
       final epNum = ep.episodeNumber ?? ep.index;
-      SeriesVcloudRepository.instance.storeEpisodeLink(
-        postKey: postUrl,
-        seasonNumber: params.seasonNumber,
-        episodeNumber: epNum,
-        title: ep.title,
-        quality: bestBtn.quality,
-        vcloudUrl: ep.vcloudUrl,
-        alternativeUrls: ep.alternativeUrls,
-        thumbnailUrl: ep.thumbnailUrl ?? params.posterUrl,
-      );
+      final otherRes = <String, String>{};
+      final otherSizes = <String, String>{};
+
+      for (final qEntry in qualityEpisodes.entries) {
+        final q = qEntry.key;
+        final matchedEp = qEntry.value.firstWhere(
+          (e) => (e.episodeNumber ?? e.index) == epNum,
+          orElse: () => (i < qEntry.value.length ? qEntry.value[i] : ep),
+        );
+        if (matchedEp.vcloudUrl.isNotEmpty) {
+          otherRes[q] = matchedEp.vcloudUrl;
+        }
+        if (matchedEp.exactSize != null && matchedEp.exactSize!.isNotEmpty) {
+          otherSizes[q] = matchedEp.exactSize!;
+        }
+
+        // Store into SeriesVcloudRepository for universal availability
+        SeriesVcloudRepository.instance.storeEpisodeLink(
+          postKey: postUrl,
+          seasonNumber: params.seasonNumber,
+          episodeNumber: epNum,
+          title: ep.title,
+          quality: q,
+          vcloudUrl: matchedEp.vcloudUrl,
+          alternativeUrls: matchedEp.alternativeUrls,
+          thumbnailUrl: ep.thumbnailUrl ?? params.posterUrl,
+        );
+      }
+
+      ep.otherResolutions = otherRes;
+      if (otherSizes.isNotEmpty) {
+        ep.otherResolutionSizes = otherSizes;
+      }
     }
 
     // 5. Fetch TMDB season details ONLY for stills/thumbnails (NEVER for titles!)

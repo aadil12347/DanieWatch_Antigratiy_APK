@@ -24,6 +24,7 @@ import '../../services/video_extractor_service.dart';
 import '../../services/vidnest_extractor.dart';
 import '../../services/peachify_extractor.dart';
 import '../../services/vcloud_extractor.dart';
+import '../../services/extraction/site_post_extractor.dart';
 
 
 /// Port name for isolate communication
@@ -1290,18 +1291,92 @@ class DownloadManager {
 
     var downloadUrl = url;
     Map<String, String>? finalHeaders = headers;
+
+    // Check if the URL is a landing page or V-Cloud page that needs direct link extraction
+    final lowerUrl = downloadUrl.toLowerCase();
+    final bool isLandingOrVcloud = lowerUrl.contains('vcloud') ||
+        lowerUrl.contains('v-cloud') ||
+        lowerUrl.contains('hubcloud') ||
+        lowerUrl.contains('nexdrive') ||
+        lowerUrl.contains('vgmlink') ||
+        lowerUrl.contains('gdflix') ||
+        lowerUrl.contains('vegadrive') ||
+        lowerUrl.contains('fastdl.zip') ||
+        lowerUrl.contains('filebee') ||
+        lowerUrl.contains('download.php') ||
+        lowerUrl.contains('/drive/');
+
+    if (isLandingOrVcloud) {
+      debugPrint('[DownloadManager] URL requires direct link extraction: $downloadUrl');
+      // 1. Try SitePostExtractor
+      try {
+        final streamRes = await SitePostExtractor.instance.resolveVcloudStream(downloadUrl);
+        final extracted = streamRes.bestDownloadUrl;
+        if (extracted != null &&
+            extracted.isNotEmpty &&
+            !extracted.toLowerCase().contains('vcloud') &&
+            !extracted.toLowerCase().contains('download.php')) {
+          downloadUrl = extracted;
+          debugPrint('[DownloadManager] SitePostExtractor resolved direct download URL: $downloadUrl');
+        }
+      } catch (e) {
+        debugPrint('[DownloadManager] SitePostExtractor error: $e');
+      }
+
+      // 2. Try VcloudExtractorService fallback if still a landing page
+      final currentLower = downloadUrl.toLowerCase();
+      if (currentLower.contains('vcloud') ||
+          currentLower.contains('hubcloud') ||
+          currentLower.contains('download.php') ||
+          currentLower.contains('/drive/')) {
+        try {
+          final servers = await VcloudExtractorService().extractVcloud(downloadUrl);
+          if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+            downloadUrl = servers['Server 2']!;
+          } else if (servers.containsKey('Server 1') &&
+              servers['Server 1']!.isNotEmpty &&
+              !servers['Server 1']!.contains('download.php')) {
+            downloadUrl = servers['Server 1']!;
+          } else if (servers.containsKey('PixelServer') && servers['PixelServer']!.isNotEmpty) {
+            downloadUrl = servers['PixelServer']!;
+          } else if (servers.containsKey('Server 3') && servers['Server 3']!.isNotEmpty) {
+            downloadUrl = servers['Server 3']!;
+          }
+          debugPrint('[DownloadManager] VcloudExtractorService resolved direct download URL: $downloadUrl');
+        } catch (e) {
+          debugPrint('[DownloadManager] VcloudExtractorService error: $e');
+        }
+      }
+
+      // 3. If Hubcloud redirect
+      if (downloadUrl.contains('hubcloud') || downloadUrl.contains('gpdl')) {
+        try {
+          final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(downloadUrl);
+          if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
+            downloadUrl = resolvedUrl;
+            debugPrint('[DownloadManager] Resolved HubCloud redirect to: $downloadUrl');
+          }
+        } catch (e) {
+          debugPrint('[DownloadManager] resolveHubCloudRedirect error: $e');
+        }
+      }
+    }
+
+    // STRICT GUARDRAIL: Never pass a raw HTML webpage to the background downloader!
+    final checkLower = downloadUrl.toLowerCase();
+    if (checkLower.contains('vcloud.fit') ||
+        checkLower.contains('vcloud.zip') ||
+        (checkLower.contains('hubcloud') && checkLower.contains('/drive/')) ||
+        checkLower.contains('download.php') ||
+        checkLower.contains('nexdrive') ||
+        checkLower.contains('vgmlink')) {
+      throw Exception('Could not extract direct media download link from $url');
+    }
+
     final bool isHubCloud = downloadUrl.contains('hubcloud') ||
         downloadUrl.contains('gpdl') ||
         url.contains('hubcloud') ||
         url.contains('gpdl');
-    if (isHubCloud) {
-      debugPrint('[DownloadManager] Resolving HubCloud redirect: $downloadUrl');
-      final resolvedUrl = await VcloudExtractorService().resolveHubCloudRedirect(downloadUrl);
-      if (resolvedUrl != null && resolvedUrl.isNotEmpty) {
-        downloadUrl = resolvedUrl;
-        debugPrint('[DownloadManager] Resolved HubCloud to: $downloadUrl');
-      }
-    }
 
     final bool finalIs10Gbps = is10Gbps ||
         isHubCloud ||

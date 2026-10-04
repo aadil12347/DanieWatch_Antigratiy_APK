@@ -81,10 +81,12 @@ class MovieSiteScraperService {
   String getResolvedMediaType(int fastId, String fallback) =>
       _resolvedMediaTypes[fastId] ?? fallback;
 
-  String? getPostUrl(int fastId) => _postUrlMap[fastId.toString()];
+  String? getPostUrl(dynamic fastId) => _postUrlMap[fastId?.toString() ?? ''];
 
-  void setPostUrl(int fastId, String postUrl) {
-    _postUrlMap[fastId.toString()] = postUrl;
+  void setPostUrl(dynamic fastId, String postUrl) {
+    if (fastId != null && postUrl.isNotEmpty) {
+      _postUrlMap[fastId.toString()] = postUrl;
+    }
   }
 
   /// Fetches IMDb ID from a post's detail page (e.g., https://vegamovies.gallery/...)

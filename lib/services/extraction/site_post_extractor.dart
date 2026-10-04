@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html_parser;
 import 'movie_site_scraper_service.dart';
 import 'dynamic_urls.dart';
+import '../vcloud_extractor.dart';
 
 /// Represents a download or episode landing button extracted from a post page.
 class SitePostButton {
@@ -386,9 +387,76 @@ class SitePostExtractor {
     throw lastError ?? Exception('Failed to fetch $url');
   }
 
+  /// Scores candidate titles/slugs against a query for intelligent disambiguation.
+  /// Prevents false matches like "Vikings: Valhalla" when searching for "Vikings".
+  static int scoreCandidate({
+    required String cleanQuery,
+    required String candidateTitle,
+    required String permalink,
+    int? year,
+  }) {
+    final lowQuery = cleanQuery.toLowerCase().trim();
+    final lowTitle = candidateTitle.toLowerCase();
+    final lowSlug = Uri.decodeFull(permalink).toLowerCase();
+
+    int score = 0;
+
+    // Direct containment of query
+    if (lowTitle.contains(lowQuery) || lowSlug.contains(lowQuery.replaceAll(' ', '-'))) {
+      score += 40;
+    } else {
+      // Check all words
+      final words = lowQuery.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+      int matchedWords = 0;
+      for (final w in words) {
+        if (lowTitle.contains(w) || lowSlug.contains(w)) matchedWords++;
+      }
+      if (matchedWords == words.length && words.isNotEmpty) {
+        score += 30;
+      } else {
+        score += matchedWords * 10;
+      }
+    }
+
+    // Penalize spin-offs if query doesn't mention them
+    final spinOffKeywords = [
+      'valhalla',
+      'blood origin',
+      'better call saul',
+      'house of the dragon',
+      'the last watch',
+      'movie',
+      'el camino',
+      'recap',
+      'bonus',
+      'special'
+    ];
+    for (final kw in spinOffKeywords) {
+      if (!lowQuery.contains(kw) && (lowTitle.contains(kw) || lowSlug.contains(kw))) {
+        score -= 60; // Strong penalty for unintended spin-offs
+      }
+    }
+
+    // Bonus for complete series / multi-season indicators
+    if (lowTitle.contains('complete') ||
+        lowTitle.contains('season 1 -') ||
+        lowTitle.contains('season 1 –') ||
+        lowTitle.contains('all seasons') ||
+        lowTitle.contains('series')) {
+      score += 25;
+    }
+
+    // Bonus for year match
+    if (year != null && (lowTitle.contains(year.toString()) || lowSlug.contains(year.toString()))) {
+      score += 15;
+    }
+
+    return score;
+  }
+
   /// Find the site post URL for a title or TMDB ID.
-  /// Uses VegaMovies TypeSense search API (/ts-search.php) for reliable JSON results,
-  /// and falls back to RogMovies HTML search.
+  /// Uses VegaMovies TypeSense search API (/ts-search.php) with candidate scoring
+  /// for reliable JSON results, and falls back to RogMovies HTML search.
   Future<String?> findPostUrl({
     required String title,
     int? tmdbId,
@@ -419,22 +487,49 @@ class SitePostExtractor {
       if (tsRes.statusCode == 200 && tsRes.body.isNotEmpty) {
         final data = jsonDecode(tsRes.body) as Map<String, dynamic>;
         final hits = data['hits'] as List? ?? [];
+        Map<String, dynamic>? bestDoc;
+        int highestScore = -999;
+
         for (final hit in hits) {
           final doc = hit['document'] as Map<String, dynamic>?;
           if (doc == null) continue;
           final permalink = doc['permalink']?.toString() ?? '';
-          if (permalink.isNotEmpty) {
-            final fullUrl = permalink.startsWith('http')
-                ? permalink
-                : '$vegaBase$permalink';
-            // Validate it's a post, not a category/tag page
-            if (!fullUrl.contains('/category/') &&
-                !fullUrl.contains('/tag/') &&
-                !fullUrl.contains('/page/')) {
-              debugPrint('[SitePostExtractor] Found post via TypeSense: $fullUrl');
-              return fullUrl;
-            }
+          final postTitle = doc['post_title']?.toString() ?? '';
+          if (permalink.isEmpty) continue;
+
+          final fullUrl = permalink.startsWith('http')
+              ? permalink
+              : '$vegaBase$permalink';
+
+          // Validate it's a post, not a category/tag/page
+          if (fullUrl.contains('/category/') ||
+              fullUrl.contains('/tag/') ||
+              fullUrl.contains('/page/')) {
+            continue;
           }
+
+          final s = scoreCandidate(
+            cleanQuery: cleanQuery,
+            candidateTitle: postTitle,
+            permalink: fullUrl,
+            year: year,
+          );
+          if (s > highestScore) {
+            highestScore = s;
+            bestDoc = doc;
+          }
+        }
+
+        if (bestDoc != null && highestScore >= 0) {
+          final permalink = bestDoc['permalink']?.toString() ?? '';
+          final fullUrl = permalink.startsWith('http')
+              ? permalink
+              : '$vegaBase$permalink';
+          debugPrint('[SitePostExtractor] Found post via TypeSense ($highestScore pts): $fullUrl');
+          if (tmdbId != null) {
+            MovieSiteScraperService.instance.setPostUrl(tmdbId, fullUrl);
+          }
+          return fullUrl;
         }
       }
     } catch (e) {
@@ -448,8 +543,12 @@ class SitePostExtractor {
       final doc = html_parser.parse(html);
       final anchors = doc.querySelectorAll(
           'article a[href], .poster-card a[href], .entry-title a[href], h2 a[href]');
+      String? bestHref;
+      int highestScore = -999;
+
       for (final a in anchors) {
         final href = a.attributes['href'] ?? '';
+        final text = a.text.trim();
         if (href.isNotEmpty &&
             (href.contains('/download-') ||
                 href.contains('vegamovies.') ||
@@ -457,9 +556,26 @@ class SitePostExtractor {
           if (!href.contains('/category/') &&
               !href.contains('/tag/') &&
               !href.contains('/page/')) {
-            return href;
+            final s = scoreCandidate(
+              cleanQuery: cleanQuery,
+              candidateTitle: text,
+              permalink: href,
+              year: year,
+            );
+            if (s > highestScore) {
+              highestScore = s;
+              bestHref = href;
+            }
           }
         }
+      }
+
+      if (bestHref != null && highestScore >= 0) {
+        debugPrint('[SitePostExtractor] Found post via Vega fallback ($highestScore pts): $bestHref');
+        if (tmdbId != null) {
+          MovieSiteScraperService.instance.setPostUrl(tmdbId, bestHref);
+        }
+        return bestHref;
       }
     } catch (e) {
       debugPrint('[SitePostExtractor] Old search fallback error: $e');
@@ -473,8 +589,12 @@ class SitePostExtractor {
       final doc = html_parser.parse(html);
       final anchors = doc.querySelectorAll(
           'article a[href], .poster-card a[href], .entry-title a[href], h2 a[href]');
+      String? bestHref;
+      int highestScore = -999;
+
       for (final a in anchors) {
         final href = a.attributes['href'] ?? '';
+        final text = a.text.trim();
         if (href.isNotEmpty &&
             (href.contains('/download-') ||
                 href.contains('vegamovies.') ||
@@ -482,9 +602,26 @@ class SitePostExtractor {
           if (!href.contains('/category/') &&
               !href.contains('/tag/') &&
               !href.contains('/page/')) {
-            return href;
+            final s = scoreCandidate(
+              cleanQuery: cleanQuery,
+              candidateTitle: text,
+              permalink: href,
+              year: year,
+            );
+            if (s > highestScore) {
+              highestScore = s;
+              bestHref = href;
+            }
           }
         }
+      }
+
+      if (bestHref != null && highestScore >= 0) {
+        debugPrint('[SitePostExtractor] Found post via RogMovies ($highestScore pts): $bestHref');
+        if (tmdbId != null) {
+          MovieSiteScraperService.instance.setPostUrl(tmdbId, bestHref);
+        }
+        return bestHref;
       }
     } catch (e) {
       debugPrint('[SitePostExtractor] RogMovies search error: $e');
@@ -696,6 +833,34 @@ class SitePostExtractor {
         pickForQuality('1080p') ??
         pickForQuality('2160p') ??
         seasonButtons.first;
+  }
+
+  /// Get the best button for each available quality (480p, 720p, 1080p, 2160p) for a given season.
+  Map<String, SitePostButton> getSeasonQualityButtons(
+      List<SitePostButton> buttons, int seasonNumber) {
+    var seasonButtons = buttons
+        .where((b) => b.seasonNumber == seasonNumber && !b.isBatchZip)
+        .toList();
+    if (seasonButtons.isEmpty && seasonNumber == 1) {
+      seasonButtons = buttons.where((b) => !b.isBatchZip).toList();
+    }
+    final result = <String, SitePostButton>{};
+    for (final q in ['480p', '720p', '1080p', '2160p']) {
+      final matches = seasonButtons
+          .where((b) => b.quality.toLowerCase() == q.toLowerCase())
+          .toList();
+      if (matches.isNotEmpty) {
+        final chosen = matches.firstWhere(
+          (b) =>
+              b.text.toLowerCase().contains('v-cloud') ||
+              b.text.toLowerCase().contains('vcloud') ||
+              b.text.toLowerCase().contains('resumable'),
+          orElse: () => matches.first,
+        );
+        result[q] = chosen;
+      }
+    }
+    return result;
   }
 
   /// Get all unique season numbers found in post buttons.
@@ -1331,13 +1496,32 @@ class SitePostExtractor {
         }
       }
 
+      // Case C.2: Nexdrive / VGMLink / GDFlix / FileBee landing page
+      if (lurl.contains('nexdrive') ||
+          lurl.contains('vgmlink') ||
+          lurl.contains('gdflix') ||
+          lurl.contains('filebee')) {
+        try {
+          final extractedVcloud = await _extractVcloudFromLanding(url);
+          if (extractedVcloud != null && extractedVcloud.isNotEmpty) {
+            return _resolveSingleStreamLink(extractedVcloud, referer: url);
+          }
+          final episodes = await extractNextdriveEpisodes(url);
+          if (episodes.isNotEmpty && episodes.first.vcloudUrl.isNotEmpty) {
+            return _resolveSingleStreamLink(episodes.first.vcloudUrl, referer: url);
+          }
+        } catch (e) {
+          debugPrint('[SitePostExtractor] Error resolving landing page $url: $e');
+        }
+      }
+
       // Case D: Standard V-Cloud
       String vHtml = await fastFetchStream(
         url,
         referer: referer,
         stopCondition: (text) =>
-            text.contains('id="size"') &&
-            (text.contains('atob(atob(') || text.contains('atob(') || text.contains('var url')),
+            (text.contains('id="size"') || text.contains('Size<i')) &&
+            (text.contains('atob(atob(') || text.contains('atob(') || text.contains('var url') || text.contains('download')),
       );
       if (vHtml.isEmpty) {
         vHtml = await fetchHtml(url, referer: referer);
@@ -1468,8 +1652,14 @@ class SitePostExtractor {
         tokenUrl,
         referer: effectiveReferer,
         stopCondition: (text) =>
-            (text.contains('[FSLv2 Server]') || text.contains('id="s3"') || text.contains('fslv2')) &&
-            (text.contains('[FSL Server]') || text.contains('id="fsl"') || text.contains('fsl')),
+            text.contains('[FSLv2 Server]') ||
+            text.contains('id="s3"') ||
+            text.contains('fslv2') ||
+            text.contains('[FSL Server]') ||
+            text.contains('id="fsl"') ||
+            text.contains('fsl') ||
+            text.contains('pixeldrain') ||
+            text.contains('10gbps'),
       );
       if (dlHtml.isEmpty) {
         dlHtml = await fetchHtml(tokenUrl, referer: effectiveReferer);
@@ -1532,6 +1722,16 @@ class SitePostExtractor {
       if (pixeldrainUrl != null && pixeldrainUrl.contains('/u/')) {
         final id = pixeldrainUrl.split('/u/').last.split('?').first.trim();
         pixeldrainUrl = 'https://pixeldrain.com/api/file/$id';
+      }
+
+      // If 10Gbps is a HubCloud redirect, resolve it to get the direct stream
+      if (tenGbpsUrl != null && (tenGbpsUrl.contains('hubcloud') || tenGbpsUrl.contains('gpdl'))) {
+        try {
+          final resolved10g = await VcloudExtractorService().resolveHubCloudRedirect(tenGbpsUrl);
+          if (resolved10g != null && resolved10g.isNotEmpty) {
+            tenGbpsUrl = resolved10g;
+          }
+        } catch (_) {}
       }
 
       return VcloudStreamResult(

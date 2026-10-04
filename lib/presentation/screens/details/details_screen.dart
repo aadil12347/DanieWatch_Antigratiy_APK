@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -58,6 +59,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   int _tabIndex = 0; // 0 = Episodes/Similars, 1 = Similars/Reviews, 2 = Reviews/Share, 3 = Share
   String _episodeSearch = '';
   bool _crawlerInitiated = false;
+  StreamSubscription<String>? _vcloudUpdatesSub;
 
   void _triggerSeriesCrawl(ContentDetail content) {
     if (_crawlerInitiated || !content.isTv) return;
@@ -80,6 +82,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         imdbId: content.imdbId,
       ).then((pUrl) {
         if (pUrl != null && pUrl.isNotEmpty) {
+          MovieSiteScraperService.instance.setPostUrl(content.id, pUrl);
+          MovieSiteScraperService.instance.setPostUrl(widget.tmdbId, pUrl);
           SeriesVcloudRepository.instance.crawlAllSeasonsVcloud(
             postUrl: pUrl,
             prioritySeason: _selectedSeason,
@@ -105,10 +109,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   @override
   void initState() {
     super.initState();
+    _vcloudUpdatesSub = SeriesVcloudRepository.instance.updatesStream.listen((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _vcloudUpdatesSub?.cancel();
     super.dispose();
   }
 
@@ -1898,6 +1906,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                 MovieSiteScraperService.instance.getPostUrl(content.id) ??
                 MovieSiteScraperService.instance.getPostUrl(widget.tmdbId) ??
                 '';
+            if (postUrl.isEmpty) {
+              postUrl = await SitePostExtractor.instance.findPostUrl(
+                title: content.title,
+                tmdbId: widget.tmdbId,
+                year: content.releaseYear,
+                imdbId: content.imdbId,
+              ) ?? '';
+            }
             final epNum = episode.episodeNumber ?? episode.index;
 
             // Query SeriesVcloudRepository for cached/on-demand stream
@@ -2041,11 +2057,26 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         episode.vcloudUrl,
         alternativeUrls: episode.alternativeUrls,
       );
-      final downloadUrl = res.bestDownloadUrl;
+      String? downloadUrl = res.bestDownloadUrl;
+      String providerName = 'V-Cloud';
+
+      if (downloadUrl == null || !_isDirectMediaUrl(downloadUrl)) {
+        final servers = await VcloudExtractorService().extractVcloud(episode.vcloudUrl);
+        if (servers.containsKey('Server 2') && _isDirectMediaUrl(servers['Server 2']!)) {
+          downloadUrl = servers['Server 2'];
+          providerName = 'FSLv2 Server';
+        } else if (servers.containsKey('Server 1') && _isDirectMediaUrl(servers['Server 1']!)) {
+          downloadUrl = servers['Server 1'];
+          providerName = 'FSL Server';
+        } else if (servers.containsKey('PixelServer') && _isDirectMediaUrl(servers['PixelServer']!)) {
+          downloadUrl = servers['PixelServer'];
+          providerName = 'PixelDrain Server';
+        }
+      }
 
       if (!mounted) return;
 
-      if (downloadUrl != null && downloadUrl.isNotEmpty) {
+      if (downloadUrl != null && downloadUrl.isNotEmpty && _isDirectMediaUrl(downloadUrl)) {
         final item = await DownloadManager.instance.startDownload(
           url: downloadUrl,
           title: '${content.title} ${episode.title}',
@@ -2056,7 +2087,8 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           fileExtension: downloadUrl.contains('.zip') ? 'zip' : 'mkv',
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
-          providerName: 'V-Cloud',
+          providerName: providerName,
+          originalEmbedUrl: episode.vcloudUrl,
         );
         if (item != null && mounted) {
           _showDownloadStartedToast(item);
@@ -2472,6 +2504,39 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     }
   }
 
+  bool _isDirectMediaUrl(String url) {
+    if (url.isEmpty) return false;
+    final l = url.toLowerCase();
+    if (l.contains('vcloud.fit') ||
+        l.contains('vcloud.zip') ||
+        (l.contains('hubcloud') && l.contains('/drive/')) ||
+        l.contains('download.php') ||
+        l.contains('nexdrive') ||
+        l.contains('vgmlink') ||
+        l.contains('gdflix') ||
+        l.contains('vegadrive') ||
+        l.contains('filebee') ||
+        l.endsWith('.php') ||
+        l.endsWith('.html')) {
+      return false;
+    }
+    return l.contains('r2.cloudflarestorage.com') ||
+        l.contains('r2.dev') ||
+        l.contains('fsl') ||
+        l.contains('fslv2') ||
+        l.contains('googleusercontent.com') ||
+        l.contains('pixeldrain.com/api/file/') ||
+        l.contains('pixeldrain.dev/api/file/') ||
+        l.contains('.mp4') ||
+        l.contains('.mkv') ||
+        l.contains('.zip') ||
+        l.contains('.m3u8') ||
+        l.contains('video') ||
+        l.contains('stream') ||
+        l.contains('download') ||
+        l.startsWith('http');
+  }
+
   Future<void> _executeDownloadResolution({
     required String chosenRes,
     required ContentDetail content,
@@ -2506,7 +2571,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     // Fast-path: if 720p was chosen and already pre-resolved, use it in 0ms!
     if (chosenRes == '720p' && episode?.preResolvedStream != null) {
       final pre = episode!.preResolvedStream!;
-      if (pre.bestDownloadUrl != null && pre.bestDownloadUrl!.isNotEmpty) {
+      if (pre.bestDownloadUrl != null &&
+          pre.bestDownloadUrl!.isNotEmpty &&
+          _isDirectMediaUrl(pre.bestDownloadUrl!)) {
         downloadUrl = pre.bestDownloadUrl;
         extractedSize = pre.fileSize ?? episode.exactSize;
         if (pre.fslv2Url != null && pre.fslv2Url!.isNotEmpty) {
@@ -2535,21 +2602,21 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         );
         extractedSize = streamRes.fileSize;
 
-        if (streamRes.fslv2Url != null && streamRes.fslv2Url!.isNotEmpty) {
+        if (streamRes.fslv2Url != null && _isDirectMediaUrl(streamRes.fslv2Url!)) {
           downloadUrl = streamRes.fslv2Url;
           providerName = 'FSLv2 Server';
-        } else if (streamRes.fslUrl != null && streamRes.fslUrl!.isNotEmpty) {
+        } else if (streamRes.fslUrl != null && _isDirectMediaUrl(streamRes.fslUrl!)) {
           downloadUrl = streamRes.fslUrl;
           providerName = 'FSL Server';
-        } else if (streamRes.fastDlUrl != null && streamRes.fastDlUrl!.isNotEmpty) {
+        } else if (streamRes.fastDlUrl != null && _isDirectMediaUrl(streamRes.fastDlUrl!)) {
           downloadUrl = streamRes.fastDlUrl;
           providerName = 'FastDL Server';
-        } else if (streamRes.tenGbpsUrl != null && streamRes.tenGbpsUrl!.isNotEmpty) {
-          downloadUrl = streamRes.tenGbpsUrl;
-          providerName = '10Gbps Server';
-        } else if (streamRes.pixeldrainUrl != null && streamRes.pixeldrainUrl!.isNotEmpty) {
+        } else if (streamRes.pixeldrainUrl != null && _isDirectMediaUrl(streamRes.pixeldrainUrl!)) {
           downloadUrl = streamRes.pixeldrainUrl;
           providerName = 'PixelDrain Server';
+        } else if (streamRes.tenGbpsUrl != null && _isDirectMediaUrl(streamRes.tenGbpsUrl!)) {
+          downloadUrl = streamRes.tenGbpsUrl;
+          providerName = '10Gbps Server';
         }
       } catch (e) {
         debugPrint('[Download] Error extracting direct link for $chosenRes: $e');
@@ -2558,26 +2625,32 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
     if (!mounted) return;
 
-    // Fallback to VcloudExtractorService if SitePostExtractor didn't yield a link
-    if (downloadUrl == null || downloadUrl.isEmpty) {
+    // Fallback to VcloudExtractorService if SitePostExtractor didn't yield a direct link
+    if (downloadUrl == null || !_isDirectMediaUrl(downloadUrl)) {
       try {
         final servers = await VcloudExtractorService().extractVcloud(targetUrl);
-        if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+        if (servers.containsKey('Server 2') && _isDirectMediaUrl(servers['Server 2']!)) {
           downloadUrl = servers['Server 2'];
           providerName = 'FSLv2 Server';
-        } else if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+        } else if (servers.containsKey('Server 1') && _isDirectMediaUrl(servers['Server 1']!)) {
           downloadUrl = servers['Server 1'];
           providerName = 'FSL Server';
-        } else if (servers.containsKey('PixelServer') && servers['PixelServer']!.isNotEmpty) {
+        } else if (servers.containsKey('PixelServer') && _isDirectMediaUrl(servers['PixelServer']!)) {
           downloadUrl = servers['PixelServer'];
           providerName = 'PixelDrain Server';
+        } else if (servers.containsKey('Server 3') && servers['Server 3']!.isNotEmpty) {
+          final resolved10g = await VcloudExtractorService().resolveHubCloudRedirect(servers['Server 3']!);
+          if (resolved10g != null && _isDirectMediaUrl(resolved10g)) {
+            downloadUrl = resolved10g;
+            providerName = '10Gbps Server';
+          }
         }
       } catch (e) {
         debugPrint('[Download] Fallback extractVcloud error: $e');
       }
     }
 
-    if (downloadUrl == null || downloadUrl.isEmpty) {
+    if (downloadUrl == null || !_isDirectMediaUrl(downloadUrl)) {
       ref.read(downloadModalProvider.notifier).update(
         (s) => s.copyWith(extractingResolution: null),
       );
@@ -2773,19 +2846,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       vcloudLinks.values.first;
                   final servers = await VcloudExtractorService().extractVcloud(vUrl);
                   // Strictly check Server 2 (FSLv2) > Server 1 (FSL), NEVER Server 3 (10Gbps)
-                  if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+                  if (servers.containsKey('Server 2') && _isDirectMediaUrl(servers['Server 2']!)) {
                     return servers['Server 2']!;
                   }
-                  if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+                  if (servers.containsKey('Server 1') && _isDirectMediaUrl(servers['Server 1']!)) {
                     return servers['Server 1']!;
                   }
                   for (final entry in servers.entries) {
                     final key = entry.key.toLowerCase();
-                    final val = entry.value.toLowerCase();
                     if ((key.contains('fslv2') || key.contains('fsl') || key.contains('direct')) &&
                         !key.contains('10gbps') &&
-                        !val.contains('hubcloud') &&
-                        !val.contains('gpdl')) {
+                        _isDirectMediaUrl(entry.value)) {
                       return entry.value;
                     }
                   }
@@ -2934,19 +3005,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       vcloudLinks.values.first;
                   final servers = await VcloudExtractorService().extractVcloud(vUrl);
                   // Strictly check Server 2 (FSLv2) > Server 1 (FSL), NEVER Server 3 (10Gbps)
-                  if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
+                  if (servers.containsKey('Server 2') && _isDirectMediaUrl(servers['Server 2']!)) {
                     return servers['Server 2']!;
                   }
-                  if (servers.containsKey('Server 1') && servers['Server 1']!.isNotEmpty) {
+                  if (servers.containsKey('Server 1') && _isDirectMediaUrl(servers['Server 1']!)) {
                     return servers['Server 1']!;
                   }
                   for (final entry in servers.entries) {
                     final key = entry.key.toLowerCase();
-                    final val = entry.value.toLowerCase();
                     if ((key.contains('fslv2') || key.contains('fsl') || key.contains('direct')) &&
                         !key.contains('10gbps') &&
-                        !val.contains('hubcloud') &&
-                        !val.contains('gpdl')) {
+                        _isDirectMediaUrl(entry.value)) {
                       return entry.value;
                     }
                   }
@@ -3029,6 +3098,32 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           description: content.overview,
           isDirectLink: false,
           is3rdPartyHosted: is3rdParty,
+          streamResolver: () async {
+            try {
+              final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(
+                tmdbId: widget.tmdbId,
+                mediaType: content.isMovie ? 'movie' : 'tv',
+                title: content.title,
+                season: content.isMovie ? null : season,
+                episode: content.isMovie ? null : episode,
+              );
+              if (dbMap.isNotEmpty) {
+                final vUrl = dbMap['720p'] ?? dbMap['480p'] ?? dbMap['1080p'] ?? dbMap.values.first;
+                final res = await SitePostExtractor.instance.resolveVcloudStream(vUrl);
+                if (res.canStreamOnline && res.onlineStreamUrl != null && _isDirectMediaUrl(res.onlineStreamUrl!)) {
+                  return res.onlineStreamUrl!;
+                }
+                final servers = await VcloudExtractorService().extractVcloud(vUrl);
+                if (servers.containsKey('Server 2') && _isDirectMediaUrl(servers['Server 2']!)) {
+                  return servers['Server 2']!;
+                }
+                if (servers.containsKey('Server 1') && _isDirectMediaUrl(servers['Server 1']!)) {
+                  return servers['Server 1']!;
+                }
+              }
+            } catch (_) {}
+            return null;
+          },
           resolutionMapResolver: () async {
             try {
               final dbMap = await VcloudExtractorService().fetchResolutionLinksMap(

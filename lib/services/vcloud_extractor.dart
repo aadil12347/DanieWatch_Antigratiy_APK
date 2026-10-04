@@ -522,13 +522,15 @@ class VcloudExtractorService {
           continue;
         }
         resolved['Server 3'] = href;
-      } else if ((attributes.toLowerCase().contains('btn') || innerHtml.toLowerCase().contains('server')) && href.contains('token=')) {
-        if (!resolved.containsKey('Server 1')) {
-          resolved['Server 1'] = href;
-        } else if (!resolved.containsKey('Server 2')) {
+      } else if ((attributes.toLowerCase().contains('btn') || innerHtml.toLowerCase().contains('server')) &&
+          !href.contains('token=') &&
+          !href.contains('download.php') &&
+          !href.contains('index.php') &&
+          (href.contains('r2.') || href.contains('fsl') || href.contains('storage') || href.contains('.mp4') || href.contains('.mkv'))) {
+        if (!resolved.containsKey('Server 2')) {
           resolved['Server 2'] = href;
-        } else if (!resolved.containsKey('Server 3')) {
-          resolved['Server 3'] = href;
+        } else if (!resolved.containsKey('Server 1')) {
+          resolved['Server 1'] = href;
         }
       }
     }
@@ -564,30 +566,6 @@ class VcloudExtractorService {
       }
       final html = await resp.transform(utf8.decoder).join();
 
-      // === CSX Strategy 1: var pxl = '...' (direct download URL) ===
-      final pxlUrl = eu.extractPxlUrl(html);
-      if (pxlUrl != null && pxlUrl.isNotEmpty && pxlUrl.startsWith('http')) {
-        debugPrint('[VcloudExtractor] Found pxl direct URL: $pxlUrl');
-        resolved['Server 1'] = pxlUrl;
-        client.close();
-        return resolved;
-      }
-
-      // === CSX Strategy 2: var url = atob(atob('...')) (double base64) ===
-      final doubleAtobUrl = eu.extractDoubleAtob(html);
-      if (doubleAtobUrl != null && doubleAtobUrl.isNotEmpty && doubleAtobUrl.startsWith('http')) {
-        debugPrint('[VcloudExtractor] Found double-atob URL: $doubleAtobUrl');
-        // Resolve the decoded URL through redirects
-        final finalUrl = await eu.resolveFinalUrl(doubleAtobUrl);
-        if (finalUrl != null && finalUrl.isNotEmpty) {
-          resolved['Server 1'] = finalUrl;
-        } else {
-          resolved['Server 1'] = doubleAtobUrl;
-        }
-        client.close();
-        return resolved;
-      }
-
       // Step 2: Try to parse server links directly from the first page
       final directServers = _parseServerLinks(html);
       if (directServers.containsKey('Server 1') || directServers.containsKey('Server 2') || directServers.containsKey('Server 3')) {
@@ -596,11 +574,18 @@ class VcloudExtractorService {
         return directServers;
       }
 
-      // Step 3: Extract token URL from JS variable or download buttons
+      // Step 3: Extract token URL from JS variable, double-atob, or download buttons
       String? tokenUrl;
 
-      // Try 3a: Extract from JS variable var url = '...' or var url = "..."
-      tokenUrl = eu.extractVarUrl(html);
+      // Try 3a: Extract from double-atob (double base64) on page 1
+      final doubleAtobUrl = eu.extractDoubleAtob(html);
+      if (doubleAtobUrl != null && doubleAtobUrl.isNotEmpty && doubleAtobUrl.startsWith('http')) {
+        tokenUrl = doubleAtobUrl;
+        debugPrint('[VcloudExtractor] Extracted token URL from double-atob: $tokenUrl');
+      }
+
+      // Try 3b: Extract from JS variable var url = '...' or var url = "..."
+      tokenUrl ??= eu.extractVarUrl(html);
       if (tokenUrl != null) {
         debugPrint('[VcloudExtractor] Extracted token URL from JS variable: $tokenUrl');
       }
@@ -676,20 +661,11 @@ class VcloudExtractorService {
       }
       final html2 = await resp2.transform(utf8.decoder).join();
 
-      // === CSX Strategy on token page: check pxl and double-atob again ===
-      final pxlUrl2 = eu.extractPxlUrl(html2);
-      if (pxlUrl2 != null && pxlUrl2.isNotEmpty && pxlUrl2.startsWith('http')) {
-        debugPrint('[VcloudExtractor] Found pxl direct URL on token page: $pxlUrl2');
-        resolved['Server 1'] = pxlUrl2;
-        client.close();
-        return resolved;
-      }
-
+      // Step 5: Check if token page has a nested token page (page 3)
       final doubleAtobUrl2 = eu.extractDoubleAtob(html2);
       if (doubleAtobUrl2 != null && doubleAtobUrl2.isNotEmpty && doubleAtobUrl2.startsWith('http')) {
         debugPrint('[VcloudExtractor] Found double-atob URL on page 2: $doubleAtobUrl2');
-        if (doubleAtobUrl2.contains('token=')) {
-          // doubleAtobUrl2 is the actual token page containing direct download buttons!
+        if (doubleAtobUrl2.contains('token=') || doubleAtobUrl2.contains('link=')) {
           try {
             final req3 = await client.getUrl(Uri.parse(doubleAtobUrl2));
             headers.forEach((k, v) => req3.headers.set(k, v));
@@ -697,27 +673,29 @@ class VcloudExtractorService {
             final resp3 = await req3.close();
             if (resp3.statusCode == 200) {
               final html3 = await resp3.transform(utf8.decoder).join();
-              final tokenServers = _parseServerLinks(html3);
-              if (tokenServers.isNotEmpty) {
-                client.close();
-                return tokenServers;
-              }
+              final page3Servers = _parseServerLinks(html3);
+              resolved.addAll(page3Servers);
             }
           } catch (e) {
             debugPrint('[VcloudExtractor] Error fetching token page 3: $e');
           }
-        } else {
-          final finalUrl2 = await eu.resolveFinalUrl(doubleAtobUrl2);
-          resolved['Server 1'] = finalUrl2 ?? doubleAtobUrl2;
-          client.close();
-          return resolved;
         }
       }
 
-      // Step 5: Parse server links from token page HTML
+      // Step 6: Parse server links from page 2 HTML
       final tokenServers = _parseServerLinks(html2);
+      resolved.addAll(tokenServers);
+
+      // Check for pxl direct URL as PixelServer fallback
+      final pxlUrl2 = eu.extractPxlUrl(html2);
+      if (pxlUrl2 != null && pxlUrl2.isNotEmpty && pxlUrl2.startsWith('http')) {
+        final cleanPxl = pxlUrl2.replaceFirst('/u/', '/api/file/');
+        resolved['PixelServer'] ??= cleanPxl;
+        debugPrint('[VcloudExtractor] Found pxl direct URL: $cleanPxl');
+      }
+
       client.close();
-      return tokenServers;
+      return resolved;
 
     } catch (e) {
       debugPrint('[VcloudExtractor] Error during vcloud extraction: $e');

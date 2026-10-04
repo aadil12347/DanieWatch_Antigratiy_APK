@@ -371,7 +371,7 @@ class ContentRepository {
             backdropUrl: scraped.backdropUrl ?? scraped.posterUrl,
             releaseYear: scraped.releaseYear,
             postUrl: postUrl,
-            siteSeasonNumbers: siteSeasons ?? [1],
+            siteSeasonNumbers: siteSeasons,
             genres: null,
             watchLink: '',
             downloadLink: '',
@@ -395,6 +395,15 @@ class ContentRepository {
       final imdbId = tmdbDetails['imdb_id']?.toString();
       final genres = _parseGenres(tmdbDetails['genres']);
       final castMembers = _parseTmdbCredits(tmdbDetails);
+
+      List<TmdbSeason>? tmdbSeasons;
+      if (tmdbDetails['seasons'] is List) {
+        tmdbSeasons = (tmdbDetails['seasons'] as List)
+            .whereType<Map<String, dynamic>>()
+            .map((s) => TmdbSeason.fromJson(s))
+            .where((s) => s.seasonNumber > 0)
+            .toList();
+      }
 
       int? releaseYear = scraped?.releaseYear;
       final dateStr = tmdbDetails['release_date']?.toString() ??
@@ -429,8 +438,12 @@ class ContentRepository {
         status: status,
         imdbId: imdbId,
         postUrl: postUrl,
-        siteSeasonNumbers: siteSeasons ?? [1],
-        numberOfSeasons: siteSeasons?.length ?? 1,
+        siteSeasonNumbers: siteSeasons,
+        numberOfSeasons: (tmdbDetails['number_of_seasons'] as num?)?.toInt() ??
+            siteSeasons?.length ??
+            (tmdbSeasons?.isNotEmpty == true ? tmdbSeasons!.length : 1),
+        numberOfEpisodes: (tmdbDetails['number_of_episodes'] as num?)?.toInt(),
+        tmdbSeasons: tmdbSeasons,
         watchLink: '',
         downloadLink: '',
       );

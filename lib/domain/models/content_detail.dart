@@ -356,22 +356,21 @@ class ContentDetail {
   String? get displayLogoUrl => tmdbLogoUrl ?? logoUrl;
 
   List<int> get seasonNumbers {
-    if (siteSeasonNumbers != null && siteSeasonNumbers!.isNotEmpty) {
-      return siteSeasonNumbers!;
-    }
-    // Check content JSON for season_X keys
     final Set<int> seasons = {};
 
+    if (siteSeasonNumbers != null && siteSeasonNumbers!.isNotEmpty) {
+      seasons.addAll(siteSeasonNumbers!);
+    }
     if (metadataEpisodes != null) {
       for (final key in metadataEpisodes!.keys) {
         final num = int.tryParse(key.replaceAll('season_', ''));
-        if (num != null) seasons.add(num);
+        if (num != null && num > 0) seasons.add(num);
       }
     }
     if (seasonsData != null) {
       for (final key in seasonsData!.keys) {
         final num = int.tryParse(key.replaceAll('season_', ''));
-        if (num != null) seasons.add(num);
+        if (num != null && num > 0) seasons.add(num);
       }
     }
     if (tmdbSeasons != null) {
@@ -379,8 +378,10 @@ class ContentDetail {
         if (s.seasonNumber > 0) seasons.add(s.seasonNumber);
       }
     }
-    if (seasons.isEmpty && numberOfSeasons != null && numberOfSeasons! > 0) {
-      return List.generate(numberOfSeasons!, (i) => i + 1);
+    if (numberOfSeasons != null && numberOfSeasons! > 0) {
+      for (int i = 1; i <= numberOfSeasons!; i++) {
+        seasons.add(i);
+      }
     }
     final list = seasons.toList()..sort();
     return list.isEmpty ? [1] : list;
