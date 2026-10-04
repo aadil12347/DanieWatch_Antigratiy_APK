@@ -69,14 +69,14 @@ class Env {
   );
 
   // ── App version for cache invalidation ────────────────────
-  static String appVersion = '1.0.0';
+  static String appVersion = '1.0.2';
 
   static Future<void> loadAppVersion() async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       appVersion = packageInfo.version;
     } catch (_) {
-      appVersion = const String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0');
+      appVersion = const String.fromEnvironment('APP_VERSION', defaultValue: '1.0.2');
     }
   }
 
