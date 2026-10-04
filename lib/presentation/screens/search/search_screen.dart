@@ -217,7 +217,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     super.dispose();
   }
 
-  void _onSearchChanged(String query) {
+  void _onSearchChanged(String query, {bool immediate = false}) {
     if (query.trim().isNotEmpty && _tabController.index != 0) {
       _isProgrammatic = true;
       _tabController.animateTo(0);
@@ -226,7 +226,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         _isProgrammatic = false;
       });
     }
-    ref.read(searchProvider('explore').notifier).search(query);
+    ref.read(searchProvider('explore').notifier).search(query, immediate: immediate);
   }
 
   Widget _buildDedicatedSearchBar(Responsive r) {
@@ -290,9 +290,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           child: TextField(
             controller: _searchController,
             focusNode: _searchFocus,
-            expands: true,
-            maxLines: null,
-            minLines: null,
+            expands: false,
+            maxLines: 1,
+            minLines: 1,
+            keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.search,
             textAlignVertical: TextAlignVertical.center,
             showCursor: true,
             cursorColor: AppColors.primary,
@@ -317,52 +319,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,
               isDense: true,
-              suffixIcon: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (hasText)
-                    GestureDetector(
+              suffixIcon: hasText
+                  ? GestureDetector(
                       onTap: () {
                         _searchController.clear();
-                        _onSearchChanged('');
+                        _onSearchChanged('', immediate: true);
                         if (mounted) setState(() {});
                       },
                       behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        margin: EdgeInsets.only(right: r.w(4)),
-                        padding: const EdgeInsets.all(6),
+                      child: Padding(
+                        padding: EdgeInsets.only(right: r.w(14), left: r.w(6)),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
+                            color: Colors.white.withValues(alpha: 0.12),
                             shape: BoxShape.circle,
                           ),
-                          padding: const EdgeInsets.all(2),
+                          padding: const EdgeInsets.all(5),
                           child: Icon(
                             Icons.close_rounded,
-                            color: Colors.white.withValues(alpha: 0.55),
-                            size: r.d(14).clamp(12.0, 18.0),
+                            color: Colors.white.withValues(alpha: 0.85),
+                            size: r.d(16).clamp(14.0, 20.0),
                           ),
                         ),
                       ),
+                    )
+                  : Padding(
+                      padding: EdgeInsets.only(right: r.w(16), left: r.w(4)),
+                      child: Icon(
+                        Icons.search_rounded,
+                        color: isFocused
+                            ? AppColors.primary.withValues(alpha: 0.9)
+                            : Colors.white.withValues(alpha: 0.3),
+                        size: r.d(20).clamp(18.0, 24.0),
+                      ),
                     ),
-                  Padding(
-                    padding: EdgeInsets.only(right: r.w(16), left: r.w(4)),
-                    child: Icon(
-                      Icons.search_rounded,
-                      color: isFocused
-                          ? AppColors.primary.withValues(alpha: 0.9)
-                          : Colors.white.withValues(alpha: 0.3),
-                      size: r.d(20).clamp(18.0, 24.0),
-                    ),
-                  ),
-                ],
-              ),
               suffixIconConstraints:
                   const BoxConstraints(minWidth: 0, minHeight: 0),
             ),
             onSubmitted: (val) {
               _saveRecentSearch(val);
-              _onSearchChanged(val);
+              _onSearchChanged(val, immediate: true);
               _searchFocus.unfocus();
             },
             onChanged: (val) {
@@ -467,7 +463,7 @@ class _CategoryPage extends ConsumerStatefulWidget {
   final String categoryLabel;
   final TextEditingController searchController;
   final FocusNode searchFocus;
-  final Function(String) onSearchChanged;
+  final void Function(String query, {bool immediate}) onSearchChanged;
   final List<String> recentSearches;
   final Function(String) onSaveRecentSearch;
   final Function(String) onRemoveRecentSearch;
@@ -536,7 +532,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
                 recentSearches: widget.recentSearches,
                 onTagSelected: (tag) {
                   widget.searchController.text = tag;
-                  widget.onSearchChanged(tag);
+                  widget.onSearchChanged(tag, immediate: true);
                   widget.onSaveRecentSearch(tag);
                 },
                 onRemoveRecent: widget.onRemoveRecentSearch,

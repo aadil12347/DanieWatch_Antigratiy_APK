@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/manifest_item.dart';
-import '../../data/clients/tmdb_client.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
 import 'manifest_provider.dart';
 
@@ -99,7 +98,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     super.dispose();
   }
 
-  void search(String query) {
+  void search(String query, {bool immediate = false}) {
     _debounce?.cancel();
 
     // Instant clear for empty/whitespace query
@@ -115,14 +114,14 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     state = state.copyWith(query: query);
 
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
+    Future<void> executeSearch() async {
       if (!mounted) return;
 
       state = state.copyWith(isSearching: true);
 
       try {
         final localMap = ref.read(localManifestMapProvider);
-        // Live search across both Vegamovies and Rogmovies sorted latest to oldest by date/time
+        // Live search across both Vegamovies and Rogmovies sorted by query relevance (closest match at top)
         final liveResults = await MovieSiteScraperService.instance.searchBothSites(
           query.trim(),
           localMap: localMap,
@@ -149,6 +148,14 @@ class SearchNotifier extends StateNotifier<SearchState> {
           return titleMatch || overviewMatch;
         }).toList();
 
+        // Sort fallback matched items by query relevance as well
+        matched.sort((a, b) {
+          final scoreA = MovieSiteScraperService.instance.computeRelevanceScore(a.title, query);
+          final scoreB = MovieSiteScraperService.instance.computeRelevanceScore(b.title, query);
+          if (scoreA != scoreB) return scoreB.compareTo(scoreA);
+          return (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0);
+        });
+
         if (mounted) {
           _unfilteredResults = matched;
           state = state.copyWith(
@@ -161,7 +168,14 @@ class SearchNotifier extends StateNotifier<SearchState> {
           state = state.copyWith(results: [], isSearching: false);
         }
       }
-    });
+    }
+
+    if (immediate) {
+      executeSearch();
+    } else {
+      // Trigger search after the user stops typing for 1.5 seconds (1500ms)
+      _debounce = Timer(const Duration(milliseconds: 1500), executeSearch);
+    }
   }
 
   void updateFilters(SearchFilters newFilters) {

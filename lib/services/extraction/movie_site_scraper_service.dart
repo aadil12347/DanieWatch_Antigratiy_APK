@@ -948,8 +948,13 @@ class MovieSiteScraperService {
       debugPrint('[MovieSiteScraperService] searchBothSites error: $e');
     }
 
-    // Sort chronologically descending (latest to oldest by date and time)
+    // Sort by query relevance (closest match from top to bottom) with date tie-breaker
     cards.sort((a, b) {
+      final scoreA = computeRelevanceScore(a.title, q);
+      final scoreB = computeRelevanceScore(b.title, q);
+      if (scoreA != scoreB) {
+        return scoreB.compareTo(scoreA); // Higher relevance score at the top
+      }
       if (a.datePublished == null && b.datePublished == null) return 0;
       if (a.datePublished == null) return 1;
       if (b.datePublished == null) return -1;
@@ -962,6 +967,101 @@ class MovieSiteScraperService {
       items.add(item);
     }
     return items;
+  }
+
+  /// Computes a relevance score (higher = closer match) comparing [rawTitle] against [rawQuery].
+  /// Accounts for exact phrase matching, prefix matching (ignoring "Download" prefix),
+  /// token matching, token density, and position bonuses.
+  int computeRelevanceScore(String rawTitle, String rawQuery) {
+    final q = rawQuery.toLowerCase().trim();
+    if (q.isEmpty) return 0;
+
+    final title = rawTitle.toLowerCase().trim();
+    if (title.isEmpty) return 0;
+
+    // Remove leading "download" prefix common on Vegamovies
+    final strippedTitle = title.replaceFirst(RegExp(r'^download\s+'), '');
+
+    int score = 0;
+
+    // 1. Exact or whole phrase match bonus
+    if (strippedTitle == q || title == q) {
+      score += 50000;
+    } else if (strippedTitle.startsWith(q) || title.startsWith(q)) {
+      score += 25000;
+    } else if (strippedTitle.contains(q) || title.contains(q)) {
+      score += 15000;
+    }
+
+    // Tokenize query and title (alphanumeric words)
+    final qTokens = q
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    final titleTokens = strippedTitle
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    final titleTokenSet = titleTokens.toSet();
+
+    if (qTokens.isEmpty) return score;
+
+    int matchedTokensCount = 0;
+    int exactTokenMatches = 0;
+
+    for (int i = 0; i < qTokens.length; i++) {
+      final qt = qTokens[i];
+
+      if (titleTokenSet.contains(qt)) {
+        matchedTokensCount++;
+        exactTokenMatches++;
+        score += 2000;
+
+        // Position bonus: earlier token = higher relevance
+        final idx = titleTokens.indexOf(qt);
+        if (idx == 0) {
+          score += 1500;
+        } else if (idx <= 3) {
+          score += 800;
+        }
+      } else {
+        // Check if any title token starts with or contains query token
+        bool foundPrefix = false;
+        for (final tt in titleTokens) {
+          if (tt.startsWith(qt)) {
+            matchedTokensCount++;
+            score += 1000;
+            foundPrefix = true;
+            break;
+          } else if (tt.contains(qt)) {
+            score += 500;
+            foundPrefix = true;
+            break;
+          }
+        }
+        if (!foundPrefix && title.contains(qt)) {
+          score += 300;
+        }
+      }
+    }
+
+    // Bonus if 100% of query tokens matched
+    if (matchedTokensCount >= qTokens.length) {
+      score += 10000;
+    } else {
+      final matchRatio = matchedTokensCount / qTokens.length;
+      score += (matchRatio * 5000).toInt();
+    }
+
+    // Density bonus: favor titles where query tokens make up a higher percentage of the title
+    if (titleTokens.isNotEmpty) {
+      final density = (exactTokenMatches / titleTokens.length) * 2000;
+      score += density.toInt();
+    }
+
+    return score;
   }
 
   /// Live fetch category/genre posts by page (supports infinite scrolling)
