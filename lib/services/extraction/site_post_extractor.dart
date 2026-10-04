@@ -132,7 +132,15 @@ class VcloudStreamResult {
   String? get onlineStreamUrl {
     if (fslv2Url != null && fslv2Url!.isNotEmpty) return fslv2Url;
     if (fslUrl != null && fslUrl!.isNotEmpty) return fslUrl;
-    if (fastDlUrl != null && fastDlUrl!.isNotEmpty) return fastDlUrl;
+    if (fastDlUrl != null &&
+        fastDlUrl!.isNotEmpty &&
+        (fastDlUrl!.contains('googleusercontent.com') ||
+         fastDlUrl!.contains('fsl') ||
+         fastDlUrl!.contains('r2.') ||
+         fastDlUrl!.contains('.mp4') ||
+         fastDlUrl!.contains('.mkv'))) {
+      return fastDlUrl;
+    }
     if (pixeldrainUrl != null && pixeldrainUrl!.isNotEmpty) {
       if (pixeldrainUrl!.contains('/u/')) {
         final id = pixeldrainUrl!.split('/u/').last.split('?').first.trim();
@@ -292,15 +300,7 @@ class SitePostExtractor {
         }
       }
 
-      String html = await fastFetchStream(
-        targetUrl,
-        stopCondition: (text) =>
-            text.contains('id="size"') &&
-            (text.contains('atob(atob(') || text.contains('atob(') || text.contains('var url')),
-      );
-      if (html.isEmpty) {
-        html = await fetchHtml(targetUrl);
-      }
+      String html = await fetchHtml(targetUrl);
       String? size = parseExactSizeFromHtml(html);
 
       // If not on initial page, check if there's a tokenUrl or redirect
@@ -326,17 +326,7 @@ class SitePostExtractor {
             final p = Uri.parse(targetUrl);
             tokenUrl = '${p.scheme}://${p.host}${tokenUrl.startsWith('/') ? '' : '/'}$tokenUrl';
           }
-          String dlHtml = await fastFetchStream(
-            tokenUrl,
-            referer: targetUrl,
-            stopCondition: (text) =>
-                text.contains('id="size"') ||
-                text.contains('[FSLv2 Server]') ||
-                text.contains('id="s3"'),
-          );
-          if (dlHtml.isEmpty) {
-            dlHtml = await fetchHtml(tokenUrl, referer: targetUrl);
-          }
+          final dlHtml = await fetchHtml(tokenUrl, referer: targetUrl);
           size = parseExactSizeFromHtml(dlHtml);
         }
       }
@@ -1501,8 +1491,8 @@ class SitePostExtractor {
         for (final a in vdDoc.querySelectorAll('a[href]')) {
           final h = a.attributes['href'] ?? '';
           final lh = h.toLowerCase();
-          if (lh.contains('gofile') || lh.contains('buzzheavier')) {
-            return VcloudStreamResult(fastDlUrl: h);
+          if (lh.contains('vcloud') || lh.contains('hubcloud')) {
+            return _resolveSingleStreamLink(h, referer: url);
           }
         }
       }
@@ -1527,16 +1517,7 @@ class SitePostExtractor {
       }
 
       // Case D: Standard V-Cloud
-      String vHtml = await fastFetchStream(
-        url,
-        referer: referer,
-        stopCondition: (text) =>
-            (text.contains('id="size"') || text.contains('Size<i')) &&
-            (text.contains('atob(atob(') || text.contains('atob(') || text.contains('var url') || text.contains('download')),
-      );
-      if (vHtml.isEmpty) {
-        vHtml = await fetchHtml(url, referer: referer);
-      }
+      final vHtml = await fetchHtml(url, referer: referer);
       String? exactFileSize = parseExactSizeFromHtml(vHtml);
 
       // 1. Look for double atob
@@ -1571,7 +1552,13 @@ class SitePostExtractor {
         }
       }
 
-      // 4. Check for intermediate VCloud / HubCloud landing page (e.g. vcloud.fit/api/index.php?link=...)
+      // 4. Download button with token=
+      if (tokenUrl == null) {
+        final btnMatch = RegExp(r'''<a[^>]+href=['"]([^'"]*token=[^'"]*)['"][^>]*>''', caseSensitive: false).firstMatch(vHtml);
+        tokenUrl = btnMatch?.group(1);
+      }
+
+      // 5. Check for intermediate VCloud / HubCloud landing page (e.g. vcloud.fit/api/index.php?link=...)
       String effectiveReferer = url;
       if (tokenUrl == null) {
         String? intermediateUrl;
@@ -1581,14 +1568,18 @@ class SitePostExtractor {
           final text = a.text.trim().toLowerCase();
           final lh = href.toLowerCase();
           if (href.isEmpty || href == '#' || lh.startsWith('javascript:')) continue;
-          if (lh.contains('telegram') || lh.contains('t.me') || lh.contains('facebook')) continue;
+          if (lh.contains('telegram') || lh.contains('t.me') || lh.contains('facebook') ||
+              lh.contains('signup') || lh.contains('login') || lh.contains('register') ||
+              lh.contains('terms') || lh.contains('privacy')) {
+            continue;
+          }
 
           if (text.contains('direct download') ||
               text.contains('resume') ||
               text.contains('download [resume]') ||
               lh.contains('vcloud.zip') ||
               (lh.contains('vcloud') && !lh.contains('index.php')) ||
-              (lh.contains('hubcloud') && !lh.contains('index.php'))) {
+              (lh.contains('hubcloud') && !lh.contains('index.php') && !lh.contains('video/'))) {
             intermediateUrl = href;
             break;
           }
@@ -1659,22 +1650,7 @@ class SitePostExtractor {
             '${p.scheme}://${p.host}${tokenUrl.startsWith('/') ? '' : '/'}$tokenUrl';
       }
 
-      String dlHtml = await fastFetchStream(
-        tokenUrl,
-        referer: effectiveReferer,
-        stopCondition: (text) =>
-            text.contains('[FSLv2 Server]') ||
-            text.contains('id="s3"') ||
-            text.contains('fslv2') ||
-            text.contains('[FSL Server]') ||
-            text.contains('id="fsl"') ||
-            text.contains('fsl') ||
-            text.contains('pixeldrain') ||
-            text.contains('10gbps'),
-      );
-      if (dlHtml.isEmpty) {
-        dlHtml = await fetchHtml(tokenUrl, referer: effectiveReferer);
-      }
+      final dlHtml = await fetchHtml(tokenUrl, referer: effectiveReferer);
       exactFileSize ??= parseExactSizeFromHtml(dlHtml);
       if (exactFileSize != null && exactFileSize.isNotEmpty) {
         _vcloudSizeCache[url] = exactFileSize;
@@ -1707,7 +1683,8 @@ class SitePostExtractor {
           fslv2Url ??= href;
         } else if (lt.contains('[fsl server]') ||
             el.attributes['id'] == 'fsl' ||
-            (lh.contains('fsl') && !lh.contains('fslv2'))) {
+            (lh.contains('fsl') && !lh.contains('fslv2')) ||
+            lh.contains('r2.dev')) {
           fslUrl ??= href;
         } else if (lt.contains('10gbps') ||
             lt.contains('g-direct') ||
@@ -1718,8 +1695,6 @@ class SitePostExtractor {
             lh.contains('pixeldrain') ||
             lh.contains('sriflix')) {
           pixeldrainUrl ??= href;
-        } else if (lt.contains('gofile') || lh.contains('gofile.io')) {
-          fastDlUrl ??= href;
         }
       }
 

@@ -451,8 +451,7 @@ class PlayerController extends ChangeNotifier {
             vcloudServers['Server 2 (FSLv2)'] = servers['Server 2']!;
           }
           if (servers.containsKey('Server 1') &&
-              servers['Server 1']!.isNotEmpty &&
-              !servers['Server 1']!.contains('download.php')) {
+              servers['Server 1']!.isNotEmpty) {
             vcloudServers['Server 1 (FSL)'] = servers['Server 1']!;
           }
           if (servers.containsKey('PixelServer') &&
@@ -469,8 +468,7 @@ class PlayerController extends ChangeNotifier {
             playableUrl = servers['Server 2']!;
             _selectedServer = 'Server 2 (FSLv2)';
           } else if (servers.containsKey('Server 1') &&
-              servers['Server 1']!.isNotEmpty &&
-              !servers['Server 1']!.contains('download.php')) {
+              servers['Server 1']!.isNotEmpty) {
             playableUrl = servers['Server 1']!;
             _selectedServer = 'Server 1 (FSL)';
           } else if (servers.containsKey('PixelServer') &&
@@ -483,19 +481,6 @@ class PlayerController extends ChangeNotifier {
         debugPrint(
             '[PlayerController] Error resolving target resolution stream: $e');
       }
-    }
-
-    // STRICT GUARD: Never play HTML webpages or landing links!
-    final checkPlayable = playableUrl.toLowerCase();
-    if (checkPlayable.contains('vcloud.fit') ||
-        checkPlayable.contains('vcloud.zip') ||
-        (checkPlayable.contains('hubcloud') && checkPlayable.contains('/drive/')) ||
-        checkPlayable.contains('download.php') ||
-        checkPlayable.contains('nexdrive') ||
-        checkPlayable.contains('vgmlink')) {
-      debugPrint('[PlayerController] Cannot play webpage/landing link: $playableUrl');
-      _tryNextSource(source, startPosition: startPosition);
-      return;
     } else {
       if (_selectedServer.isEmpty) {
         if (playableUrl.contains('fslv2') || playableUrl.contains('s3.')) {
@@ -686,8 +671,7 @@ class PlayerController extends ChangeNotifier {
           if (servers.containsKey('Server 2') && servers['Server 2']!.isNotEmpty) {
             streamUrl = servers['Server 2']!;
           } else if (servers.containsKey('Server 1') &&
-              servers['Server 1']!.isNotEmpty &&
-              !servers['Server 1']!.contains('download.php')) {
+              servers['Server 1']!.isNotEmpty) {
             streamUrl = servers['Server 1']!;
           } else if (servers.containsKey('PixelServer') && servers['PixelServer']!.isNotEmpty) {
             streamUrl = servers['PixelServer']!;
