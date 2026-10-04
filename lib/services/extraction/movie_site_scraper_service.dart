@@ -481,27 +481,45 @@ class MovieSiteScraperService {
     return cards;
   }
 
-  /// Query Typesense search across Vegamovies and Rogmovies
-  Future<List<ScrapedSiteCard>> _fetchTypesenseCards(String query, {int page = 1}) async {
+  /// Query Typesense search across Vegamovies and/or Rogmovies
+  Future<List<ScrapedSiteCard>> _fetchTypesenseCards(
+    String query, {
+    int page = 1,
+    String? site, // 'vegamovies' | 'rogmovies' | null (both)
+  }) async {
     final cleanQ = Uri.encodeComponent(query);
     final cards = <ScrapedSiteCard>[];
     try {
-      final results = await Future.wait([
-        _dio
-            .get<String>(
-              '$vegaBaseUrl/ts-search.php?q=$cleanQ&page=$page',
-              options: Options(responseType: ResponseType.plain),
-            )
-            .then((r) => r.data)
-            .catchError((_) => null),
-        _dio
-            .get<String>(
-              '$rogBaseUrl/ts-search.php?q=$cleanQ&page=$page',
-              options: Options(responseType: ResponseType.plain),
-            )
-            .then((r) => r.data)
-            .catchError((_) => null),
-      ]);
+      final futures = <Future<String?>>[];
+      if (site == null || site == 'vegamovies') {
+        futures.add(
+          _dio
+              .get<String>(
+                '$vegaBaseUrl/ts-search.php?q=$cleanQ&page=$page',
+                options: Options(responseType: ResponseType.plain),
+              )
+              .then((r) => r.data)
+              .catchError((_) => null),
+        );
+      } else {
+        futures.add(Future.value(null));
+      }
+
+      if (site == null || site == 'rogmovies') {
+        futures.add(
+          _dio
+              .get<String>(
+                '$rogBaseUrl/ts-search.php?q=$cleanQ&page=$page',
+                options: Options(responseType: ResponseType.plain),
+              )
+              .then((r) => r.data)
+              .catchError((_) => null),
+        );
+      } else {
+        futures.add(Future.value(null));
+      }
+
+      final results = await Future.wait(futures);
       if (results[0] != null) cards.addAll(parseTsCards(results[0], 'vegamovies', vegaBaseUrl));
       if (results[1] != null) cards.addAll(parseTsCards(results[1], 'rogmovies', rogBaseUrl));
     } catch (e) {
@@ -1356,47 +1374,48 @@ class MovieSiteScraperService {
       final pageUrl = page == 1
           ? '$vegaBaseUrl/korean-series/'
           : '$vegaBaseUrl/korean-series/page/$page/';
-      final results = await Future.wait([
-        fetchHtml(pageUrl),
-        _fetchTypesenseCards('Korean', page: page),
-      ]);
-      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
-      cards.addAll(results[1] as List<ScrapedSiteCard>);
+      final html = await fetchHtml(pageUrl);
+      if (html != null && html.isNotEmpty) {
+        cards.addAll(parseCards(html, 'vegamovies'));
+      }
+      if (cards.isEmpty) {
+        cards.addAll(await _fetchTypesenseCards('Korean', page: page, site: 'vegamovies'));
+      }
     } else if (key == 'chinese') {
-      final results = await Future.wait([
-        _fetchChineseCards(page: page),
-        _fetchTypesenseCards('Chinese', page: page),
-      ]);
-      cards.addAll(results[0]);
-      cards.addAll(results[1]);
+      cards.addAll(await _fetchChineseCards(page: page));
+      if (cards.isEmpty) {
+        cards.addAll(await _fetchTypesenseCards('Chinese', page: page, site: 'vegamovies'));
+      }
     } else if (key == 'anime') {
       final pageUrl = page == 1
           ? '$vegaBaseUrl/anime-series/'
           : '$vegaBaseUrl/anime-series/page/$page/';
-      final results = await Future.wait([
-        fetchHtml(pageUrl),
-        _fetchTypesenseCards('Anime', page: page),
-      ]);
-      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'vegamovies'));
-      cards.addAll(results[1] as List<ScrapedSiteCard>);
+      final html = await fetchHtml(pageUrl);
+      if (html != null && html.isNotEmpty) {
+        cards.addAll(parseCards(html, 'vegamovies'));
+      }
+      if (cards.isEmpty) {
+        cards.addAll(await _fetchTypesenseCards('Anime', page: page, site: 'vegamovies'));
+      }
     } else if (key == 'indian' || key == 'bollywood') {
+      // Rogmovies homepage feed and pagination ONLY (never Vegamovies)
       final pageUrl = page == 1 ? rogBaseUrl : '$rogBaseUrl/page/$page/';
-      final results = await Future.wait([
-        fetchHtml(pageUrl),
-        _fetchTypesenseCards('Hindi', page: page),
-      ]);
-      if (results[0] != null) cards.addAll(parseCards(results[0]! as String, 'rogmovies'));
-      cards.addAll(results[1] as List<ScrapedSiteCard>);
+      final html = await fetchHtml(pageUrl);
+      if (html != null && html.isNotEmpty) {
+        cards.addAll(parseCards(html, 'rogmovies'));
+      }
+      if (cards.isEmpty) {
+        cards.addAll(await _fetchTypesenseCards('Hindi', page: page, site: 'rogmovies'));
+      }
     } else if (key == 'dual-audio' || key == 'dualaudio') {
-      // Vegamovies homepage feed and pagination as requested
+      // Vegamovies homepage feed and pagination ONLY (never Rogmovies)
       final pageUrl = page == 1 ? vegaBaseUrl : '$vegaBaseUrl/page/$page/';
       final html = await fetchHtml(pageUrl);
       if (html != null && html.isNotEmpty) {
         cards.addAll(parseCards(html, 'vegamovies'));
       }
       if (cards.isEmpty) {
-        // Fallback to Typesense if direct HTML failed
-        cards.addAll(await _fetchTypesenseCards('Dual Audio', page: page));
+        cards.addAll(await _fetchTypesenseCards('Dual Audio', page: page, site: 'vegamovies'));
       }
     } else if (key == 'hollywood') {
       final vegaUrl = page == 1 ? '$vegaBaseUrl/?s=Hollywood' : '$vegaBaseUrl/page/$page/?s=Hollywood';
@@ -1456,7 +1475,7 @@ class MovieSiteScraperService {
     // Dynamically sort posts chronologically descending by actual upload date
     // (Latest uploaded posts at the top, seamless dynamic flow from both sites)
     // ─────────────────────────────────────────────────────────────────────────
-    if (key != 'dual-audio' && key != 'dualaudio') {
+    if (key != 'dual-audio' && key != 'dualaudio' && key != 'indian' && key != 'bollywood') {
       cards.sort((a, b) {
         if (a.datePublished == null && b.datePublished == null) return 0;
         if (a.datePublished == null) return 1;

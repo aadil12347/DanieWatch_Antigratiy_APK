@@ -494,14 +494,24 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   /// The catalog slug for this category tab.
   String get _slug => categoryLabelToSlug(widget.categoryLabel);
 
-  /// Trigger loading the next page when scroll is near the bottom.
+  /// Trigger loading the next page when scroll is near the bottom,
+  /// or previous page when scroll is near the top (e.g. from page 100 -> 99).
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
       final metrics = notification.metrics;
-      // Trigger when within 600px of the bottom
+      // Downward scroll near bottom -> load next page (e.g. 101)
       if (metrics.pixels >= metrics.maxScrollExtent - 600) {
         ref.read(paginatedCategoryProvider(_slug).notifier).loadNextPage();
       }
+      // Upward scroll near top -> load previous page (e.g. 99)
+      if (metrics.pixels <= 180 &&
+          notification.scrollDelta != null &&
+          notification.scrollDelta! < 0) {
+        ref.read(paginatedCategoryProvider(_slug).notifier).loadPreviousPage();
+      }
+    } else if (notification is OverscrollNotification && notification.overscroll < 0) {
+      // User pulled down past the top -> load previous page
+      ref.read(paginatedCategoryProvider(_slug).notifier).loadPreviousPage();
     }
     return false;
   }
@@ -682,6 +692,11 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
                   isVisible: !showResults && effectiveItems.isNotEmpty && totalPages > 1,
                   onPageSelected: (selectedPage) {
                     ref.read(paginatedCategoryProvider(_slug).notifier).jumpToPage(selectedPage);
+                    PrimaryScrollController.maybeOf(context)?.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                    );
                   },
                 ),
               ),
@@ -734,9 +749,62 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 
     // No search or filter active → grid of items + loading indicator
     return [
+      // Top loading indicator when user swipes up to load previous page (e.g. from 100 to 99)
+      if (pagState.isLoadingPrevious)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 14),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+      // Subtle jumping banner when jumping directly to page (retains current posts smoothly)
+      if (pagState.isJumping)
+        SliverToBoxAdapter(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Loading Page ${pagState.currentPage}...',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
       _buildResultsGrid(itemsToDisplay),
-      // Loading indicator for infinite scroll
-      if (pagState.isLoadingMore)
+
+      // Loading indicator for infinite scroll (next page)
+      if (pagState.isLoadingMore && !pagState.isJumping)
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -752,8 +820,9 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
             ),
           ),
         ),
+
       // "No more items" indicator
-      if (!pagState.hasMore && itemsToDisplay.isNotEmpty && !pagState.isLoadingMore)
+      if (!pagState.hasMore && itemsToDisplay.isNotEmpty && !pagState.isLoadingMore && !pagState.isJumping)
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 24),

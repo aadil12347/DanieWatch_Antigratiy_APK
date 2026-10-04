@@ -505,30 +505,50 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
 class PaginatedCategoryState {
   final List<ManifestItem> items;
   final int currentPage;
+  final int minPage;
+  final int maxPage;
   final bool isLoadingMore;
+  final bool isLoadingPrevious;
+  final bool isJumping;
   final bool hasMore;
+  final bool hasPrevious;
   final String? error;
 
   const PaginatedCategoryState({
     this.items = const [],
     this.currentPage = 0,
+    this.minPage = 1,
+    this.maxPage = 1,
     this.isLoadingMore = false,
+    this.isLoadingPrevious = false,
+    this.isJumping = false,
     this.hasMore = true,
+    this.hasPrevious = false,
     this.error,
   });
 
   PaginatedCategoryState copyWith({
     List<ManifestItem>? items,
     int? currentPage,
+    int? minPage,
+    int? maxPage,
     bool? isLoadingMore,
+    bool? isLoadingPrevious,
+    bool? isJumping,
     bool? hasMore,
+    bool? hasPrevious,
     String? Function()? errorOverride,
   }) {
     return PaginatedCategoryState(
       items: items ?? this.items,
       currentPage: currentPage ?? this.currentPage,
+      minPage: minPage ?? this.minPage,
+      maxPage: maxPage ?? this.maxPage,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      isLoadingPrevious: isLoadingPrevious ?? this.isLoadingPrevious,
+      isJumping: isJumping ?? this.isJumping,
       hasMore: hasMore ?? this.hasMore,
+      hasPrevious: hasPrevious ?? this.hasPrevious,
       error: errorOverride != null ? errorOverride() : error,
     );
   }
@@ -557,7 +577,10 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       state = AsyncValue.data(PaginatedCategoryState(
         items: results,
         currentPage: 1,
+        minPage: 1,
+        maxPage: 1,
         hasMore: results.length >= minPageSize,
+        hasPrevious: false,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category page 1 error: $e', stackTrace: stack);
@@ -570,7 +593,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     if (current == null) return;
     if (current.isLoadingMore || !current.hasMore) return;
 
-    final nextPage = current.currentPage + 1;
+    final nextPage = current.maxPage + 1;
     state = AsyncValue.data(current.copyWith(isLoadingMore: true, errorOverride: () => null));
 
     try {
@@ -587,8 +610,9 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       };
       final minPageSize = liveCategories.contains(cat) ? 10 : 30;
 
-      state = AsyncValue.data(PaginatedCategoryState(
+      state = AsyncValue.data(current.copyWith(
         items: [...current.items, ...results],
+        maxPage: nextPage,
         currentPage: nextPage,
         isLoadingMore: false,
         hasMore: results.length >= minPageSize,
@@ -604,13 +628,50 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     }
   }
 
+  /// When user swiped to page 100, swiping up near the top loads page 99 above!
+  Future<void> loadPreviousPage() async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    if (current.isLoadingPrevious || !current.hasPrevious || current.minPage <= 1) return;
+
+    final prevPage = current.minPage - 1;
+    state = AsyncValue.data(current.copyWith(isLoadingPrevious: true, errorOverride: () => null));
+
+    try {
+      final results = await _fetchLocalPage(prevPage);
+
+      if (!mounted) return;
+
+      state = AsyncValue.data(current.copyWith(
+        items: [...results, ...current.items],
+        minPage: prevPage,
+        currentPage: prevPage,
+        isLoadingPrevious: false,
+        hasPrevious: prevPage > 1,
+      ));
+    } catch (e, stack) {
+      dev.log('[PaginatedCategory] $category previous page $prevPage error: $e', stackTrace: stack);
+      if (mounted) {
+        state = AsyncValue.data(current.copyWith(
+          isLoadingPrevious: false,
+          errorOverride: () => e.toString(),
+        ));
+      }
+    }
+  }
+
   /// Jumps directly to a specific page number selected via the page slider.
   Future<void> jumpToPage(int targetPage) async {
     final current = state.valueOrNull;
     if (current == null) return;
     if (targetPage == current.currentPage && current.items.isNotEmpty) return;
 
-    state = const AsyncValue.loading();
+    // Keep current posts visible with jumping indicator — never flash random fallback posts!
+    state = AsyncValue.data(current.copyWith(
+      isJumping: true,
+      isLoadingMore: true,
+      errorOverride: () => null,
+    ));
 
     try {
       final results = await _fetchLocalPage(targetPage);
@@ -626,15 +687,21 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       final minPageSize = liveCategories.contains(cat) ? 10 : 30;
 
       state = AsyncValue.data(PaginatedCategoryState(
-        items: results,
+        items: results.isNotEmpty ? results : current.items,
         currentPage: targetPage,
+        minPage: targetPage,
+        maxPage: targetPage,
+        isJumping: false,
         isLoadingMore: false,
+        isLoadingPrevious: false,
         hasMore: results.length >= minPageSize,
+        hasPrevious: targetPage > 1,
       ));
     } catch (e, stack) {
       dev.log('[PaginatedCategory] $category jump to page $targetPage error: $e', stackTrace: stack);
       if (mounted) {
         state = AsyncValue.data(current.copyWith(
+          isJumping: false,
           isLoadingMore: false,
           errorOverride: () => e.toString(),
         ));
