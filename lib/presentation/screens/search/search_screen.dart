@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -31,8 +32,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   final ScrollController _outerScrollController = ScrollController();
 
   late TabController _tabController;
-  late AnimationController _glowCtrl;
-  late Animation<double> _glowAnim;
 
   /// Tracks whether we are programmatically changing tabs (to avoid circular updates)
   bool _isProgrammatic = false;
@@ -56,14 +55,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       animationDuration: const Duration(milliseconds: 300), // Smooth red line slide
     );
 
-    _glowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    );
-    _glowAnim = Tween<double>(begin: 0.15, end: 0.35).animate(
-      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
-    );
-
     // Sync tab changes → update search provider filters & rebuild header
     _tabController.addListener(_onTabChanged);
     _tabController.animation?.addListener(() {
@@ -75,9 +66,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       _searchController.text = currentQuery;
     }
     _searchFocus.addListener(_onFocusChange);
-    if (_searchFocus.hasFocus) {
-      _glowCtrl.repeat(reverse: true);
-    }
 
     // Register outer scroll controller for scroll-to-top (Explore = bottom nav index 1)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -194,12 +182,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (mounted) {
       setState(() {});
       ref.read(searchFocusProvider.notifier).state = _searchFocus.hasFocus;
-      if (_searchFocus.hasFocus) {
-        _glowCtrl.repeat(reverse: true);
-      } else {
-        _glowCtrl.stop();
-        _glowCtrl.value = 0;
-      }
     }
   }
 
@@ -207,7 +189,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   void dispose() {
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
-    _glowCtrl.dispose();
     _searchController.dispose();
     _searchFocus.removeListener(_onFocusChange);
     ref.read(searchFocusProvider.notifier).state = false;
@@ -230,141 +211,159 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   Widget _buildDedicatedSearchBar(Responsive r) {
-    final isFocused = _searchFocus.hasFocus;
+    final isActive = _searchFocus.hasFocus;
     final hasText = _searchController.text.isNotEmpty;
-    final barHeight = r.h(44).clamp(38.0, 52.0);
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(r.w(16), r.h(6), r.w(16), r.h(10)),
-      child: AnimatedBuilder(
-        animation: _glowAnim,
-        builder: (context, child) {
-          return Container(
-            height: barHeight,
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(35),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF1E1E22),
-                  const Color(0xFF1A1A1E),
-                  isFocused
-                      ? AppColors.primary.withValues(alpha: 0.05)
-                      : const Color(0xFF18181C),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(r.w(14)),
+              color: isActive
+                  ? const Color(0xFF1E1E22).withValues(alpha: 0.88)
+                  : const Color(0xFF161619).withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(35),
               border: Border.all(
-                color: isFocused
-                    ? AppColors.primary.withValues(alpha: 0.55)
-                    : Colors.white.withValues(alpha: 0.06),
-                width: isFocused ? 1.2 : 0.8,
+                color: isActive
+                    ? AppColors.primary
+                    : Colors.white.withValues(alpha: 0.12),
+                width: isActive ? 1.8 : 1.2,
               ),
-              boxShadow: isFocused
-                  ? [
-                      BoxShadow(
-                        color: AppColors.primary
-                            .withValues(alpha: _glowAnim.value),
-                        blurRadius: 20,
-                        spreadRadius: -2,
-                      ),
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.06),
-                        blurRadius: 40,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+              boxShadow: [
+                // Active aura glow behind search bar
+                if (isActive)
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.35),
+                    blurRadius: 24,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 2),
+                  ),
+                // Deep 3D elevation shadow
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  blurRadius: isActive ? 22 : 12,
+                  offset: const Offset(0, 6),
+                  spreadRadius: 1,
+                ),
+                // Accent glow shadow
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: isActive ? 0.45 : 0.15),
+                  blurRadius: isActive ? 16 : 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: child,
-          );
-        },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(r.w(14)),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _searchFocus,
-            expands: false,
-            maxLines: 1,
-            minLines: 1,
-            keyboardType: TextInputType.text,
-            textInputAction: TextInputAction.search,
-            textAlignVertical: TextAlignVertical.center,
-            showCursor: true,
-            cursorColor: AppColors.primary,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: r.f(14).clamp(13.0, 17.0),
-              fontWeight: FontWeight.w400,
-              letterSpacing: 0.1,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Search movies, shows...',
-              hintStyle: GoogleFonts.inter(
-                color: Colors.white.withValues(alpha: 0.28),
-                fontSize: r.f(14).clamp(12.0, 16.0),
-                fontWeight: FontWeight.w400,
-                letterSpacing: 0.2,
-              ),
-              filled: true,
-              fillColor: Colors.transparent,
-              contentPadding: EdgeInsets.only(left: r.w(18), right: r.w(8)),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              isDense: true,
-              suffixIcon: hasText
-                  ? GestureDetector(
-                      onTap: () {
-                        _searchController.clear();
-                        _onSearchChanged('', immediate: true);
-                        if (mounted) setState(() {});
-                      },
-                      behavior: HitTestBehavior.opaque,
-                      child: Padding(
-                        padding: EdgeInsets.only(right: r.w(14), left: r.w(6)),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(5),
-                          child: Icon(
-                            Icons.close_rounded,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            size: r.d(16).clamp(14.0, 20.0),
-                          ),
-                        ),
+            child: Row(
+              children: [
+                const SizedBox(width: 14),
+                AnimatedScale(
+                  scale: isActive ? 1.15 : 1.0,
+                  duration: const Duration(milliseconds: 180),
+                  child: Icon(
+                    Icons.search_rounded,
+                    color: isActive ? AppColors.primary : Colors.white.withValues(alpha: 0.45),
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    textAlignVertical: TextAlignVertical.center,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search movies & series...',
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
                       ),
-                    )
-                  : Padding(
-                      padding: EdgeInsets.only(right: r.w(16), left: r.w(4)),
-                      child: Icon(
-                        Icons.search_rounded,
-                        color: isFocused
-                            ? AppColors.primary.withValues(alpha: 0.9)
-                            : Colors.white.withValues(alpha: 0.3),
-                        size: r.d(20).clamp(18.0, 24.0),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (val) {
+                      _saveRecentSearch(val);
+                      _onSearchChanged(val, immediate: true);
+                      _searchFocus.unfocus();
+                    },
+                    onChanged: (val) {
+                      _onSearchChanged(val);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+                if (hasText)
+                  GestureDetector(
+                    onTap: () {
+                      _searchController.clear();
+                      _onSearchChanged('', immediate: true);
+                      if (mounted) setState(() {});
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 4),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 18,
                       ),
                     ),
-              suffixIconConstraints:
-                  const BoxConstraints(minWidth: 0, minHeight: 0),
+                  )
+                else
+                  GestureDetector(
+                    onTap: () {
+                      final q = _searchController.text.trim();
+                      if (q.isNotEmpty) {
+                        _saveRecentSearch(q);
+                        _onSearchChanged(q, immediate: true);
+                        _searchFocus.unfocus();
+                      }
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.search_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            onSubmitted: (val) {
-              _saveRecentSearch(val);
-              _onSearchChanged(val, immediate: true);
-              _searchFocus.unfocus();
-            },
-            onChanged: (val) {
-              _onSearchChanged(val);
-              if (mounted) setState(() {});
-            },
           ),
         ),
       ),
