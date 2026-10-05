@@ -97,6 +97,15 @@ Future<void> main() async {
 
     await Env.loadAppVersion();
 
+    // Fast local database init (<15ms) — guarantees all local SQLite tables (watchlist, continue watching)
+    // are immediately available when providers build without race conditions
+    try {
+      await AppDatabase.instance.initialize();
+      debugPrint('[Startup] ✅ SQLite Database initialized');
+    } catch (e) {
+      debugPrint('[Startup] ⚠️ SQLite Database init error: $e');
+    }
+
     // Remove native splash immediately — launch UI NOW!
     FlutterNativeSplash.remove();
 

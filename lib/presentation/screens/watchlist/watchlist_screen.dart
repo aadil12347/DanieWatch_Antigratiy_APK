@@ -6,7 +6,6 @@ import '../../../core/utils/responsive.dart';
 import '../../../domain/models/manifest_item.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/search_provider.dart';
-import '../../providers/manifest_provider.dart';
 import '../../widgets/movie_card.dart';
 import '../../widgets/empty_results_view.dart';
 import '../../widgets/category_header.dart';
@@ -99,33 +98,75 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
               ),
               // Scrollable content
               Expanded(
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    // Filter chips — scroll normally
-                    const SliverToBoxAdapter(
-                      child: CategoryFilterChips(contextId: 'watchlist'),
-                    ),
-                    // Content
-                    ...watchlistAsync.when(
-                      loading: () => [
-                        const SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Center(
-                            child: CircularProgressIndicator(color: AppColors.primary),
+                child: RefreshIndicator(
+                  color: AppColors.primary,
+                  backgroundColor: AppColors.surface,
+                  onRefresh: () async {
+                    ref.invalidate(watchlistProvider);
+                    await ref.read(watchlistProvider.future);
+                  },
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      // Filter chips — scroll normally
+                      const SliverToBoxAdapter(
+                        child: CategoryFilterChips(contextId: 'watchlist'),
+                      ),
+                      // Content
+                      ...watchlistAsync.when(
+                        loading: () => [
+                          const SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: CircularProgressIndicator(color: AppColors.primary),
+                            ),
                           ),
-                        ),
-                      ],
-                      error: (e, _) => [
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Center(
-                            child: Text('Error: $e',
-                                style: const TextStyle(color: AppColors.textMuted)),
+                        ],
+                        error: (e, _) => [
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error_outline_rounded,
+                                        color: AppColors.error, size: 48),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'Unable to load favourites',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '$e',
+                                      style: const TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 13,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    TextButton.icon(
+                                      onPressed: () => ref.invalidate(watchlistProvider),
+                                      icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
+                                      label: const Text(
+                                        'Retry',
+                                        style: TextStyle(color: AppColors.primary),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
                       data: (items) {
                         if (items.isEmpty) {
                           return [
@@ -213,10 +254,11 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -1,17 +1,20 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../data/local/database.dart';
+import '../../data/local/watchlist_backup_manager.dart';
 import '../../domain/models/entry.dart';
 
-/// Watchlist provider — guest local storage in SQLite
+/// Watchlist provider — guest local storage in SQLite with permanent device-level backup
 class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
   @override
   Future<List<WatchlistItem>> build() async {
+    // Ensure SQLite database is fully initialized before loading
+    await AppDatabase.instance.ensureInitialized();
     return _loadWatchlist();
   }
 
-  Future<List<WatchlistItem>> _loadWatchlist() async {
-    final db = AppDatabase.instance.db;
+  Future<List<WatchlistItem>> _queryWatchlist(Database db) async {
     final rows = await db.query('watchlist', orderBy: 'added_at DESC');
     return rows
         .map((r) => WatchlistItem(
@@ -26,6 +29,25 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
         .toList();
   }
 
+  Future<List<WatchlistItem>> _loadWatchlist() async {
+    final db = await AppDatabase.instance.database;
+    List<WatchlistItem> items = await _queryWatchlist(db);
+
+    // If SQLite has no items (e.g. fresh install, cleared app data, uninstalled and reinstalled),
+    // automatically restore from permanent device storage backup!
+    if (items.isEmpty) {
+      final restored = await WatchlistBackupManager.instance.restoreToDatabase(db);
+      if (restored.isNotEmpty) {
+        items = restored;
+      }
+    } else {
+      // In the background, keep permanent device backup fresh and synced
+      unawaited(WatchlistBackupManager.instance.saveBackup(items));
+    }
+
+    return items;
+  }
+
   Future<void> toggle({
     required int tmdbId,
     required String mediaType,
@@ -33,7 +55,7 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
     String? posterPath,
     double voteAverage = 0.0,
   }) async {
-    final db = AppDatabase.instance.db;
+    final db = await AppDatabase.instance.database;
     final existing = await db.query(
       'watchlist',
       where: 'tmdb_id = ? AND media_type = ?',
@@ -55,13 +77,25 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
       });
     }
 
-    state = AsyncValue.data(await _loadWatchlist());
-  }
+    final updatedItems = await _queryWatchlist(db);
+    state = AsyncValue.data(updatedItems);
 
+    // Permanently persist to device storage files immediately
+    await WatchlistBackupManager.instance.saveBackup(updatedItems);
+  }
 
   bool isInWatchlist(int tmdbId, String mediaType) {
     final items = state.valueOrNull ?? [];
     return items.any((i) => i.tmdbId == tmdbId && i.mediaType == mediaType);
+  }
+
+  /// Manually trigger a restore from permanent device backup
+  Future<void> restoreFromBackup() async {
+    final db = await AppDatabase.instance.database;
+    final restored = await WatchlistBackupManager.instance.restoreToDatabase(db);
+    if (restored.isNotEmpty) {
+      state = AsyncValue.data(await _queryWatchlist(db));
+    }
   }
 }
 
@@ -74,11 +108,12 @@ class ContinueWatchingNotifier
     extends AsyncNotifier<List<ContinueWatchingItem>> {
   @override
   Future<List<ContinueWatchingItem>> build() async {
+    await AppDatabase.instance.ensureInitialized();
     return _load();
   }
 
   Future<List<ContinueWatchingItem>> _load() async {
-    final db = AppDatabase.instance.db;
+    final db = await AppDatabase.instance.database;
     final rows =
         await db.query('continue_watching', orderBy: 'updated_at DESC');
     return rows
@@ -107,7 +142,7 @@ class ContinueWatchingNotifier
     required int progressSeconds,
     required int totalSeconds,
   }) async {
-    final db = AppDatabase.instance.db;
+    final db = await AppDatabase.instance.database;
     await db.insert(
       'continue_watching',
       {
@@ -127,7 +162,7 @@ class ContinueWatchingNotifier
   }
 
   Future<void> remove(int tmdbId, String mediaType) async {
-    final db = AppDatabase.instance.db;
+    final db = await AppDatabase.instance.database;
     await db.delete('continue_watching',
         where: 'tmdb_id = ? AND media_type = ?',
         whereArgs: [tmdbId, mediaType]);

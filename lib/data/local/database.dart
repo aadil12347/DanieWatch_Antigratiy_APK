@@ -11,32 +11,56 @@ class AppDatabase {
   static const _schemaVersion = 3;
 
   Database? _db;
+  Completer<void>? _initCompleter;
 
   Database get db {
-    if (_db == null) {
+    if (_db == null || !_db!.isOpen) {
       throw StateError('Database not initialized. Call initialize() first.');
     }
     return _db!;
   }
 
-  Future<void> initialize() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, _dbName);
+  bool get isInitialized => _db != null && _db!.isOpen;
 
-    _db = await openDatabase(
-      path,
-      version: _schemaVersion,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-      onConfigure: (db) async {
-        // Enable WAL mode for better concurrent read performance
-        // PRAGMA statements that return results must use rawQuery on Android
-        await db.rawQuery('PRAGMA journal_mode=WAL');
-        await db.execute('PRAGMA synchronous=NORMAL');
-        await db.execute('PRAGMA cache_size=-8000'); // 8MB cache
-        await db.execute('PRAGMA temp_store=MEMORY');
-      },
-    );
+  Future<Database> ensureInitialized() async {
+    if (_db != null && _db!.isOpen) return _db!;
+    await initialize();
+    return _db!;
+  }
+
+  Future<Database> get database async => ensureInitialized();
+
+  Future<void> initialize() async {
+    if (_db != null && _db!.isOpen) return;
+    if (_initCompleter != null) return _initCompleter!.future;
+
+    final completer = Completer<void>();
+    _initCompleter = completer;
+
+    try {
+      final dbPath = await getDatabasesPath();
+      final path = join(dbPath, _dbName);
+
+      _db = await openDatabase(
+        path,
+        version: _schemaVersion,
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+        onConfigure: (db) async {
+          // Enable WAL mode for better concurrent read performance
+          // PRAGMA statements that return results must use rawQuery on Android
+          await db.rawQuery('PRAGMA journal_mode=WAL');
+          await db.execute('PRAGMA synchronous=NORMAL');
+          await db.execute('PRAGMA cache_size=-8000'); // 8MB cache
+          await db.execute('PRAGMA temp_store=MEMORY');
+        },
+      );
+      completer.complete();
+    } catch (e, st) {
+      _initCompleter = null;
+      completer.completeError(e, st);
+      rethrow;
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -133,10 +157,13 @@ class AppDatabase {
   }
 
   /// Full data wipe for a Fresh Start (called on logout)
-  Future<void> clearAll() async {
+  /// Watchlist is preserved by default to protect user's device favourites.
+  Future<void> clearAll({bool clearWatchlist = false}) async {
     if (_db == null) return;
     await _db!.transaction((txn) async {
-      await txn.delete('watchlist');
+      if (clearWatchlist) {
+        await txn.delete('watchlist');
+      }
       await txn.delete('continue_watching');
       await txn.delete('tmdb_cache');
     });
