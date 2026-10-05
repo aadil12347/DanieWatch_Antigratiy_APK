@@ -407,15 +407,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               children: [
                 Column(
                   children: [
-                    // ── Scrollable content: TopNavbar slider at top, search bar below it on Search tab ──
+                    // Fixed top tab switcher — permanently fixed and always visible regardless of scrolling
+                    TopNavbar(tabController: _tabController),
+
+                    // ── Scrollable content: search bar or filter chips and grid ──
                     Expanded(
                       child: NestedScrollView(
                         controller: _outerScrollController,
                         headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                          // Top navbar slider — at the top
-                          SliverToBoxAdapter(
-                            child: TopNavbar(tabController: _tabController),
-                          ),
                           // Dedicated search bar on Search tab — BELOW the top tab slider!
                           if (isSearchTab)
                             SliverToBoxAdapter(
@@ -478,6 +477,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                       }
 
                       return PageDrawerScrubber(
+                        key: ValueKey('scrubber_$slug'),
                         totalPages: totalPages,
                         currentPage: currentPage,
                         onPageSelected: (selectedPage) {
@@ -526,6 +526,8 @@ class _CategoryPage extends ConsumerStatefulWidget {
 
 class _CategoryPageState extends ConsumerState<_CategoryPage>
     with AutomaticKeepAliveClientMixin {
+  late final ScrollController _scrollController;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -535,6 +537,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController();
     // Trigger lazy load only when this content tab is first built (visited).
     // Dedicated Search tab uses search bar & landing, not category pagination.
     if (widget.categoryLabel != 'Search') {
@@ -546,13 +549,21 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     }
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   /// Trigger loading the next page when scroll is near the bottom,
   /// or previous page when scroll is near the top (e.g. from page 100 -> 99).
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
       final metrics = notification.metrics;
       // Downward scroll near bottom -> load next page (e.g. 101)
-      if (metrics.pixels >= metrics.maxScrollExtent - 600) {
+      if (metrics.pixels >= metrics.maxScrollExtent - 600 &&
+          notification.scrollDelta != null &&
+          notification.scrollDelta! > 0) {
         ref.read(paginatedCategoryProvider(_slug).notifier).loadNextPage();
       }
       // Upward scroll near top -> load previous page (e.g. 99)
@@ -629,6 +640,44 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 
     final paginatedState = ref.watch(paginatedCategoryProvider(_slug));
 
+    ref.listen<AsyncValue<PaginatedCategoryState>>(
+      paginatedCategoryProvider(_slug),
+      (previous, next) {
+        final prevVal = previous?.valueOrNull;
+        final nextVal = next.valueOrNull;
+
+        if (nextVal != null && nextVal.items.isNotEmpty) {
+          final justFinishedJump = prevVal != null && prevVal.isJumping && !nextVal.isJumping;
+
+          if (justFinishedJump) {
+            if (nextVal.scrollToBottomOnLoad) {
+              // User moved backwards/up to a lower page (e.g. 8 -> 7):
+              // Position at the BOTTOM of the page so they see bottom posts first!
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients) {
+                  _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+                  // Ensure secondary layout pass also anchors to the bottom
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_scrollController.hasClients) {
+                      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+                    }
+                  });
+                }
+              });
+            } else {
+              // User moved forwards/down to a higher page (e.g. 1 -> 5):
+              // Position at the TOP of the page!
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients) {
+                  _scrollController.jumpTo(0.0);
+                }
+              });
+            }
+          }
+        }
+      },
+    );
+
     final isSearchTab = widget.categoryLabel == 'Search';
     final hasSearch = isSearchTab && searchState.query.trim().isNotEmpty;
     // Check for user-applied filters BEYOND the nav category.
@@ -702,6 +751,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           onNotification: _onScrollNotification,
           child: CustomScrollView(
             key: PageStorageKey('scroll_${widget.categoryLabel}'),
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: _buildContentSlivers(
               searchState,
@@ -799,7 +849,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Loading Page ${pagState.currentPage}...',
+                  'Loading Page ${pagState.targetPage ?? pagState.currentPage}',
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 12,

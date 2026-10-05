@@ -111,33 +111,42 @@ class MovieSiteScraperService {
     'all': 778,
     'explore': 778,
     'search': 778,
-    'korean': 160,
-    'k-drama': 160,
-    'kdrama': 160,
-    'chinese': 80,
-    'anime': 95,
-    'hollywood': 350,
-    'punjabi': 45,
-    'pakistani': 35,
-    'action': 320,
-    'sci-fi': 180,
-    'scifi': 180,
-    'comedy': 260,
-    'thriller': 290,
-    'horror': 170,
-    'romance': 190,
-    'adventure': 210,
-    'crime': 180,
-    'drama': 350,
-    'mystery': 140,
-    'fantasy': 160,
-    'animation': 120,
+    'korean': 15,
+    'k-drama': 15,
+    'kdrama': 15,
+    'chinese': 12,
+    'anime': 15,
+    'animation': 74,
+    'action': 260,
+    'sci-fi': 120,
+    'scifi': 120,
+    'comedy': 160,
+    'thriller': 180,
+    'horror': 110,
+    'romance': 130,
+    'adventure': 150,
+    'crime': 140,
+    'drama': 320,
+    'mystery': 90,
+    'fantasy': 110,
+    'hollywood': 150,
+    'punjabi': 25,
+    'pakistani': 20,
   };
 
   /// Returns total pagination pages for a category tab (defaults to verified baseline)
   int getTotalPages(String categorySlug) {
     final key = categorySlug.toLowerCase().trim();
     return _categoryTotalPages[key] ?? 100;
+  }
+
+  /// Dynamically clamps or updates total pages for a category when an boundary is detected
+  void updateCategoryTotalPages(String categorySlug, int maxPages) {
+    final key = categorySlug.toLowerCase().trim();
+    if (maxPages > 0) {
+      _categoryTotalPages[key] = maxPages;
+      dev.log('[MovieSiteScraperService] Dynamic total pages for $key set to $maxPages');
+    }
   }
 
   /// Live fetches total page counts from Typesense instantly on app startup
@@ -154,6 +163,13 @@ class MovieSiteScraperService {
         _dio
             .get<String>(
               '$rogBaseUrl/ts-search.php?q=&page=1',
+              options: Options(responseType: ResponseType.plain),
+            )
+            .then((r) => r.data)
+            .catchError((_) => null),
+        _dio
+            .get<String>(
+              '$vegaBaseUrl/ts-search.php?q=Chinese&page=1',
               options: Options(responseType: ResponseType.plain),
             )
             .then((r) => r.data)
@@ -182,6 +198,16 @@ class MovieSiteScraperService {
           _categoryTotalPages['indian'] = pages;
           _categoryTotalPages['bollywood'] = pages;
           dev.log('[MovieSiteScraperService] Live Rog total pages: $pages ($found posts)');
+        }
+      }
+
+      if (results[2] != null && results[2]!.isNotEmpty) {
+        final data = jsonDecode(results[2]!) as Map<String, dynamic>;
+        final found = (data['found'] as num?)?.toInt() ?? 0;
+        if (found > 0) {
+          final pages = (found / 15).ceil();
+          _categoryTotalPages['chinese'] = pages;
+          dev.log('[MovieSiteScraperService] Live Chinese total pages: $pages ($found posts)');
         }
       }
     } catch (e) {
@@ -1668,10 +1694,12 @@ class MovieSiteScraperService {
         cards.addAll(await _fetchTypesenseCards('Korean', page: page, site: 'vegamovies'));
       }
     } else if (key == 'chinese') {
-      cards.addAll(await _fetchChineseCards(page: page));
-      if (cards.isEmpty) {
-        cards.addAll(await _fetchTypesenseCards('Chinese', page: page, site: 'vegamovies'));
+      // 1. Chinese series from /chinese-series/ (pages 1 to 6)
+      if (page <= 6) {
+        cards.addAll(await _fetchChineseCards(page: page));
       }
+      // 2. Typesense Chinese search (matches vegamovies.gallery/search.html?q=Chinese)
+      cards.addAll(await _fetchTypesenseCards('Chinese', page: page, site: 'vegamovies'));
     } else if (key == 'anime') {
       final pageUrl = page == 1
           ? '$vegaBaseUrl/anime-series/'
@@ -1783,6 +1811,10 @@ class MovieSiteScraperService {
         categoryTag: key,
       );
       items.add(item);
+    }
+
+    if (items.isEmpty && page > 1) {
+      updateCategoryTotalPages(key, page - 1);
     }
 
     _categoryPageCache[cacheKey] = items;

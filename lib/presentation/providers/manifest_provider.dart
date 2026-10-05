@@ -482,6 +482,8 @@ class PaginatedCategoryState {
   final bool isLoadingMore;
   final bool isLoadingPrevious;
   final bool isJumping;
+  final int? targetPage;
+  final bool scrollToBottomOnLoad;
   final bool hasMore;
   final bool hasPrevious;
   final String? error;
@@ -494,6 +496,8 @@ class PaginatedCategoryState {
     this.isLoadingMore = false,
     this.isLoadingPrevious = false,
     this.isJumping = false,
+    this.targetPage,
+    this.scrollToBottomOnLoad = false,
     this.hasMore = true,
     this.hasPrevious = false,
     this.error,
@@ -507,6 +511,8 @@ class PaginatedCategoryState {
     bool? isLoadingMore,
     bool? isLoadingPrevious,
     bool? isJumping,
+    int? targetPage,
+    bool? scrollToBottomOnLoad,
     bool? hasMore,
     bool? hasPrevious,
     String? Function()? errorOverride,
@@ -519,6 +525,8 @@ class PaginatedCategoryState {
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       isLoadingPrevious: isLoadingPrevious ?? this.isLoadingPrevious,
       isJumping: isJumping ?? this.isJumping,
+      targetPage: targetPage ?? this.targetPage,
+      scrollToBottomOnLoad: scrollToBottomOnLoad ?? this.scrollToBottomOnLoad,
       hasMore: hasMore ?? this.hasMore,
       hasPrevious: hasPrevious ?? this.hasPrevious,
       error: errorOverride != null ? errorOverride() : error,
@@ -708,10 +716,14 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     if (current == null) return;
     if (targetPage == current.currentPage && current.items.isNotEmpty) return;
 
-    // Keep current posts visible with jumping indicator — never flash random fallback posts!
+    final wasMovingUp = targetPage < current.currentPage;
+
+    // Keep current posts visible with jumping indicator showing targetPage
     state = AsyncValue.data(current.copyWith(
       isJumping: true,
+      targetPage: targetPage,
       isLoadingMore: true,
+      scrollToBottomOnLoad: wasMovingUp,
       errorOverride: () => null,
     ));
 
@@ -728,14 +740,31 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
       };
       final minPageSize = liveCategories.contains(cat) ? 10 : 30;
 
+      if (results.isEmpty) {
+        // Target page had no items — clamp category total pages and restore
+        if (targetPage > 1) {
+          MovieSiteScraperService.instance.updateCategoryTotalPages(cat, targetPage - 1);
+        }
+        state = AsyncValue.data(current.copyWith(
+          isJumping: false,
+          isLoadingMore: false,
+          targetPage: null,
+          scrollToBottomOnLoad: false,
+          hasMore: false,
+        ));
+        return;
+      }
+
       state = AsyncValue.data(PaginatedCategoryState(
-        items: results.isNotEmpty ? results : current.items,
+        items: results,
         currentPage: targetPage,
         minPage: targetPage,
         maxPage: targetPage,
         isJumping: false,
+        targetPage: null,
         isLoadingMore: false,
         isLoadingPrevious: false,
+        scrollToBottomOnLoad: wasMovingUp,
         hasMore: results.length >= minPageSize,
         hasPrevious: targetPage > 1,
       ));
@@ -745,6 +774,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
         state = AsyncValue.data(current.copyWith(
           isJumping: false,
           isLoadingMore: false,
+          targetPage: null,
           errorOverride: () => e.toString(),
         ));
       }
