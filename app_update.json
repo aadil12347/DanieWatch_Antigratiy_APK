@@ -1,7 +1,8 @@
 {
-  "title": "Update Available!",
-  "version": "1.3.0",
-  "description": "We have optimized your experience with this latest release:\n\n• Smooth fast-page drawer scrubber with liquid curve\n• Cinematic dynamic dark vignette effect\n• Upgraded video streaming and category navigation\n• Core stability and performance enhancements",
-  "download_url": "https://github.com/aadil12347/DanieWatch_Antigratiy_APK/releases/download/v1.3.0/app-release.apk",
-  "file_size_mb": 70.2
+  "title": "Update Available! (v1.3.2)",
+  "version": "1.3.2",
+  "description": "🚀 DanieWatch v1.3.2 is now available!\n\n• Pinned Category Bar: Top tab bar stays permanently pinned at the top and never hides while scrolling.\n• Reverse Scrubber Navigation: Swiping backward lands directly at the bottom posts of the page for natural bottom-to-top reading.\n• Touch Polish: Instantly shows page number on tap-and-hold with zero ghosting or lingering shadows.\n• Live Pagination: Fast page switching across Korean, Chinese, Anime, and all Genre sections.\n• Persistent Watchlist: Your saved watchlist is permanently preserved.",
+  "download_url": "https://github.com/aadil12347/DanieWatch_Antigratiy_APK/releases/download/v1.3.2/app-release.apk",
+  "file_size_mb": 70.4
 }
+
