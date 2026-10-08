@@ -779,8 +779,10 @@ class PlayerController extends ChangeNotifier {
         notifyListeners();
         break;
       case BetterPlayerEventType.exception:
+        final exDesc = event.parameters?['exception'];
+        debugPrint('[PlayerController] Playback exception: $exDesc');
         _state = PlaybackState.error;
-        _errorMessage = 'Playback error';
+        _errorMessage = 'Playback error: ${exDesc ?? "Unknown error"}';
         notifyListeners();
         break;
       default:
@@ -1384,10 +1386,6 @@ class PlayerController extends ChangeNotifier {
         url: track.url,
       );
       _betterPlayerController!.setAudioTrack(trackToSet);
-      _betterPlayerController!.videoPlayerController?.setAudioTrack(
-        track.label ?? track.language,
-        track.id,
-      );
       debugPrint('[PlayerController] Switched audio to: ${track.label ?? track.language} (id: ${track.id})');
     } catch (e) {
       debugPrint('[PlayerController] Error switching audio: $e');

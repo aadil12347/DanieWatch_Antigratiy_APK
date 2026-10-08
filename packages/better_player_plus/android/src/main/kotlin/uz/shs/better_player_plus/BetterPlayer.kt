@@ -43,7 +43,6 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionOverride
-import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
@@ -106,7 +105,6 @@ internal class BetterPlayer(
     private val customDefaultLoadControl: CustomDefaultLoadControl =
         customDefaultLoadControl ?: CustomDefaultLoadControl()
     private var lastSendBufferedPosition = 0L
-    private var loudnessEnhancer: LoudnessEnhancer? = null
 
     init {
         val loadBuilder = DefaultLoadControl.Builder()
@@ -466,11 +464,8 @@ internal class BetterPlayer(
         )
         surface = Surface(textureEntry.surfaceTexture())
         exoPlayer?.setVideoSurface(surface)
-        setAudioAttributes(exoPlayer, false)
+        setAudioAttributes(exoPlayer, true)
         exoPlayer?.addListener(object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                initLoudnessEnhancer(audioSessionId)
-            }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
@@ -484,12 +479,6 @@ internal class BetterPlayer(
                         if (!isInitialized) {
                             isInitialized = true
                             sendInitialized()
-                        }
-                        if (loudnessEnhancer == null) {
-                            val sid = exoPlayer?.audioSessionId ?: 0
-                            if (sid != 0) {
-                                initLoudnessEnhancer(sid)
-                            }
                         }
                         val event: MutableMap<String, Any> = HashMap()
                         event["event"] = "bufferingEnd"
@@ -535,6 +524,7 @@ internal class BetterPlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                Log.e(TAG, "onPlayerError: errorCode=${error.errorCode}, message=${error.message}", error)
                 eventSink.error("VideoError", "Video player had error $error", "")
             }
         })
@@ -556,19 +546,7 @@ internal class BetterPlayer(
         }
     }
 
-    private fun initLoudnessEnhancer(sessionId: Int) {
-        if (sessionId == 0 || sessionId == C.AUDIO_SESSION_ID_UNSET) return
-        try {
-            loudnessEnhancer?.release()
-            loudnessEnhancer = LoudnessEnhancer(sessionId).apply {
-                setTargetGain(1500) // +15dB cinema-to-mobile dialogue and speaker volume boost
-                enabled = true
-            }
-            Log.d(TAG, "LoudnessEnhancer enabled for session $sessionId (+15dB boost)")
-        } catch (e: Exception) {
-            Log.e(TAG, "LoudnessEnhancer setup failed: $e")
-        }
-    }
+
 
     @Suppress("DEPRECATION")
     private fun setAudioAttributes(exoPlayer: ExoPlayer?, mixWithOthers: Boolean) {
@@ -987,6 +965,9 @@ internal class BetterPlayer(
 
     fun setAudioTrack(name: String?, index: Int) {
         try {
+            val player = exoPlayer ?: return
+            Log.d(TAG, "setAudioTrack: requested name=$name, index=$index")
+
             val mappedTrackInfo = trackSelector.currentMappedTrackInfo
             if (mappedTrackInfo != null) {
                 for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
@@ -994,128 +975,99 @@ internal class BetterPlayer(
                         continue
                     }
                     val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
-                    
-                    // 1. Try case-insensitive matching by label or language
-                    if (!name.isNullOrEmpty()) {
-                        for (groupIndex in 0 until trackGroupArray.length) {
-                            val group = trackGroupArray[groupIndex]
-                            for (groupElementIndex in 0 until group.length) {
-                                val format = group.getFormat(groupElementIndex)
-                                val label = format.label
-                                val language = format.language
-                                
-                                val isLabelMatch = label != null && name.equals(label, ignoreCase = true)
-                                val isLangMatch = language != null && (name.equals(language, ignoreCase = true) || 
-                                                  name.startsWith(language, ignoreCase = true) || 
-                                                  language.startsWith(name, ignoreCase = true))
-                                                  
-                                if (isLabelMatch || isLangMatch) {
-                                    Log.d("BetterPlayer", "Audio track matched by name/lang: name=$name, label=$label, lang=$language")
-                                    setAudioTrack(rendererIndex, groupIndex, groupElementIndex)
-                                    return
-                                }
+                    var matchedGroupIndex = -1
+                    var matchedTrackIndex = 0
+                    var flatIndex = 0
+
+                    for (g in 0 until trackGroupArray.length) {
+                        val group = trackGroupArray.get(g)
+                        for (t in 0 until group.length) {
+                            val format = group.getFormat(t)
+                            val label = format.label
+                            val language = format.language
+                            val isMatch = if (index >= 0) {
+                                flatIndex == index
+                            } else if (!name.isNullOrEmpty()) {
+                                name.equals(label, ignoreCase = true) ||
+                                (language != null && (name.equals(language, ignoreCase = true) ||
+                                 name.startsWith(language, ignoreCase = true) ||
+                                 language.startsWith(name, ignoreCase = true)))
+                            } else {
+                                false
                             }
+
+                            if (isMatch) {
+                                matchedGroupIndex = g
+                                matchedTrackIndex = t
+                                Log.d(TAG, "setAudioTrack: Found in trackSelector: renderer=$rendererIndex, group=$g, track=$t, label=$label, lang=$language (flatIndex=$flatIndex, reqIndex=$index)")
+                                break
+                            }
+                            flatIndex++
                         }
+                        if (matchedGroupIndex >= 0) break
                     }
 
-                    // 2. Flattened index matching (universal fallback for progressive or multi-group tracks)
-                    var currentFlattenedIndex = 0
-                    for (groupIndex in 0 until trackGroupArray.length) {
-                        val group = trackGroupArray[groupIndex]
-                        for (groupElementIndex in 0 until group.length) {
-                            if (currentFlattenedIndex == index) {
-                                Log.d("BetterPlayer", "Audio track matched by flattened index: index=$index, groupIndex=$groupIndex, groupElementIndex=$groupElementIndex")
-                                setAudioTrack(rendererIndex, groupIndex, groupElementIndex)
-                                return
-                            }
-                            currentFlattenedIndex++
-                        }
-                    }
+                    if (matchedGroupIndex >= 0) {
+                        val group = trackGroupArray.get(matchedGroupIndex)
+                        val safeTrackIndex = matchedTrackIndex.coerceIn(0, group.length - 1)
+                        val builder = trackSelector.parameters
+                            .buildUpon()
+                            .setRendererDisabled(rendererIndex, false)
+                            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                            .setPreferredAudioLanguage(group.getFormat(safeTrackIndex).language)
+                            .addOverride(TrackSelectionOverride(group, safeTrackIndex))
+                        trackSelector.setParameters(builder)
 
-                    // 3. Fallback: If progressive container, there's only 1 TrackGroup.
-                    if (trackGroupArray.length == 1) {
-                        val group = trackGroupArray[0]
-                        if (index >= 0 && index < group.length) {
-                            Log.d("BetterPlayer", "Audio track matched by element index for single group: index=$index")
-                            setAudioTrack(rendererIndex, 0, index)
-                            return
-                        }
-                    }
-
-                    // 4. Original fallback matching
-                    if (!name.isNullOrEmpty()) {
-                        for (groupIndex in 0 until trackGroupArray.length) {
-                            val group = trackGroupArray[groupIndex]
-                            for (groupElementIndex in 0 until group.length) {
-                                val label = group.getFormat(groupElementIndex).label
-                                if (name == label && index == groupIndex) {
-                                    setAudioTrack(rendererIndex, groupIndex, groupElementIndex)
-                                    return
-                                }
-                            }
-                        }
+                        val pBuilder = player.trackSelectionParameters
+                            .buildUpon()
+                            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                            .setPreferredAudioLanguage(group.getFormat(safeTrackIndex).language)
+                            .setOverrideForType(TrackSelectionOverride(group, safeTrackIndex))
+                        player.trackSelectionParameters = pBuilder.build()
+                        Log.d(TAG, "setAudioTrack: Successfully applied audio track selection")
+                        return
                     }
                 }
             }
 
             // Fallback: match using player.currentTracks
-            exoPlayer?.let { player ->
-                var aIndex = 0
-                for (group in player.currentTracks.groups) {
-                    if (group.type == C.TRACK_TYPE_AUDIO) {
-                        for (i in 0 until group.length) {
-                            val format = group.getTrackFormat(i)
-                            val label = format.label
-                            val language = format.language
-                            val isMatch = (!name.isNullOrEmpty() && (name.equals(label, ignoreCase = true) ||
-                                (language != null && (name.equals(language, ignoreCase = true) ||
-                                 name.startsWith(language, ignoreCase = true) ||
-                                 language.startsWith(name, ignoreCase = true))))) ||
-                                (aIndex == index)
-                            if (isMatch) {
-                                Log.d(TAG, "Fallback audio track selection on currentTracks: index=$i, group=${group.mediaTrackGroup}")
-                                val params = player.trackSelectionParameters
-                                    .buildUpon()
-                                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
-                                    .build()
-                                player.trackSelectionParameters = params
-                                return
-                            }
-                            aIndex++
+            var audioIndex = 0
+            for (group in player.currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_AUDIO) {
+                    for (i in 0 until group.length) {
+                        val format = group.getTrackFormat(i)
+                        val label = format.label
+                        val language = format.language
+                        val isMatch = if (index >= 0) {
+                            audioIndex == index
+                        } else if (!name.isNullOrEmpty()) {
+                            name.equals(label, ignoreCase = true) ||
+                            (language != null && (name.equals(language, ignoreCase = true) ||
+                             name.startsWith(language, ignoreCase = true) ||
+                             language.startsWith(name, ignoreCase = true)))
+                        } else {
+                            false
                         }
+
+                        if (isMatch) {
+                            Log.d(TAG, "setAudioTrack: Fallback matched on currentTracks: group=${group.mediaTrackGroup}, track=$i")
+                            val builder = player.trackSelectionParameters
+                                .buildUpon()
+                                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                .setPreferredAudioLanguage(format.language)
+                                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
+                            player.trackSelectionParameters = builder.build()
+                            return
+                        }
+                        audioIndex++
                     }
                 }
             }
         } catch (exception: Exception) {
-            Log.e(TAG, "setAudioTrack failed$exception")
-        }
-    }
-
-    private fun setAudioTrack(rendererIndex: Int, groupIndex: Int, trackIndex: Int) {
-        val mappedTrackInfo = trackSelector.currentMappedTrackInfo
-        if (mappedTrackInfo != null) {
-            val trackGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
-            if (groupIndex >= 0 && groupIndex < trackGroups.length) {
-                val group = trackGroups.get(groupIndex)
-                val safeTrackIndex = trackIndex.coerceIn(0, group.length - 1)
-
-                val builder = trackSelector.parameters
-                    .buildUpon()
-                    .setRendererDisabled(rendererIndex, false)
-                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                    .addOverride(
-                        TrackSelectionOverride(
-                            group,
-                            safeTrackIndex
-                        )
-                    )
-
-                trackSelector.setParameters(builder)
-            } else {
-                Log.e(TAG, "setAudioTrack: groupIndex out of bounds: $groupIndex")
-            }
+            Log.e(TAG, "setAudioTrack failed: $exception")
         }
     }
 
@@ -1140,10 +1092,6 @@ internal class BetterPlayer(
         textureEntry.release()
         eventChannel.setStreamHandler(null)
         surface?.release()
-        try {
-            loudnessEnhancer?.release()
-        } catch (_: Exception) {}
-        loudnessEnhancer = null
         exoPlayer?.release()
     }
 
