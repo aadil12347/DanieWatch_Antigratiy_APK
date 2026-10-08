@@ -197,6 +197,7 @@ class WatchlistBackupManager {
               'media_type': item.mediaType,
               'title': item.title,
               'poster_path': item.posterPath,
+              'release_date': item.releaseDate,
               'vote_average': item.voteAverage,
               'added_at': (item.addedAt ?? DateTime.now()).millisecondsSinceEpoch,
             },

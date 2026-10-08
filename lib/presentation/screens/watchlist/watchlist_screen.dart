@@ -188,6 +188,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                             mediaType: item.mediaType,
                             title: item.title,
                             posterUrl: item.posterPath,
+                            releaseDate: item.releaseDate,
                             voteAverage: item.voteAverage,
                           );
                         }).toList();

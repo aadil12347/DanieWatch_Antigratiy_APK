@@ -8,7 +8,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _dbName = 'daniewatch.db';
-  static const _schemaVersion = 3;
+  static const _schemaVersion = 4;
 
   Database? _db;
   Completer<void>? _initCompleter;
@@ -70,6 +70,7 @@ class AppDatabase {
         media_type TEXT NOT NULL,
         title TEXT NOT NULL,
         poster_path TEXT,
+        release_date TEXT,
         vote_average REAL DEFAULT 0,
         added_at INTEGER NOT NULL,
         PRIMARY KEY (tmdb_id, media_type)
@@ -111,6 +112,11 @@ class AppDatabase {
           updated_at INTEGER NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 4) {
+      try {
+        await db.execute('ALTER TABLE watchlist ADD COLUMN release_date TEXT');
+      } catch (_) {}
     }
   }
 

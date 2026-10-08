@@ -193,6 +193,7 @@ class WatchlistItem {
   final String mediaType;
   final String title;
   final String? posterPath;
+  final String? releaseDate;
   final double voteAverage;
   final DateTime? addedAt;
 
@@ -201,20 +202,24 @@ class WatchlistItem {
     required this.mediaType,
     required this.title,
     this.posterPath,
+    this.releaseDate,
     this.voteAverage = 0.0,
     this.addedAt,
   });
 
   factory WatchlistItem.fromJson(Map<String, dynamic> json) {
     return WatchlistItem(
-      tmdbId: json['tmdb_id'] as int,
-      mediaType: json['media_type'] as String,
-      title: json['title'] as String,
-      posterPath: json['poster_path'] as String?,
-      voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
+      tmdbId: (json['tmdb_id'] ?? json['id'] ?? 0) as int,
+      mediaType: (json['media_type'] ?? json['type'] ?? 'movie') as String,
+      title: (json['title'] ?? json['t'] ?? '') as String,
+      posterPath: (json['poster_path'] ?? json['poster'] ?? json['p']) as String?,
+      releaseDate: (json['release_date'] ?? json['date'] ?? json['d'] ?? json['y']) as String?,
+      voteAverage: (json['vote_average'] ?? json['vote'] ?? json['v'] as num?)?.toDouble() ?? 0.0,
       addedAt: json['added_at'] != null
-          ? DateTime.parse(json['added_at'] as String)
-          : null,
+          ? DateTime.tryParse(json['added_at'] as String)
+          : (json['a'] is int
+              ? DateTime.fromMillisecondsSinceEpoch(json['a'] as int)
+              : null),
     );
   }
 
@@ -224,8 +229,22 @@ class WatchlistItem {
       'media_type': mediaType,
       'title': title,
       'poster_path': posterPath,
+      'release_date': releaseDate,
       'vote_average': voteAverage,
       'added_at': addedAt?.toIso8601String(),
+    };
+  }
+
+  /// Compact representation for Supabase user_metadata
+  Map<String, dynamic> toCompactJson() {
+    return {
+      'id': tmdbId,
+      'type': mediaType,
+      't': title,
+      if (posterPath != null) 'p': posterPath,
+      if (releaseDate != null) 'd': releaseDate,
+      'v': voteAverage,
+      if (addedAt != null) 'a': addedAt!.millisecondsSinceEpoch,
     };
   }
 }

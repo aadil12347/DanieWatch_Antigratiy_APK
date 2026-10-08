@@ -2172,6 +2172,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
           mediaType: widget.mediaType,
           title: content.title,
           posterPath: content.posterUrl,
+          releaseDate: content.releaseDate,
           voteAverage: content.voteAverage,
         );
 

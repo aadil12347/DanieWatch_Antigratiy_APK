@@ -319,6 +319,7 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
                 mediaType: widget.item.mediaType,
                 title: widget.item.title,
                 posterPath: widget.item.posterUrl,
+                releaseDate: widget.item.releaseDate,
                 voteAverage: widget.item.voteAverage,
               );
 
