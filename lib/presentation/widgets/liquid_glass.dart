@@ -178,7 +178,8 @@ class _LiquidGlassState extends State<LiquidGlass>
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

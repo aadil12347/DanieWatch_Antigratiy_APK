@@ -46,6 +46,12 @@ android {
             isDebuggable = true
         }
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 flutter {
