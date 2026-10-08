@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/manifest_item.dart';
 import '../../data/clients/tmdb_client.dart';
+import 'dynamic_urls.dart';
 
 class ScrapedSiteCard {
   final String site; // 'vegamovies' | 'rogmovies'
@@ -30,8 +31,8 @@ class MovieSiteScraperService {
   MovieSiteScraperService._();
   static final MovieSiteScraperService instance = MovieSiteScraperService._();
 
-  static const String vegaBaseUrl = 'https://vegamovies.gallery';
-  static const String rogBaseUrl = 'https://rogmovies.best';
+  static String get vegaBaseUrl => DynamicUrls.vegaBase;
+  static String get rogBaseUrl => DynamicUrls.rogBase;
 
   static final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),

@@ -5,7 +5,6 @@
 ///
 /// Reference: CSX/VegaMovies/src/main/kotlin/com/megix/VegaMoviesProvider.kt
 
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'models.dart';
@@ -17,13 +16,19 @@ class VegaMoviesScraper {
   static const String name = 'VegaMovies';
   static const String _sourceKey = 'vegamovies';
 
-  /// Search VegaMovies for a title and return matching page URLs.
-  static Future<List<Map<String, String>>> search(String query) async {
+  /// Search VegaMovies (or RogMovies) for a title and return matching page URLs.
+  static Future<List<Map<String, String>>> search(
+    String query, {
+    String sourceKey = _sourceKey,
+  }) async {
     final results = <Map<String, String>>[];
 
     try {
+      final defaultBase = sourceKey == 'rogmovies'
+          ? DynamicUrls.rogBase
+          : DynamicUrls.vegaBase;
       final baseUrl = await DynamicUrls()
-          .getLatestBaseUrl(_sourceKey, fallback: 'https://vegamovies.mq');
+          .getLatestBaseUrl(sourceKey, fallback: defaultBase);
       final searchUrl = '$baseUrl/?s=${Uri.encodeComponent(query)}';
 
       debugPrint('[VegaMovies] Searching: $searchUrl');
@@ -111,12 +116,13 @@ class VegaMoviesScraper {
     required String title,
     int? year,
     String? imdbId,
+    String sourceKey = _sourceKey,
   }) async {
     final links = <ExtractorLink>[];
 
     try {
       final searchQuery = year != null ? '$title $year' : title;
-      final results = await search(searchQuery);
+      final results = await search(searchQuery, sourceKey: sourceKey);
 
       if (results.isEmpty) {
         debugPrint('[VegaMovies] No search results for: $searchQuery');
@@ -144,9 +150,10 @@ class VegaMoviesScraper {
         for (final downloadUrl in groupLinks) {
           if (isAdUrl(downloadUrl)) continue;
 
+          final label = sourceKey == 'rogmovies' ? 'RogMovies' : name;
           links.add(ExtractorLink(
-            sourceName: name,
-            displayName: '[$name] ${quality > 0 ? '${quality}p' : 'Unknown'} $groupTitle',
+            sourceName: label,
+            displayName: '[$label] ${quality > 0 ? '${quality}p' : 'Unknown'} $groupTitle',
             url: downloadUrl,
             quality: quality,
             qualityTags: tags.isNotEmpty ? tags : null,
@@ -169,13 +176,14 @@ class VegaMoviesScraper {
     required int season,
     required int episode,
     String? imdbId,
+    String sourceKey = _sourceKey,
   }) async {
     final links = <ExtractorLink>[];
 
     try {
       // Search with season info
       final searchQuery = '$title Season $season';
-      final results = await search(searchQuery);
+      final results = await search(searchQuery, sourceKey: sourceKey);
 
       if (results.isEmpty) {
         debugPrint('[VegaMovies] No search results for: $searchQuery');

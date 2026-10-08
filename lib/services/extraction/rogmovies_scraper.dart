@@ -7,7 +7,6 @@
 
 import 'package:flutter/foundation.dart';
 import 'models.dart';
-import 'dynamic_urls.dart';
 import 'vegamovies_scraper.dart';
 
 /// RogMovies uses the same extraction logic as VegaMovies
@@ -30,6 +29,7 @@ class RogMoviesScraper {
         title: title,
         year: year,
         imdbId: imdbId,
+        sourceKey: _sourceKey,
       );
     } catch (e) {
       debugPrint('[RogMovies] Movie extraction error: $e');
@@ -52,6 +52,7 @@ class RogMoviesScraper {
         season: season,
         episode: episode,
         imdbId: imdbId,
+        sourceKey: _sourceKey,
       );
     } catch (e) {
       debugPrint('[RogMovies] Episode extraction error: $e');

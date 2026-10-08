@@ -17,6 +17,7 @@ import 'core/services/notification_service.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/app_update_service.dart';
 import 'services/extraction/movie_site_scraper_service.dart';
+import 'services/extraction/dynamic_urls.dart';
 
 /// Global completer so splash/router can await Supabase readiness.
 final Completer<void> supabaseReady = Completer<void>();
@@ -95,6 +96,9 @@ Future<void> main() async {
     final prefs = await SharedPreferences.getInstance();
     hasPersistedSession = prefs.getBool('has_session') ?? false;
 
+    // Fast local dynamic URLs init (<1ms)
+    DynamicUrls.instance.initFromPrefs(prefs);
+
     await Env.loadAppVersion();
 
     // Fast local database init (<15ms) — guarantees all local SQLite tables (watchlist, continue watching)
@@ -138,6 +142,7 @@ Future<void> main() async {
         }
 
         // Non-critical services — fire & forget
+        DynamicUrls.instance.syncFromSupabase();
         PipController.instance.init();
         DownloadManager.instance.initialize();
         NotificationService.instance.initialize();

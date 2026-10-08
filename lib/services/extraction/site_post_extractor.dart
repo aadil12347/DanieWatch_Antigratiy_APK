@@ -347,12 +347,26 @@ class SitePostExtractor {
 
     final urlsToTry = <String>[url];
     if (uri.host.contains('vegamovies.')) {
-      for (final mirror in ['vegamovies.gallery', 'vegamovies.pages.dev', 'vegamovies.im']) {
+      final activeVegaHost = Uri.tryParse(DynamicUrls.vegaBase)?.host;
+      final vegaMirrors = [
+        if (activeVegaHost != null) activeVegaHost,
+        'vegamovies.gallery',
+        'vegamovies.pages.dev',
+        'vegamovies.im',
+      ];
+      for (final mirror in vegaMirrors) {
         final alt = url.replaceFirst(uri.host, mirror);
         if (!urlsToTry.contains(alt)) urlsToTry.add(alt);
       }
     } else if (uri.host.contains('rogmovies.')) {
-      for (final mirror in ['rogmovies.best', 'rogmovies.online']) {
+      final activeRogHost = Uri.tryParse(DynamicUrls.rogBase)?.host;
+      final rogMirrors = [
+        if (activeRogHost != null) activeRogHost,
+        'rogmovies.wtf',
+        'rogmovies.best',
+        'rogmovies.online',
+      ];
+      for (final mirror in rogMirrors) {
         final alt = url.replaceFirst(uri.host, mirror);
         if (!urlsToTry.contains(alt)) urlsToTry.add(alt);
       }
@@ -469,7 +483,7 @@ class SitePostExtractor {
 
     // 3. Search VegaMovies via TypeSense API (returns JSON, not JS-powered HTML)
     final vegaBase = await DynamicUrls()
-        .getLatestBaseUrl('vegamovies', fallback: 'https://vegamovies.gallery');
+        .getLatestBaseUrl('vegamovies', fallback: DynamicUrls.vegaBase);
     try {
       final tsUrl = '$vegaBase/ts-search.php?q=${Uri.encodeComponent(cleanQuery)}&page=1';
       final tsRes = await http.get(Uri.parse(tsUrl), headers: _headers)
@@ -573,8 +587,9 @@ class SitePostExtractor {
 
     // 5. Fallback: RogMovies old ?s= search
     try {
+      final rogBase = DynamicUrls.rogBase;
       final rogSearchUrl =
-          'https://rogmovies.best/?s=${Uri.encodeComponent(cleanQuery)}';
+          '$rogBase/?s=${Uri.encodeComponent(cleanQuery)}';
       final html = await fetchHtml(rogSearchUrl);
       final doc = html_parser.parse(html);
       final anchors = doc.querySelectorAll(
