@@ -224,14 +224,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
               const SizedBox(height: 3),
               Row(
                 children: [
-                  Text(
-                    item.releaseYear?.toString() ?? 'N/A',
-                    style: GoogleFonts.inter(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  _MovieYearWidget(item: item),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6),
                     child: Text('•',
@@ -253,6 +246,46 @@ class _MovieCardState extends ConsumerState<MovieCard>
         ),
         const SizedBox(height: 6),
       ],
+    );
+  }
+}
+
+class _MovieYearWidget extends ConsumerWidget {
+  final ManifestItem item;
+  const _MovieYearWidget({required this.item});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final direct = item.displayYear ?? item.releaseYear;
+    if (direct != null && direct > 0) {
+      return Text(
+        '$direct',
+        style: GoogleFonts.inter(
+          color: AppColors.textSecondary,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+      );
+    }
+
+    final key = '${item.id}___${item.mediaType}___${item.cleanTitle}';
+    final yearAsync = ref.watch(releaseYearProvider(key));
+
+    return yearAsync.maybeWhen(
+      data: (yr) {
+        if (yr != null && yr > 0) {
+          return Text(
+            '$yr',
+            style: GoogleFonts.inter(
+              color: AppColors.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          );
+        }
+        return const SizedBox.shrink();
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }
@@ -314,12 +347,14 @@ class _SaveButtonState extends ConsumerState<_SaveButton>
           _controller.forward(from: 0.0);
           HapticFeedback.lightImpact();
           
+          final effectiveDate = widget.item.releaseDate ??
+              (widget.item.displayYear ?? widget.item.releaseYear)?.toString();
           ref.read(watchlistProvider.notifier).toggle(
                 tmdbId: widget.item.id,
                 mediaType: widget.item.mediaType,
                 title: widget.item.title,
                 posterPath: widget.item.posterUrl,
-                releaseDate: widget.item.releaseDate,
+                releaseDate: effectiveDate,
                 voteAverage: widget.item.voteAverage,
               );
 

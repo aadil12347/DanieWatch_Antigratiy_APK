@@ -12,6 +12,7 @@ import '../../widgets/category_header.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../providers/scroll_provider.dart';
 import '../../widgets/morphing_search.dart';
+import '../../../services/extraction/movie_site_scraper_service.dart';
 
 class WatchlistScreen extends ConsumerStatefulWidget {
   const WatchlistScreen({super.key});
@@ -183,12 +184,27 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
                         // Map watchlist items to ManifestItems
                         final manifestItems = items.map((item) {
+                          int? yr;
+                          if (item.releaseDate != null && item.releaseDate!.isNotEmpty) {
+                            final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(item.releaseDate!);
+                            if (m != null) yr = int.tryParse(m.group(1)!);
+                          }
+                          if (yr == null) {
+                            final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(item.title);
+                            if (m != null) yr = int.tryParse(m.group(1)!);
+                          }
+                          if (yr == null) {
+                            final cached = MovieSiteScraperService.instance.itemMap[item.tmdbId.toString()];
+                            yr = cached?.displayYear ?? cached?.releaseYear;
+                          }
+
                           return ManifestItem(
                             id: item.tmdbId,
                             mediaType: item.mediaType,
                             title: item.title,
                             posterUrl: item.posterPath,
-                            releaseDate: item.releaseDate,
+                            releaseYear: yr,
+                            releaseDate: item.releaseDate ?? (yr != null ? '$yr' : null),
                             voteAverage: item.voteAverage,
                           );
                         }).toList();

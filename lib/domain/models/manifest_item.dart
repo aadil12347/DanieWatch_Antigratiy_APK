@@ -70,6 +70,20 @@ class ManifestItem {
     this.postUrl,
   });
 
+  /// Safe display year — checks releaseYear, parses releaseDate, or extracts 4-digit year from title
+  int? get displayYear {
+    if (releaseYear != null && releaseYear! > 0) return releaseYear;
+    if (releaseDate != null && releaseDate!.isNotEmpty) {
+      final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(releaseDate!);
+      if (m != null) return int.tryParse(m.group(1)!);
+      final dt = DateTime.tryParse(releaseDate!);
+      if (dt != null) return dt.year;
+    }
+    final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(rawTitle ?? title);
+    if (m != null) return int.tryParse(m.group(1)!);
+    return null;
+  }
+
   // ─── Post Title Cleaning & Parsing ──────────────────────────────────────────
   
   /// Cleans raw VegaMovies / RogMovies post title into pure clean title.

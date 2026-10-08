@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/local/database.dart';
 import '../../data/local/watchlist_backup_manager.dart';
 import '../../domain/models/entry.dart';
+import '../../data/clients/tmdb_client.dart';
+import '../../services/extraction/movie_site_scraper_service.dart';
 import 'auth_provider.dart';
 
 /// Watchlist provider — SQLite local sandbox with zero-load Supabase user_metadata cloud sync.
@@ -69,7 +71,105 @@ class WatchlistNotifier extends AsyncNotifier<List<WatchlistItem>> {
       unawaited(WatchlistBackupManager.instance.saveBackup(items));
     }
 
+    // Auto-enrich any items that have missing releaseDate from TMDB
+    _enrichMissingDates(db, items);
+
     return items;
+  }
+
+  /// Automatically fetch and backfill missing release dates for previously saved items
+  void _enrichMissingDates(Database db, List<WatchlistItem> items) {
+    final missing = items
+        .where((i) => i.releaseDate == null || i.releaseDate!.isEmpty || i.releaseDate == 'N/A')
+        .toList();
+    if (missing.isEmpty) return;
+
+    Future.microtask(() async {
+      bool hasUpdates = false;
+      for (final item in missing) {
+        try {
+          String? date;
+
+          // 1. Check if scraper has cached this item
+          final cached = MovieSiteScraperService.instance.itemMap[item.tmdbId.toString()];
+          if (cached != null) {
+            final yr = cached.displayYear ?? cached.releaseYear;
+            if (yr != null && yr > 0) {
+              date = cached.releaseDate ?? '$yr';
+            }
+          }
+
+          // 2. Check resolved TMDB ID (if item was mapped to a real TMDB ID)
+          final resolvedId = MovieSiteScraperService.instance.getResolvedTmdbId(item.tmdbId);
+          if ((date == null || date.isEmpty) && resolvedId > 0 && resolvedId < 1000000) {
+            try {
+              if (item.mediaType == 'tv') {
+                final details = await TmdbClient.instance.getTvDetails(resolvedId);
+                date = details?['first_air_date'] as String?;
+              } else {
+                final details = await TmdbClient.instance.getMovieDetails(resolvedId);
+                date = details?['release_date'] as String?;
+              }
+            } catch (_) {}
+          }
+
+          // 3. Search TMDB Multi by clean title
+          if (date == null || date.isEmpty) {
+            try {
+              final pure = MovieSiteScraperService.extractPureTitle(item.title);
+              final searchResults = await TmdbClient.instance.searchMulti(pure.isNotEmpty ? pure : item.title);
+              if (searchResults.isNotEmpty) {
+                final first = searchResults.first;
+                date = (first['release_date'] ?? first['first_air_date'])?.toString();
+              }
+            } catch (_) {}
+          }
+
+          // 4. Scraper fallback search on Vegamovies & Rogmovies
+          if (date == null || date.isEmpty) {
+            try {
+              final pure = MovieSiteScraperService.extractPureTitle(item.title);
+              final siteResults = await MovieSiteScraperService.instance.searchBothSites(pure.isNotEmpty ? pure : item.title);
+              if (siteResults.isNotEmpty) {
+                final first = siteResults.first;
+                final yr = first.displayYear ?? first.releaseYear;
+                if (yr != null && yr > 0) {
+                  date = '$yr';
+                }
+              }
+            } catch (_) {}
+          }
+
+          // 5. Title regex fallback
+          if (date == null || date.isEmpty) {
+            final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(item.title);
+            if (m != null) {
+              date = m.group(1);
+            }
+          }
+
+          if (date != null && date.isNotEmpty) {
+            await db.update(
+              'watchlist',
+              {'release_date': date},
+              where: 'tmdb_id = ? AND media_type = ?',
+              whereArgs: [item.tmdbId, item.mediaType],
+            );
+            hasUpdates = true;
+          }
+        } catch (e) {
+          debugPrint('[Watchlist] Enrich error for ${item.title}: $e');
+        }
+      }
+
+      if (hasUpdates) {
+        final updated = await _queryWatchlist(db);
+        state = AsyncValue.data(updated);
+        _uploadToUserMetadata(updated);
+        unawaited(WatchlistBackupManager.instance.saveBackup(updated));
+        debugPrint('[Watchlist] 📅 Enriched missing release dates for ${missing.length} items');
+      }
+    });
   }
 
   /// Two-way sync with Supabase Auth user_metadata (Zero DB tables, Zero server load)

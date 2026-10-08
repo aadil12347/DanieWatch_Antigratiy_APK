@@ -132,6 +132,75 @@ final posterUrlProvider = FutureProvider.family<String?, String>((ref, idAndType
   return null;
 });
 
+/// Dynamically resolves a release year for an item if not present in the initial item model.
+/// Key is formatted as: "${item.id}___${item.mediaType}___${item.cleanTitle}"
+final releaseYearProvider = FutureProvider.family<int?, String>((ref, key) async {
+  final parts = key.split('___');
+  final idStr = parts[0];
+  final type = parts.length > 1 ? parts[1] : 'movie';
+  final rawTitle = parts.length > 2 ? parts.sublist(2).join('___') : '';
+
+  // 1. Check live scraped service itemMap first
+  final scrapedItem = MovieSiteScraperService.instance.itemMap[idStr];
+  if (scrapedItem != null) {
+    final yr = scrapedItem.displayYear ?? scrapedItem.releaseYear;
+    if (yr != null && yr > 0) return yr;
+  }
+
+  final parsedId = int.tryParse(idStr);
+  final resolvedId = parsedId != null
+      ? MovieSiteScraperService.instance.getResolvedTmdbId(parsedId)
+      : 0;
+
+  // 2. Query TMDB details if we have a valid TMDB ID (< 1,000,000)
+  if (resolvedId > 0 && resolvedId < 1000000) {
+    try {
+      final isTv = type == 'tv' || type == 'series';
+      final details = isTv
+          ? await TmdbClient.instance.getTvDetails(resolvedId)
+          : await TmdbClient.instance.getMovieDetails(resolvedId);
+      final relDate = (details?['release_date'] ?? details?['first_air_date'])?.toString();
+      if (relDate != null && relDate.isNotEmpty) {
+        final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(relDate);
+        if (m != null) return int.tryParse(m.group(1)!);
+      }
+    } catch (_) {}
+  }
+
+  // 3. Search TMDB Multi by clean title
+  final pureTitle = MovieSiteScraperService.extractPureTitle(rawTitle);
+  final query = pureTitle.isNotEmpty ? pureTitle : rawTitle;
+  if (query.isNotEmpty) {
+    try {
+      final results = await TmdbClient.instance.searchMulti(query);
+      if (results.isNotEmpty) {
+        final relDate = (results.first['release_date'] ?? results.first['first_air_date'])?.toString();
+        if (relDate != null && relDate.isNotEmpty) {
+          final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(relDate);
+          if (m != null) return int.tryParse(m.group(1)!);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4. Scraper fallback search on Vegamovies & Rogmovies
+  if (query.isNotEmpty) {
+    try {
+      final siteResults = await MovieSiteScraperService.instance.searchBothSites(query);
+      if (siteResults.isNotEmpty) {
+        final yr = siteResults.first.displayYear ?? siteResults.first.releaseYear;
+        if (yr != null && yr > 0) return yr;
+      }
+    } catch (_) {}
+  }
+
+  // 5. Title regex fallback
+  final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(rawTitle);
+  if (m != null) return int.tryParse(m.group(1)!);
+
+  return null;
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Home Screen Providers (Local-Cache Powered)
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -2167,12 +2167,14 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     HapticFeedback.lightImpact();
 
     // Optmistically update through the provider
+    final effectiveDate = content.releaseDate ??
+        (content.releaseYear != null ? '${content.releaseYear}' : null);
     ref.read(watchlistProvider.notifier).toggle(
           tmdbId: widget.tmdbId,
           mediaType: widget.mediaType,
           title: content.title,
           posterPath: content.posterUrl,
-          releaseDate: content.releaseDate,
+          releaseDate: effectiveDate,
           voteAverage: content.voteAverage,
         );
 
