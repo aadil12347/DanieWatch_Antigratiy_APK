@@ -86,7 +86,7 @@ class _ContentRowState extends ConsumerState<ContentRow> {
         controller: _scrollController,
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         cacheExtent: 500,
         addRepaintBoundaries: true,
         padding: EdgeInsets.only(
@@ -125,18 +125,13 @@ class _ContentRowState extends ConsumerState<ContentRow> {
             );
           }
 
-          // Real card with fade-in animation
-          return RepaintBoundary(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: MovieCard(
-                key: ValueKey(displayItems[index].id),
-                item: displayItems[index],
-                width: cardWidth,
-                height: rowHeight,
-                rank: widget.isRanked ? index + 1 : null,
-              ),
-            ),
+          // Real card — zero animation overhead during fast scroll recycling
+          return MovieCard(
+            key: ValueKey(displayItems[index].id),
+            item: displayItems[index],
+            width: cardWidth,
+            height: rowHeight,
+            rank: widget.isRanked ? index + 1 : null,
           );
         },
       ),

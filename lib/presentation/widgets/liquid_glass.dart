@@ -37,7 +37,7 @@ class LiquidGlass extends StatefulWidget {
     this.intensity = GlassIntensity.medium,
     this.tintColor,
     this.tintOpacity = 0.06,
-    this.enableAnimatedBorder = true,
+    this.enableAnimatedBorder = false,
     this.enableTouchRipple = true,
     this.padding,
     this.margin,
@@ -145,10 +145,11 @@ class _LiquidGlassState extends State<LiquidGlass>
         height: widget.height,
         constraints: widget.constraints,
         margin: widget.margin,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: RepaintBoundary(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
             child: AnimatedBuilder(
               // PERF: Use cached listenable instead of creating new merge every build
               animation: _mergedAnimation,

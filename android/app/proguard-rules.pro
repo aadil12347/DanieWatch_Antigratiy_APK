@@ -38,3 +38,18 @@
 -keepclassmembers class * extends io.flutter.embedding.engine.plugins.FlutterPlugin {
   public <init>(...);
 }
+
+# BetterPlayer Plus & AndroidX Media3 / ExoPlayer
+-keep class uz.shs.better_player_plus.** { *; }
+-keep class androidx.media3.** { *; }
+-keep class com.google.android.exoplayer2.** { *; }
+-dontwarn androidx.media3.**
+-dontwarn uz.shs.better_player_plus.**
+
+# Native Muxer
+-keep class com.daniewatch.native_muxer.** { *; }
+
+# Flutter Background Service & WorkManager
+-keep class id.flutter.flutter_background_service.** { *; }
+-keep class androidx.work.** { *; }
+-dontwarn androidx.work.**

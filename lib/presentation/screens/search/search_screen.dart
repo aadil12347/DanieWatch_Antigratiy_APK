@@ -59,9 +59,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
     // Sync tab changes → update search provider filters & rebuild header
     _tabController.addListener(_onTabChanged);
-    _tabController.animation?.addListener(() {
-      if (mounted) setState(() {});
-    });
 
     final currentQuery = ref.read(searchProvider('explore')).query;
     if (currentQuery.isNotEmpty) {

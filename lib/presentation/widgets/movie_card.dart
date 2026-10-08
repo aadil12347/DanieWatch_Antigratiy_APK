@@ -494,8 +494,8 @@ class _PosterImage extends ConsumerWidget {
       return CachedNetworkImage(
         imageUrl: initialPosterUrl!,
         fit: BoxFit.cover,
-        memCacheWidth: 300,
-        memCacheHeight: 450,
+        memCacheWidth: 260,
+        memCacheHeight: 390,
         maxWidthDiskCache: 450,
         maxHeightDiskCache: 675,
         placeholder: (_, __) => Container(
@@ -531,8 +531,8 @@ class _PosterImage extends ConsumerWidget {
         return CachedNetworkImage(
           imageUrl: url,
           fit: BoxFit.cover,
-          memCacheWidth: 300,
-          memCacheHeight: 450,
+          memCacheWidth: 260,
+          memCacheHeight: 390,
           maxWidthDiskCache: 450,
           maxHeightDiskCache: 675,
           placeholder: (_, __) => Container(

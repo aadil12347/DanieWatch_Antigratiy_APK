@@ -30,6 +30,10 @@ Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
+  // PERF: Enlarge image cache from default 100MB to 250MB to prevent GC thrashing during 120 FPS scrolls
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 250 << 20; // 250 MB
+  PaintingBinding.instance.imageCache.maximumSize = 1000;
+
   // Validate required environment variables are configured via --dart-define
   Env.validate();
 
@@ -141,14 +145,42 @@ Future<void> main() async {
           prefs.setBool('has_session', true);
         }
 
-        // Non-critical services — fire & forget
-        DynamicUrls.instance.syncFromSupabase();
-        PipController.instance.init();
-        DownloadManager.instance.initialize();
-        NotificationService.instance.initialize();
-        DeepLinkService.instance.initialize();
-        AppUpdateService.instance.cleanupIfNeeded();
-        MovieSiteScraperService.instance.fetchLiveTotalPages();
+        // Non-critical services — fire & forget with independent error boundaries
+        try {
+          DynamicUrls.instance.syncFromSupabase();
+        } catch (e) {
+          debugPrint('[Startup] DynamicUrls init error: $e');
+        }
+        try {
+          PipController.instance.init();
+        } catch (e) {
+          debugPrint('[Startup] PipController init error: $e');
+        }
+        try {
+          DownloadManager.instance.initialize();
+        } catch (e) {
+          debugPrint('[Startup] DownloadManager init error: $e');
+        }
+        try {
+          NotificationService.instance.initialize();
+        } catch (e) {
+          debugPrint('[Startup] NotificationService init error: $e');
+        }
+        try {
+          DeepLinkService.instance.initialize();
+        } catch (e) {
+          debugPrint('[Startup] DeepLinkService init error: $e');
+        }
+        try {
+          AppUpdateService.instance.cleanupIfNeeded();
+        } catch (e) {
+          debugPrint('[Startup] AppUpdateService init error: $e');
+        }
+        try {
+          MovieSiteScraperService.instance.fetchLiveTotalPages();
+        } catch (e) {
+          debugPrint('[Startup] Scraper init error: $e');
+        }
       } catch (e) {
         debugPrint('[Startup] Background service init warning: $e');
         if (!supabaseReady.isCompleted) supabaseReady.completeError(e);

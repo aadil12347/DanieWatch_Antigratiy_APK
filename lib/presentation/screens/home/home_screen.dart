@@ -209,7 +209,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
             child: CustomScrollView(
               controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               // PERF: Reduced from 800 to avoid pre-building off-screen shimmers
               cacheExtent: 200,
               slivers: [

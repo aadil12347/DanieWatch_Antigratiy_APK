@@ -48,6 +48,60 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        unlockHighRefreshRate()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        unlockHighRefreshRate()
+    }
+
+    private fun unlockHighRefreshRate() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val currentDisplay = display
+                if (currentDisplay != null) {
+                    val modes = currentDisplay.supportedModes
+                    var maxRate = 60f
+                    var bestModeId = 0
+                    for (mode in modes) {
+                        if (mode.refreshRate > maxRate) {
+                            maxRate = mode.refreshRate
+                            bestModeId = mode.modeId
+                        }
+                    }
+                    if (maxRate > 60f) {
+                        val layoutParams = window.attributes
+                        if (bestModeId != 0) {
+                            layoutParams.preferredDisplayModeId = bestModeId
+                        }
+                        layoutParams.preferredRefreshRate = maxRate
+                        window.attributes = layoutParams
+                    }
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                @Suppress("DEPRECATION")
+                val currentDisplay = windowManager.defaultDisplay
+                val modes = currentDisplay.supportedModes
+                var maxRate = 60f
+                var bestModeId = 0
+                for (mode in modes) {
+                    if (mode.refreshRate > maxRate) {
+                        maxRate = mode.refreshRate
+                        bestModeId = mode.modeId
+                    }
+                }
+                if (bestModeId != 0 && maxRate > 60f) {
+                    val layoutParams = window.attributes
+                    layoutParams.preferredDisplayModeId = bestModeId
+                    window.attributes = layoutParams
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 

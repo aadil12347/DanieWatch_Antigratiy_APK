@@ -166,7 +166,7 @@ class _LiquidGlassButtonState extends State<LiquidGlassButton>
               tintOpacity: accent != null
                   ? 0.08 + (_glowAnimation.value * 0.12)
                   : 0.08,
-              enableAnimatedBorder: true,
+              enableAnimatedBorder: false,
               enableTouchRipple: false,
               padding: widget.padding,
               width: widget.width,

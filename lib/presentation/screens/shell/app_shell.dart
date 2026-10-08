@@ -344,20 +344,21 @@ class _AppShellState extends ConsumerState<AppShell>
                   bottom: navBottom,
                   left: 0,
                   right: 0,
-                  child: Center(
-                    child: AnimatedContainer(
-                      // PERF: 350ms → 200ms — snappier modal open/close
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOutCubic,
-                      constraints: BoxConstraints(maxWidth: navMaxWidth),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: navHPad),
-                        child: LiquidGlass(
-                          borderRadius: navRadius,
-                          intensity: anyModalOpen ? GlassIntensity.heavy : GlassIntensity.medium,
-                          enableAnimatedBorder: true,
-                          enableTouchRipple: false,
-                          edgeGlow: anyModalOpen ? 0.10 : 0.18,
+                  child: RepaintBoundary(
+                    child: Center(
+                      child: AnimatedContainer(
+                        // PERF: 350ms → 200ms — snappier modal open/close
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        constraints: BoxConstraints(maxWidth: navMaxWidth),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: navHPad),
+                          child: LiquidGlass(
+                            borderRadius: navRadius,
+                            intensity: anyModalOpen ? GlassIntensity.heavy : GlassIntensity.medium,
+                            enableAnimatedBorder: false,
+                            enableTouchRipple: false,
+                            edgeGlow: anyModalOpen ? 0.10 : 0.18,
                           child: AnimatedSize(
                             // PERF: 300ms → 200ms, Clip.hardEdge → Clip.none (GPU savings)
                             duration: const Duration(milliseconds: 200),
@@ -478,8 +479,9 @@ class _AppShellState extends ConsumerState<AppShell>
                       ),
                     ),
                   ),
-                );
-              }),
+                ),
+              );
+            }),
 
             // ── Force Update Modal (blocks all interaction when update needed) ──
             Consumer(
