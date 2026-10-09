@@ -200,6 +200,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: RefreshIndicator(
             color: AppColors.primary,
             backgroundColor: AppColors.surfaceElevated,
+            edgeOffset: MediaQuery.paddingOf(context).top,
+            displacement: 36,
             onRefresh: () async {
               MovieSiteScraperService.instance.clearCache();
               await MovieSiteScraperService.instance.loadDiskCache();
@@ -211,7 +213,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
             child: CustomScrollView(
               controller: _scrollController,
-              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              physics: const ClampingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               // PERF: Reduced from 800 to avoid pre-building off-screen shimmers
               cacheExtent: 200,
               slivers: [

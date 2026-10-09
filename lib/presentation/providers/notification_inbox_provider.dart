@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../core/services/notification_service.dart';
 import '../../data/local/notification_storage.dart';
 import '../../domain/models/local_notification.dart';
+import '../../main.dart' show supabaseReady;
 
 /// Manages local notification inbox state with Supabase sync + real-time updates.
 /// Strategy: Keep old cache → fetch fresh from Supabase in background → 
@@ -22,11 +22,12 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
     // 1. Show cached data immediately
     await loadNotifications();
     
-    // 2. Sync from Supabase in background (replaces cache only when fully loaded)
-    syncFromSupabase();
-
-    // 3. Start real-time subscription for instant updates
-    _startRealtimeSubscription();
+    // 2. Await Supabase readiness in background before syncing or subscribing
+    try {
+      await supabaseReady.future;
+      syncFromSupabase();
+      _startRealtimeSubscription();
+    } catch (_) {}
   }
 
 
@@ -52,7 +53,7 @@ class NotificationInboxNotifier extends StateNotifier<List<LocalNotification>> {
           .order('created_at', ascending: false)
           .limit(100);
 
-      if (data == null || data is! List) return;
+      if (data.isEmpty) return;
 
       // Convert Supabase rows → LocalNotification objects
       final freshNotifications = <LocalNotification>[];
