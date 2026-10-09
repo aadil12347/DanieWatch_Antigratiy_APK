@@ -68,6 +68,8 @@ class PlayerController extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration get position => _position;
   Duration? _targetSeekPosition;
+  Duration? _targetRelativeSeekPosition;
+  DateTime? _lastRelativeSeekTime;
 
   Duration _duration = Duration.zero;
   Duration get duration => _duration;
@@ -1271,6 +1273,12 @@ class PlayerController extends ChangeNotifier {
       if (_isDisposed) return;
       final controller = _betterPlayerController?.videoPlayerController;
       if (controller != null && controller.value.initialized) {
+        // Skip periodic position overwrite while user is actively seeking relatively (within last 1000ms)
+        // so ExoPlayer's asynchronous position doesn't cause jitter or snap backwards during rapid taps.
+        if (_lastRelativeSeekTime != null &&
+            DateTime.now().difference(_lastRelativeSeekTime!).inMilliseconds < 1000) {
+          return;
+        }
         final newPosition = controller.value.position;
         final newDuration = controller.value.duration ?? Duration.zero;
         // Track buffered position
@@ -1320,17 +1328,39 @@ class PlayerController extends ChangeNotifier {
   void seekTo(Duration position) {
     final vp = _betterPlayerController?.videoPlayerController;
     if (vp == null || !vp.value.initialized) return;
+    _position = position;
+    _targetRelativeSeekPosition = null;
+    _safeNotify();
     _betterPlayerController?.seekTo(position);
   }
 
   void seekRelative(Duration offset) {
     final vp = _betterPlayerController?.videoPlayerController;
     if (vp == null || !vp.value.initialized) return;
-    final newPos = _position + offset;
+
+    final now = DateTime.now();
+    Duration basePosition;
+    // If consecutive relative seeks occur within 1200ms (rapid tapping), accumulate onto target seek position
+    if (_targetRelativeSeekPosition != null &&
+        _lastRelativeSeekTime != null &&
+        now.difference(_lastRelativeSeekTime!).inMilliseconds < 1200) {
+      basePosition = _targetRelativeSeekPosition!;
+    } else {
+      basePosition = _position;
+    }
+
+    final newPos = basePosition + offset;
     final clamped = newPos < Duration.zero
         ? Duration.zero
         : (newPos > _duration ? _duration : newPos);
-    seekTo(clamped);
+
+    _targetRelativeSeekPosition = clamped;
+    _lastRelativeSeekTime = now;
+    _position = clamped;
+    onProgressUpdate?.call(_position, _duration);
+    _safeNotify();
+
+    _betterPlayerController?.seekTo(clamped);
   }
 
   /// Skip forward 10 seconds (CloudStream-style)
@@ -1534,12 +1564,12 @@ class PlayerController extends ChangeNotifier {
   DateTime? _lastControlInteractionTime;
   DateTime? get lastControlInteractionTime => _lastControlInteractionTime;
 
-  /// Returns true if the user recently tapped a control button (within 700ms).
+  /// Returns true if the user recently tapped a control button (within 1000ms).
   /// Used by gesture recognizers to prevent accidental double-tap seeks while rapidly tapping buttons.
   bool get isActivelyTappingControls {
     if (_lastControlInteractionTime == null) return false;
     return DateTime.now().difference(_lastControlInteractionTime!) <
-        const Duration(milliseconds: 700);
+        const Duration(milliseconds: 1000);
   }
 
   /// Mark that a control button (e.g. skip forward, skip backward, play/pause) was tapped.

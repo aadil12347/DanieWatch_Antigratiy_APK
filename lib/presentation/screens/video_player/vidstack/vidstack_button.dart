@@ -15,6 +15,7 @@ class VidstackButton extends StatefulWidget {
   final Color? activeBackgroundColor;
   final Border? border;
   final EdgeInsetsGeometry padding;
+  final bool triggerOnTapDown;
 
   const VidstackButton({
     super.key,
@@ -28,6 +29,7 @@ class VidstackButton extends StatefulWidget {
     this.activeBackgroundColor,
     this.border,
     this.padding = EdgeInsets.zero,
+    this.triggerOnTapDown = false,
   });
 
   @override
@@ -64,7 +66,10 @@ class _VidstackButtonState extends State<VidstackButton>
 
   void _handleTapDown(TapDownDetails _) {
     if (widget.onTap == null) return;
-    _controller.forward();
+    _controller.forward(from: 0.0);
+    if (widget.triggerOnTapDown) {
+      widget.onTap?.call();
+    }
   }
 
   void _handleTapUp(TapUpDetails _) {
@@ -72,7 +77,9 @@ class _VidstackButtonState extends State<VidstackButton>
     Future.delayed(const Duration(milliseconds: 50), () {
       if (mounted) _controller.reverse();
     });
-    widget.onTap?.call();
+    if (!widget.triggerOnTapDown) {
+      widget.onTap?.call();
+    }
   }
 
   void _handleTapCancel() {
@@ -127,20 +134,51 @@ class _VidstackButtonState extends State<VidstackButton>
       );
     }
 
+    final scaledContent = AnimatedScale(
+      scale: widget.isActive ? 1.08 : 1.0,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutBack,
+      child: ScaleTransition(
+        scale: _scale,
+        child: content,
+      ),
+    );
+
+    // If triggerOnTapDown is enabled, bypass gesture arena delays and cancellations completely
+    // using a raw pointer Listener so every single repeated click (even 10+ clicks per second)
+    // executes instantaneously at 0ms latency without dropping any taps.
+    if (widget.triggerOnTapDown) {
+      return Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) {
+          if (widget.onTap == null) return;
+          _controller.forward(from: 0.0);
+          widget.onTap?.call();
+        },
+        onPointerUp: (_) {
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (mounted) _controller.reverse();
+          });
+        },
+        onPointerCancel: (_) {
+          _controller.reverse();
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            // Absorb gesture in the arena to prevent bubbling to parent overlay toggleControls
+          },
+          child: scaledContent,
+        ),
+      );
+    }
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: _handleTapDown,
       onTapUp: _handleTapUp,
       onTapCancel: _handleTapCancel,
-      child: AnimatedScale(
-        scale: widget.isActive ? 1.08 : 1.0,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutBack,
-        child: ScaleTransition(
-          scale: _scale,
-          child: content,
-        ),
-      ),
+      child: scaledContent,
     );
   }
 }

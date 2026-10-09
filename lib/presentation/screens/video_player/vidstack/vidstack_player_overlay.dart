@@ -595,10 +595,10 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   Widget _buildPlaybackButtons({bool showLoading = false, bool isCompleted = false}) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onDoubleTapDown: (_) {
-        // Absorb double-tap on and in-between center controls: NEVER allow double-tap seek to activate
+      onTap: () {
+        // Absorb taps in the spacing around center controls so overlay does not dismiss
+        widget.controller.markControlInteraction();
       },
-      onDoubleTap: () {},
       child: Container(
         color: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -616,6 +616,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
               child: VidstackButton(
                 isCircle: true,
                 size: 56,
+                triggerOnTapDown: true,
                 backgroundColor: VidstackTheme.surfaceGlass,
                 border: Border.all(color: VidstackTheme.borderMedium),
                 tooltip: 'Rewind 10 seconds',
@@ -679,6 +680,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
         VidstackButton(
           isCircle: true,
           size: 76,
+          triggerOnTapDown: true,
           backgroundColor: VidstackTheme.brand,
           border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.5),
           tooltip: isCompleted ? 'Replay' : (widget.controller.isPlaying ? 'Pause' : 'Play'),
@@ -724,6 +726,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
               child: VidstackButton(
                 isCircle: true,
                 size: 56,
+                triggerOnTapDown: true,
                 backgroundColor: VidstackTheme.surfaceGlass,
                 border: Border.all(color: VidstackTheme.borderMedium),
                 tooltip: 'Forward 10 seconds',
