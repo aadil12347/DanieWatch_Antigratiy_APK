@@ -24,6 +24,7 @@ enum PosterTouchState {
 class PosterTouchHandler extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
+  final VoidCallback? onDoubleTap;
   final ValueChanged<bool>? onLongHold;
   final Color? glowColor;
   final BorderRadius borderRadius;
@@ -32,6 +33,7 @@ class PosterTouchHandler extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
+    this.onDoubleTap,
     this.onLongHold,
     this.glowColor,
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
@@ -48,6 +50,11 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
   Offset? _startPosition;
   Timer? _longPressTimer;
   DateTime? _pointerDownTime;
+
+  // Double-tap tracking
+  Timer? _singleTapTimer;
+  DateTime? _lastTapTime;
+  Offset? _lastTapPosition;
 
   // Scale animation
   late AnimationController _scaleController;
@@ -84,6 +91,7 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
   @override
   void dispose() {
     _longPressTimer?.cancel();
+    _singleTapTimer?.cancel();
     _scaleController.dispose();
     super.dispose();
   }
@@ -101,8 +109,6 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     ));
     _scaleController.forward(from: 0.0);
   }
-
-
 
   void _onPointerDown(PointerDownEvent event) {
     if (_isScrolling) return;
@@ -130,6 +136,9 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
     final distance = (event.position - (_startPosition ?? event.position)).distance;
     if (distance > _touchSlop) {
       _longPressTimer?.cancel();
+      _singleTapTimer?.cancel();
+      _lastTapTime = null;
+      _lastTapPosition = null;
       if (_state == PosterTouchState.longHolding) {
         widget.onLongHold?.call(false);
       }
@@ -146,27 +155,54 @@ class PosterTouchHandlerState extends State<PosterTouchHandler>
         ? DateTime.now().difference(_pointerDownTime!)
         : Duration.zero;
     _pointerDownTime = null;
+    final pos = event.position;
 
     setState(() => _state = PosterTouchState.idle);
     _animateScale(_normalScale);
 
     switch (previousState) {
       case PosterTouchState.pressing:
-        // Quick tap — navigate
-        widget.onTap?.call();
+        _handleTap(pos);
         break;
       case PosterTouchState.longHolding:
-        // Long hold release — only navigate if held < 1 second
         widget.onLongHold?.call(false);
         if (holdDuration < _tapThreshold) {
-          widget.onTap?.call();
+          _handleTap(pos);
         }
         break;
       case PosterTouchState.dragging:
-        // Was scrolling — do nothing
         break;
       case PosterTouchState.idle:
         break;
+    }
+  }
+
+  void _handleTap(Offset pos) {
+    if (widget.onDoubleTap == null) {
+      widget.onTap?.call();
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastTapTime != null &&
+        now.difference(_lastTapTime!) < const Duration(milliseconds: 280) &&
+        _lastTapPosition != null &&
+        (pos - _lastTapPosition!).distance < 40.0) {
+      // Double-tap detected: cancel pending single-tap and trigger double-tap
+      _singleTapTimer?.cancel();
+      _lastTapTime = null;
+      _lastTapPosition = null;
+      widget.onDoubleTap?.call();
+    } else {
+      // First tap: start brief debounce timer before navigation
+      _lastTapTime = now;
+      _lastTapPosition = pos;
+      _singleTapTimer?.cancel();
+      _singleTapTimer = Timer(const Duration(milliseconds: 280), () {
+        _lastTapTime = null;
+        _lastTapPosition = null;
+        widget.onTap?.call();
+      });
     }
   }
 

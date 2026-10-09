@@ -38,8 +38,15 @@ class MovieCard extends ConsumerStatefulWidget {
 }
 
 class _MovieCardState extends ConsumerState<MovieCard>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _hoverController;
+
+  // Double-tap visual feedback
+  late final AnimationController _doubleTapController;
+  late final Animation<double> _doubleTapScaleAnim;
+  late final Animation<double> _doubleTapFadeAnim;
+  bool _showDoubleTapAnim = false;
+  bool _doubleTapWasAdded = false;
 
   String get _cardKey => '${widget.item.mediaType}_${widget.item.id}';
 
@@ -51,11 +58,60 @@ class _MovieCardState extends ConsumerState<MovieCard>
       duration: const Duration(milliseconds: 150),
       reverseDuration: const Duration(milliseconds: 100),
     );
+
+    _doubleTapController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
+
+    _doubleTapScaleAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.25)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.25, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutQuad)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.85)
+            .chain(CurveTween(curve: Curves.easeInQuad)),
+        weight: 35,
+      ),
+    ]).animate(_doubleTapController);
+
+    _doubleTapFadeAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 30,
+      ),
+    ]).animate(_doubleTapController);
+
+    _doubleTapController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (mounted) {
+          setState(() => _showDoubleTapAnim = false);
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
     _hoverController.dispose();
+    _doubleTapController.dispose();
     super.dispose();
   }
 
@@ -65,6 +121,46 @@ class _MovieCardState extends ConsumerState<MovieCard>
     } else {
       context.push('/details/${widget.item.mediaType}/${widget.item.id}');
     }
+  }
+
+  void _onDoubleTap() {
+    HapticFeedback.mediumImpact();
+
+    final watchlist = ref.read(watchlistProvider);
+    final wasInWatchlist = watchlist.maybeWhen(
+      data: (items) => items.any((w) =>
+          w.tmdbId == widget.item.id && w.mediaType == widget.item.mediaType),
+      orElse: () => false,
+    );
+
+    final effectiveDate = widget.item.releaseDate ??
+        (widget.item.displayYear ?? widget.item.releaseYear)?.toString();
+
+    ref.read(watchlistProvider.notifier).toggle(
+          tmdbId: widget.item.id,
+          mediaType: widget.item.mediaType,
+          title: widget.item.title,
+          posterPath: widget.item.posterUrl,
+          releaseDate: effectiveDate,
+          voteAverage: widget.item.voteAverage,
+        );
+
+    final isNowAdded = !wasInWatchlist;
+
+    setState(() {
+      _showDoubleTapAnim = true;
+      _doubleTapWasAdded = isNowAdded;
+    });
+    _doubleTapController.forward(from: 0.0);
+
+    CustomToast.show(
+      context,
+      isNowAdded ? 'Added to watchlist' : 'Removed from watchlist',
+      type: isNowAdded ? ToastType.success : ToastType.info,
+      icon: isNowAdded
+          ? Icons.bookmark_added_rounded
+          : Icons.bookmark_remove_rounded,
+    );
   }
 
   void _onLongHoldChanged(bool active) {
@@ -105,6 +201,7 @@ class _MovieCardState extends ConsumerState<MovieCard>
             Positioned.fill(
               child: PosterTouchHandler(
                 onTap: _navigate,
+                onDoubleTap: _onDoubleTap,
                 onLongHold: _onLongHoldChanged,
                 child: _buildCardContent(
                   item: item,
@@ -123,6 +220,53 @@ class _MovieCardState extends ConsumerState<MovieCard>
               right: 6,
               child: _SaveButton(item: item),
             ),
+            // Floating Double-Tap Animated Feedback Icon
+            if (_showDoubleTapAnim)
+              Positioned.fill(
+                child: Center(
+                  child: IgnorePointer(
+                    child: FadeTransition(
+                      opacity: _doubleTapFadeAnim,
+                      child: ScaleTransition(
+                        scale: _doubleTapScaleAnim,
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.70),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: (_doubleTapWasAdded
+                                      ? AppColors.primary
+                                      : Colors.white)
+                                  .withValues(alpha: 0.5),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_doubleTapWasAdded
+                                        ? AppColors.primary
+                                        : Colors.black)
+                                    .withValues(alpha: 0.55),
+                                blurRadius: 24,
+                                spreadRadius: 3,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _doubleTapWasAdded
+                                ? Icons.bookmark_added_rounded
+                                : Icons.bookmark_remove_rounded,
+                            color: _doubleTapWasAdded
+                                ? AppColors.primary
+                                : Colors.white70,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

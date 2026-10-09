@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +18,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:daniewatch_app/core/theme/app_theme.dart';
 import '../../../core/utils/responsive.dart';
-import '../../../data/clients/tmdb_client.dart';
 import '../../../data/local/download_manager.dart';
 import '../../../domain/models/content_detail.dart';
 import '../../../domain/models/entry.dart';
@@ -56,7 +54,7 @@ class DetailsScreen extends ConsumerStatefulWidget {
 
 class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   int _selectedSeason = 1;
-  int _tabIndex = 0; // 0 = Episodes/Similars, 1 = Similars/Reviews, 2 = Reviews/Share, 3 = Share
+  int _tabIndex = 0; // 0 = Episodes (or Reviews for Movie), 1 = Reviews (or Share for Movie), 2 = Share
   String _episodeSearch = '';
   bool _crawlerInitiated = false;
   StreamSubscription<String>? _vcloudUpdatesSub;
@@ -214,7 +212,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                       const SizedBox(height: 24),
                       _buildActorsSection(content.castMembers),
                     ],
-                    // ─── Unified Tab Section (Episodes/Similars/Reviews/Share) ───
+                    // ─── Unified Tab Section (Episodes/Reviews/Share) ───
                     const SizedBox(height: 24),
                     RepaintBoundary(child: _buildTabSection(content)),
 
@@ -775,22 +773,18 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               _buildTabChip('Episodes', 0),
               const SizedBox(width: 16),
             ],
-            _buildTabChip('Similars', content.isTv ? 1 : 0),
+            _buildTabChip('Reviews', content.isTv ? 1 : 0),
             const SizedBox(width: 16),
-            _buildTabChip('Reviews', content.isTv ? 2 : 1),
-            const SizedBox(width: 16),
-            _buildTabChip('Share', content.isTv ? 3 : 2),
+            _buildTabChip('Share', content.isTv ? 2 : 1),
           ],
         ),
         const SizedBox(height: 16),
 
         if (content.isTv && _tabIndex == 0)
           _buildEpisodesTab(content)
-        else if ((content.isTv && _tabIndex == 1) || (!content.isTv && _tabIndex == 0))
-          _buildSimilarsTab()
-        else if ((content.isTv && _tabIndex == 2) || (!content.isTv && _tabIndex == 1))
+        else if ((content.isTv && _tabIndex == 1) || (!content.isTv && _tabIndex <= 0))
           _buildReviewsTab()
-        else if ((content.isTv && _tabIndex == 3) || (!content.isTv && _tabIndex == 2))
+        else
           _buildShareTab(content),
       ],
     );
@@ -880,86 +874,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     });
   }
 
-  // ─── Similars Tab ─────────────────────────────────────────────────────────
-  Widget _buildSimilarsTab() {
-    final similarAsync = ref.watch(similarProvider(_detailParams));
-    return similarAsync.when(
-      loading: () => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
-        ),
-      ),
-      error: (e, _) => _buildEmptyTab(Icons.error_outline, 'Failed to load similar content'),
-      data: (list) {
-        if (list.isEmpty) {
-          return _buildEmptyTab(Icons.movie_filter_outlined, 'No similar content found');
-        }
-        return SizedBox(
-          height: 200,
-          child: ListView.builder(
-            physics: const ClampingScrollPhysics(),
-            scrollDirection: Axis.horizontal,
-            itemCount: list.length,
-            itemBuilder: (context, index) {
-              final item = list[index];
-              return _buildSimilarCard(item);
-            },
-          ),
-        );
-      },
-    );
-  }
 
-  Widget _buildSimilarCard(SimilarItem item) {
-    final posterUrl =
-        item.posterPath != null ? TmdbClient.posterUrl(item.posterPath) : null;
-
-    return GestureDetector(
-      onTap: () {
-        context.push('/details/${item.mediaType}/${item.id}');
-      },
-      child: Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: SizedBox(
-          width: 110,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 110,
-                  height: 160,
-                  child: posterUrl != null && posterUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: posterUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
-                          errorWidget: (_, __, ___) => Container(
-                            color: AppColors.surfaceElevated,
-                            child: const Icon(Icons.movie, color: AppColors.textMuted),
-                          ),
-                        )
-                      : Container(
-                          color: AppColors.surfaceElevated,
-                          child: const Icon(Icons.movie, color: AppColors.textMuted),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                item.title,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // ─── Reviews Tab ──────────────────────────────────────────────────────────
   Widget _buildReviewsTab() {
