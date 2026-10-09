@@ -158,15 +158,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   void _onTabChanged() {
-    if (mounted) setState(() {});
     if (_isProgrammatic) return;
 
-    // Only sync when the tab has settled (animation complete)
+    final newIndex = _tabController.index;
     if (!_tabController.indexIsChanging) {
-      final newIndex = _tabController.index;
       if (newIndex != _lastSyncedTabIndex) {
         _lastSyncedTabIndex = newIndex;
+        if (mounted) setState(() {});
         _syncFiltersToTab(newIndex);
+      }
+    } else {
+      // User tapped a tab header; if switching between Search (0) and category tabs (>0), update header once
+      if ((newIndex == 0 && _lastSyncedTabIndex != 0) || (newIndex != 0 && _lastSyncedTabIndex == 0)) {
+        if (mounted) setState(() {});
       }
     }
   }
@@ -215,154 +219,141 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(35),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-            decoration: BoxDecoration(
+      child: RepaintBoundary(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+          decoration: BoxDecoration(
+            color: isActive
+                ? const Color(0xFF1E1E24)
+                : const Color(0xFF16151A),
+            borderRadius: BorderRadius.circular(35),
+            border: Border.all(
               color: isActive
-                  ? const Color(0xFF1E1E22).withValues(alpha: 0.88)
-                  : const Color(0xFF161619).withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(35),
-              border: Border.all(
-                color: isActive
-                    ? AppColors.primary
-                    : Colors.white.withValues(alpha: 0.12),
-                width: isActive ? 1.8 : 1.2,
+                  ? AppColors.primary
+                  : Colors.white.withValues(alpha: 0.12),
+              width: isActive ? 1.8 : 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
-              boxShadow: [
-                // Active aura glow behind search bar
-                if (isActive)
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.35),
-                    blurRadius: 24,
-                    spreadRadius: 2,
-                    offset: const Offset(0, 2),
-                  ),
-                // Deep 3D elevation shadow
+              if (isActive)
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  blurRadius: isActive ? 22 : 12,
-                  offset: const Offset(0, 6),
+                  color: AppColors.primary.withValues(alpha: 0.35),
+                  blurRadius: 18,
                   spreadRadius: 1,
-                ),
-                // Accent glow shadow
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: isActive ? 0.45 : 0.15),
-                  blurRadius: isActive ? 16 : 8,
                   offset: const Offset(0, 2),
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 14),
-                AnimatedScale(
-                  scale: isActive ? 1.15 : 1.0,
-                  duration: const Duration(milliseconds: 180),
-                  child: Icon(
-                    Icons.search_rounded,
-                    color: isActive ? AppColors.primary : Colors.white.withValues(alpha: 0.45),
-                    size: 22,
-                  ),
+            ],
+          ),
+          child: Row(
+            children: [
+              const SizedBox(width: 14),
+              AnimatedScale(
+                scale: isActive ? 1.15 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                child: Icon(
+                  Icons.search_rounded,
+                  color: isActive ? AppColors.primary : Colors.white.withValues(alpha: 0.45),
+                  size: 22,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocus,
-                    textAlignVertical: TextAlignVertical.center,
-                    style: GoogleFonts.inter(
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocus,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Search movies & series...',
+                    hintStyle: GoogleFonts.inter(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (val) {
+                    _saveRecentSearch(val);
+                    _onSearchChanged(val, immediate: true);
+                    _searchFocus.unfocus();
+                  },
+                  onChanged: (val) {
+                    _onSearchChanged(val);
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
+              if (hasText)
+                GestureDetector(
+                  onTap: () {
+                    _searchController.clear();
+                    _onSearchChanged('', immediate: true);
+                    if (mounted) setState(() {});
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
                       color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      size: 18,
                     ),
-                    decoration: InputDecoration(
-                      hintText: 'Search movies & series...',
-                      hintStyle: GoogleFonts.inter(
-                        color: Colors.white.withValues(alpha: 0.35),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (val) {
-                      _saveRecentSearch(val);
-                      _onSearchChanged(val, immediate: true);
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: () {
+                    final q = _searchController.text.trim();
+                    if (q.isNotEmpty) {
+                      _saveRecentSearch(q);
+                      _onSearchChanged(q, immediate: true);
                       _searchFocus.unfocus();
-                    },
-                    onChanged: (val) {
-                      _onSearchChanged(val);
-                      if (mounted) setState(() {});
-                    },
+                    }
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.search_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                 ),
-                if (hasText)
-                  GestureDetector(
-                    onTap: () {
-                      _searchController.clear();
-                      _onSearchChanged('', immediate: true);
-                      if (mounted) setState(() {});
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 4),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  )
-                else
-                  GestureDetector(
-                    onTap: () {
-                      final q = _searchController.text.trim();
-                      if (q.isNotEmpty) {
-                        _saveRecentSearch(q);
-                        _onSearchChanged(q, immediate: true);
-                        _searchFocus.unfocus();
-                      }
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.search_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
@@ -579,10 +570,10 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
-    final searchState = ref.watch(searchProvider('explore'));
 
     // ── Dedicated Search Tab Landing & Results ──
     if (widget.categoryLabel == 'Search') {
+      final searchState = ref.watch(searchProvider('explore'));
       final hasSearch = searchState.query.trim().isNotEmpty;
 
       if (searchState.isSearching) {
@@ -675,19 +666,18 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
       },
     );
 
-    final isSearchTab = widget.categoryLabel == 'Search';
-    final hasSearch = isSearchTab && searchState.query.trim().isNotEmpty;
-    // Check for user-applied filters BEYOND the nav category.
-    // The nav category alone should NOT trigger FilterUtils re-sorting,
-    // because category providers already supply correctly filtered + sorted data
-    final f = searchState.filters;
-    final hasUserFilters = f.regions.isNotEmpty ||
-        f.originalLanguages.isNotEmpty ||
-        f.genres.isNotEmpty ||
-        f.years.isNotEmpty ||
-        f.sortBy != 'Popularity' ||
-        f.categories.any((c) => c != searchState.navCategory && c != widget.categoryLabel);
-    final showResults = hasSearch || hasUserFilters;
+    // Efficiently watch only whether search or custom filters are active on explore
+    // This prevents all 17 kept-alive category tabs from rebuilding when user swipes between tabs
+    final isSearching = ref.watch(searchProvider('explore').select((s) => s.isSearching));
+    final hasUserFilters = ref.watch(searchProvider('explore').select((s) {
+      final f = s.filters;
+      return f.regions.isNotEmpty ||
+          f.originalLanguages.isNotEmpty ||
+          f.genres.isNotEmpty ||
+          f.years.isNotEmpty ||
+          f.sortBy != 'Popularity' ||
+          f.categories.any((c) => c != s.navCategory && c != widget.categoryLabel);
+    }));
 
     return paginatedState.when(
       loading: () {
@@ -719,22 +709,21 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
       data: (pagState) {
         final effectiveItems = pagState.items;
 
-        // Determine enforced category for FilterUtils
-        String? enforceCategory;
-        const categoryPages = {
-          'Action', 'Korean', 'K-Drama', 'Chinese', 'Anime', 'Comedy',
-          'Thriller', 'Horror', 'Sci-Fi', 'Romance', 'Indian', 'Bollywood',
-          'Hollywood', 'Punjabi', 'Pakistani', 'Dual Audio', 'Adventure',
-          'Crime', 'Drama', 'Mystery', 'Fantasy', 'Animation',
-        };
-        final filterCat = searchState.filters.categories;
-        if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
-          enforceCategory = filterCat.first;
-        }
-
-        // Apply filters across category list if search or custom filter is active
         final List<ManifestItem> itemsToDisplay;
-        if (showResults) {
+        if (hasUserFilters) {
+          final searchState = ref.watch(searchProvider('explore'));
+          String? enforceCategory;
+          const categoryPages = {
+            'Action', 'Korean', 'K-Drama', 'Chinese', 'Anime', 'Comedy',
+            'Thriller', 'Horror', 'Sci-Fi', 'Romance', 'Indian', 'Bollywood',
+            'Hollywood', 'Punjabi', 'Pakistani', 'Dual Audio', 'Adventure',
+            'Crime', 'Drama', 'Mystery', 'Fantasy', 'Animation',
+          };
+          final filterCat = searchState.filters.categories;
+          if (filterCat.isNotEmpty && categoryPages.contains(filterCat.first)) {
+            enforceCategory = filterCat.first;
+          }
+
           itemsToDisplay = FilterUtils.getFilteredItems(
             allItems: effectiveItems,
             searchState: searchState,
@@ -751,9 +740,9 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: _buildContentSlivers(
-              searchState,
-              hasSearch,
-              showResults,
+              isSearching,
+              false,
+              hasUserFilters,
               itemsToDisplay,
               effectiveItems,
               pagState,
@@ -765,7 +754,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
   }
 
   List<Widget> _buildContentSlivers(
-    SearchState searchState,
+    bool isSearching,
     bool hasSearch,
     bool showResults,
     List<ManifestItem> itemsToDisplay,
@@ -773,7 +762,7 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
     PaginatedCategoryState pagState,
   ) {
     // Searching shimmer
-    if (searchState.isSearching) {
+    if (isSearching) {
       return [_buildShimmerGrid()];
     }
 

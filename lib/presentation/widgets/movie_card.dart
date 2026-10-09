@@ -94,35 +94,37 @@ class _MovieCardState extends ConsumerState<MovieCard>
       _hoverController.reverse();
     }
 
-    return SizedBox(
-      width: widget.width,
-      height: widget.height,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Main card with touch handler
-          Positioned.fill(
-            child: PosterTouchHandler(
-              onTap: _navigate,
-              onLongHold: _onLongHoldChanged,
-              child: _buildCardContent(
-                item: item,
-                posterUrl: posterUrl,
-                logoUrl: logoUrl,
-                isInWatchlist: false,
-                isHovering: isActive,
-                hoverAnimation: _hoverController,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Main card with touch handler
+            Positioned.fill(
+              child: PosterTouchHandler(
+                onTap: _navigate,
+                onLongHold: _onLongHoldChanged,
+                child: _buildCardContent(
+                  item: item,
+                  posterUrl: posterUrl,
+                  logoUrl: logoUrl,
+                  isInWatchlist: false,
+                  isHovering: isActive,
+                  hoverAnimation: _hoverController,
+                ),
               ),
             ),
-          ),
-          // Save button: positioned OUTSIDE PosterTouchHandler
-          // so tapping it doesn't trigger navigation — moved to bottom-right
-          Positioned(
-            bottom: 6,
-            right: 6,
-            child: _SaveButton(item: item),
-          ),
-        ],
+            // Save button: positioned OUTSIDE PosterTouchHandler
+            // so tapping it doesn't trigger navigation — moved to bottom-right
+            Positioned(
+              bottom: 6,
+              right: 6,
+              child: _SaveButton(item: item),
+            ),
+          ],
+        ),
       ),
     );
   }

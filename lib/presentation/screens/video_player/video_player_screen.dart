@@ -242,12 +242,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           return Stack(
             fit: StackFit.expand,
             children: [
-              // 1. Native ExoPlayer Video Layer
+              // 1. Native ExoPlayer Video Layer (Isolated in RepaintBoundary so UI doesn't force texture re-compositing)
               if (_controller.betterPlayerController != null)
                 Positioned.fill(
-                  child: Center(
-                    child: BetterPlayer(
-                      controller: _controller.betterPlayerController!,
+                  child: RepaintBoundary(
+                    child: Center(
+                      child: BetterPlayer(
+                        controller: _controller.betterPlayerController!,
+                      ),
                     ),
                   ),
                 ),
@@ -255,19 +257,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               // 2. Gesture Controls (VLC style) + Vidstack Player Overlay
               if (isReady)
                 Positioned.fill(
-                  child: PlayerGestures(
-                    controller: _controller,
-                    child: PlayerOverlay(
+                  child: RepaintBoundary(
+                    child: PlayerGestures(
                       controller: _controller,
-                      onBack: _handleBack,
-                      onPipTap: _handlePip,
+                      child: PlayerOverlay(
+                        controller: _controller,
+                        onBack: _handleBack,
+                        onPipTap: _handlePip,
+                      ),
                     ),
                   ),
                 ),
 
               // 3. Subtitle Layer (Vidstack styled, subtle grey pill background, small text at center bottom)
               if (isReady)
-                _buildSubtitleOverlay(context),
+                RepaintBoundary(child: _buildSubtitleOverlay(context)),
 
               // 4. Cinematic Landscape Loading Screen
               if (!isReady)

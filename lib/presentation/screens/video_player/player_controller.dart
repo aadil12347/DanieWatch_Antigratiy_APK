@@ -1261,7 +1261,10 @@ class PlayerController extends ChangeNotifier {
           _duration = newDuration;
           _buffered = newBuffered;
           onProgressUpdate?.call(_position, _duration);
-          _safeNotify();
+          // Only trigger UI rebuild if controls are currently on screen
+          if (_controlsVisible) {
+            _safeNotify();
+          }
         }
       }
     });

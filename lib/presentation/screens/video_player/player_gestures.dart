@@ -41,13 +41,24 @@ class _PlayerGesturesState extends State<PlayerGestures>
   // ─── Swipe seek ────────────────────────────────────────────────────────
   Duration _seekPreviewPosition = Duration.zero;
   Duration _seekStartPosition = Duration.zero;
-  bool _showSeekPreview = false;
 
-  // ─── Volume/Brightness ─────────────────────────────────────────────────
+  // ─── Volume/Brightness with ValueNotifiers for lag-free localized indicator updates ───
   double _currentVolume = 0.5;
   double _currentBrightness = 0.5;
-  bool _showVolumeIndicator = false;
-  bool _showBrightnessIndicator = false;
+  final ValueNotifier<double> _volumeNotifier = ValueNotifier<double>(0.5);
+  final ValueNotifier<double> _brightnessNotifier = ValueNotifier<double>(0.5);
+  final ValueNotifier<bool> _showVolumeNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _showBrightnessNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _showSeekPreviewNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<Duration> _seekPreviewPosNotifier = ValueNotifier<Duration>(Duration.zero);
+
+  // Platform channel throttlers to prevent IPC saturation
+  int _lastPlatformCallMs = 0;
+  double? _pendingBrightness;
+  double? _pendingVolume;
+  Timer? _platformThrottleTimer;
+  Timer? _volumeIndicatorTimer;
+  Timer? _brightnessIndicatorTimer;
 
   // ─── Pinch-to-zoom (YouTube style: Zoomed to fill vs Original) ───────────
   final Map<int, Offset> _pointerPositions = {};
@@ -83,10 +94,71 @@ class _PlayerGesturesState extends State<PlayerGestures>
       _currentVolume = 0.5;
       _currentBrightness = 0.5;
     }
+    _volumeNotifier.value = _currentVolume;
+    _brightnessNotifier.value = _currentBrightness;
+  }
+
+  void _throttledSetBrightness(double val) {
+    _pendingBrightness = val;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastPlatformCallMs >= 24) {
+      _lastPlatformCallMs = now;
+      final target = _pendingBrightness!;
+      _pendingBrightness = null;
+      try {
+        ScreenBrightness().setScreenBrightness(target);
+      } catch (_) {}
+    } else {
+      _platformThrottleTimer?.cancel();
+      _platformThrottleTimer = Timer(const Duration(milliseconds: 24), () {
+        if (_pendingBrightness != null) {
+          final target = _pendingBrightness!;
+          _pendingBrightness = null;
+          try {
+            ScreenBrightness().setScreenBrightness(target);
+          } catch (_) {}
+        }
+      });
+    }
+  }
+
+  void _throttledSetVolume(double val) {
+    _pendingVolume = val;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastPlatformCallMs >= 24) {
+      _lastPlatformCallMs = now;
+      final target = _pendingVolume!;
+      _pendingVolume = null;
+      try {
+        VolumeController.instance.showSystemUI = false;
+        VolumeController.instance.setVolume(target);
+      } catch (_) {}
+    } else {
+      _platformThrottleTimer?.cancel();
+      _platformThrottleTimer = Timer(const Duration(milliseconds: 24), () {
+        if (_pendingVolume != null) {
+          final target = _pendingVolume!;
+          _pendingVolume = null;
+          try {
+            VolumeController.instance.showSystemUI = false;
+            VolumeController.instance.setVolume(target);
+          } catch (_) {}
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _platformThrottleTimer?.cancel();
+    _volumeIndicatorTimer?.cancel();
+    _brightnessIndicatorTimer?.cancel();
+    _volumeNotifier.dispose();
+    _brightnessNotifier.dispose();
+    _showVolumeNotifier.dispose();
+    _showBrightnessNotifier.dispose();
+    _showSeekPreviewNotifier.dispose();
+    _seekPreviewPosNotifier.dispose();
     _pinchToastTimer?.cancel();
     _seekResetTimer?.cancel();
     _leftSeekAnim.dispose();
@@ -120,7 +192,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
             onHorizontalDragStart: _onHorizontalDragStart,
             onHorizontalDragUpdate: _onHorizontalDragUpdate,
             onHorizontalDragEnd: _onHorizontalDragEnd,
-            child: widget.child,
+            child: RepaintBoundary(child: widget.child),
           ),
         ),
 
@@ -255,52 +327,82 @@ class _PlayerGesturesState extends State<PlayerGestures>
           ),
 
         // Horizontal swipe seek preview overlay
-        if (_showSeekPreview)
-          Center(
-            child: _buildSwipeSeekOverlay(),
-          ),
+        ValueListenableBuilder<bool>(
+          valueListenable: _showSeekPreviewNotifier,
+          builder: (context, show, _) {
+            if (!show) return const SizedBox.shrink();
+            return ValueListenableBuilder<Duration>(
+              valueListenable: _seekPreviewPosNotifier,
+              builder: (context, pos, _) {
+                return Center(
+                  child: _buildSwipeSeekOverlay(pos),
+                );
+              },
+            );
+          },
+        ),
 
-        // Volume indicator (right side)
-        if (_showVolumeIndicator)
-          Positioned(
-            right: 28,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: _VerticalIndicator(
-                value: _currentVolume,
-                icon: _currentVolume > 0.5
-                    ? Icons.volume_up_rounded
-                    : (_currentVolume > 0 ? Icons.volume_down_rounded : Icons.volume_mute_rounded),
-                label: '${(_currentVolume * 100).toInt()}%',
-                title: 'Volume',
+        // Volume indicator (LEFT side — opposite to right-side drag gesture so hand never blocks it)
+        ValueListenableBuilder<bool>(
+          valueListenable: _showVolumeNotifier,
+          builder: (context, show, _) {
+            if (!show) return const SizedBox.shrink();
+            return Positioned(
+              left: 28,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _volumeNotifier,
+                  builder: (context, vol, _) {
+                    return _VerticalIndicator(
+                      value: vol,
+                      icon: vol > 0.5
+                          ? Icons.volume_up_rounded
+                          : (vol > 0 ? Icons.volume_down_rounded : Icons.volume_mute_rounded),
+                      label: '${(vol * 100).toInt()}%',
+                      title: 'Volume',
+                    );
+                  },
+                ),
               ),
-            ),
-          ),
+            );
+          },
+        ),
 
-        // Brightness indicator (left side)
-        if (_showBrightnessIndicator)
-          Positioned(
-            left: 28,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: _VerticalIndicator(
-                value: _currentBrightness,
-                icon: _currentBrightness > 0.6
-                    ? Icons.brightness_7_rounded
-                    : (_currentBrightness > 0.3 ? Icons.brightness_6_rounded : Icons.brightness_5_rounded),
-                label: '${(_currentBrightness * 100).toInt()}%',
-                title: 'Brightness',
+        // Brightness indicator (RIGHT side — opposite to left-side drag gesture so hand never blocks it)
+        ValueListenableBuilder<bool>(
+          valueListenable: _showBrightnessNotifier,
+          builder: (context, show, _) {
+            if (!show) return const SizedBox.shrink();
+            return Positioned(
+              right: 28,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _brightnessNotifier,
+                  builder: (context, bri, _) {
+                    return _VerticalIndicator(
+                      value: bri,
+                      icon: bri > 0.6
+                          ? Icons.brightness_7_rounded
+                          : (bri > 0.3 ? Icons.brightness_6_rounded : Icons.brightness_5_rounded),
+                      label: '${(bri * 100).toInt()}%',
+                      title: 'Brightness',
+                    );
+                  },
+                ),
               ),
-            ),
-          ),
+            );
+          },
+        ),
       ],
     );
   }
 
-  Widget _buildSwipeSeekOverlay() {
-    final diff = _seekPreviewPosition - _seekStartPosition;
+  Widget _buildSwipeSeekOverlay(Duration previewPos) {
+    final diff = previewPos - _seekStartPosition;
     final isForward = diff.inMilliseconds >= 0;
     final diffSeconds = (diff.inMilliseconds.abs() / 1000).round();
     final diffText = isForward ? '+$diffSeconds s' : '-$diffSeconds s';
@@ -311,9 +413,9 @@ class _PlayerGesturesState extends State<PlayerGestures>
         color: Colors.black.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
+            color: Colors.black54,
             blurRadius: 20,
             spreadRadius: 4,
           ),
@@ -343,7 +445,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
           ),
           const SizedBox(height: 8),
           Text(
-            '${_formatDuration(_seekPreviewPosition)} / ${_formatDuration(widget.controller.duration)}',
+            '${_formatDuration(previewPos)} / ${_formatDuration(widget.controller.duration)}',
             style: GoogleFonts.plusJakartaSans(
               color: Colors.white,
               fontSize: 16,
@@ -376,12 +478,12 @@ class _PlayerGesturesState extends State<PlayerGestures>
       // Abort any ongoing vertical / horizontal drag so it doesn't conflict with pinch
       if (_isVerticalDrag) {
         _isVerticalDrag = false;
-        _showVolumeIndicator = false;
-        _showBrightnessIndicator = false;
+        _showVolumeNotifier.value = false;
+        _showBrightnessNotifier.value = false;
       }
       if (_isHorizontalDrag) {
         _isHorizontalDrag = false;
-        _showSeekPreview = false;
+        _showSeekPreviewNotifier.value = false;
       }
     }
   }
@@ -507,13 +609,13 @@ class _PlayerGesturesState extends State<PlayerGestures>
     _isLeftSide = details.globalPosition.dx < screenWidth / 2;
     _isVerticalDrag = true;
 
-    setState(() {
-      if (_isLeftSide) {
-        _showBrightnessIndicator = true;
-      } else {
-        _showVolumeIndicator = true;
-      }
-    });
+    if (_isLeftSide) {
+      _brightnessIndicatorTimer?.cancel();
+      _showBrightnessNotifier.value = true;
+    } else {
+      _volumeIndicatorTimer?.cancel();
+      _showVolumeNotifier.value = true;
+    }
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
@@ -524,29 +626,25 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
     if (_isLeftSide) {
       _currentBrightness = (_currentBrightness + delta).clamp(0.0, 1.0);
-      try {
-        ScreenBrightness().setScreenBrightness(_currentBrightness);
-      } catch (_) {}
+      _brightnessNotifier.value = _currentBrightness;
+      _throttledSetBrightness(_currentBrightness);
     } else {
       _currentVolume = (_currentVolume + delta).clamp(0.0, 1.0);
-      try {
-        VolumeController.instance.showSystemUI = false;
-        VolumeController.instance.setVolume(_currentVolume);
-      } catch (_) {}
+      _volumeNotifier.value = _currentVolume;
+      _throttledSetVolume(_currentVolume);
     }
-
-    setState(() {});
+    // Zero setState here! ValueNotifier updates indicators smoothly without outer overlay rebuilds
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
     _isVerticalDrag = false;
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) {
-        setState(() {
-          _showVolumeIndicator = false;
-          _showBrightnessIndicator = false;
-        });
-      }
+    _volumeIndicatorTimer?.cancel();
+    _brightnessIndicatorTimer?.cancel();
+    _volumeIndicatorTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) _showVolumeNotifier.value = false;
+    });
+    _brightnessIndicatorTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) _showBrightnessNotifier.value = false;
     });
   }
 
@@ -557,7 +655,8 @@ class _PlayerGesturesState extends State<PlayerGestures>
     _isHorizontalDrag = true;
     _seekStartPosition = widget.controller.position;
     _seekPreviewPosition = widget.controller.position;
-    setState(() => _showSeekPreview = true);
+    _seekPreviewPosNotifier.value = _seekPreviewPosition;
+    _showSeekPreviewNotifier.value = true;
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
@@ -574,8 +673,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
     if (_seekPreviewPosition > widget.controller.duration && widget.controller.duration > Duration.zero) {
       _seekPreviewPosition = widget.controller.duration;
     }
-
-    setState(() {});
+    _seekPreviewPosNotifier.value = _seekPreviewPosition;
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
@@ -583,7 +681,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
       widget.controller.seekTo(_seekPreviewPosition);
     }
     _isHorizontalDrag = false;
-    setState(() => _showSeekPreview = false);
+    _showSeekPreviewNotifier.value = false;
   }
 
   String _formatDuration(Duration d) {

@@ -117,7 +117,11 @@ internal class BetterPlayer(
         loadBuilder.setPrioritizeTimeOverSizeThresholds(true)
         loadBuilder.setTargetBufferBytes(15 * 1024 * 1024)
         loadControl = loadBuilder.build()
-        exoPlayer = ExoPlayer.Builder(context)
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context).apply {
+            setEnableDecoderFallback(true)
+            setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        }
+        exoPlayer = ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
             .build()

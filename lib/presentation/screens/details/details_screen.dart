@@ -60,6 +60,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   String _episodeSearch = '';
   bool _crawlerInitiated = false;
   StreamSubscription<String>? _vcloudUpdatesSub;
+  Timer? _vcloudDebounceTimer;
 
   void _triggerSeriesCrawl(ContentDetail content) {
     if (_crawlerInitiated || !content.isTv) return;
@@ -110,12 +111,17 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   void initState() {
     super.initState();
     _vcloudUpdatesSub = SeriesVcloudRepository.instance.updatesStream.listen((_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      _vcloudDebounceTimer?.cancel();
+      _vcloudDebounceTimer = Timer(const Duration(milliseconds: 600), () {
+        if (mounted) setState(() {});
+      });
     });
   }
 
   @override
   void dispose() {
+    _vcloudDebounceTimer?.cancel();
     _vcloudUpdatesSub?.cancel();
     super.dispose();
   }
@@ -153,7 +159,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  _HeroSection(content: content),
+                  RepaintBoundary(child: _HeroSection(content: content)),
                   Container(
                     margin: EdgeInsets.only(top: Responsive(context).h(420).clamp(320.0, 520.0) - 40.0),
                     padding: EdgeInsets.symmetric(horizontal: Responsive(context).w(8)),
@@ -210,7 +216,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                     ],
                     // ─── Unified Tab Section (Episodes/Similars/Reviews/Share) ───
                     const SizedBox(height: 24),
-                    _buildTabSection(content),
+                    RepaintBoundary(child: _buildTabSection(content)),
 
                         const SizedBox(height: 120),
                       ],
@@ -3700,6 +3706,7 @@ class _HeroSectionState extends State<_HeroSection> {
   void dispose() {
     try {
       _webViewController?.stopLoading();
+      _webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri('about:blank')));
       _webViewController = null;
     } catch (_) {}
     super.dispose();
@@ -3910,7 +3917,8 @@ class _HeroSectionState extends State<_HeroSection> {
                             allowsInlineMediaPlayback: true,
                             transparentBackground: true,
                             javaScriptEnabled: true,
-                            useHybridComposition: true,
+                            useHybridComposition: false,
+                            cacheEnabled: true,
                             disableVerticalScroll: true,
                             disableHorizontalScroll: true,
                             supportZoom: false,
