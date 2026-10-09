@@ -127,6 +127,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   }
 
   void _handleSkipBackward() {
+    widget.controller.markControlInteraction();
     HapticFeedback.lightImpact();
     widget.controller.skipBackward();
     _rewindRotateController.forward(from: 0.0);
@@ -152,6 +153,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   }
 
   void _handleSkipForward() {
+    widget.controller.markControlInteraction();
     HapticFeedback.lightImpact();
     widget.controller.skipForward();
     _forwardRotateController.forward(from: 0.0);
@@ -389,15 +391,14 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
         }
       },
       onDoubleTapDown: (details) {
+        if (widget.controller.isActivelyTappingControls) return;
         final screenWidth = MediaQuery.of(context).size.width;
         if (details.localPosition.dx < screenWidth * 0.35) {
           _handleSkipBackward();
         } else if (details.localPosition.dx > screenWidth * 0.65) {
           _handleSkipForward();
-        } else {
-          HapticFeedback.lightImpact();
-          widget.controller.togglePlayPause();
         }
+        // Center area (0.35 <= dx <= 0.65) is a dead zone: NEVER seek forward/backward or toggle play
       },
       onDoubleTap: () {},
       child: Container(
@@ -592,10 +593,19 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   }
 
   Widget _buildPlaybackButtons({bool showLoading = false, bool isCompleted = false}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onDoubleTapDown: (_) {
+        // Absorb double-tap on and in-between center controls: NEVER allow double-tap seek to activate
+      },
+      onDoubleTap: () {},
+      child: Container(
+        color: Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
         // Skip Backward 10s (with rotation animation & collective seek badge)
         Stack(
           clipBehavior: Clip.none,
@@ -673,6 +683,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
           border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.5),
           tooltip: isCompleted ? 'Replay' : (widget.controller.isPlaying ? 'Pause' : 'Play'),
           onTap: () {
+            widget.controller.markControlInteraction();
             HapticFeedback.lightImpact(); // minor vibration on play pause
             if (isCompleted) {
               widget.controller.seekTo(Duration.zero);
@@ -770,6 +781,8 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
           ],
         ),
       ],
+        ),
+      ),
     );
   }
 

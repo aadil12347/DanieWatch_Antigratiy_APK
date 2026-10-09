@@ -554,9 +554,22 @@ class _PlayerGesturesState extends State<PlayerGestures>
 
   void _onDoubleTapDown(TapDownDetails details, BuildContext context) {
     if (widget.controller.isLocked || _pointerPositions.length >= 2) return;
+
+    // Suppress double-tap seek if user is actively tapping control buttons (within 700ms)
+    if (widget.controller.isActivelyTappingControls) return;
+
     final screenWidth = MediaQuery.of(context).size.width;
     final tapX = details.globalPosition.dx;
-    final isLeft = tapX < screenWidth / 2;
+
+    // Center Deadzone: Never activate double-tap seek in the center 35% to 65% of the screen.
+    // This protects the center controls (Skip Backward, Play/Pause, Skip Forward) and the space between them.
+    if (tapX >= screenWidth * 0.35 && tapX <= screenWidth * 0.65) {
+      return;
+    }
+
+    final isLeft = tapX < screenWidth * 0.35;
+    final isRight = tapX > screenWidth * 0.65;
+    if (!isLeft && !isRight) return;
 
     HapticFeedback.lightImpact();
 

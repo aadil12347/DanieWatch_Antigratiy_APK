@@ -1531,6 +1531,23 @@ class PlayerController extends ChangeNotifier {
   bool _isModalOpen = false;
   bool get isModalOpen => _isModalOpen;
 
+  DateTime? _lastControlInteractionTime;
+  DateTime? get lastControlInteractionTime => _lastControlInteractionTime;
+
+  /// Returns true if the user recently tapped a control button (within 700ms).
+  /// Used by gesture recognizers to prevent accidental double-tap seeks while rapidly tapping buttons.
+  bool get isActivelyTappingControls {
+    if (_lastControlInteractionTime == null) return false;
+    return DateTime.now().difference(_lastControlInteractionTime!) <
+        const Duration(milliseconds: 700);
+  }
+
+  /// Mark that a control button (e.g. skip forward, skip backward, play/pause) was tapped.
+  void markControlInteraction() {
+    _lastControlInteractionTime = DateTime.now();
+    _resetControlsTimer();
+  }
+
   void setPipMode(bool inPip) {
     _isInPip = inPip;
     if (inPip) {
