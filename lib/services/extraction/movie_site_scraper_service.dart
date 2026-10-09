@@ -113,6 +113,10 @@ class MovieSiteScraperService {
   final Map<int, int> _resolvedTmdbIds = {};
   final Map<int, String> _resolvedMediaTypes = {};
 
+  /// True if top lists are already loaded in memory (disk cache or live)
+  bool get hasHomeTopListsCache =>
+      _cachedTop10Indian != null && _cachedTop10HindiDub != null;
+
   final Map<String, int> _categoryTotalPages = {
     'dual-audio': 778,
     'dualaudio': 778,

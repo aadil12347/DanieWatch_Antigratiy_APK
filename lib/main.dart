@@ -125,66 +125,70 @@ Future<void> main() async {
       ),
     );
 
-    // ── PHASE 2: Background init — Supabase + services AFTER FIRST FRAME ──
-    // addPostFrameCallback guarantees the first frame has rendered before
-    // any heavy background work starts — prevents ANR on low-end devices.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        // Supabase is the heaviest — network-bound 1-2.5s.
-        // UI is already visible, so this runs in parallel.
-        await Supabase.initialize(
-          url: Env.supabaseUrl,
-          anonKey: Env.supabaseAnonKey,
-        );
-        if (!supabaseReady.isCompleted) supabaseReady.complete();
-        debugPrint('[Startup] ✅ Supabase ready');
-
-        // Persist session flag for next cold start
-        final user = Supabase.instance.client.auth.currentUser;
-        if (user != null) {
-          prefs.setBool('has_session', true);
-        }
-
-        // Non-critical services — fire & forget with independent error boundaries
+    // ── PHASE 2: 4-Tier Staggered Boot Ladder ───────────────────────────
+    // Stagger services into execution tiers so the UI renders at 120 FPS
+    // before any background network, IPC, or heavy engine setup begins.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // ── Tier 2 (1.2s delay): Critical Cloud Sync (Auth & Domains) ─────
+      Future.delayed(const Duration(milliseconds: 1200), () async {
         try {
-          DynamicUrls.instance.syncFromSupabase();
+          await Supabase.initialize(
+            url: Env.supabaseUrl,
+            anonKey: Env.supabaseAnonKey,
+          );
+          if (!supabaseReady.isCompleted) supabaseReady.complete();
+          debugPrint('[Startup:Tier2] ✅ Supabase ready');
+
+          final user = Supabase.instance.client.auth.currentUser;
+          if (user != null) {
+            prefs.setBool('has_session', true);
+          }
+
+          try {
+            DynamicUrls.instance.syncFromSupabase();
+          } catch (e) {
+            debugPrint('[Startup:Tier2] DynamicUrls sync error: $e');
+          }
         } catch (e) {
-          debugPrint('[Startup] DynamicUrls init error: $e');
+          debugPrint('[Startup:Tier2] Supabase init error: $e');
+          if (!supabaseReady.isCompleted) supabaseReady.completeError(e);
         }
+      });
+
+      // ── Tier 3 (5.0s delay): Non-Critical Background Services Idle Queue ─
+      Future.delayed(const Duration(milliseconds: 5000), () async {
+        debugPrint('[Startup:Tier3] 🚀 Starting background services idle queue...');
         try {
           PipController.instance.init();
         } catch (e) {
-          debugPrint('[Startup] PipController init error: $e');
+          debugPrint('[Startup:Tier3] PipController init error: $e');
         }
         try {
           DownloadManager.instance.initialize();
         } catch (e) {
-          debugPrint('[Startup] DownloadManager init error: $e');
+          debugPrint('[Startup:Tier3] DownloadManager init error: $e');
         }
         try {
           NotificationService.instance.initialize();
         } catch (e) {
-          debugPrint('[Startup] NotificationService init error: $e');
+          debugPrint('[Startup:Tier3] NotificationService init error: $e');
         }
         try {
           DeepLinkService.instance.initialize();
         } catch (e) {
-          debugPrint('[Startup] DeepLinkService init error: $e');
+          debugPrint('[Startup:Tier3] DeepLinkService init error: $e');
         }
         try {
           AppUpdateService.instance.cleanupIfNeeded();
         } catch (e) {
-          debugPrint('[Startup] AppUpdateService init error: $e');
+          debugPrint('[Startup:Tier3] AppUpdateService init error: $e');
         }
         try {
           MovieSiteScraperService.instance.fetchLiveTotalPages();
         } catch (e) {
-          debugPrint('[Startup] Scraper init error: $e');
+          debugPrint('[Startup:Tier3] Scraper init error: $e');
         }
-      } catch (e) {
-        debugPrint('[Startup] Background service init warning: $e');
-        if (!supabaseReady.isCompleted) supabaseReady.completeError(e);
-      }
+      });
     });
   } catch (e, stackTrace) {
     // Ensure splash is removed even on failure to show error UI

@@ -34,6 +34,9 @@ final localManifestItemsProvider = FutureProvider<List<ManifestItem>>((ref) asyn
     return []; // Still initializing — return empty, will rebuild when ready
   }
 
+  // PERF: Yield to UI first so home screen renders at 120 FPS before heavy 1.7MB index parse
+  await Future.delayed(const Duration(milliseconds: 3000));
+
   // Load main index only (3rd party index DEACTIVATED)
   final items = await DatabaseSyncService.instance.loadLocalIndex();
 
@@ -335,8 +338,8 @@ final topPicksSyncProvider = FutureProvider<bool>((ref) async {
 
 /// Featured content for the Carousel (Top 5 from VegaMovies homepage)
 final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
+  final localMap = scraper.hasHomeTopListsCache ? null : ref.read(localManifestMapProvider);
   try {
     final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
     final carousel = topLists['carousel'] ?? topLists['top5'];
@@ -354,7 +357,7 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
   return await _buildHybridTopList(
     folder: 'Top 5',
     maxSlots: 5,
-    localMap: localMap,
+    localMap: localMap ?? const {},
     trendingPool: trending,
     excludeIds: {},
     sortedItems: sorted,
@@ -363,8 +366,8 @@ final mergedCarouselProvider = FutureProvider<List<ManifestItem>>((ref) async {
 
 /// Top 10 Indian Today provider (2026 Indian releases from RogMovies)
 final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
+  final localMap = scraper.hasHomeTopListsCache ? null : ref.read(localManifestMapProvider);
   try {
     final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
     final indian = topLists['top10Indian'];
@@ -383,8 +386,8 @@ final top10IndianProvider = FutureProvider<List<ManifestItem>>((ref) async {
 
 /// Top 10 Hindi Dub Today provider (5 from RogMovies + 5 from VegaMovies, distinct from Indian Today)
 final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
-  final localMap = ref.read(localManifestMapProvider);
   final scraper = MovieSiteScraperService.instance;
+  final localMap = scraper.hasHomeTopListsCache ? null : ref.read(localManifestMapProvider);
   try {
     final topLists = await scraper.fetchHomeTopLists(localMap: localMap);
     final top10 = topLists['top10HindiDub'] ?? topLists['top10'];
@@ -405,7 +408,7 @@ final top10HindiDubProvider = FutureProvider<List<ManifestItem>>((ref) async {
   return await _buildHybridTopList(
     folder: 'Top 10',
     maxSlots: 10,
-    localMap: localMap,
+    localMap: localMap ?? const {},
     trendingPool: trending,
     excludeIds: indianIds,
     sortedItems: sorted,

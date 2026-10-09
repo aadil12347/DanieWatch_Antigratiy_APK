@@ -49,8 +49,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Register the controller with the global manager
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollManager.register(0, _scrollController);
-      // Deferred from splash — request permissions after home is visible
-      _requestPermissionsIfNeeded();
+      // Deferred to idle — only request permissions after user has browsed smoothly
+      Future.delayed(const Duration(seconds: 6), () {
+        if (mounted) _requestPermissionsIfNeeded();
+      });
     });
   }
 

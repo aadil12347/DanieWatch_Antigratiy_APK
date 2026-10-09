@@ -490,6 +490,7 @@ class NotificationService {
               .subscribeToTopic(topic)
               .timeout(const Duration(seconds: 10));
           debugPrint('✅ Subscribed to $topic topic');
+          await Future.delayed(const Duration(milliseconds: 600));
         } catch (e) {
           debugPrint('⚠️ Topic subscription for $topic failed (non-fatal): $e');
         }

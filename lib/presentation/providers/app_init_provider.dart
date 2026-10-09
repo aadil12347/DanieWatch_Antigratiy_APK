@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/env.dart';
 import '../../data/local/database.dart';
 import '../../services/extraction/movie_site_scraper_service.dart';
-import '../../main.dart' show supabaseReady;
 
 /// Describes the current phase of app initialization.
 enum InitPhase {
@@ -116,21 +115,8 @@ final appInitProvider = StreamProvider<AppInitState>((ref) async* {
       debugPrint('[AppInit] ⚠️ Disk cache load error: $e');
     }
 
-    // Step 3: Wait for Supabase (max 5s)
-    try {
-      await supabaseReady.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          debugPrint('[AppInit] ⚠️ Supabase timeout — continuing without');
-        },
-      );
-      debugPrint('[AppInit] ✅ Supabase ready in ${sw.elapsedMilliseconds}ms');
-    } catch (e) {
-      debugPrint('[AppInit] ⚠️ Supabase wait error: $e');
-    }
-
     sw.stop();
-    debugPrint('[AppInit] 🚀 All background init complete in ${sw.elapsedMilliseconds}ms');
+    debugPrint('[AppInit] 🚀 All foreground init complete in ${sw.elapsedMilliseconds}ms');
   });
 });
 
