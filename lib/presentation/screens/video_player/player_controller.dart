@@ -90,6 +90,9 @@ class PlayerController extends ChangeNotifier {
   bool _isLocked = false;
   bool get isLocked => _isLocked;
 
+  bool _isInPip = false;
+  bool get isInPip => _isInPip;
+
   // ─── Audio/Subtitle Tracks ─────────────────────────────────────────────
   List<BetterPlayerAsmsAudioTrack> _audioTracks = [];
   List<BetterPlayerAsmsAudioTrack> get audioTracks => _audioTracks;
@@ -104,7 +107,7 @@ class PlayerController extends ChangeNotifier {
   List<String> _currentCues = [];
   List<String> get currentCues => _currentCues;
 
-  bool _subtitlesExplicitlyDisabled = false;
+  bool _subtitlesExplicitlyDisabled = true;
   bool get subtitlesExplicitlyDisabled => _subtitlesExplicitlyDisabled;
 
   // ─── Available Resolutions & Servers ────────────────────────────────────
@@ -184,6 +187,7 @@ class PlayerController extends ChangeNotifier {
     _episode = episode;
     _seasonNumbers = seasonNumbers ?? [];
     _totalEpisodes = totalEpisodes ?? 0;
+    _subtitlesExplicitlyDisabled = true;
 
     // Lock to landscape
     await SystemChrome.setPreferredOrientations([
@@ -551,10 +555,10 @@ class PlayerController extends ChangeNotifier {
               useAsmsAudioTracks: isHls,
               useAsmsSubtitles: isHls,
               bufferingConfiguration: const BetterPlayerBufferingConfiguration(
-                minBufferMs: 15000,
-                maxBufferMs: 35000,
-                bufferForPlaybackMs: 2500,
-                bufferForPlaybackAfterRebufferMs: 4000,
+                minBufferMs: 20000,
+                maxBufferMs: 50000,
+                bufferForPlaybackMs: 1500,
+                bufferForPlaybackAfterRebufferMs: 3000,
               ),
             );
 
@@ -939,6 +943,8 @@ class PlayerController extends ChangeNotifier {
         }
       } else {
         _currentSubtitleSource = _subtitleSources.first;
+        _betterPlayerController?.setTextTrack(null, -1);
+        _currentCues = [];
       }
     } else {
       final subs = _betterPlayerController!.betterPlayerSubtitlesSourceList;
@@ -953,6 +959,13 @@ class PlayerController extends ChangeNotifier {
                         s.name != 'Off',
                     orElse: () => _subtitleSources.first,
                   );
+        } else {
+          _currentSubtitleSource = _subtitleSources.firstWhere(
+            (s) => s.type == BetterPlayerSubtitlesSourceType.none || s.name == 'Off',
+            orElse: () => _subtitleSources.first,
+          );
+          _betterPlayerController?.setTextTrack(null, -1);
+          _currentCues = [];
         }
       } else if (_currentSource?.url.toLowerCase().contains('.mkv') == true) {
         _subtitleSources = [
@@ -963,6 +976,10 @@ class PlayerController extends ChangeNotifier {
         ];
         if (!_subtitlesExplicitlyDisabled) {
           _currentSubtitleSource = _subtitleSources[1];
+        } else {
+          _currentSubtitleSource = _subtitleSources.first;
+          _betterPlayerController?.setTextTrack(null, -1);
+          _currentCues = [];
         }
       }
     }
@@ -1263,8 +1280,8 @@ class PlayerController extends ChangeNotifier {
           _duration = newDuration;
           _buffered = newBuffered;
           onProgressUpdate?.call(_position, _duration);
-          // Only trigger UI rebuild if controls are currently on screen
-          if (_controlsVisible) {
+          // Only trigger UI rebuild if controls are currently on screen and not in PiP
+          if (_controlsVisible && !_isInPip) {
             _safeNotify();
           }
         }
@@ -1504,7 +1521,18 @@ class PlayerController extends ChangeNotifier {
   bool _isModalOpen = false;
   bool get isModalOpen => _isModalOpen;
 
+  void setPipMode(bool inPip) {
+    _isInPip = inPip;
+    if (inPip) {
+      _isModalOpen = false;
+      _controlsVisible = false;
+      _controlsTimer?.cancel();
+    }
+    _safeNotify();
+  }
+
   void setModalOpen(bool open) {
+    if (_isInPip) return;
     _isModalOpen = open;
     if (open) {
       _controlsTimer?.cancel();
@@ -1516,20 +1544,21 @@ class PlayerController extends ChangeNotifier {
   }
 
   void showControls() {
-    if (_isLocked) return;
+    if (_isLocked || _isInPip) return;
     _controlsVisible = true;
     _safeNotify();
     _resetControlsTimer();
   }
 
-  void hideControls() {
-    if (_isModalOpen) return;
+  void hideControls({bool force = false}) {
+    if (_isModalOpen && !force && !_isInPip) return;
     _controlsVisible = false;
     _controlsTimer?.cancel();
     _safeNotify();
   }
 
   void toggleControls() {
+    if (_isInPip) return;
     if (_controlsVisible) {
       hideControls();
     } else {
@@ -1539,9 +1568,9 @@ class PlayerController extends ChangeNotifier {
 
   void _resetControlsTimer() {
     _controlsTimer?.cancel();
-    if (_isModalOpen) return;
+    if (_isModalOpen || _isInPip) return;
     _controlsTimer = Timer(const Duration(seconds: 3), () {
-      if (_isPlaying && _controlsVisible && !_isModalOpen) {
+      if (_isPlaying && _controlsVisible && !_isModalOpen && !_isInPip) {
         hideControls();
       }
     });

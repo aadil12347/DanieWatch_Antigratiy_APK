@@ -1,6 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:better_player_plus/better_player_plus.dart';
 import '../player_controller.dart';
@@ -13,16 +12,14 @@ enum VidstackSettingsSubmenu {
   quality,
   audio,
   subtitles,
-  servers,
-  aspect,
 }
 
 /// Vidstack Nested Popover Settings Menu.
 /// Features:
-/// - Floating obsidian frosted glass card with BackdropFilter blur
-/// - Smooth horizontal slide-drilldown into submenus
-/// - Active checkmark indicators
-/// - Clean typography and Vidstack iconography
+/// - Ultra-premium obsidian frosted glass card with BackdropFilter blur
+/// - Adaptive responsive height & width for all screen sizes (never overflows)
+/// - Speed, Quality, and Audio submenus (Resize, Server, and Subtitle removed)
+/// - Smooth animated transitions and checkmark indicators
 class VidstackSettingsPopover extends StatefulWidget {
   final PlayerController controller;
   final VoidCallback onClose;
@@ -108,91 +105,83 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
         : 'Default';
   }
 
-  String _getSubtitleLabel() {
-    final cur = widget.controller.currentSubtitleSource;
-    if (cur == null || cur.name == 'Off' || cur.type == BetterPlayerSubtitlesSourceType.none) {
-      return 'Off';
-    }
-    return cur.name ?? 'On';
-  }
-
-  String _getServerLabel() {
-    if (widget.controller.selectedServer.isNotEmpty) {
-      return widget.controller.selectedServer;
-    }
-    final cur = widget.controller.currentSource;
-    if (cur != null) {
-      final name = cur.displayName.isNotEmpty
-          ? cur.displayName
-          : (cur.sourceName.isNotEmpty ? cur.sourceName : 'Server 1');
-      return name;
-    }
-    return 'Server 1';
-  }
-
   double _getCaretRightPadding() {
     switch (_currentMenu) {
-      case VidstackSettingsSubmenu.audio:
       case VidstackSettingsSubmenu.subtitles:
-        return 123.0;
+        return 124.0;
+      case VidstackSettingsSubmenu.audio:
+        return 88.0;
       case VidstackSettingsSubmenu.root:
       case VidstackSettingsSubmenu.speed:
       case VidstackSettingsSubmenu.quality:
-      case VidstackSettingsSubmenu.servers:
-      case VidstackSettingsSubmenu.aspect:
-      default:
-        return 92.0;
+        return 52.0;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final popoverWidth = (media.size.width * 0.65).clamp(210.0, 260.0);
+    final popoverMaxHeight = (media.size.height * 0.72).clamp(160.0, 275.0);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Container(
-          width: 260,
-          decoration: BoxDecoration(
-            color: const Color(0xFF14151F), // 100% solid, fully opaque obsidian background (zero transparency)
-            borderRadius: BorderRadius.circular(VidstackTheme.cardRadius),
-            border: Border.all(color: const Color(0x38FFFFFF), width: 1.0),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black,
-                blurRadius: 32,
-                spreadRadius: 3,
-                offset: Offset(0, 10),
-              ),
-            ],
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: popoverWidth,
+            maxHeight: popoverMaxHeight,
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(VidstackTheme.cardRadius),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final inOffset = _isForward
-                    ? const Offset(0.15, 0.0)
-                    : const Offset(-0.15, 0.0);
-                return SlideTransition(
-                  position: Tween<Offset>(begin: inOffset, end: Offset.zero).animate(animation),
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
-              child: _buildSubmenuView(),
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                width: popoverWidth,
+                decoration: BoxDecoration(
+                  color: const Color(0xF210121C), // Deep obsidian frosted glass
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    width: 1.0,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black87,
+                      blurRadius: 36,
+                      spreadRadius: 2,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    final inOffset = _isForward
+                        ? const Offset(0.12, 0.0)
+                        : const Offset(-0.12, 0.0);
+                    return SlideTransition(
+                      position: Tween<Offset>(begin: inOffset, end: Offset.zero).animate(animation),
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: _buildSubmenuView(popoverMaxHeight),
+                ),
+              ),
             ),
           ),
         ),
-        // Caret pointer pointing down to the active button
+        // Caret pointer pointing down towards the active button
         Padding(
           padding: EdgeInsets.only(right: _getCaretRightPadding()),
-          child: CustomPaint(
-            size: const Size(14, 7),
-            painter: const _CaretPainter(
-              color: Color(0xFF14151F),
-              borderColor: Color(0x38FFFFFF),
+          child: const CustomPaint(
+            size: Size(14, 7),
+            painter: _CaretPainter(
+              color: Color(0xF210121C),
+              borderColor: Color(0x28FFFFFF),
             ),
           ),
         ),
@@ -200,114 +189,93 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
     );
   }
 
-  Widget _buildSubmenuView() {
+  Widget _buildSubmenuView(double maxHeight) {
     switch (_currentMenu) {
       case VidstackSettingsSubmenu.root:
-        return _buildRootMenu();
+        return _buildRootMenu(maxHeight);
       case VidstackSettingsSubmenu.speed:
-        return _buildSpeedMenu();
+        return _buildSpeedMenu(maxHeight);
       case VidstackSettingsSubmenu.quality:
-        return _buildQualityMenu();
+        return _buildQualityMenu(maxHeight);
       case VidstackSettingsSubmenu.audio:
-        return _buildAudioMenu();
+        return _buildAudioMenu(maxHeight);
       case VidstackSettingsSubmenu.subtitles:
-        return _buildSubtitleMenu();
-      case VidstackSettingsSubmenu.servers:
-        return _buildServerMenu();
-      case VidstackSettingsSubmenu.aspect:
-        return _buildAspectMenu();
+        return _buildSubtitleMenu(maxHeight);
     }
   }
 
   // ─── ROOT MENU ─────────────────────────────────────────────────────────
 
-  Widget _buildRootMenu() {
-    return Column(
+  Widget _buildRootMenu(double maxHeight) {
+    return SingleChildScrollView(
       key: const ValueKey('root'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-          child: Row(
-            children: [
-              VidstackIcon.settings(size: 16, color: VidstackTheme.textMuted),
-              const SizedBox(width: 8),
-              Text(
-                'Settings',
-                style: GoogleFonts.inter(
-                  color: VidstackTheme.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 8),
+            child: Row(
+              children: [
+                VidstackIcon.settings(size: 15, color: VidstackTheme.textMuted),
+                const SizedBox(width: 8),
+                Text(
+                  'Settings',
+                  style: GoogleFonts.inter(
+                    color: VidstackTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: widget.onClose,
-                child: const Icon(Icons.close_rounded, size: 18, color: VidstackTheme.textMuted),
-              ),
-            ],
+                const Spacer(),
+                GestureDetector(
+                  onTap: widget.onClose,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close_rounded, size: 14, color: VidstackTheme.textMuted),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
 
-        const Divider(color: VidstackTheme.borderSubtle, height: 1),
+          const Divider(color: VidstackTheme.borderSubtle, height: 1),
 
-        // 1. Playback Speed
-        _buildRootRow(
-          icon: VidstackIcon.speed(size: 18),
-          title: 'Speed',
-          value: _getSpeedLabel(widget.controller.playbackSpeed),
-          onTap: () => _navigateTo(VidstackSettingsSubmenu.speed),
-        ),
-
-        // 2. Quality
-        _buildRootRow(
-          icon: VidstackIcon.quality(size: 18),
-          title: 'Quality',
-          value: _getQualityLabel(),
-          onTap: () => _navigateTo(VidstackSettingsSubmenu.quality),
-        ),
-
-        // 3. Audio Track
-        _buildRootRow(
-          icon: VidstackIcon.audio(size: 18),
-          title: 'Audio',
-          value: _getAudioLabel(),
-          onTap: () => _navigateTo(VidstackSettingsSubmenu.audio),
-        ),
-
-        // 4. Subtitles
-        _buildRootRow(
-          icon: VidstackIcon.captions(
-            size: 18,
-            isActive: widget.controller.isSubtitleActive,
-          ),
-          title: 'Subtitles',
-          value: _getSubtitleLabel(),
-          onTap: () => _navigateTo(VidstackSettingsSubmenu.subtitles),
-        ),
-
-        // 5. Server Source
-        if (widget.controller.currentServers.isNotEmpty || widget.controller.sources.isNotEmpty)
+          // 1. Playback Speed
           _buildRootRow(
-            icon: VidstackIcon.server(size: 18),
-            title: 'Server',
-            value: _getServerLabel(),
-            onTap: () => _navigateTo(VidstackSettingsSubmenu.servers),
+            icon: VidstackIcon.speed(size: 17),
+            title: 'Speed',
+            value: _getSpeedLabel(widget.controller.playbackSpeed),
+            onTap: () => _navigateTo(VidstackSettingsSubmenu.speed),
           ),
 
-        // 6. Video Fit / Aspect Ratio
-        _buildRootRow(
-          icon: VidstackIcon.aspect(size: 18),
-          title: 'Resize Mode',
-          value: widget.controller.resizeModeLabel,
-          onTap: () => _navigateTo(VidstackSettingsSubmenu.aspect),
-        ),
+          // 2. Quality
+          _buildRootRow(
+            icon: VidstackIcon.quality(size: 17),
+            title: 'Quality',
+            value: _getQualityLabel(),
+            onTap: () => _navigateTo(VidstackSettingsSubmenu.quality),
+          ),
 
-        const SizedBox(height: 6),
-      ],
+          // 3. Audio Track
+          _buildRootRow(
+            icon: VidstackIcon.audio(size: 17),
+            title: 'Audio',
+            value: _getAudioLabel(),
+            onTap: () => _navigateTo(VidstackSettingsSubmenu.audio),
+          ),
+
+          const SizedBox(height: 6),
+        ],
+      ),
     );
   }
 
@@ -322,7 +290,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
       splashColor: Colors.white10,
       highlightColor: Colors.white.withValues(alpha: 0.05),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         child: Row(
           children: [
             SizedBox(width: 22, height: 22, child: Center(child: icon)),
@@ -337,7 +305,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             ),
             const Spacer(),
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 100),
+              constraints: const BoxConstraints(maxWidth: 95),
               child: Text(
                 value,
                 maxLines: 1,
@@ -351,7 +319,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
               ),
             ),
             const SizedBox(width: 6),
-            VidstackIcon.chevronRight(size: 14, color: VidstackTheme.textMuted),
+            VidstackIcon.chevronRight(size: 13, color: VidstackTheme.textMuted),
           ],
         ),
       ),
@@ -365,7 +333,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
         _currentMenu == widget.initialMenu;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
       child: Row(
         children: [
           if (isDirectModal) ...[
@@ -388,7 +356,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  VidstackIcon.chevronLeft(size: 16, color: Colors.white),
+                  VidstackIcon.chevronLeft(size: 15, color: Colors.white),
                   const SizedBox(width: 6),
                   Text(
                     title,
@@ -407,9 +375,9 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             onTap: widget.onClose,
             behavior: HitTestBehavior.opaque,
             child: Container(
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
+                color: Colors.white.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
@@ -422,7 +390,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
 
   // ─── SPEED SUBMENU ─────────────────────────────────────────────────────
 
-  Widget _buildSpeedMenu() {
+  Widget _buildSpeedMenu(double maxHeight) {
     const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
     final currentSpeed = widget.controller.playbackSpeed;
 
@@ -434,7 +402,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
         _buildSubmenuHeader('Playback Speed'),
         const Divider(color: VidstackTheme.borderSubtle, height: 1),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 240),
+          constraints: BoxConstraints(maxHeight: maxHeight - 48),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
@@ -454,14 +422,14 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
       ],
     );
   }
 
   // ─── QUALITY SUBMENU ───────────────────────────────────────────────────
 
-  Widget _buildQualityMenu() {
+  Widget _buildQualityMenu(double maxHeight) {
     final Map<String, String> allResolutions =
         Map.from(widget.controller.availableResolutions);
     for (final s in widget.controller.sources) {
@@ -498,7 +466,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
         _buildSubmenuHeader('Quality'),
         const Divider(color: VidstackTheme.borderSubtle, height: 1),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 240),
+          constraints: BoxConstraints(maxHeight: maxHeight - 48),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
@@ -546,14 +514,14 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
       ],
     );
   }
 
   // ─── AUDIO SUBMENU ─────────────────────────────────────────────────────
 
-  Widget _buildAudioMenu() {
+  Widget _buildAudioMenu(double maxHeight) {
     final tracks = widget.controller.audioTracks;
     final current = widget.controller.currentAudioTrack;
     final bool isDirect = widget.initialMenu == VidstackSettingsSubmenu.audio;
@@ -565,7 +533,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
       children: [
         _buildSubmenuHeader(
           'Audio Track',
-          icon: VidstackIcon.audio(size: 16, color: Colors.white),
+          icon: VidstackIcon.audio(size: 15, color: Colors.white),
         ),
         const Divider(color: VidstackTheme.borderSubtle, height: 1),
         if (tracks.isEmpty)
@@ -578,7 +546,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
           )
         else
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
+            constraints: BoxConstraints(maxHeight: maxHeight - 48),
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: Column(
@@ -603,24 +571,24 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
               ),
             ),
           ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
       ],
     );
   }
 
-  // ─── SUBTITLE SUBMENU ──────────────────────────────────────────────────
+  // ─── SUBTITLES SUBMENU ──────────────────────────────────────────────────
 
-  Widget _buildSubtitleMenu() {
-    final sources = widget.controller.subtitleSources;
+  Widget _buildSubtitleMenu(double maxHeight) {
+    final subs = widget.controller.subtitleSources;
     final current = widget.controller.currentSubtitleSource;
-    final isOff = current == null ||
-        current.name == 'Off' ||
-        current.type == BetterPlayerSubtitlesSourceType.none;
-    final bool isDirect = widget.initialMenu == VidstackSettingsSubmenu.subtitles;
-
-    final validSources = sources
+    final isOff = widget.controller.subtitlesExplicitlyDisabled ||
+        current == null ||
+        current.type == BetterPlayerSubtitlesSourceType.none ||
+        current.name == 'Off';
+    final availableSubs = subs
         .where((s) => s.type != BetterPlayerSubtitlesSourceType.none && s.name != 'Off')
         .toList();
+    final bool isDirect = widget.initialMenu == VidstackSettingsSubmenu.subtitles;
 
     return Column(
       key: const ValueKey('subtitles'),
@@ -629,19 +597,21 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
       children: [
         _buildSubmenuHeader(
           'Subtitles',
-          icon: VidstackIcon.captions(size: 16, color: Colors.white),
+          icon: VidstackIcon.captions(size: 15, color: Colors.white),
         ),
         const Divider(color: VidstackTheme.borderSubtle, height: 1),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 240),
+          constraints: BoxConstraints(maxHeight: maxHeight - 48),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // "Off" option (Subtitles turned off)
                 _buildOptionRow(
                   title: 'Off',
+                  subtitle: 'Disable subtitles',
                   isSelected: isOff,
                   onTap: () {
                     widget.controller.disableSubtitles();
@@ -652,10 +622,22 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
                     }
                   },
                 ),
-                ...validSources.map((s) {
-                  final isSelected = !isOff && current.name == s.name;
+                if (availableSubs.isEmpty && isOff)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    child: Text(
+                      'No additional subtitle tracks available',
+                      style: GoogleFonts.inter(
+                        color: VidstackTheme.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ...availableSubs.map((s) {
+                  final isSelected = !isOff && (current.name == s.name);
+                  final label = s.name ?? 'Subtitle Track';
                   return _buildOptionRow(
-                    title: s.name ?? 'Subtitle Track',
+                    title: label,
                     isSelected: isSelected,
                     onTap: () {
                       widget.controller.setSubtitleSource(s);
@@ -671,116 +653,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             ),
           ),
         ),
-        const SizedBox(height: 6),
-      ],
-    );
-  }
-
-  // ─── SERVER SUBMENU ────────────────────────────────────────────────────
-
-  Widget _buildServerMenu() {
-    final servers = widget.controller.currentServers;
-    final selectedServer = widget.controller.selectedServer;
-
-    return Column(
-      key: const ValueKey('servers'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildSubmenuHeader('Streaming Server'),
-        const Divider(color: VidstackTheme.borderSubtle, height: 1),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 240),
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: servers.isNotEmpty
-                  ? servers.entries.map((entry) {
-                      final serverName = entry.key;
-                      final streamUrl = entry.value;
-                      final isSelected = selectedServer.isNotEmpty
-                          ? selectedServer == serverName
-                          : (widget.controller.currentSource?.url == streamUrl);
-
-                      String? subtitle;
-                      if (serverName.contains('FSLv2')) {
-                        subtitle = 'Fastest direct streaming • Low latency';
-                      } else if (serverName.contains('FSL')) {
-                        subtitle = 'Direct high-speed streaming';
-                      } else if (serverName.contains('FastDL') || serverName.contains('Google')) {
-                        subtitle = 'Google Cloud CDN streaming';
-                      } else if (serverName.contains('Pixeldrain')) {
-                        subtitle = 'Reliable high-bandwidth fallback';
-                      }
-
-                      return _buildOptionRow(
-                        title: serverName,
-                        subtitle: subtitle,
-                        isSelected: isSelected,
-                        onTap: () {
-                          widget.controller.switchServer(serverName, streamUrl);
-                          _navigateBack();
-                        },
-                      );
-                    }).toList()
-                  : [
-                      _buildOptionRow(
-                        title: selectedServer.isNotEmpty ? selectedServer : 'Server 2 (FSLv2)',
-                        subtitle: 'Primary direct stream',
-                        isSelected: true,
-                        onTap: _navigateBack,
-                      ),
-                    ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-      ],
-    );
-  }
-
-  // ─── ASPECT RATIO SUBMENU ──────────────────────────────────────────────
-
-  Widget _buildAspectMenu() {
-    final curMode = widget.controller.resizeMode;
-
-    return Column(
-      key: const ValueKey('aspect'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildSubmenuHeader('Resize Mode'),
-        const Divider(color: VidstackTheme.borderSubtle, height: 1),
-        _buildOptionRow(
-          title: 'Fit (Letterbox)',
-          subtitle: 'Maintains original aspect ratio',
-          isSelected: curMode == VideoResizeMode.fit,
-          onTap: () {
-            widget.controller.setResizeMode(VideoResizeMode.fit);
-            _navigateBack();
-          },
-        ),
-        _buildOptionRow(
-          title: 'Fill (Crop)',
-          subtitle: 'Fills display without black bars',
-          isSelected: curMode == VideoResizeMode.fill,
-          onTap: () {
-            widget.controller.setResizeMode(VideoResizeMode.fill);
-            _navigateBack();
-          },
-        ),
-        _buildOptionRow(
-          title: 'Stretch (Full)',
-          subtitle: 'Stretches content to screen edges',
-          isSelected: curMode == VideoResizeMode.zoom,
-          onTap: () {
-            widget.controller.setResizeMode(VideoResizeMode.zoom);
-            _navigateBack();
-          },
-        ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
       ],
     );
   }
@@ -796,7 +669,7 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
       splashColor: Colors.white10,
       highlightColor: Colors.white.withValues(alpha: 0.05),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         child: Row(
           children: [
             Expanded(
@@ -827,11 +700,11 @@ class _VidstackSettingsPopoverState extends State<VidstackSettingsPopover>
             ),
             if (isSelected)
               VidstackIcon.check(
-                size: 16,
+                size: 15,
                 color: VidstackTheme.brand,
               )
             else
-              const SizedBox(width: 16),
+              const SizedBox(width: 15),
           ],
         ),
       ),

@@ -16,10 +16,6 @@ import '../../../services/peachify_extractor.dart';
 import 'player_controller.dart';
 import 'player_gestures.dart';
 import 'player_overlay.dart';
-import 'widgets/audio_track_selector_sheet.dart';
-import 'widgets/subtitle_track_selector_sheet.dart';
-import 'widgets/speed_selector_sheet.dart';
-import 'widgets/source_selector_sheet.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String url;
@@ -82,6 +78,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   String? _resolvedLogoUrl;
   Timer? _progressSaveTimer;
   bool _hasStartedPlaying = false;
+  bool _isInPipMode = false;
 
   @override
   void initState() {
@@ -168,6 +165,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   void _setupPipListeners() {
+    PipController.instance.onPipModeChanged = (inPip) {
+      if (!mounted) return;
+      setState(() {
+        _isInPipMode = inPip;
+      });
+      _controller.setPipMode(inPip);
+    };
+
+    PipController.instance.onUserLeaveHint = () {
+      if (!mounted) return;
+      setState(() {
+        _isInPipMode = true;
+      });
+      _controller.setPipMode(true);
+    };
+
     PipController.instance.onPipAction = (action) {
       if (!mounted) return;
       switch (action) {
@@ -221,6 +234,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _saveWatchProgress();
     _progressSaveTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    PipController.instance.onPipModeChanged = null;
+    PipController.instance.onUserLeaveHint = null;
+    PipController.instance.onPipAction = null;
     _controller.removeListener(_onControllerUpdate);
     _controller.dispose();
     _restoreOrientations();
@@ -255,7 +271,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ),
 
               // 2. Gesture Controls (VLC style) + Vidstack Player Overlay
-              if (isReady)
+              // In PiP mode, completely omit gestures and overlay to never interfere with PiP controls
+              if (isReady && !_isInPipMode)
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: PlayerGestures(
@@ -270,11 +287,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ),
 
               // 3. Subtitle Layer (Vidstack styled, subtle grey pill background, small text at center bottom)
-              if (isReady)
+              if (isReady && !_isInPipMode)
                 _buildSubtitleOverlay(context),
 
               // 4. Cinematic Landscape Loading Screen
-              if (!isReady)
+              if (!isReady && !_isInPipMode)
                 _buildCinematicLoadingScreen(),
             ],
           );
@@ -487,54 +504,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   void _handlePip() {
     try {
+      // Instantly hide controls and set PiP state before entering native PiP
+      setState(() => _isInPipMode = true);
+      _controller.setPipMode(true);
       PipController.instance.enterPipMode();
     } catch (e) {
       debugPrint('[VideoPlayer] PiP error: $e');
     }
   }
 
-  void _showAudioSelector() {
-    _controller.setModalOpen(true);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => AudioTrackSelectorSheet(controller: _controller),
-    ).whenComplete(() => _controller.setModalOpen(false));
-  }
 
-  void _showSubtitleSelector() {
-    _controller.setModalOpen(true);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => SubtitleTrackSelectorSheet(controller: _controller),
-    ).whenComplete(() => _controller.setModalOpen(false));
-  }
-
-  void _showSpeedSelector() {
-    _controller.setModalOpen(true);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => SpeedSelectorSheet(controller: _controller),
-    ).whenComplete(() => _controller.setModalOpen(false));
-  }
-
-  void _showSourceSelector() {
-    _controller.setModalOpen(true);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => SourceSelectorSheet(controller: _controller),
-    ).whenComplete(() => _controller.setModalOpen(false));
-  }
-
-  void _showSettings() {
-    _showSpeedSelector();
-  }
 
   Widget _buildSubtitleOverlay(BuildContext context) {
     if (_controller.subtitlesExplicitlyDisabled ||

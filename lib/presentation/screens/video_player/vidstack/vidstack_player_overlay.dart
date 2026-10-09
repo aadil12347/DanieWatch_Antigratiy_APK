@@ -152,31 +152,26 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
 
     switch (_popoverSubmenu) {
       case VidstackSettingsSubmenu.subtitles:
-        return safeRight + 65.0;
+        return safeRight + 56.0;
       case VidstackSettingsSubmenu.audio:
-        return safeRight + 25.0;
+        return safeRight + 20.0;
       case VidstackSettingsSubmenu.root:
       case VidstackSettingsSubmenu.speed:
       case VidstackSettingsSubmenu.quality:
-      case VidstackSettingsSubmenu.servers:
-      case VidstackSettingsSubmenu.aspect:
-      default:
-        return safeRight + 16.0;
+        return safeRight + 12.0;
     }
   }
 
   Alignment _getPopoverAlignment() {
     switch (_popoverSubmenu) {
       case VidstackSettingsSubmenu.subtitles:
+        return Alignment.bottomCenter;
       case VidstackSettingsSubmenu.audio:
         return Alignment.bottomCenter;
       case VidstackSettingsSubmenu.root:
       case VidstackSettingsSubmenu.speed:
       case VidstackSettingsSubmenu.quality:
-      case VidstackSettingsSubmenu.servers:
-      case VidstackSettingsSubmenu.aspect:
-      default:
-        return const Alignment(0.24, 1.0);
+        return const Alignment(0.40, 1.0);
     }
   }
 
@@ -185,6 +180,11 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
+        // In PiP mode, NEVER show any controls or overlays
+        if (widget.controller.isInPip) {
+          return const SizedBox.shrink();
+        }
+
         // Locked mode: only show floating unlock pill with auto-vanish
         if (widget.controller.isLocked) {
           return _buildLockedOverlay();
@@ -273,7 +273,8 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   // ─── FULL CONTROLS OVERLAY ───────────────────────────────────────────────
 
   Widget _buildFullOverlay(BuildContext context, {bool alwaysVisible = false}) {
-    final popoverBottom = MediaQuery.of(context).padding.bottom + 78.0;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    final popoverBottom = (safeBottom + 56.0).clamp(42.0, 78.0);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -613,10 +614,9 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
     final isSettingsOpen = _showSettingsPopover && (
       _popoverSubmenu == VidstackSettingsSubmenu.root ||
       _popoverSubmenu == VidstackSettingsSubmenu.speed ||
-      _popoverSubmenu == VidstackSettingsSubmenu.quality ||
-      _popoverSubmenu == VidstackSettingsSubmenu.servers ||
-      _popoverSubmenu == VidstackSettingsSubmenu.aspect
+      _popoverSubmenu == VidstackSettingsSubmenu.quality
     );
+    final hasActiveSubtitles = widget.controller.isSubtitleActive;
 
     return SafeArea(
       child: Padding(
@@ -635,139 +635,177 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
 
             const SizedBox(height: 2),
 
-            // 2. Vidstack Controls Row
-            Row(
-              children: [
-                // ─── LEFT CLUSTER ────────────────────────────────────────
-                // Mini Play / Pause Toggle
-                VidstackButton(
-                  tooltip: widget.controller.isPlaying ? 'Pause (k)' : 'Play (k)',
-                  onTap: () {
-                    HapticFeedback.lightImpact(); // minor vibration on play pause
-                    widget.controller.togglePlayPause();
-                  },
-                  child: widget.controller.isPlaying
-                      ? VidstackIcon.pause(size: 20)
-                      : VidstackIcon.play(size: 20),
-                ),
+            // 2. Vidstack Controls Row — Adaptive & Responsive to all mobile screen sizes
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 540;
+                final isUltraCompact = constraints.maxWidth < 430;
+                final buttonSize = isCompact ? 32.0 : 36.0;
+                final iconSize = isCompact ? 17.0 : 20.0;
+                final btnSpacing = isCompact ? 2.0 : 4.0;
 
-                const SizedBox(width: 4),
-
-                // Vidstack Volume Button + Expandable Mini Slider
-                const VidstackVolumeControl(),
-
-                const SizedBox(width: 8),
-
-                // Time Display with countdown toggle
-                GestureDetector(
-                  onTap: () {
-                    setState(() => _showCountdownTime = !_showCountdownTime);
-                  },
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _formatDuration(position),
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
+                return Row(
+                  children: [
+                    // ─── LEFT CLUSTER (Strictly bottom-left aligned) ─────────
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Mini Play / Pause Toggle
+                        VidstackButton(
+                          size: buttonSize,
+                          tooltip: widget.controller.isPlaying ? 'Pause (k)' : 'Play (k)',
+                          onTap: () {
+                            HapticFeedback.lightImpact(); // minor vibration on play pause
+                            widget.controller.togglePlayPause();
+                          },
+                          child: widget.controller.isPlaying
+                              ? VidstackIcon.pause(size: iconSize)
+                              : VidstackIcon.play(size: iconSize),
                         ),
-                      ),
-                      Text(
-                        _showCountdownTime
-                            ? ' / -${_formatDuration(duration - position > Duration.zero ? duration - position : Duration.zero)}'
-                            : ' / ${_formatDuration(duration)}',
-                        style: GoogleFonts.inter(
-                          color: VidstackTheme.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.2,
+
+                        SizedBox(width: btnSpacing),
+
+                        // Vidstack Volume Button + Expandable Mini Slider
+                        const VidstackVolumeControl(),
+
+                        SizedBox(width: isCompact ? 4.0 : 8.0),
+
+                        // Time Display with countdown toggle
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            setState(() => _showCountdownTime = !_showCountdownTime);
+                          },
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _formatDuration(position),
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: isUltraCompact ? 10 : 12,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              if (!isUltraCompact)
+                                Text(
+                                  _showCountdownTime
+                                      ? ' / -${_formatDuration(duration - position > Duration.zero ? duration - position : Duration.zero)}'
+                                      : ' / ${_formatDuration(duration)}',
+                                  style: GoogleFonts.inter(
+                                    color: VidstackTheme.textMuted,
+                                    fontSize: isCompact ? 10 : 12,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const Spacer(),
-
-                // ─── RIGHT CLUSTER ───────────────────────────────────────
-                // Subtitles / Captions Button (opens sleek popover directly to subtitles tab)
-                VidstackButton(
-                  tooltip: 'Subtitles (c)',
-                  isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
-                  onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.subtitles),
-                  child: AnimatedScale(
-                    scale: isSubtitlesOpen ? 1.15 : 1.0,
-                    duration: const Duration(milliseconds: 240),
-                    curve: Curves.easeOutBack,
-                    child: VidstackIcon.captions(
-                      size: 20,
-                      isActive: isSubtitlesOpen || widget.controller.isSubtitleActive,
+                      ],
                     ),
-                  ),
-                ),
 
-                const SizedBox(width: 2),
+                    // Spacer expands to push the right cluster firmly to the far bottom-right
+                    const Spacer(),
 
-                // Audio Tracks Button (opens sleek popover directly to audio tab)
-                VidstackButton(
-                  tooltip: 'Audio Track',
-                  isActive: isAudioOpen,
-                  onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.audio),
-                  child: AnimatedScale(
-                    scale: isAudioOpen ? 1.15 : 1.0,
-                    duration: const Duration(milliseconds: 240),
-                    curve: Curves.easeOutBack,
-                    child: VidstackIcon.audio(
-                      size: 20,
-                      color: isAudioOpen ? VidstackTheme.brand : Colors.white,
+                    // ─── RIGHT CLUSTER (Strictly bottom-right pinned) ────────
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Subtitles CC Button (opens popover directly to subtitles submenu)
+                        VidstackButton(
+                          size: buttonSize,
+                          tooltip: hasActiveSubtitles ? 'Subtitles (Enabled)' : 'Subtitles (c)',
+                          isActive: isSubtitlesOpen || hasActiveSubtitles,
+                          onTap: () {
+                            if (widget.onSubtitleTap != null) {
+                              widget.onSubtitleTap!();
+                            } else {
+                              _toggleSettingsPopover(VidstackSettingsSubmenu.subtitles);
+                            }
+                          },
+                          child: AnimatedScale(
+                            scale: isSubtitlesOpen ? 1.15 : 1.0,
+                            duration: const Duration(milliseconds: 240),
+                            curve: Curves.easeOutBack,
+                            child: VidstackIcon.captions(
+                              size: iconSize,
+                              color: (isSubtitlesOpen || hasActiveSubtitles)
+                                  ? VidstackTheme.brand
+                                  : Colors.white,
+                              isActive: hasActiveSubtitles,
+                            ),
+                          ),
+                        ),
+
+                        SizedBox(width: btnSpacing),
+
+                        // Audio Tracks Button (opens sleek popover directly to audio tab)
+                        VidstackButton(
+                          size: buttonSize,
+                          tooltip: 'Audio Track',
+                          isActive: isAudioOpen,
+                          onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.audio),
+                          child: AnimatedScale(
+                            scale: isAudioOpen ? 1.15 : 1.0,
+                            duration: const Duration(milliseconds: 240),
+                            curve: Curves.easeOutBack,
+                            child: VidstackIcon.audio(
+                              size: iconSize,
+                              color: isAudioOpen ? VidstackTheme.brand : Colors.white,
+                            ),
+                          ),
+                        ),
+
+                        SizedBox(width: btnSpacing),
+
+                        // Settings Gear Button (Opens Vidstack Popover)
+                        VidstackButton(
+                          size: buttonSize,
+                          tooltip: 'Settings',
+                          isActive: isSettingsOpen,
+                          onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.root),
+                          child: AnimatedRotation(
+                            turns: isSettingsOpen ? 0.25 : 0.0,
+                            duration: const Duration(milliseconds: 320),
+                            curve: Curves.easeOutCubic,
+                            child: AnimatedScale(
+                              scale: isSettingsOpen ? 1.12 : 1.0,
+                              duration: const Duration(milliseconds: 240),
+                              curve: Curves.easeOutBack,
+                              child: VidstackIcon.settings(
+                                size: iconSize,
+                                color: isSettingsOpen ? VidstackTheme.brand : Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        SizedBox(width: btnSpacing),
+
+                        // Picture-in-Picture Button
+                        VidstackButton(
+                          size: buttonSize,
+                          tooltip: 'Picture in Picture (p)',
+                          onTap: widget.onPipTap,
+                          child: VidstackIcon.pip(size: iconSize),
+                        ),
+
+                        SizedBox(width: btnSpacing),
+
+                        // Aspect Ratio / Fullscreen Button
+                        VidstackButton(
+                          size: buttonSize,
+                          tooltip: 'Resize Mode: ${widget.controller.resizeModeLabel}',
+                          onTap: widget.controller.cycleResizeMode,
+                          child: VidstackIcon.aspect(size: iconSize),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-
-                const SizedBox(width: 2),
-
-                // Settings Gear Button (Opens Vidstack Popover)
-                VidstackButton(
-                  tooltip: 'Settings',
-                  isActive: isSettingsOpen,
-                  onTap: () => _toggleSettingsPopover(VidstackSettingsSubmenu.root),
-                  child: AnimatedRotation(
-                    turns: isSettingsOpen ? 0.25 : 0.0,
-                    duration: const Duration(milliseconds: 320),
-                    curve: Curves.easeOutCubic,
-                    child: AnimatedScale(
-                      scale: isSettingsOpen ? 1.12 : 1.0,
-                      duration: const Duration(milliseconds: 240),
-                      curve: Curves.easeOutBack,
-                      child: VidstackIcon.settings(
-                        size: 20,
-                        color: isSettingsOpen ? VidstackTheme.brand : Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 2),
-
-                // Picture-in-Picture Button
-                VidstackButton(
-                  tooltip: 'Picture in Picture (p)',
-                  onTap: widget.onPipTap,
-                  child: VidstackIcon.pip(size: 20),
-                ),
-
-                const SizedBox(width: 2),
-
-                // Aspect Ratio / Fullscreen Button
-                VidstackButton(
-                  tooltip: 'Resize Mode: ${widget.controller.resizeModeLabel}',
-                  onTap: widget.controller.cycleResizeMode,
-                  child: VidstackIcon.aspect(size: 20),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
           ],
         ),

@@ -606,15 +606,23 @@ class _PlayerGesturesState extends State<PlayerGestures>
   void _onVerticalDragStart(DragStartDetails details) {
     if (widget.controller.isLocked || _pointerPositions.length >= 2) return;
     final screenWidth = MediaQuery.of(context).size.width;
-    _isLeftSide = details.globalPosition.dx < screenWidth / 2;
-    _isVerticalDrag = true;
+    final dx = details.globalPosition.dx;
 
-    if (_isLeftSide) {
+    if (dx < screenWidth * 0.30) {
+      _isLeftSide = true;
+      _isVerticalDrag = true;
       _brightnessIndicatorTimer?.cancel();
       _showBrightnessNotifier.value = true;
-    } else {
+    } else if (dx > screenWidth * 0.70) {
+      _isLeftSide = false;
+      _isVerticalDrag = true;
       _volumeIndicatorTimer?.cancel();
       _showVolumeNotifier.value = true;
+    } else {
+      // Middle 40% of the screen (30% to 70% width) is a dead zone:
+      // Vertical swipes here do nothing so the user can easily pull down notification shade
+      // or swipe up for system home/PiP gestures without accidental adjustments.
+      _isVerticalDrag = false;
     }
   }
 
@@ -637,6 +645,7 @@ class _PlayerGesturesState extends State<PlayerGestures>
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
+    if (!_isVerticalDrag) return;
     _isVerticalDrag = false;
     _volumeIndicatorTimer?.cancel();
     _brightnessIndicatorTimer?.cancel();
