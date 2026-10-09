@@ -1554,34 +1554,44 @@ class MovieSiteScraperService {
     return score;
   }
 
+  /// Invalidate cache for a specific category to force instant fresh fetch
+  void invalidateCategoryCache(String categoryOrGenre) {
+    final key = categoryOrGenre.toLowerCase().trim();
+    _categoryPageCache.removeWhere((k, _) => k.startsWith('${key}_page_'));
+    _lastCategoryRefreshTimes.remove(key);
+  }
+
   /// Live fetch category/genre posts by page (supports infinite scrolling)
   Future<List<ManifestItem>> fetchCategoryPage(
     String categoryOrGenre, {
     int page = 1,
     Map<String, ManifestItem>? localMap,
+    bool forceRefresh = false,
   }) async {
     final key = categoryOrGenre.toLowerCase().trim();
     final cacheKey = '${key}_page_$page';
 
-    // 1. Instant return from cache (0ms)
-    final cached = getCategoryPageSync(categoryOrGenre, page: page);
-    if (cached != null && cached.isNotEmpty) {
-      if (page == 1 && shouldRefreshCategory(key)) {
-        // Enqueue background refresh "slowly and gracefully"
-        _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
-      }
-      return cached;
-    }
-
-    // 2. If disk cache wasn't loaded yet, try loading it now
-    if (!_isDiskCacheLoaded) {
-      await loadDiskCache();
-      final diskLoaded = getCategoryPageSync(categoryOrGenre, page: page);
-      if (diskLoaded != null && diskLoaded.isNotEmpty) {
+    // 1. Instant return from cache (0ms) unless forceRefresh is true
+    if (!forceRefresh) {
+      final cached = getCategoryPageSync(categoryOrGenre, page: page);
+      if (cached != null && cached.isNotEmpty) {
         if (page == 1 && shouldRefreshCategory(key)) {
+          // Enqueue background refresh "slowly and gracefully"
           _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
         }
-        return diskLoaded;
+        return cached;
+      }
+
+      // 2. If disk cache wasn't loaded yet, try loading it now
+      if (!_isDiskCacheLoaded) {
+        await loadDiskCache();
+        final diskLoaded = getCategoryPageSync(categoryOrGenre, page: page);
+        if (diskLoaded != null && diskLoaded.isNotEmpty) {
+          if (page == 1 && shouldRefreshCategory(key)) {
+            _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
+          }
+          return diskLoaded;
+        }
       }
     }
 

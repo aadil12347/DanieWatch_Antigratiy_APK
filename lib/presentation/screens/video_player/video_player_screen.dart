@@ -271,7 +271,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
               // 3. Subtitle Layer (Vidstack styled, subtle grey pill background, small text at center bottom)
               if (isReady)
-                RepaintBoundary(child: _buildSubtitleOverlay(context)),
+                _buildSubtitleOverlay(context),
 
               // 4. Cinematic Landscape Loading Screen
               if (!isReady)
@@ -574,8 +574,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       left: 24,
       right: 24,
       bottom: bottomPadding,
-      child: IgnorePointer(
-        child: Center(
+      child: RepaintBoundary(
+        child: IgnorePointer(
+          child: Center(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
             decoration: BoxDecoration(
@@ -612,6 +613,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
 }

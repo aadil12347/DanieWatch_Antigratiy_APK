@@ -9,9 +9,14 @@ import 'underline_glow_indicator.dart';
 /// Uses the passed TabController directly so the red indicator smoothly
 /// tracks swipes and taps. Text sizes animate via AnimatedDefaultTextStyle.
 class TopNavbar extends StatefulWidget {
-  const TopNavbar({super.key, required this.tabController});
+  const TopNavbar({
+    super.key,
+    required this.tabController,
+    this.onTabReselected,
+  });
 
   final TabController tabController;
+  final void Function(int index)? onTabReselected;
 
   static const List<String> items = [
     'Search',
@@ -89,6 +94,11 @@ class _TopNavbarState extends State<TopNavbar> {
       child: TabBar(
         controller: widget.tabController,
         isScrollable: true,
+        onTap: (index) {
+          if (_currentIndex == index) {
+            widget.onTabReselected?.call(index);
+          }
+        },
         dividerColor: Colors.transparent,
         splashFactory: NoSplash.splashFactory,
         overlayColor: WidgetStateProperty.all(Colors.transparent),

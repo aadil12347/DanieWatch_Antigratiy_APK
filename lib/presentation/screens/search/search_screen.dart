@@ -396,7 +396,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                 Column(
                   children: [
                     // Fixed top tab switcher — permanently fixed and always visible regardless of scrolling
-                    TopNavbar(tabController: _tabController),
+                    TopNavbar(
+                      tabController: _tabController,
+                      onTabReselected: (index) {
+                        final label = TopNavbar.items[index];
+                        if (label == 'Search') {
+                          final query = _searchController.text.trim();
+                          if (query.isNotEmpty) {
+                            ref.read(searchProvider('explore').notifier).search(query, immediate: true);
+                          } else {
+                            ref.read(paginatedCategoryProvider('explore').notifier).refresh(forceRefresh: true);
+                          }
+                        } else {
+                          final slug = categoryLabelToSlug(label);
+                          ref.read(paginatedCategoryProvider(slug).notifier).refresh(forceRefresh: true);
+                        }
+                      },
+                    ),
 
                     // ── Scrollable content: search bar or filter chips and grid ──
                     Expanded(
@@ -585,44 +601,68 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
 
       if (!hasSearch) {
         // Landing state: clean empty landing matching save & download empty pages with recent searches
-        return CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _SearchLandingView(
-                recentSearches: widget.recentSearches,
-                onTagSelected: (tag) {
-                  widget.searchController.text = tag;
-                  widget.onSearchChanged(tag, immediate: true);
-                  widget.onSaveRecentSearch(tag);
-                },
-                onRemoveRecent: widget.onRemoveRecentSearch,
-                onClearAll: widget.onClearAllRecentSearches,
+        return RefreshIndicator(
+          color: AppColors.primary,
+          backgroundColor: AppColors.surface,
+          displacement: 20,
+          onRefresh: () async {
+            await ref.read(paginatedCategoryProvider('explore').notifier).refresh(forceRefresh: true);
+          },
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _SearchLandingView(
+                  recentSearches: widget.recentSearches,
+                  onTagSelected: (tag) {
+                    widget.searchController.text = tag;
+                    widget.onSearchChanged(tag, immediate: true);
+                    widget.onSaveRecentSearch(tag);
+                  },
+                  onRemoveRecent: widget.onRemoveRecentSearch,
+                  onClearAll: widget.onClearAllRecentSearches,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       }
 
       if (searchState.results.isEmpty) {
-        return const CustomScrollView(
-          physics: AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: EmptyResultsView(),
-            ),
-          ],
+        return RefreshIndicator(
+          color: AppColors.primary,
+          backgroundColor: AppColors.surface,
+          displacement: 20,
+          onRefresh: () async {
+            ref.read(searchProvider('explore').notifier).search(searchState.query, immediate: true);
+          },
+          child: const CustomScrollView(
+            physics: AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: EmptyResultsView(),
+              ),
+            ],
+          ),
         );
       }
 
-      return CustomScrollView(
-        key: const PageStorageKey('scroll_search_results'),
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          _buildResultsGrid(searchState.results),
-        ],
+      return RefreshIndicator(
+        color: AppColors.primary,
+        backgroundColor: AppColors.surface,
+        displacement: 20,
+        onRefresh: () async {
+          ref.read(searchProvider('explore').notifier).search(searchState.query, immediate: true);
+        },
+        child: CustomScrollView(
+          key: const PageStorageKey('scroll_search_results'),
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            _buildResultsGrid(searchState.results),
+          ],
+        ),
       );
     }
 
@@ -688,22 +728,31 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
         );
       },
       error: (err, _) {
-        return CustomScrollView(
-          key: PageStorageKey('scroll_${widget.categoryLabel}'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: Text(
-                    'Unable to load items: $err',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+        return RefreshIndicator(
+          color: AppColors.primary,
+          backgroundColor: AppColors.surface,
+          displacement: 20,
+          onRefresh: () async {
+            await ref.read(paginatedCategoryProvider(_slug).notifier).refresh(forceRefresh: true);
+          },
+          child: CustomScrollView(
+            key: PageStorageKey('scroll_${widget.categoryLabel}'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: Text(
+                      'Unable to load items: $err\nPull down to retry',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
       data: (pagState) {
@@ -733,19 +782,27 @@ class _CategoryPageState extends ConsumerState<_CategoryPage>
           itemsToDisplay = effectiveItems;
         }
 
-        return NotificationListener<ScrollNotification>(
-          onNotification: _onScrollNotification,
-          child: CustomScrollView(
-            key: PageStorageKey('scroll_${widget.categoryLabel}'),
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: _buildContentSlivers(
-              isSearching,
-              false,
-              hasUserFilters,
-              itemsToDisplay,
-              effectiveItems,
-              pagState,
+        return RefreshIndicator(
+          color: AppColors.primary,
+          backgroundColor: AppColors.surface,
+          displacement: 20,
+          onRefresh: () async {
+            await ref.read(paginatedCategoryProvider(_slug).notifier).refresh(forceRefresh: true);
+          },
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onScrollNotification,
+            child: CustomScrollView(
+              key: PageStorageKey('scroll_${widget.categoryLabel}'),
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: _buildContentSlivers(
+                isSearching,
+                false,
+                hasUserFilters,
+                itemsToDisplay,
+                effectiveItems,
+                pagState,
+              ),
             ),
           ),
         );

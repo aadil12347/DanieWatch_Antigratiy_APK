@@ -468,7 +468,7 @@ internal class BetterPlayer(
         )
         surface = Surface(textureEntry.surfaceTexture())
         exoPlayer?.setVideoSurface(surface)
-        setAudioAttributes(exoPlayer, true)
+        setAudioAttributes(exoPlayer, false)
         exoPlayer?.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
@@ -702,37 +702,10 @@ internal class BetterPlayer(
         val list = ArrayList<MutableMap<String, Any?>>()
         val player = exoPlayer ?: return list
 
-        val mappedTrackInfo = trackSelector.currentMappedTrackInfo
-        if (mappedTrackInfo != null) {
-            var index = 0
-            for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
-                if (mappedTrackInfo.getRendererType(rendererIndex) == C.TRACK_TYPE_AUDIO) {
-                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
-                    for (g in 0 until trackGroupArray.length) {
-                        val group = trackGroupArray.get(g)
-                        for (i in 0 until group.length) {
-                            val format = group.getFormat(i)
-                            val map = HashMap<String, Any?>()
-                            map["index"] = index
-                            map["groupIndex"] = g
-                            map["trackIndex"] = i
-                            map["label"] = format.label
-                            map["language"] = format.language
-                            map["channels"] = format.channelCount
-                            map["bitrate"] = format.bitrate
-                            map["mimeType"] = format.sampleMimeType
-                            map["selected"] = false
-                            list.add(map)
-                            index++
-                        }
-                    }
-                }
-            }
-        }
-
-        if (list.isEmpty()) {
-            var index = 0
-            for (group in player.currentTracks.groups) {
+        var index = 0
+        val currentTracks = player.currentTracks
+        if (!currentTracks.groups.isEmpty()) {
+            for (group in currentTracks.groups) {
                 if (group.type == C.TRACK_TYPE_AUDIO) {
                     for (i in 0 until group.length) {
                         val format = group.getTrackFormat(i)
@@ -749,22 +722,40 @@ internal class BetterPlayer(
                     }
                 }
             }
-        } else {
-            for (group in player.currentTracks.groups) {
-                if (group.type == C.TRACK_TYPE_AUDIO) {
-                    for (i in 0 until group.length) {
-                        if (group.isTrackSelected(i)) {
-                            val format = group.getTrackFormat(i)
-                            for (m in list) {
-                                if (m["label"] == format.label && m["language"] == format.language) {
-                                    m["selected"] = true
-                                }
-                            }
+            if (list.isNotEmpty()) {
+                return list
+            }
+        }
+
+        // Fallback: use mappedTrackInfo from the first audio renderer only to prevent duplicate entries
+        val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+        if (mappedTrackInfo != null) {
+            for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                if (mappedTrackInfo.getRendererType(rendererIndex) == C.TRACK_TYPE_AUDIO) {
+                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
+                    for (g in 0 until trackGroupArray.length) {
+                        val group = trackGroupArray.get(g)
+                        for (i in 0 until group.length) {
+                            val format = group.getFormat(i)
+                            val map = HashMap<String, Any?>()
+                            map["index"] = index
+                            map["groupIndex"] = g
+                            map["trackIndex"] = i
+                            map["label"] = format.label
+                            map["language"] = format.language
+                            map["channels"] = format.channelCount
+                            map["bitrate"] = format.bitrate
+                            map["mimeType"] = format.sampleMimeType
+                            map["selected"] = (index == 0)
+                            list.add(map)
+                            index++
                         }
                     }
+                    if (list.isNotEmpty()) break
                 }
             }
         }
+
         return list
     }
 
@@ -972,103 +963,112 @@ internal class BetterPlayer(
             val player = exoPlayer ?: return
             Log.d(TAG, "setAudioTrack: requested name=$name, index=$index")
 
-            val mappedTrackInfo = trackSelector.currentMappedTrackInfo
-            if (mappedTrackInfo != null) {
-                for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
-                    if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_AUDIO) {
-                        continue
-                    }
-                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
-                    var matchedGroupIndex = -1
-                    var matchedTrackIndex = 0
-                    var flatIndex = 0
+            var targetGroup: androidx.media3.common.TrackGroup? = null
+            var targetTrackIndex = 0
 
-                    for (g in 0 until trackGroupArray.length) {
-                        val group = trackGroupArray.get(g)
-                        for (t in 0 until group.length) {
-                            val format = group.getFormat(t)
-                            val label = format.label
-                            val language = format.language
-                            val isMatch = if (index >= 0) {
-                                flatIndex == index
-                            } else if (!name.isNullOrEmpty()) {
-                                name.equals(label, ignoreCase = true) ||
-                                (language != null && (name.equals(language, ignoreCase = true) ||
-                                 name.startsWith(language, ignoreCase = true) ||
-                                 language.startsWith(name, ignoreCase = true)))
-                            } else {
-                                false
-                            }
-
-                            if (isMatch) {
-                                matchedGroupIndex = g
-                                matchedTrackIndex = t
-                                Log.d(TAG, "setAudioTrack: Found in trackSelector: renderer=$rendererIndex, group=$g, track=$t, label=$label, lang=$language (flatIndex=$flatIndex, reqIndex=$index)")
+            // 1. Try matching by index in player.currentTracks
+            if (index >= 0) {
+                var audioIndex = 0
+                for (group in player.currentTracks.groups) {
+                    if (group.type == C.TRACK_TYPE_AUDIO) {
+                        for (i in 0 until group.length) {
+                            if (audioIndex == index) {
+                                targetGroup = group.mediaTrackGroup
+                                targetTrackIndex = i
+                                Log.d(TAG, "setAudioTrack: matched by index $index -> group=$targetGroup, track=$i")
                                 break
                             }
-                            flatIndex++
+                            audioIndex++
                         }
-                        if (matchedGroupIndex >= 0) break
-                    }
-
-                    if (matchedGroupIndex >= 0) {
-                        val group = trackGroupArray.get(matchedGroupIndex)
-                        val safeTrackIndex = matchedTrackIndex.coerceIn(0, group.length - 1)
-                        val builder = trackSelector.parameters
-                            .buildUpon()
-                            .setRendererDisabled(rendererIndex, false)
-                            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                            .setPreferredAudioLanguage(group.getFormat(safeTrackIndex).language)
-                            .addOverride(TrackSelectionOverride(group, safeTrackIndex))
-                        trackSelector.setParameters(builder)
-
-                        val pBuilder = player.trackSelectionParameters
-                            .buildUpon()
-                            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                            .setPreferredAudioLanguage(group.getFormat(safeTrackIndex).language)
-                            .setOverrideForType(TrackSelectionOverride(group, safeTrackIndex))
-                        player.trackSelectionParameters = pBuilder.build()
-                        Log.d(TAG, "setAudioTrack: Successfully applied audio track selection")
-                        return
+                        if (targetGroup != null) break
                     }
                 }
             }
 
-            // Fallback: match using player.currentTracks
-            var audioIndex = 0
-            for (group in player.currentTracks.groups) {
-                if (group.type == C.TRACK_TYPE_AUDIO) {
-                    for (i in 0 until group.length) {
-                        val format = group.getTrackFormat(i)
-                        val label = format.label
-                        val language = format.language
-                        val isMatch = if (index >= 0) {
-                            audioIndex == index
-                        } else if (!name.isNullOrEmpty()) {
-                            name.equals(label, ignoreCase = true) ||
-                            (language != null && (name.equals(language, ignoreCase = true) ||
-                             name.startsWith(language, ignoreCase = true) ||
-                             language.startsWith(name, ignoreCase = true)))
-                        } else {
-                            false
+            // 2. Fallback: match by label or language in player.currentTracks
+            if (targetGroup == null && !name.isNullOrEmpty()) {
+                for (group in player.currentTracks.groups) {
+                    if (group.type == C.TRACK_TYPE_AUDIO) {
+                        for (i in 0 until group.length) {
+                            val format = group.getTrackFormat(i)
+                            val label = format.label
+                            val language = format.language
+                            if (name.equals(label, ignoreCase = true) ||
+                                (language != null && (name.equals(language, ignoreCase = true) ||
+                                 name.startsWith(language, ignoreCase = true) ||
+                                 language.startsWith(name, ignoreCase = true)))) {
+                                targetGroup = group.mediaTrackGroup
+                                targetTrackIndex = i
+                                Log.d(TAG, "setAudioTrack: matched by name/lang $name -> group=$targetGroup, track=$i")
+                                break
+                            }
                         }
-
-                        if (isMatch) {
-                            Log.d(TAG, "setAudioTrack: Fallback matched on currentTracks: group=${group.mediaTrackGroup}, track=$i")
-                            val builder = player.trackSelectionParameters
-                                .buildUpon()
-                                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                                .setPreferredAudioLanguage(format.language)
-                                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
-                            player.trackSelectionParameters = builder.build()
-                            return
-                        }
-                        audioIndex++
+                        if (targetGroup != null) break
                     }
                 }
+            }
+
+            // 3. Fallback: match in mappedTrackInfo
+            if (targetGroup == null) {
+                val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+                if (mappedTrackInfo != null) {
+                    for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                        if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_AUDIO) continue
+                        val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
+                        var flatIndex = 0
+                        for (g in 0 until trackGroupArray.length) {
+                            val group = trackGroupArray.get(g)
+                            for (t in 0 until group.length) {
+                                val format = group.getFormat(t)
+                                val label = format.label
+                                val language = format.language
+                                val isMatch = if (index >= 0) {
+                                    flatIndex == index
+                                } else if (!name.isNullOrEmpty()) {
+                                    name.equals(label, ignoreCase = true) ||
+                                    (language != null && (name.equals(language, ignoreCase = true) ||
+                                     name.startsWith(language, ignoreCase = true) ||
+                                     language.startsWith(name, ignoreCase = true)))
+                                } else false
+
+                                if (isMatch) {
+                                    targetGroup = group
+                                    targetTrackIndex = t
+                                    break
+                                }
+                                flatIndex++
+                            }
+                            if (targetGroup != null) break
+                        }
+                        if (targetGroup != null) break
+                    }
+                }
+            }
+
+            if (targetGroup != null) {
+                val safeTrackIndex = targetTrackIndex.coerceIn(0, targetGroup.length - 1)
+                val lang = targetGroup.getFormat(safeTrackIndex).language
+
+                // Clear any lingering overrides on trackSelector
+                try {
+                    val tsBuilder = trackSelector.parameters.buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                    trackSelector.setParameters(tsBuilder)
+                } catch (_: Exception) {}
+
+                val pBuilder = player.trackSelectionParameters
+                    .buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                if (lang != null) {
+                    pBuilder.setPreferredAudioLanguage(lang)
+                }
+                pBuilder.setOverrideForType(TrackSelectionOverride(targetGroup, safeTrackIndex))
+                player.trackSelectionParameters = pBuilder.build()
+                Log.d(TAG, "setAudioTrack: Successfully applied audio track selection: group=$targetGroup, track=$safeTrackIndex")
+            } else {
+                Log.w(TAG, "setAudioTrack: No matching audio track found for name=$name, index=$index")
             }
         } catch (exception: Exception) {
             Log.e(TAG, "setAudioTrack failed: $exception")

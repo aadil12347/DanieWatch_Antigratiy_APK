@@ -850,7 +850,7 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     }
   }
 
-  Future<List<ManifestItem>> _fetchLocalPage(int page) async {
+  Future<List<ManifestItem>> _fetchLocalPage(int page, {bool forceRefresh = false}) async {
     final cat = category.toLowerCase().trim();
     const liveCategories = {
       'all',
@@ -883,14 +883,14 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     if (liveCategories.contains(cat)) {
       try {
         final liveItems = await MovieSiteScraperService.instance
-            .fetchCategoryPage(cat, page: page);
+            .fetchCategoryPage(cat, page: page, forceRefresh: forceRefresh);
         if (liveItems.isNotEmpty) {
           return liveItems;
         }
       } catch (e) {
         dev.log('[_fetchLocalPage] Error fetching live $cat page $page: $e');
       }
-      if (page == 1) {
+      if (page == 1 && !forceRefresh) {
         final syncFallback = MovieSiteScraperService.instance.getCategoryPageSync(cat, page: 1);
         if (syncFallback != null && syncFallback.isNotEmpty) {
           return syncFallback;
@@ -912,9 +912,27 @@ class PaginatedCategoryNotifier extends StateNotifier<AsyncValue<PaginatedCatego
     return filtered.skip(offset).take(limit).toList();
   }
 
-  Future<void> refresh() async {
-    state = const AsyncValue.loading();
-    await _loadFirstPage();
+  Future<void> refresh({bool forceRefresh = true}) async {
+    try {
+      if (forceRefresh) {
+        final cat = category.toLowerCase().trim();
+        MovieSiteScraperService.instance.invalidateCategoryCache(cat);
+      }
+      final results = await _fetchLocalPage(1, forceRefresh: forceRefresh);
+      if (!mounted) return;
+      if (results.isNotEmpty) {
+        state = AsyncValue.data(PaginatedCategoryState(
+          items: results,
+          currentPage: 1,
+          minPage: 1,
+          maxPage: 1,
+          hasMore: results.length >= 10,
+          hasPrevious: false,
+        ));
+      }
+    } catch (e, stack) {
+      dev.log('[PaginatedCategory] $category refresh error: $e', stackTrace: stack);
+    }
   }
 }
 

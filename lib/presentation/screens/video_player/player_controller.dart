@@ -585,8 +585,10 @@ class PlayerController extends ChangeNotifier {
         betterPlayerDataSource: dataSource,
       );
 
-      // Force volume to 1.0 (full volume)
-      _betterPlayerController!.setVolume(1.0);
+      // Ensure volume is at 1.0 (full volume)
+      try {
+        _betterPlayerController!.setVolume(1.0);
+      } catch (_) {}
 
       if (startPosition != null && startPosition > 0) {
         _targetSeekPosition =
