@@ -263,8 +263,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: Center(
-                      child: BetterPlayer(
-                        controller: _controller.betterPlayerController!,
+                      child: AnimatedScale(
+                        scale: _controller.resizeMode == VideoResizeMode.fill ? 1.02 : 1.0,
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutBack,
+                        child: BetterPlayer(
+                          controller: _controller.betterPlayerController!,
+                        ),
                       ),
                     ),
                   ),

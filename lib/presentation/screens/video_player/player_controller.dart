@@ -746,7 +746,9 @@ class PlayerController extends ChangeNotifier {
         _state = PlaybackState.playing;
         _isPlaying = true;
         _betterPlayerController?.setVolume(1.0);
-        _updateTracksAndSubtitles();
+        if (_audioTracks.isEmpty) {
+          _updateTracksAndSubtitles();
+        }
         notifyListeners();
         break;
       case BetterPlayerEventType.pause:
@@ -760,7 +762,9 @@ class PlayerController extends ChangeNotifier {
         break;
       case BetterPlayerEventType.bufferingEnd:
         _state = _isPlaying ? PlaybackState.playing : PlaybackState.paused;
-        _updateTracksAndSubtitles();
+        if (_audioTracks.isEmpty) {
+          _updateTracksAndSubtitles();
+        }
         notifyListeners();
         break;
       case BetterPlayerEventType.changedSubtitles:
@@ -1293,17 +1297,23 @@ class PlayerController extends ChangeNotifier {
 
   void togglePlayPause() {
     if (_isPlaying) {
-      _betterPlayerController?.pause();
+      pause();
     } else {
-      _betterPlayerController?.play();
+      play();
     }
   }
 
   void play() {
+    _isPlaying = true;
+    _state = PlaybackState.playing;
+    _safeNotify();
     _betterPlayerController?.play();
   }
 
   void pause() {
+    _isPlaying = false;
+    _state = PlaybackState.paused;
+    _safeNotify();
     _betterPlayerController?.pause();
   }
 

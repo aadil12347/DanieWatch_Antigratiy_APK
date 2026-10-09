@@ -39,7 +39,7 @@ class VidstackPlayerOverlay extends StatefulWidget {
 }
 
 class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   bool _showSettingsPopover = false;
   VidstackSettingsSubmenu _popoverSubmenu = VidstackSettingsSubmenu.root;
   bool _showCountdownTime = false;
@@ -47,6 +47,19 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   late final AnimationController _popoverAnimController;
   late final Animation<double> _popoverScaleAnim;
   late final Animation<double> _popoverFadeAnim;
+
+  // ─── Rewind & Forward Rotation + YouTube Collective Seek Timer ──────────
+  late final AnimationController _rewindRotateController;
+  late final Animation<double> _rewindRotationAnim;
+  int _rewindSecondsAccumulated = 0;
+  Timer? _rewindTimer;
+  bool _showRewindBadge = false;
+
+  late final AnimationController _forwardRotateController;
+  late final Animation<double> _forwardRotationAnim;
+  int _forwardSecondsAccumulated = 0;
+  Timer? _forwardTimer;
+  bool _showForwardBadge = false;
 
   // ─── Locked State Auto-Vanish ──────────────────────────────────────────
   bool _showUnlockButton = true;
@@ -75,11 +88,101 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
         reverseCurve: Curves.easeInCubic,
       ),
     );
+
+    // Rewind rotation: snaps -32° backward, then spring returns to 0°
+    _rewindRotateController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _rewindRotationAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: -0.09)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: -0.09, end: 0.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 65,
+      ),
+    ]).animate(_rewindRotateController);
+
+    // Forward rotation: snaps +32° forward, then spring returns to 0°
+    _forwardRotateController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _forwardRotationAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 0.09)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.09, end: 0.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 65,
+      ),
+    ]).animate(_forwardRotateController);
+  }
+
+  void _handleSkipBackward() {
+    HapticFeedback.lightImpact();
+    widget.controller.skipBackward();
+    _rewindRotateController.forward(from: 0.0);
+
+    // Dismiss opposing forward badge immediately
+    _forwardTimer?.cancel();
+    _showForwardBadge = false;
+    _forwardSecondsAccumulated = 0;
+
+    _rewindSecondsAccumulated += 10;
+    _showRewindBadge = true;
+    setState(() {});
+
+    _rewindTimer?.cancel();
+    _rewindTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _showRewindBadge = false;
+          _rewindSecondsAccumulated = 0;
+        });
+      }
+    });
+  }
+
+  void _handleSkipForward() {
+    HapticFeedback.lightImpact();
+    widget.controller.skipForward();
+    _forwardRotateController.forward(from: 0.0);
+
+    // Dismiss opposing rewind badge immediately
+    _rewindTimer?.cancel();
+    _showRewindBadge = false;
+    _rewindSecondsAccumulated = 0;
+
+    _forwardSecondsAccumulated += 10;
+    _showForwardBadge = true;
+    setState(() {});
+
+    _forwardTimer?.cancel();
+    _forwardTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _showForwardBadge = false;
+          _forwardSecondsAccumulated = 0;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _unlockVanishTimer?.cancel();
+    _rewindTimer?.cancel();
+    _forwardTimer?.cancel();
+    _rewindRotateController.dispose();
+    _forwardRotateController.dispose();
     _popoverAnimController.dispose();
     super.dispose();
   }
@@ -288,9 +391,9 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
       onDoubleTapDown: (details) {
         final screenWidth = MediaQuery.of(context).size.width;
         if (details.localPosition.dx < screenWidth * 0.35) {
-          widget.controller.skipBackward();
+          _handleSkipBackward();
         } else if (details.localPosition.dx > screenWidth * 0.65) {
-          widget.controller.skipForward();
+          _handleSkipForward();
         } else {
           HapticFeedback.lightImpact();
           widget.controller.togglePlayPause();
@@ -491,23 +594,78 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
   Widget _buildPlaybackButtons({bool showLoading = false, bool isCompleted = false}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Skip Backward 10s (Vidstack circular icon)
-        VidstackButton(
-          isCircle: true,
-          size: 56,
-          backgroundColor: VidstackTheme.surfaceGlass,
-          border: Border.all(color: VidstackTheme.borderMedium),
-          tooltip: 'Rewind 10 seconds',
-          onTap: () {
-            widget.controller.skipBackward();
-          },
-          child: VidstackIcon.seekBackward10(size: 28, color: Colors.white),
+        // Skip Backward 10s (with rotation animation & collective seek badge)
+        Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            RotationTransition(
+              turns: _rewindRotationAnim,
+              child: VidstackButton(
+                isCircle: true,
+                size: 56,
+                backgroundColor: VidstackTheme.surfaceGlass,
+                border: Border.all(color: VidstackTheme.borderMedium),
+                tooltip: 'Rewind 10 seconds',
+                onTap: _handleSkipBackward,
+                child: VidstackIcon.seekBackward10(size: 28, color: Colors.white),
+              ),
+            ),
+            if (_showRewindBadge)
+              Positioned(
+                bottom: 64,
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(_rewindSecondsAccumulated),
+                  tween: Tween<double>(begin: 0.80, end: 1.0),
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutBack,
+                  builder: (context, scale, child) => Transform.scale(
+                    scale: scale,
+                    child: child,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xE610121C),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 0.8,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black87,
+                          blurRadius: 12,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.fast_rewind_rounded, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          '-${_rewindSecondsAccumulated}s',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
 
         const SizedBox(width: 38),
 
-        // Center Play / Pause / Replay Button (Vidstack Large Disc)
+        // Center Play / Pause / Replay Button (Vidstack Large Disc - Instant 0ms response)
         VidstackButton(
           isCircle: true,
           size: 76,
@@ -532,7 +690,7 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
                   ),
                 )
               : AnimatedSwitcher(
-                  duration: VidstackTheme.fastAnim,
+                  duration: const Duration(milliseconds: 110),
                   transitionBuilder: (child, animation) =>
                       ScaleTransition(scale: animation, child: child),
                   child: isCompleted
@@ -545,17 +703,71 @@ class _VidstackPlayerOverlayState extends State<VidstackPlayerOverlay>
 
         const SizedBox(width: 38),
 
-        // Skip Forward 10s (Vidstack circular icon)
-        VidstackButton(
-          isCircle: true,
-          size: 56,
-          backgroundColor: VidstackTheme.surfaceGlass,
-          border: Border.all(color: VidstackTheme.borderMedium),
-          tooltip: 'Forward 10 seconds',
-          onTap: () {
-            widget.controller.skipForward();
-          },
-          child: VidstackIcon.seekForward10(size: 28, color: Colors.white),
+        // Skip Forward 10s (with rotation animation & collective seek badge)
+        Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            RotationTransition(
+              turns: _forwardRotationAnim,
+              child: VidstackButton(
+                isCircle: true,
+                size: 56,
+                backgroundColor: VidstackTheme.surfaceGlass,
+                border: Border.all(color: VidstackTheme.borderMedium),
+                tooltip: 'Forward 10 seconds',
+                onTap: _handleSkipForward,
+                child: VidstackIcon.seekForward10(size: 28, color: Colors.white),
+              ),
+            ),
+            if (_showForwardBadge)
+              Positioned(
+                bottom: 64,
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(_forwardSecondsAccumulated),
+                  tween: Tween<double>(begin: 0.80, end: 1.0),
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutBack,
+                  builder: (context, scale, child) => Transform.scale(
+                    scale: scale,
+                    child: child,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xE610121C),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 0.8,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black87,
+                          blurRadius: 12,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '+${_forwardSecondsAccumulated}s',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 14),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );

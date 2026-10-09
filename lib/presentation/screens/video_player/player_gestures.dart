@@ -530,6 +530,9 @@ class _PlayerGesturesState extends State<PlayerGestures>
   void _triggerPinch({required bool fill}) {
     if (widget.controller.isLocked) return;
 
+    // Subtle crisp tactile vibration on pinch zoom in and out
+    HapticFeedback.lightImpact();
+
     final targetMode = fill ? VideoResizeMode.fill : VideoResizeMode.fit;
     widget.controller.setResizeMode(targetMode);
     widget.controller.hideControls();
@@ -555,7 +558,16 @@ class _PlayerGesturesState extends State<PlayerGestures>
     final tapX = details.globalPosition.dx;
     final isLeft = tapX < screenWidth / 2;
 
-    _seekSeconds = 10;
+    HapticFeedback.lightImpact();
+
+    // YouTube-style cumulative timer: adds 10s on each consecutive tap
+    if (_seekResetTimer != null &&
+        _seekResetTimer!.isActive &&
+        ((isLeft && _showLeftSeek) || (!isLeft && _showRightSeek))) {
+      _seekSeconds += 10;
+    } else {
+      _seekSeconds = 10;
+    }
 
     if (isLeft) {
       widget.controller.skipBackward();
@@ -574,11 +586,12 @@ class _PlayerGesturesState extends State<PlayerGestures>
     }
 
     _seekResetTimer?.cancel();
-    _seekResetTimer = Timer(const Duration(milliseconds: 600), () {
+    _seekResetTimer = Timer(const Duration(milliseconds: 750), () {
       if (mounted) {
         setState(() {
           _showLeftSeek = false;
           _showRightSeek = false;
+          _seekSeconds = 0;
         });
       }
     });
