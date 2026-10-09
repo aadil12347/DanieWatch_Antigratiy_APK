@@ -1,0 +1,778 @@
+[
+  {
+    "id": 6465024,
+    "media_type": "movie",
+    "title": "${doc.post_title}",
+    "raw_title": "${doc.post_title}",
+    "poster_url": "${thumb}",
+    "backdrop_url": "${thumb}",
+    "vote_average": 7.2,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": null,
+    "language": [],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-01-01",
+    "post_url": "javascript:void(0)"
+  },
+  {
+    "id": 288659,
+    "media_type": "tv",
+    "title": "Agents of the Four Seasons Dance of Spring",
+    "raw_title": "Agents of the Four Seasons Dance of Spring (2026) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/288659.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/288659.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "JP"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Animation",
+      "Drama",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39267868",
+    "language": [
+      "Hindi",
+      "English",
+      "Japanese"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-06-28 23:36:12",
+    "post_url": "https://vegamovies.gallery/?p=288659"
+  },
+  {
+    "id": 296206,
+    "media_type": "tv",
+    "title": "Agent Kim Reactivated",
+    "raw_title": "Agent Kim Reactivated (2026) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/296206.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/296206.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "KR"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Action & Adventure",
+      "Crime",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt42127457",
+    "language": [
+      "English",
+      "Korean"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-06-27 23:36:12",
+    "post_url": "https://vegamovies.gallery/?p=296206"
+  },
+  {
+    "id": 218342,
+    "media_type": "tv",
+    "title": "A Good Girl's Guide to Murder",
+    "raw_title": "A Good Girl's Guide to Murder (2024) (S1-S2)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/218342.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/218342.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2024,
+    "original_language": null,
+    "origin_country": [
+      "GB"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Drama",
+      "Crime",
+      "Mystery"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt28118211",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-06-10 23:35:56",
+    "post_url": "https://vegamovies.gallery/?p=218342"
+  },
+  {
+    "id": 213703,
+    "media_type": "tv",
+    "title": "Agent from Above",
+    "raw_title": "Agent from Above (2026) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/213703.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/213703.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "TW"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Drama",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt23220752",
+    "language": [
+      "Hindi",
+      "English",
+      "Chinese"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-04-02 23:36:11",
+    "post_url": "https://vegamovies.gallery/?p=213703"
+  },
+  {
+    "id": 287390,
+    "media_type": "tv",
+    "title": "Age of Attraction",
+    "raw_title": "Age of Attraction (2026) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/287390.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/287390.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Reality"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt37610452",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-03-25 23:36:11",
+    "post_url": "https://vegamovies.gallery/?p=287390"
+  },
+  {
+    "id": 224372,
+    "media_type": "tv",
+    "title": "A Knight of the Seven Kingdoms",
+    "raw_title": "A Knight of the Seven Kingdoms (2026) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/224372.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/224372.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Drama",
+      "Sci-Fi & Fantasy",
+      "Action & Adventure"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt27497448",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-02-22 23:35:57",
+    "post_url": "https://vegamovies.gallery/?p=224372"
+  },
+  {
+    "id": 241372,
+    "media_type": "tv",
+    "title": "56 Days",
+    "raw_title": "56 Days (2026) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/241372.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/241372.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood",
+      "Drama",
+      "Crime",
+      "Mystery"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt30412869",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-02-18 23:35:54",
+    "post_url": "https://vegamovies.gallery/?p=241372"
+  },
+  {
+    "id": 1704958,
+    "media_type": "movie",
+    "title": "WWE Clash in Italy",
+    "raw_title": "WWE Clash in Italy",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1704958.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1704958.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt40017618",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1704958"
+  },
+  {
+    "id": 1699155,
+    "media_type": "movie",
+    "title": "Maternal Instinct",
+    "raw_title": "Maternal Instinct",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1699155.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1699155.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt42863533",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1699155"
+  },
+  {
+    "id": 1693002,
+    "media_type": "movie",
+    "title": "The Murder of Rachel Nickell",
+    "raw_title": "The Murder of Rachel Nickell",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1693002.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1693002.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt42192165",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1693002"
+  },
+  {
+    "id": 1684244,
+    "media_type": "movie",
+    "title": "Untold UK: Liverpool's Miracle of Istanbul",
+    "raw_title": "Untold UK: Liverpool's Miracle of Istanbul",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1684244.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1684244.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt41801280",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1684244"
+  },
+  {
+    "id": 1684240,
+    "media_type": "movie",
+    "title": "Jamie Vardy",
+    "raw_title": "Jamie Vardy",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1684240.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1684240.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt41777258",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1684240"
+  },
+  {
+    "id": 1675177,
+    "media_type": "movie",
+    "title": "Chris & Martina: The Final Set",
+    "raw_title": "Chris & Martina: The Final Set",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1675177.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1675177.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt42037166",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1675177"
+  },
+  {
+    "id": 1662317,
+    "media_type": "movie",
+    "title": "The Crash",
+    "raw_title": "The Crash",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1662317.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1662317.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt40792117",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1662317"
+  },
+  {
+    "id": 1659087,
+    "media_type": "movie",
+    "title": "180",
+    "raw_title": "180",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1659087.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1659087.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt40891145",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1659087"
+  },
+  {
+    "id": 1641965,
+    "media_type": "movie",
+    "title": "Untold: Jail Blazers",
+    "raw_title": "Untold: Jail Blazers",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1641965.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1641965.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt40224401",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1641965"
+  },
+  {
+    "id": 1641961,
+    "media_type": "movie",
+    "title": "Untold: The Death & Life of Lamar Odom",
+    "raw_title": "Untold: The Death & Life of Lamar Odom",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1641961.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1641961.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt40224397",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1641961"
+  },
+  {
+    "id": 1641319,
+    "media_type": "movie",
+    "title": "Sniper: No Nation",
+    "raw_title": "Sniper: No Nation",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1641319.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1641319.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39538786",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1641319"
+  },
+  {
+    "id": 1635276,
+    "media_type": "movie",
+    "title": "Eat Pray Bark",
+    "raw_title": "Eat Pray Bark",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1635276.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1635276.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": null,
+    "original_language": null,
+    "origin_country": [
+      "US"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Hollywood"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39465484",
+    "language": [
+      "Hindi",
+      "English"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-00-00",
+    "post_url": "https://vegamovies.gallery/?p=1635276"
+  }
+]

@@ -19,6 +19,7 @@ class _AppInitOverlayState extends ConsumerState<AppInitOverlay>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   bool _dismissed = false;
+  bool _completelyHidden = false;
 
   @override
   void initState() {
@@ -41,12 +42,15 @@ class _AppInitOverlayState extends ConsumerState<AppInitOverlay>
 
   @override
   Widget build(BuildContext context) {
+    if (_completelyHidden) return const SizedBox.shrink();
+
     final initState = ref.watch(appInitProvider);
     final state = initState.valueOrNull ?? const AppInitState();
 
     // Once complete, trigger dismissal
     if (state.isComplete && !_dismissed) {
       _dismissed = true;
+      _pulseController.stop();
     }
 
     return IgnorePointer(
@@ -55,6 +59,11 @@ class _AppInitOverlayState extends ConsumerState<AppInitOverlay>
         opacity: _dismissed ? 0.0 : 1.0,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
+        onEnd: () {
+          if (mounted && _dismissed) {
+            setState(() => _completelyHidden = true);
+          }
+        },
         child: Material(
           color: Colors.transparent,
           child: Container(
@@ -78,21 +87,14 @@ class _AppInitOverlayState extends ConsumerState<AppInitOverlay>
                   const Spacer(flex: 3),
 
                   // Pulsing logo
-                  AnimatedBuilder2(
-                    listenable: _pulseAnimation,
-                    builder: (context, child) {
-                      return Opacity(
-                        opacity: _pulseAnimation.value,
-                        child: Transform.scale(
-                          scale: 0.95 + (_pulseAnimation.value * 0.05),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 80,
+                  FadeTransition(
+                    opacity: _pulseAnimation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(_pulseAnimation),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 80,
                           height: 80,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
@@ -131,8 +133,9 @@ class _AppInitOverlayState extends ConsumerState<AppInitOverlay>
                       ],
                     ),
                   ),
+                ),
 
-                  const SizedBox(height: 48),
+                const SizedBox(height: 48),
 
                   // Progress section
                   Padding(

@@ -37,11 +37,17 @@ class _StackedCarouselState extends ConsumerState<StackedCarousel> {
     _positions = List.generate(_displayItems.length, (index) => index - maxDist);
     _updateActiveIndex();
     _startAutoPlay();
-    // Pre-warm poster colors and logos for smooth transitions
-    _preWarmColors();
-    _preWarmLogos();
     // Set initial gradient
     _updateGradientForActiveItem();
+    // Pre-warm remaining colors and logos after the initial frame is rendered smoothly
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted) {
+          _preWarmColors();
+          _preWarmLogos();
+        }
+      });
+    });
   }
 
   @override

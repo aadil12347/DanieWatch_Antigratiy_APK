@@ -460,6 +460,7 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   await scraper.loadDiskCache();
   await Future<void>.delayed(Duration.zero); // Yield to UI
 
+  // 1. FAST PATH: Immediately yield top lists from lightweight base_home.json (0ms)
   final cachedSections = <ContentSection>[];
   if (scraper.cachedTop10Indian != null && scraper.cachedTop10Indian!.isNotEmpty) {
     cachedSections.add(ContentSection(title: 'Top 10 Indian Today', items: scraper.cachedTop10Indian!, isRanked: true));
@@ -467,17 +468,25 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   if (scraper.cachedTop10HindiDub != null && scraper.cachedTop10HindiDub!.isNotEmpty) {
     cachedSections.add(ContentSection(title: 'Top 10 Hindi Dub Today', items: scraper.cachedTop10HindiDub!, isRanked: true));
   }
+
+  // YIELD TOP SECTIONS IMMEDIATELY — 0ms FIRST FRAME!
+  if (cachedSections.isNotEmpty) {
+    yield List<ContentSection>.unmodifiable(cachedSections);
+  }
+
+  // Progressively load each category's modular base JSON file one-by-one
   for (final def in categoryDefs) {
-    final cached = scraper.getCachedCategory(def.$1);
-    if (cached != null && cached.isNotEmpty) {
+    var cached = scraper.getCachedCategory(def.$1);
+    if (cached == null || cached.isEmpty) {
+      cached = await scraper.loadCategoryDiskCache(def.$1);
+    }
+    if (cached.isNotEmpty) {
       cachedSections.add(ContentSection(title: def.$2, items: cached, categorySlug: def.$1));
+      yield List<ContentSection>.unmodifiable(cachedSections);
     }
   }
 
-  // YIELD REAL CONTENT IMMEDIATELY — NO BLANK SHIMMER WAIT!
-  if (cachedSections.isNotEmpty) {
-    yield List<ContentSection>.unmodifiable(cachedSections);
-  } else {
+  if (cachedSections.isEmpty) {
     // Only fallback to placeholders if literally zero data is available
     final emptySections = <ContentSection>[
       const ContentSection(title: 'Top 10 Indian Today', items: [], isRanked: true),
@@ -504,14 +513,23 @@ final homeSectionsProvider = StreamProvider<List<ContentSection>>((ref) async* {
   // gentle sequential background refresh ("slowly slowly").
   final currentSectionsMap = <String, ContentSection>{};
 
-  for (final def in categoryDefs) {
-    try {
-      final items = await scraper.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
-      if (items.isNotEmpty) {
-        currentSectionsMap[def.$2] = ContentSection(title: def.$2, items: items, categorySlug: def.$1);
+  final categoryResults = await Future.wait(
+    categoryDefs.map((def) async {
+      try {
+        final items = await scraper.fetchCategoryPage(def.$1, page: 1, localMap: localMap);
+        if (items.isNotEmpty) {
+          return MapEntry(def.$2, ContentSection(title: def.$2, items: items, categorySlug: def.$1));
+        }
+      } catch (e) {
+        dev.log('[homeSectionsProvider] Category ${def.$2} fetch error: $e');
       }
-    } catch (e) {
-      dev.log('[homeSectionsProvider] Category ${def.$2} fetch error: $e');
+      return null;
+    }),
+  );
+
+  for (final res in categoryResults) {
+    if (res != null) {
+      currentSectionsMap[res.key] = res.value;
     }
   }
 

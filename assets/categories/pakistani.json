@@ -1,0 +1,784 @@
+[
+  {
+    "id": 6465024,
+    "media_type": "movie",
+    "title": "${doc.post_title}",
+    "raw_title": "${doc.post_title}",
+    "poster_url": "${thumb}",
+    "backdrop_url": "${thumb}",
+    "vote_average": 7.2,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": null,
+    "language": [],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-01-01",
+    "post_url": "javascript:void(0)"
+  },
+  {
+    "id": 1523579,
+    "media_type": "movie",
+    "title": "Enna Nu Rehna Sehna Ni Aaunda",
+    "raw_title": "Enna Nu Rehna Sehna Ni Aaunda",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1523579.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1523579.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "CA",
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Comedy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt33044546",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-08-22 19:00:45",
+    "post_url": "https://vegamovies.gallery/?p=1523579"
+  },
+  {
+    "id": 1311029,
+    "media_type": "movie",
+    "title": "Na Baligh Afraad",
+    "raw_title": "Na Baligh Afraad",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1311029.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1311029.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2024,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Comedy",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt32552818",
+    "language": [
+      "Hindi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2024-06-17 19:30:55",
+    "post_url": "https://vegamovies.gallery/?p=1311029"
+  },
+  {
+    "id": 934214,
+    "media_type": "movie",
+    "title": "UmroAyyar - A New Beginning",
+    "raw_title": "UmroAyyar - A New Beginning",
+    "poster_url": "https://image.tmdb.org/t/p/w500/934214.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/934214.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2024,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Action",
+      "Adventure",
+      "Fantasy",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt16149652",
+    "language": [
+      "Hindi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2024-06-14 20:01:01",
+    "post_url": "https://vegamovies.gallery/?p=934214"
+  },
+  {
+    "id": 1135365,
+    "media_type": "movie",
+    "title": "Teri Meri Kahaniyaan",
+    "raw_title": "Teri Meri Kahaniyaan",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1135365.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1135365.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2023,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Romance",
+      "Horror",
+      "Drama",
+      "Comedy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt27935445",
+    "language": [
+      "Urdu"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2023-06-29 19:54:19",
+    "post_url": "https://vegamovies.gallery/?p=1135365"
+  },
+  {
+    "id": 1145738,
+    "media_type": "movie",
+    "title": "Aar Paar",
+    "raw_title": "Aar Paar",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1145738.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1145738.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2023,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Comedy",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt27987936",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2023-06-29 18:33:35",
+    "post_url": "https://vegamovies.gallery/?p=1145738"
+  },
+  {
+    "id": 1125011,
+    "media_type": "movie",
+    "title": "Super",
+    "raw_title": "Super Punjabi",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1125011.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1125011.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2023,
+    "original_language": null,
+    "origin_country": [
+      "IN",
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Comedy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt25305832",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2023-05-12 19:52:00",
+    "post_url": "https://vegamovies.gallery/?p=1125011"
+  },
+  {
+    "id": 1033845,
+    "media_type": "movie",
+    "title": "Money Back Guarantee",
+    "raw_title": "Money Back Guarantee",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1033845.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1033845.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2023,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Action",
+      "Comedy",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt12038672",
+    "language": [
+      "Hindi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2023-04-21 19:29:28",
+    "post_url": "https://vegamovies.gallery/?p=1033845"
+  },
+  {
+    "id": 1116364,
+    "media_type": "movie",
+    "title": "Daadal",
+    "raw_title": "Daadal",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1116364.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1116364.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2023,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Action",
+      "Crime",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt21141958",
+    "language": [
+      "Urdu"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2023-04-21 18:49:19",
+    "post_url": "https://vegamovies.gallery/?p=1116364"
+  },
+  {
+    "id": 1133105,
+    "media_type": "movie",
+    "title": "Shotcut",
+    "raw_title": "Shotcut",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1133105.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1133105.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt19990760",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-12-23 19:49:10",
+    "post_url": "https://vegamovies.gallery/?p=1133105"
+  },
+  {
+    "id": 592534,
+    "media_type": "movie",
+    "title": "Zarrar",
+    "raw_title": "Zarrar",
+    "poster_url": "https://image.tmdb.org/t/p/w500/592534.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/592534.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Action",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt5698284",
+    "language": [
+      "Urdu"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-11-25 20:07:11",
+    "post_url": "https://vegamovies.gallery/?p=592534"
+  },
+  {
+    "id": 1045211,
+    "media_type": "movie",
+    "title": "Tich Button",
+    "raw_title": "Tich Button",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1045211.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1045211.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt12259888",
+    "language": [
+      "Urdu"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-11-25 19:58:29",
+    "post_url": "https://vegamovies.gallery/?p=1045211"
+  },
+  {
+    "id": 962571,
+    "media_type": "movie",
+    "title": "Joyland",
+    "raw_title": "Joyland",
+    "poster_url": "https://image.tmdb.org/t/p/w500/962571.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/962571.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "US",
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Romance",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt19719976",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-11-18 19:17:16",
+    "post_url": "https://vegamovies.gallery/?p=962571"
+  },
+  {
+    "id": 464293,
+    "media_type": "movie",
+    "title": "The Legend of Maula Jatt",
+    "raw_title": "The Legend of Maula Jatt",
+    "poster_url": "https://image.tmdb.org/t/p/w500/464293.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/464293.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Drama",
+      "Fantasy",
+      "Action"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt4139928",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-10-13 19:56:40",
+    "post_url": "https://vegamovies.gallery/?p=464293"
+  },
+  {
+    "id": 958552,
+    "media_type": "movie",
+    "title": "Quaid-e-Azam Zindabad",
+    "raw_title": "Quaid-e-Azam Zindabad",
+    "poster_url": "https://image.tmdb.org/t/p/w500/958552.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/958552.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Action",
+      "Comedy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt12138574",
+    "language": [
+      "Urdu"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-07-08 19:38:46",
+    "post_url": "https://vegamovies.gallery/?p=958552"
+  },
+  {
+    "id": 995170,
+    "media_type": "movie",
+    "title": "London Nahi Jaunga",
+    "raw_title": "London Nahi Jaunga",
+    "poster_url": "https://image.tmdb.org/t/p/w500/995170.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/995170.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Action",
+      "Comedy",
+      "Romance"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt12132832",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-07-08 19:24:26",
+    "post_url": "https://vegamovies.gallery/?p=995170"
+  },
+  {
+    "id": 990418,
+    "media_type": "movie",
+    "title": "Peechay Tou Dekho",
+    "raw_title": "Peechay Tou Dekho",
+    "poster_url": "https://image.tmdb.org/t/p/w500/990418.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/990418.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Comedy",
+      "Horror"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt16978674",
+    "language": [
+      "Hindi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-06-20 19:35:37",
+    "post_url": "https://vegamovies.gallery/?p=990418"
+  },
+  {
+    "id": 971816,
+    "media_type": "movie",
+    "title": "Ghabrana Nahi Hai",
+    "raw_title": "Ghabrana Nahi Hai",
+    "poster_url": "https://image.tmdb.org/t/p/w500/971816.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/971816.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2022,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Comedy",
+      "Romance",
+      "Action"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt12796444",
+    "language": [
+      "Urdu"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2022-05-02 19:07:44",
+    "post_url": "https://vegamovies.gallery/?p=971816"
+  },
+  {
+    "id": 152431,
+    "media_type": "tv",
+    "title": "Qatil Haseenaon Ke Naam",
+    "raw_title": "Qatil Haseenaon Ke Naam (2021) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/152431.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/152431.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2021,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Drama",
+      "Crime",
+      "Mystery"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt16141842",
+    "language": [
+      "Hindi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2021-12-10 19:38:38",
+    "post_url": "https://vegamovies.gallery/?p=152431"
+  },
+  {
+    "id": 128225,
+    "media_type": "tv",
+    "title": "Dhoop Ki Deewar",
+    "raw_title": "Dhoop Ki Deewar (2021) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/128225.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/128225.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2021,
+    "original_language": null,
+    "origin_country": [
+      "PK"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Pakistani",
+      "Drama",
+      "Family"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt13129104",
+    "language": [
+      "Hindi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2021-08-13 18:53:49",
+    "post_url": "https://vegamovies.gallery/?p=128225"
+  }
+]

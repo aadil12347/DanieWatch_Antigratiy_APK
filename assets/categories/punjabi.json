@@ -1,0 +1,766 @@
+[
+  {
+    "id": 6465024,
+    "media_type": "movie",
+    "title": "${doc.post_title}",
+    "raw_title": "${doc.post_title}",
+    "poster_url": "${thumb}",
+    "backdrop_url": "${thumb}",
+    "vote_average": 7.2,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": null,
+    "language": [],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-01-01",
+    "post_url": "javascript:void(0)"
+  },
+  {
+    "id": 1659052,
+    "media_type": "movie",
+    "title": "Budh Singh",
+    "raw_title": "Budh Singh",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1659052.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1659052.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Action",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt27190700",
+    "language": [
+      "Hindi",
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-03-26 18:45:23",
+    "post_url": "https://vegamovies.gallery/?p=1659052"
+  },
+  {
+    "id": 1646589,
+    "media_type": "movie",
+    "title": "13 Teen",
+    "raw_title": "13 Teen",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1646589.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1646589.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Drama",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39958734",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-03-05 18:32:20",
+    "post_url": "https://vegamovies.gallery/?p=1646589"
+  },
+  {
+    "id": 1635529,
+    "media_type": "movie",
+    "title": "Bambukat 2",
+    "raw_title": "Bambukat 2",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1635529.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1635529.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Comedy",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt11173332",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-02-20 18:41:55",
+    "post_url": "https://vegamovies.gallery/?p=1635529"
+  },
+  {
+    "id": 1637367,
+    "media_type": "movie",
+    "title": "Udd Da Teer",
+    "raw_title": "Udd Da Teer",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1637367.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1637367.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Drama",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39958737",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-02-10 20:00:48",
+    "post_url": "https://vegamovies.gallery/?p=1637367"
+  },
+  {
+    "id": 1621842,
+    "media_type": "movie",
+    "title": "Bebe Main Badmash Banuga",
+    "raw_title": "Bebe Main Badmash Banuga",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1621842.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1621842.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39319045",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-02-06 18:42:29",
+    "post_url": "https://vegamovies.gallery/?p=1621842"
+  },
+  {
+    "id": 1620943,
+    "media_type": "movie",
+    "title": "Welcome Jija Ji",
+    "raw_title": "Welcome Jija Ji",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1620943.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1620943.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Comedy",
+      "Family"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39373668",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-01-22 20:05:01",
+    "post_url": "https://vegamovies.gallery/?p=1620943"
+  },
+  {
+    "id": 1621160,
+    "media_type": "movie",
+    "title": "Mcoca",
+    "raw_title": "Mcoca",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1621160.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1621160.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Thriller"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt23866180",
+    "language": [
+      "Hindi",
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-01-22 19:27:47",
+    "post_url": "https://vegamovies.gallery/?p=1621160"
+  },
+  {
+    "id": 1614475,
+    "media_type": "movie",
+    "title": "Seeds",
+    "raw_title": "Seeds",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1614475.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1614475.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2026,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39387371",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2026-01-12 19:47:29",
+    "post_url": "https://vegamovies.gallery/?p=1614475"
+  },
+  {
+    "id": 1599346,
+    "media_type": "movie",
+    "title": "Tenu Suit Suit Karda",
+    "raw_title": "Tenu Suit Suit Karda",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1599346.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1599346.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39150156",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-12-14 19:54:06",
+    "post_url": "https://vegamovies.gallery/?p=1599346"
+  },
+  {
+    "id": 308057,
+    "media_type": "tv",
+    "title": "Rajdhani - The Capital of Crime",
+    "raw_title": "Rajdhani - The Capital of Crime (2025) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/308057.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/308057.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39140364",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-12-12 19:40:40",
+    "post_url": "https://vegamovies.gallery/?p=308057"
+  },
+  {
+    "id": 1595286,
+    "media_type": "movie",
+    "title": "Yamla",
+    "raw_title": "Yamla",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1595286.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1595286.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Drama",
+      "Romance"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt39066215",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-11-28 20:06:02",
+    "post_url": "https://vegamovies.gallery/?p=1595286"
+  },
+  {
+    "id": 306886,
+    "media_type": "tv",
+    "title": "Firottiye",
+    "raw_title": "Firottiye (2025) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/306886.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/306886.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Action & Adventure"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt38454779",
+    "language": [
+      "Hindi",
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-11-21 19:03:01",
+    "post_url": "https://vegamovies.gallery/?p=306886"
+  },
+  {
+    "id": 1570904,
+    "media_type": "movie",
+    "title": "Happy Khush Ho Gaya",
+    "raw_title": "Happy Khush Ho Gaya",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1570904.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1570904.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Comedy"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt37896655",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-11-07 19:10:50",
+    "post_url": "https://vegamovies.gallery/?p=1570904"
+  },
+  {
+    "id": 1575785,
+    "media_type": "movie",
+    "title": "Badaa Karara Pudna",
+    "raw_title": "Badaa Karara Pudna",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1575785.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1575785.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt38598593",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-11-07 18:41:16",
+    "post_url": "https://vegamovies.gallery/?p=1575785"
+  },
+  {
+    "id": 1568195,
+    "media_type": "movie",
+    "title": "Madhaniyan",
+    "raw_title": "Madhaniyan",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1568195.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1568195.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Romance",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt34052201",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-10-31 19:25:45",
+    "post_url": "https://vegamovies.gallery/?p=1568195"
+  },
+  {
+    "id": 303851,
+    "media_type": "tv",
+    "title": "Lakadbaggey",
+    "raw_title": "Lakadbaggey (2025) (S01)",
+    "poster_url": "https://image.tmdb.org/t/p/w500/303851.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/303851.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": 1,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt35678103",
+    "language": [
+      "Hindi",
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-10-30 19:23:25",
+    "post_url": "https://vegamovies.gallery/?p=303851"
+  },
+  {
+    "id": 1554048,
+    "media_type": "movie",
+    "title": "Godday Godday Chaa 2",
+    "raw_title": "Godday Godday Chaa 2",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1554048.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1554048.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Comedy",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt38504130",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-10-22 19:08:20",
+    "post_url": "https://vegamovies.gallery/?p=1554048"
+  },
+  {
+    "id": 1569849,
+    "media_type": "movie",
+    "title": "The Error",
+    "raw_title": "The Error",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1569849.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1569849.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi",
+      "Crime",
+      "Drama"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt38689817",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-10-16 19:55:20",
+    "post_url": "https://vegamovies.gallery/?p=1569849"
+  },
+  {
+    "id": 1563575,
+    "media_type": "movie",
+    "title": "Rajdhani Punjab",
+    "raw_title": "Rajdhani Punjab",
+    "poster_url": "https://image.tmdb.org/t/p/w500/1563575.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w500/1563575.jpg",
+    "vote_average": 7.5,
+    "vote_count": 0,
+    "release_year": 2025,
+    "original_language": null,
+    "origin_country": [
+      "IN"
+    ],
+    "genre_ids": [],
+    "genres": [
+      "Punjabi"
+    ],
+    "overview": null,
+    "tagline": null,
+    "runtime": null,
+    "number_of_seasons": null,
+    "number_of_episodes": null,
+    "status": null,
+    "imdb_id": "tt38691549",
+    "language": [
+      "Punjabi"
+    ],
+    "result": null,
+    "is_trending": false,
+    "is_popular": false,
+    "trending_rank": null,
+    "tmdb_poster_path": null,
+    "tmdb_backdrop_path": null,
+    "release_date": "2025-10-14 19:40:42",
+    "post_url": "https://vegamovies.gallery/?p=1563575"
+  }
+]

@@ -30,9 +30,9 @@ Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
-  // PERF: Enlarge image cache from default 100MB to 250MB to prevent GC thrashing during 120 FPS scrolls
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 250 << 20; // 250 MB
-  PaintingBinding.instance.imageCache.maximumSize = 1000;
+  // PERF: Image cache sized to 120MB (350 entries) to balance smooth 120 FPS scrolling with OOM protection
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 120 << 20; // 120 MB
+  PaintingBinding.instance.imageCache.maximumSize = 350;
 
   // Validate required environment variables are configured via --dart-define
   Env.validate();

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const VEGA_BASE = 'https://vegamovies.gallery';
-const ROG_BASE = 'https://rogmovies.best';
+const ROG_BASE = 'https://rogmovies.wtf';
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -507,8 +507,8 @@ async function main() {
   cats['search'] = cats['all'] || cats['dual-audio'] || [];
   cats['explore'] = cats['all'] || cats['dual-audio'] || [];
 
-  // 3. Assemble and Write base_home.json
-  const finalPayload = {
+  // 3. Assemble and Write base_home.json (HOMEPAGE ONLY for 0ms instant startup)
+  const homePayload = {
     timestamp: new Date().toISOString(),
     home: {
       carousel,
@@ -518,12 +518,23 @@ async function main() {
       top10: top10HindiDub,
       timestamp: new Date().toISOString(),
     },
-    cats,
   };
 
   const outputPath = path.join(__dirname, '..', 'assets', 'base_home.json');
-  fs.writeFileSync(outputPath, JSON.stringify(finalPayload, null, 2), 'utf8');
-  console.log(`\nSUCCESS! Wrote base JSON to: ${outputPath} (${(fs.statSync(outputPath).size / 1024).toFixed(1)} KB)`);
+  fs.writeFileSync(outputPath, JSON.stringify(homePayload, null, 2), 'utf8');
+  console.log(`\nSUCCESS! Wrote base home JSON to: ${outputPath} (${(fs.statSync(outputPath).size / 1024).toFixed(1)} KB)`);
+
+  // 4. Write Individual Category JSON Files (assets/categories/*.json)
+  const catsDir = path.join(__dirname, '..', 'assets', 'categories');
+  if (!fs.existsSync(catsDir)) {
+    fs.mkdirSync(catsDir, { recursive: true });
+  }
+
+  for (const [slug, items] of Object.entries(cats)) {
+    const catPath = path.join(catsDir, `${slug}.json`);
+    fs.writeFileSync(catPath, JSON.stringify(items, null, 2), 'utf8');
+    console.log(`  -> Wrote category "${slug}" (${items.length} items) to: ${catPath}`);
+  }
 }
 
 main().catch(err => {

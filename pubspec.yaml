@@ -128,6 +128,7 @@ flutter:
     - assets/rog_index.json
     - assets/vega_index.json
     - assets/base_home.json
+    - assets/categories/
     - poster/
 
 dependency_overrides:

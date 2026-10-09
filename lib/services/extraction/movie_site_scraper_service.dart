@@ -53,6 +53,15 @@ class MovieSiteScraperService {
   static const String _diskCacheKeyCategories = 'daniewatch_scraped_cats_v1';
   static const Duration _staleDuration = Duration(minutes: 5);
 
+  // Memory management constants — prevent unbounded growth → OOM crashes
+  static const int _maxItemMapSize = 5000;
+  static const int _maxPostUrlMapSize = 5000;
+  static const int _maxPostImdbCacheSize = 500;
+
+  // Disk save throttling — prevent excessive SharedPreferences writes
+  DateTime? _lastDiskSaveTime;
+  static const Duration _minSaveInterval = Duration(seconds: 30);
+
   bool _isDiskCacheLoaded = false;
   bool get isDiskCacheLoaded => _isDiskCacheLoaded;
   DateTime? _lastHomeFetchTime;
@@ -304,51 +313,30 @@ class MovieSiteScraperService {
       String? rawHome = prefs.getString(_diskCacheKeyHome);
       String? rawCats = prefs.getString(_diskCacheKeyCategories);
 
-      // ── BUNDLED BASE JSON FALLBACK ──────────────────────────────────────────
-      // If either rawHome or rawCats is missing/empty, load from bundled assets/base_home.json.
-      // This gives the app instant 0ms startup without any network calls on fresh launch.
+      String? baseAsset;
       if (rawHome == null || rawHome.isEmpty || rawHome == '{}' ||
           rawCats == null || rawCats.isEmpty || rawCats == '{}') {
         try {
           dev.log('[MovieSiteScraperService] SharedPreferences cache empty — reading bundled assets/base_home.json');
-          final baseAsset = await rootBundle.loadString('assets/base_home.json');
-          if (baseAsset.isNotEmpty) {
-            final baseJson = jsonDecode(baseAsset) as Map<String, dynamic>;
-            if ((rawHome == null || rawHome.isEmpty || rawHome == '{}') && baseJson['home'] != null) {
-              rawHome = jsonEncode(baseJson['home']);
-              await prefs.setString(_diskCacheKeyHome, rawHome);
-            }
-            if ((rawCats == null || rawCats.isEmpty || rawCats == '{}') && baseJson['cats'] != null) {
-              rawCats = jsonEncode(baseJson['cats']);
-              await prefs.setString(_diskCacheKeyCategories, rawCats);
-            }
-            dev.log('[MovieSiteScraperService] ✅ Loaded initial base data from assets/base_home.json');
-          }
+          baseAsset = await rootBundle.loadString('assets/base_home.json');
         } catch (e) {
           dev.log('[MovieSiteScraperService] ⚠️ Error loading bundled base_home.json: $e');
         }
       }
 
-      // Direct JSON decode — compute() has 500ms+ isolate overhead in debug
-      var parsed = _parseDiskCacheIsolate({
+      // Parse JSON in a real background isolate to avoid blocking the UI thread
+      var parsed = await compute(_parseDiskCacheIsolate, {
         'home': rawHome,
         'cats': rawCats,
+        'asset': baseAsset,
       });
 
-      // Secondary safety check: if parsed results are still empty, force re-load bundled asset
-      if (parsed['top10Indian'] == null || (parsed['top10Indian'] as List).isEmpty) {
-        try {
-          final baseAsset = await rootBundle.loadString('assets/base_home.json');
-          final baseJson = jsonDecode(baseAsset) as Map<String, dynamic>;
-          rawHome = jsonEncode(baseJson['home']);
-          rawCats = jsonEncode(baseJson['cats']);
-          await prefs.setString(_diskCacheKeyHome, rawHome);
-          await prefs.setString(_diskCacheKeyCategories, rawCats);
-          parsed = _parseDiskCacheIsolate({
-            'home': rawHome,
-            'cats': rawCats,
-          });
-        } catch (_) {}
+      // Persist base data to prefs asynchronously if populated by isolate
+      if (parsed['saveHome'] != null) {
+        prefs.setString(_diskCacheKeyHome, parsed['saveHome'] as String);
+      }
+      if (parsed['saveCats'] != null) {
+        prefs.setString(_diskCacheKeyCategories, parsed['saveCats'] as String);
       }
 
       await Future<void>.delayed(Duration.zero); // Yield to UI
@@ -417,35 +405,119 @@ class MovieSiteScraperService {
     return null;
   }
 
+  /// Loads an individual category's base JSON on demand from assets/categories/`<slug>`.json
+  /// or SharedPreferences. Parses in background isolate, caches in memory, and returns.
+  Future<List<ManifestItem>> loadCategoryDiskCache(String categoryOrGenre) async {
+    final key = categoryOrGenre.toLowerCase().trim();
+    final cacheKey = '${key}_page_1';
+    final existing = _categoryPageCache[cacheKey];
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? raw = prefs.getString('daniewatch_cat_${key}_v1');
+      if (raw == null || raw.isEmpty) {
+        try {
+          raw = await rootBundle.loadString('assets/categories/$key.json');
+        } catch (_) {
+          if (key == 'k-drama') {
+            try { raw = await rootBundle.loadString('assets/categories/korean.json'); } catch (_) {}
+          } else if (key == 'indian') {
+            try { raw = await rootBundle.loadString('assets/categories/bollywood.json'); } catch (_) {}
+          }
+        }
+      }
+
+      if (raw != null && raw.isNotEmpty) {
+        final items = await compute(_parseSingleCategoryIsolate, raw);
+        if (items.isNotEmpty) {
+          _categoryPageCache[cacheKey] = items;
+          for (final it in items) {
+            _itemMap[it.id.toString()] = it;
+          }
+          dev.log('[MovieSiteScraperService] ✅ Loaded category $key (${items.length} items from modular JSON)');
+          return items;
+        }
+      }
+    } catch (e) {
+      dev.log('[MovieSiteScraperService] Error loading category $key base JSON: $e');
+    }
+    return [];
+  }
+
+  static List<ManifestItem> _parseSingleCategoryIsolate(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is List) {
+        return decoded
+            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } else if (decoded is Map<String, dynamic> && decoded['items'] is List) {
+        return (decoded['items'] as List)
+            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
   /// Background isolate function for JSON parsing — runs off main thread.
   static Map<String, dynamic> _parseDiskCacheIsolate(Map<String, String?> raw) {
     final result = <String, dynamic>{};
 
+    Map<String, dynamic>? assetData;
+    final rawAsset = raw['asset'];
+    if (rawAsset != null && rawAsset.isNotEmpty) {
+      try {
+        assetData = jsonDecode(rawAsset) as Map<String, dynamic>?;
+      } catch (_) {}
+    }
+
     final rawHome = raw['home'];
-    if (rawHome != null && rawHome.isNotEmpty) {
-      final data = jsonDecode(rawHome) as Map<String, dynamic>;
-      if (data['top10Indian'] is List) {
-        result['top10Indian'] = (data['top10Indian'] as List)
+    Map<String, dynamic>? homeData;
+    if (rawHome != null && rawHome.isNotEmpty && rawHome != '{}') {
+      try {
+        homeData = jsonDecode(rawHome) as Map<String, dynamic>?;
+      } catch (_) {}
+    }
+    if ((homeData == null || homeData.isEmpty) && assetData != null && assetData['home'] is Map) {
+      homeData = assetData['home'] as Map<String, dynamic>;
+      result['saveHome'] = jsonEncode(homeData);
+    }
+
+    if (homeData != null) {
+      if (homeData['top10Indian'] is List) {
+        result['top10Indian'] = (homeData['top10Indian'] as List)
             .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
             .toList();
       }
-      if (data['top10HindiDub'] is List) {
-        result['top10HindiDub'] = (data['top10HindiDub'] as List)
+      if (homeData['top10HindiDub'] is List) {
+        result['top10HindiDub'] = (homeData['top10HindiDub'] as List)
             .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
             .toList();
       }
-      if (data['carousel'] is List) {
-        result['carousel'] = (data['carousel'] as List)
+      if (homeData['carousel'] is List) {
+        result['carousel'] = (homeData['carousel'] as List)
             .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
             .toList();
       }
     }
 
     final rawCats = raw['cats'];
-    if (rawCats != null && rawCats.isNotEmpty) {
-      final data = jsonDecode(rawCats) as Map<String, dynamic>;
+    Map<String, dynamic>? catsData;
+    if (rawCats != null && rawCats.isNotEmpty && rawCats != '{}') {
+      try {
+        catsData = jsonDecode(rawCats) as Map<String, dynamic>?;
+      } catch (_) {}
+    }
+    if ((catsData == null || catsData.isEmpty) && assetData != null && assetData['cats'] is Map) {
+      catsData = assetData['cats'] as Map<String, dynamic>;
+      result['saveCats'] = jsonEncode(catsData);
+    }
+
+    if (catsData != null) {
       final categories = <String, List<ManifestItem>>{};
-      for (final entry in data.entries) {
+      for (final entry in catsData.entries) {
         if (entry.value is List) {
           categories[entry.key] = (entry.value as List)
               .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
@@ -459,8 +531,13 @@ class MovieSiteScraperService {
   }
 
   /// Saves current scraped items to local disk for 0ms startup on next launch.
-  /// JSON encoding runs in a background isolate to avoid blocking the UI thread.
+  /// Throttled to prevent excessive writes. JSON encoding runs in background isolate.
   Future<void> saveDiskCache() async {
+    // Throttle: skip if saved too recently (prevents jank from rapid saves)
+    if (_lastDiskSaveTime != null &&
+        DateTime.now().difference(_lastDiskSaveTime!) < _minSaveInterval) {
+      return;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -480,8 +557,8 @@ class MovieSiteScraperService {
         }
       }
 
-      // Direct JSON encode — compute() has 500ms+ isolate overhead in debug
-      final encoded = _encodeDiskCacheIsolate({
+      // JSON encode in background isolate to avoid blocking UI
+      final encoded = await compute(_encodeDiskCacheIsolate, {
         'home': homeItems,
         'cats': catItems,
       });
@@ -493,6 +570,7 @@ class MovieSiteScraperService {
       if (encoded['cats'] != null) {
         await prefs.setString(_diskCacheKeyCategories, encoded['cats']!);
       }
+      _lastDiskSaveTime = DateTime.now();
     } catch (e) {
       dev.log('[MovieSiteScraperService] Error saving disk cache: $e');
     }
@@ -533,7 +611,47 @@ class MovieSiteScraperService {
     _resolvedMediaTypes.clear();
     _lastHomeFetchTime = null;
     _lastCategoryFetchTime = null;
+    _lastDiskSaveTime = null;
     _isDiskCacheLoaded = false;
+    _titleIndexMap = null;
+    _lastIndexedMapLength = 0;
+  }
+
+  /// Trims unbounded caches to prevent OOM crashes.
+  /// Called periodically after background refreshes.
+  void _trimCaches() {
+    if (_itemMap.length > _maxItemMapSize) {
+      final excess = _itemMap.length - _maxItemMapSize;
+      final keysToRemove = _itemMap.keys.take(excess).toList();
+      for (final k in keysToRemove) {
+        _itemMap.remove(k);
+      }
+      dev.log('[MovieSiteScraperService] Trimmed _itemMap: removed $excess entries');
+    }
+    if (_postUrlMap.length > _maxPostUrlMapSize) {
+      final excess = _postUrlMap.length - _maxPostUrlMapSize;
+      final keysToRemove = _postUrlMap.keys.take(excess).toList();
+      for (final k in keysToRemove) {
+        _postUrlMap.remove(k);
+      }
+      dev.log('[MovieSiteScraperService] Trimmed _postUrlMap: removed $excess entries');
+    }
+    if (_postImdbCache.length > _maxPostImdbCacheSize) {
+      final excess = _postImdbCache.length - _maxPostImdbCacheSize;
+      final keysToRemove = _postImdbCache.keys.take(excess).toList();
+      for (final k in keysToRemove) {
+        _postImdbCache.remove(k);
+      }
+      dev.log('[MovieSiteScraperService] Trimmed _postImdbCache: removed $excess entries');
+    }
+    if (_resolvedTmdbIds.length > _maxItemMapSize) {
+      final excess = _resolvedTmdbIds.length - _maxItemMapSize;
+      final keysToRemove = _resolvedTmdbIds.keys.take(excess).toList();
+      for (final k in keysToRemove) {
+        _resolvedTmdbIds.remove(k);
+        _resolvedMediaTypes.remove(k);
+      }
+    }
   }
 
   /// Clears both in-memory AND on-disk caches so next launch fetches fresh.
@@ -1000,6 +1118,7 @@ class MovieSiteScraperService {
 
       await _doFetchHomeTopLists(localMap: localMap);
       _lastHomeFetchTime = DateTime.now();
+      _trimCaches(); // Prevent OOM from unbounded growth
       await saveDiskCache();
       onHomeRefreshed?.call();
       dev.log('[MovieSiteScraperService] Background refresh (direct) done — UI notified');
@@ -1582,7 +1701,18 @@ class MovieSiteScraperService {
         return cached;
       }
 
-      // 2. If disk cache wasn't loaded yet, try loading it now
+      // 2. Load modular category base JSON on-demand (0-2ms)
+      if (page == 1) {
+        final modular = await loadCategoryDiskCache(categoryOrGenre);
+        if (modular.isNotEmpty) {
+          if (shouldRefreshCategory(key)) {
+            _backgroundRefreshCategory(categoryOrGenre, localMap: localMap);
+          }
+          return modular;
+        }
+      }
+
+      // 3. Fallback: If disk cache wasn't loaded yet, try loading it now
       if (!_isDiskCacheLoaded) {
         await loadDiskCache();
         final diskLoaded = getCategoryPageSync(categoryOrGenre, page: page);
@@ -1647,6 +1777,7 @@ class MovieSiteScraperService {
             }
             _lastCategoryRefreshTimes[key] = DateTime.now();
             _lastCategoryFetchTime = DateTime.now();
+            _trimCaches(); // Prevent OOM from unbounded growth
             await saveDiskCache();
             onCategoriesRefreshed?.call();
             onSingleCategoryRefreshed?.call(key, newItems);

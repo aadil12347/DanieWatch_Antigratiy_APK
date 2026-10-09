@@ -58,11 +58,11 @@ class PosterColorService {
       final generator = await PaletteGenerator.fromImageProvider(
         ResizeImage(
           NetworkImage(imageUrl),
-          width: 150,
+          width: 70,
           policy: ResizeImagePolicy.fit,
         ),
-        maximumColorCount: 24,
-        timeout: const Duration(seconds: 8),
+        maximumColorCount: 8,
+        timeout: const Duration(seconds: 4),
       );
 
       final palette = _buildPalette(generator);
@@ -102,10 +102,13 @@ class PosterColorService {
   }
 
   Future<void> preWarm(List<String> urls) async {
-    await Future.wait(
-      urls.where((url) => url.isNotEmpty && !_cache.containsKey(url))
-          .map((url) => extractFromUrl(url)),
-    );
+    for (final url in urls) {
+      if (url.isNotEmpty && !_cache.containsKey(url)) {
+        await extractFromUrl(url);
+        // Micro-yield between images to keep the main thread smooth
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
+    }
   }
 
   void clearCache() => _cache.clear();
