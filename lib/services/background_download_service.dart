@@ -328,37 +328,54 @@ void _onStart(ServiceInstance service) async {
     }
   }
 
-  // ── Helper: Move temp file to public Downloads ──
+  // ── Helper: Move temp file to public Downloads (with resilient Scoped Storage fallback) ──
   Future<String?> moveToPublicDownloads(
       String tempPath, String fileName) async {
     try {
       final safeFileName = fileName.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
-      final finalPath = '/storage/emulated/0/Download/$safeFileName';
-
       final tempFile = File(tempPath);
       if (!await tempFile.exists()) {
         debugPrint('⚠ Temp file not found: $tempPath');
         return null;
       }
 
-      await tempFile.copy(finalPath);
-
-      final destFile = File(finalPath);
-      if (!await destFile.exists()) {
-        debugPrint('⚠ Copy to Downloads failed');
-        return null;
+      // Tier 1: Try public /storage/emulated/0/Download
+      try {
+        final finalPath = '/storage/emulated/0/Download/$safeFileName';
+        final publicDir = Directory('/storage/emulated/0/Download');
+        if (!await publicDir.exists()) await publicDir.create(recursive: true);
+        await tempFile.copy(finalPath);
+        final destFile = File(finalPath);
+        if (await destFile.exists()) {
+          try { await tempFile.delete(); } catch (_) {}
+          debugPrint('📂 Moved to public Downloads: $finalPath');
+          return finalPath;
+        }
+      } catch (e) {
+        debugPrint('⚠ Direct public download copy failed (Scoped Storage): $e');
       }
 
-      // Clean up temp file
+      // Tier 2: Try app-specific external storage (always writable on Android 11–16 without permissions)
       try {
-        await tempFile.delete();
-      } catch (_) {}
+        final appExtDir = Directory('/storage/emulated/0/Android/data/com.daniewatch.app/files/Download');
+        if (!await appExtDir.exists()) await appExtDir.create(recursive: true);
+        final appExtPath = '${appExtDir.path}/$safeFileName';
+        await tempFile.copy(appExtPath);
+        final destFile = File(appExtPath);
+        if (await destFile.exists()) {
+          try { await tempFile.delete(); } catch (_) {}
+          debugPrint('📂 Moved to app external Download: $appExtPath');
+          return appExtPath;
+        }
+      } catch (e) {
+        debugPrint('⚠ App external download copy failed: $e');
+      }
 
-      debugPrint('📂 Moved to: $finalPath');
-      return finalPath;
+      // Tier 3: Return existing tempPath as safe fallback so the file is preserved
+      return tempPath;
     } catch (e) {
       debugPrint('❌ File move error: $e');
-      return null;
+      return tempPath;
     }
   }
 

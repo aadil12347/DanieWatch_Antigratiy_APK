@@ -1040,17 +1040,26 @@ class DownloadManager {
 
     // Background isolate handles all notifications and file finalization
 
-    await BackgroundDownloadService().startDownload(
-      id: item.id,
-      title: item.displayName,
-      videoUrl: item.videoStreamUrl ?? item.url,
-      audioUrl: item.audioStreamUrl,
-      subtitleUrl: item.subtitleStreamUrl,
-      saveDir: segmentDir,
-      outputMp4Path: tempMp4Path,
-      fileName: item.fileName,
-      headers: headers,
-    );
+    try {
+      await BackgroundDownloadService().startDownload(
+        id: item.id,
+        title: item.displayName,
+        videoUrl: item.videoStreamUrl ?? item.url,
+        audioUrl: item.audioStreamUrl,
+        subtitleUrl: item.subtitleStreamUrl,
+        saveDir: segmentDir,
+        outputMp4Path: tempMp4Path,
+        fileName: item.fileName,
+        headers: headers,
+      );
+    } catch (e) {
+      debugPrint('⚠️ Error launching background service for download ${item.id}: $e');
+      item.status = DownloadStatus.failed;
+      item.error = 'Download failed to start. Tap to retry.';
+      await _saveDownloads();
+      _updateController.add(item);
+      onDownloadUpdate?.call(item);
+    }
     
     return item;
   }
@@ -1147,46 +1156,53 @@ class DownloadManager {
     } else {
       // Service was killed — restart the download.
       debugPrint('⚠ Service not running on resume — restarting download for $id');
-      if (item.isHls) {
-        if (item.segmentDirectory != null) {
-          // Derive the temp mp4 path from the segment directory
-          // segmentDir = <tmpDir>/.segments_<safeTitle>_<ts>
-          // tempMp4    = <tmpDir>/<safeTitle>_<ts>.mp4
-          final segDirName = item.segmentDirectory!.split('/').last;
-          final baseName = segDirName.replaceFirst('.segments_', '');
-          final parentDir = item.segmentDirectory!.substring(
-              0, item.segmentDirectory!.length - segDirName.length - 1);
-          final tempMp4Path = '$parentDir/$baseName.mp4';
+      try {
+        if (item.isHls) {
+          if (item.segmentDirectory != null) {
+            // Derive the temp mp4 path from the segment directory
+            // segmentDir = <tmpDir>/.segments_<safeTitle>_<ts>
+            // tempMp4    = <tmpDir>/<safeTitle>_<ts>.mp4
+            final segDirName = item.segmentDirectory!.split('/').last;
+            final baseName = segDirName.replaceFirst('.segments_', '');
+            final parentDir = item.segmentDirectory!.substring(
+                0, item.segmentDirectory!.length - segDirName.length - 1);
+            final tempMp4Path = '$parentDir/$baseName.mp4';
+
+            await BackgroundDownloadService().startDownload(
+              id: item.id,
+              title: item.displayName,
+              videoUrl: item.videoStreamUrl ?? item.url,
+              audioUrl: item.audioStreamUrl,
+              subtitleUrl: item.subtitleStreamUrl,
+              saveDir: item.segmentDirectory!,
+              outputMp4Path: tempMp4Path,
+              fileName: item.fileName,
+              headers: item.headers,
+            );
+          }
+        } else {
+          // Direct resume restart
+          final tempDir = await getTemporaryDirectory();
+          final safeTitle = _buildSafeTitle(item.title, item.season, item.episode, item.qualityLabel);
+          final ext = item.fileExtension.startsWith('.') ? item.fileExtension : '.${item.fileExtension}';
+          final tempFilePath = '${tempDir.path}/${safeTitle}_${item.id}$ext';
+          final segmentDir = item.segmentDirectory ?? '${tempDir.path}/.direct_${safeTitle}_${item.id}';
 
           await BackgroundDownloadService().startDownload(
             id: item.id,
             title: item.displayName,
-            videoUrl: item.videoStreamUrl ?? item.url,
-            audioUrl: item.audioStreamUrl,
-            subtitleUrl: item.subtitleStreamUrl,
-            saveDir: item.segmentDirectory!,
-            outputMp4Path: tempMp4Path,
+            videoUrl: item.url,
+            saveDir: segmentDir,
+            outputMp4Path: tempFilePath,
             fileName: item.fileName,
             headers: item.headers,
           );
         }
-      } else {
-        // Direct resume restart
-        final tempDir = await getTemporaryDirectory();
-        final safeTitle = _buildSafeTitle(item.title, item.season, item.episode, item.qualityLabel);
-        final ext = item.fileExtension.startsWith('.') ? item.fileExtension : '.${item.fileExtension}';
-        final tempFilePath = '${tempDir.path}/${safeTitle}_${item.id}$ext';
-        final segmentDir = item.segmentDirectory ?? '${tempDir.path}/.direct_${safeTitle}_${item.id}';
-
-        await BackgroundDownloadService().startDownload(
-          id: item.id,
-          title: item.displayName,
-          videoUrl: item.url,
-          saveDir: segmentDir,
-          outputMp4Path: tempFilePath,
-          fileName: item.fileName,
-          headers: item.headers,
-        );
+      } catch (e) {
+        debugPrint('⚠️ Error restarting background service on resume for ${item.id}: $e');
+        item.status = DownloadStatus.failed;
+        item.error = 'Resume failed. Tap to retry.';
+        _saveDownloads();
       }
     }
     
