@@ -548,7 +548,7 @@ class PlayerController extends ChangeNotifier {
       final isLocalFile = targetSource.url.startsWith('/') || !targetSource.url.startsWith('http');
       final isHls = targetSource.resolvedType == LinkType.m3u8 ||
           targetSource.url.toLowerCase().contains('.m3u8') ||
-          targetSource.url.toLowerCase().contains('hsl') ||
+          targetSource.url.toLowerCase().contains('hls') ||
           targetSource.url.toLowerCase().contains('master');
 
       final dataSource = isLocalFile
@@ -814,6 +814,17 @@ class PlayerController extends ChangeNotifier {
       case BetterPlayerEventType.exception:
         final exDesc = event.parameters?['exception'];
         debugPrint('[PlayerController] Playback exception: $exDesc');
+        if (!_isDisposed && _currentServers.length > 1) {
+          final serverEntries = _currentServers.entries.toList();
+          final currentIdx = serverEntries.indexWhere((e) => e.key == _selectedServer);
+          final nextIdx = (currentIdx >= 0) ? currentIdx + 1 : 0;
+          if (nextIdx < serverEntries.length) {
+            final nextEntry = serverEntries[nextIdx];
+            debugPrint('[PlayerController] Auto failing over to backup server: ${nextEntry.key}');
+            switchServer(nextEntry.key, nextEntry.value);
+            break;
+          }
+        }
         _state = PlaybackState.error;
         _errorMessage = 'Playback error: ${exDesc ?? "Unknown error"}';
         notifyListeners();

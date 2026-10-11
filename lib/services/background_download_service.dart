@@ -833,6 +833,9 @@ void _onStart(ServiceInstance service) async {
     wifiLock?.release();
     service.stopSelf();
   });
+
+  debugPrint('🟢 BackgroundService setup complete, sending serviceReady');
+  service.invoke('serviceReady');
 }
 
 // ══════════════════════════════════════════════════════════════

@@ -430,33 +430,57 @@ class DownloadManager {
   @deprecated
   Function(DownloadItem)? onDownloadComplete;
 
+  bool _isInitialized = false;
+  Future<void>? _initFuture;
+
   Future<void> initialize() async {
     if (kIsWeb) return;
-    await FlutterDownloader.initialize();
-    await _notifService.init(
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
-    );
+    if (_isInitialized) return;
+    if (_initFuture != null) return _initFuture!;
+    _initFuture = _doInitialize();
+    await _initFuture;
+  }
 
-    
-    // Initialize background service
-    await BackgroundDownloadService().initialize();
-    _listenToBackgroundService();
-    
-    await _loadDownloads();
-
-    // Reset interrupted downloads to paused (so user can resume)
-    for (var d in _downloads) {
-      if (d.status == DownloadStatus.downloading ||
-          d.status == DownloadStatus.converting) {
-        d.status = DownloadStatus.paused;
-        d.error = null;
-      }
+  Future<void> _doInitialize() async {
+    try {
+      await FlutterDownloader.initialize();
+    } catch (e) {
+      debugPrint('⚠️ FlutterDownloader.initialize error (non-fatal): $e');
     }
-    await _saveDownloads();
+    try {
+      await _notifService.init(
+        onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+      );
+    } catch (e) {
+      debugPrint('⚠️ _notifService.init error (non-fatal): $e');
+    }
+
+    try {
+      // Initialize background service
+      await BackgroundDownloadService().initialize();
+      _listenToBackgroundService();
+    } catch (e) {
+      debugPrint('⚠️ BackgroundDownloadService.initialize error: $e');
+    }
+
+    try {
+      await _loadDownloads();
+
+      // Reset interrupted downloads to paused (so user can resume)
+      for (var d in _downloads) {
+        if (d.status == DownloadStatus.downloading ||
+            d.status == DownloadStatus.converting) {
+          d.status = DownloadStatus.paused;
+          d.error = null;
+        }
+      }
+      await _saveDownloads();
+    } catch (e) {
+      debugPrint('⚠️ _loadDownloads error: $e');
+    }
 
     // Wire notification action buttons (Pause/Resume/Cancel from notification bar)
     _notifService.onNotificationAction = (actionId, notifId, payload) {
-      // Find item by payload ID (most reliable) or fallback to hashCode
       DownloadItem? item;
       if (payload != null) {
         item = _findById(payload);
@@ -476,24 +500,29 @@ class DownloadManager {
           resumeDownload(item.id);
           break;
         case 'cancel':
-          // Cancel directly from notification (no UI modal)
           cancelDownload(item.id);
           break;
       }
     };
 
-    // Register the port for isolate communication (legacy flutter_downloader)
-    _unbindPort();
-    IsolateNameServer.registerPortWithName(_port.sendPort, _downloadPortName);
+    try {
+      // Register the port for isolate communication (legacy flutter_downloader)
+      _unbindPort();
+      IsolateNameServer.registerPortWithName(_port.sendPort, _downloadPortName);
 
-    _port.listen((dynamic data) {
-      final taskId = data[0] as String;
-      final status = data[1] as int;
-      final progress = data[2] as int;
-      _handleDownloadProgress(taskId, status, progress);
-    });
+      _port.listen((dynamic data) {
+        final taskId = data[0] as String;
+        final status = data[1] as int;
+        final progress = data[2] as int;
+        _handleDownloadProgress(taskId, status, progress);
+      });
 
-    await FlutterDownloader.registerCallback(downloadCallback);
+      await FlutterDownloader.registerCallback(downloadCallback);
+    } catch (e) {
+      debugPrint('⚠️ Legacy FlutterDownloader port setup error: $e');
+    }
+
+    _isInitialized = true;
   }
 
   void _listenToBackgroundService() {
@@ -814,42 +843,24 @@ class DownloadManager {
 
       // 1. Notification Permission (All versions Android 13+)
       if (sdkInt >= 33) {
-        await Permission.notification.request();
+        try {
+          await Permission.notification.request();
+        } catch (_) {}
       }
 
-      // 2. Storage/Media Permission
-      PermissionStatus status;
-      if (sdkInt >= 33) {
-        // Android 13+ Granular Permissions
-        // We primarily need videos for this app
-        final statuses = await [
-          Permission.videos,
-          Permission.photos,
-        ].request();
-        
-        status = statuses[Permission.videos] ?? PermissionStatus.denied;
-      } else {
-        // Android 12 and below
-        status = await Permission.storage.request();
+      // 2. Storage Permission for Android 12 and below
+      if (sdkInt < 33) {
+        try {
+          final status = await Permission.storage.request();
+          if (status.isPermanentlyDenied) {
+            _showPermissionSettingsDialog(context);
+            return false;
+          }
+        } catch (_) {}
       }
 
-      // 3. Optional: Request Manage External Storage for Android 11+ if standard fails
-      if (sdkInt >= 30) {
-        final manageStatus = await Permission.manageExternalStorage.status;
-        if (!manageStatus.isGranted) {
-           // We'll prompt the user if they want better reliability
-           // But for now just request it if we really need it
-        }
-      }
-      
-      if (status.isPermanentlyDenied) {
-        _showPermissionSettingsDialog(context);
-        return false;
-      }
-      
-      // If we are on Android 11+ and don't have manage storage, 
-      // we can still proceed with MediaStore, but it might be less reliable for FFmpeg.
-      return status.isGranted || status.isLimited;
+      // On Android 13+ (API 33-36), app-specific downloads & Scoped Storage do not require gallery/media permissions.
+      return true;
     }
     return true;
   }
@@ -979,6 +990,7 @@ class DownloadManager {
     Map<String, String>? headers,
     int? runtime,
   }) async {
+    await initialize();
     final hasPermission = await requestPermissions(context);
     if (!hasPermission) return null;
 
@@ -1121,6 +1133,7 @@ class DownloadManager {
   /// already on disk, so this effectively resumes from where it left off.
   Future<void> resumeDownload(String id) async {
     if (kIsWeb) return;
+    await initialize();
     final item = _findById(id);
     if (item == null) return;
 
@@ -1300,6 +1313,7 @@ class DownloadManager {
     bool is10Gbps = false,
   }) async {
     if (kIsWeb) throw UnsupportedError('Downloads are not supported on web.');
+    await initialize();
     final hasPermission = await requestPermissions(context);
     if (!hasPermission) {
       throw Exception('Storage permission denied');
@@ -1319,7 +1333,7 @@ class DownloadManager {
         lowerUrl.contains('vegadrive') ||
         lowerUrl.contains('fastdl.zip') ||
         lowerUrl.contains('filebee') ||
-        lowerUrl.contains('download.php') ||
+        (lowerUrl.contains('download.php') && !lowerUrl.contains('token=')) ||
         lowerUrl.contains('/drive/');
 
     if (isLandingOrVcloud) {
@@ -1331,7 +1345,7 @@ class DownloadManager {
         if (extracted != null &&
             extracted.isNotEmpty &&
             !extracted.toLowerCase().contains('vcloud') &&
-            !extracted.toLowerCase().contains('download.php')) {
+            !(extracted.toLowerCase().contains('download.php') && !extracted.toLowerCase().contains('token='))) {
           downloadUrl = extracted;
           debugPrint('[DownloadManager] SitePostExtractor resolved direct download URL: $downloadUrl');
         }
@@ -1343,7 +1357,7 @@ class DownloadManager {
       final currentLower = downloadUrl.toLowerCase();
       if (currentLower.contains('vcloud') ||
           currentLower.contains('hubcloud') ||
-          currentLower.contains('download.php') ||
+          (currentLower.contains('download.php') && !currentLower.contains('token=')) ||
           currentLower.contains('/drive/')) {
         try {
           final servers = await VcloudExtractorService().extractVcloud(downloadUrl);
@@ -1351,7 +1365,7 @@ class DownloadManager {
             downloadUrl = servers['Server 2']!;
           } else if (servers.containsKey('Server 1') &&
               servers['Server 1']!.isNotEmpty &&
-              !servers['Server 1']!.contains('download.php')) {
+              !(servers['Server 1']!.contains('download.php') && !servers['Server 1']!.contains('token='))) {
             downloadUrl = servers['Server 1']!;
           } else if (servers.containsKey('PixelServer') && servers['PixelServer']!.isNotEmpty) {
             downloadUrl = servers['PixelServer']!;
@@ -1383,7 +1397,7 @@ class DownloadManager {
     if (checkLower.contains('vcloud.fit') ||
         checkLower.contains('vcloud.zip') ||
         (checkLower.contains('hubcloud') && checkLower.contains('/drive/')) ||
-        checkLower.contains('download.php') ||
+        (checkLower.contains('download.php') && !checkLower.contains('token=')) ||
         checkLower.contains('nexdrive') ||
         checkLower.contains('vgmlink')) {
       throw Exception('Could not extract direct media download link from $url');

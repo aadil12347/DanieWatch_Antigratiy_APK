@@ -300,35 +300,41 @@ internal class BetterPlayer(
             }
         }
         var playerNotificationChannelName = notificationChannelName
-        if (notificationChannelName == null) {
+        try {
+            val channelId = notificationChannelName ?: DEFAULT_NOTIFICATION_CHANNEL
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val importance = NotificationManager.IMPORTANCE_LOW
-                val channel = NotificationChannel(
-                    DEFAULT_NOTIFICATION_CHANNEL,
-                    DEFAULT_NOTIFICATION_CHANNEL, importance
-                )
-                channel.description = DEFAULT_NOTIFICATION_CHANNEL
                 val notificationManager = context.getSystemService(
                     NotificationManager::class.java
                 )
-                notificationManager.createNotificationChannel(channel)
-                playerNotificationChannelName = DEFAULT_NOTIFICATION_CHANNEL
+                if (notificationManager != null && notificationManager.getNotificationChannel(channelId) == null) {
+                    val importance = NotificationManager.IMPORTANCE_LOW
+                    val channel = NotificationChannel(
+                        channelId,
+                        channelId,
+                        importance
+                    ).apply {
+                        description = channelId
+                    }
+                    notificationManager.createNotificationChannel(channel)
+                }
             }
-        }
+            playerNotificationChannelName = channelId
 
-        playerNotificationManager = PlayerNotificationManager.Builder(
-            context, NOTIFICATION_ID,
-            playerNotificationChannelName!!
-        ).setMediaDescriptionAdapter(mediaDescriptionAdapter).build()
+            playerNotificationManager = PlayerNotificationManager.Builder(
+                context, NOTIFICATION_ID,
+                playerNotificationChannelName
+            ).setMediaDescriptionAdapter(mediaDescriptionAdapter).build()
 
-        playerNotificationManager?.apply {
-
-            exoPlayer?.let {
-                setPlayer(ForwardingPlayer(exoPlayer))
-                setUseNextAction(false)
-                setUsePreviousAction(false)
-                setUseStopAction(false)
+            playerNotificationManager?.apply {
+                exoPlayer?.let {
+                    setPlayer(ForwardingPlayer(exoPlayer))
+                    setUseNextAction(false)
+                    setUsePreviousAction(false)
+                    setUseStopAction(false)
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup player notification: $e")
         }
 
         refreshHandler = Handler(Looper.getMainLooper())
@@ -385,9 +391,9 @@ internal class BetterPlayer(
         cacheKey: String?,
         context: Context
     ): MediaSource {
-        val type: Int
+        val rawType: Int
         if (formatHint == null) {
-            type = if (uri != null) {
+            rawType = if (uri != null) {
                 try {
                     Util.inferContentType(uri)
                 } catch (e: Exception) {
@@ -397,13 +403,25 @@ internal class BetterPlayer(
                 C.CONTENT_TYPE_OTHER
             }
         } else {
-            type = when (formatHint) {
+            rawType = when (formatHint) {
                 FORMAT_SS -> C.CONTENT_TYPE_SS
                 FORMAT_DASH -> C.CONTENT_TYPE_DASH
                 FORMAT_HLS -> C.CONTENT_TYPE_HLS
                 FORMAT_OTHER -> C.CONTENT_TYPE_OTHER
                 else -> -1
             }
+        }
+
+        // Resilient fallback: If detected as OTHER but URI contains HLS indicators, force HLS
+        val type = if (rawType == C.CONTENT_TYPE_OTHER && uri != null) {
+            val uriStr = uri.toString().lowercase()
+            if (uriStr.contains(".m3u8") || uriStr.contains("m3u8") || uriStr.contains("/hls/")) {
+                C.CONTENT_TYPE_HLS
+            } else {
+                rawType
+            }
+        } else {
+            rawType
         }
         val mediaItemBuilder = MediaItem.Builder()
         mediaItemBuilder.setUri(uri)

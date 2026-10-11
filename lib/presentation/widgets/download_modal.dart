@@ -140,15 +140,19 @@ class _DownloadModalState extends State<DownloadModal> {
       _capturedUrl = url;
     });
 
-    DownloadManager.instance.startDownload(
-      url: url,
-      title: widget.content.title,
-      season: widget.season,
-      episode: widget.episode,
-      posterUrl: widget.posterUrl,
-      context: context,
-      originalEmbedUrl: widget.initialUrl,
-    );
+    try {
+      await DownloadManager.instance.startDownload(
+        url: url,
+        title: widget.content.title,
+        season: widget.season,
+        episode: widget.episode,
+        posterUrl: widget.posterUrl,
+        context: context,
+        originalEmbedUrl: widget.initialUrl,
+      );
+    } catch (e) {
+      debugPrint('[Download] Modal startDownload error: $e');
+    }
 
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted) Navigator.pop(context);
