@@ -881,29 +881,33 @@ class BackgroundDownloadService {
     final wasRunning = await service.isRunning();
 
     if (!wasRunning) {
-      await service.startService();
+      try {
+        await service.startService();
 
-      // Wait for the background isolate to fully spin up and register its
-      // listeners. We listen for 'serviceReady' with a timeout fallback.
-      debugPrint('⏳ Waiting for background service to be ready...');
-      final readyCompleter = Completer<void>();
-      StreamSubscription? readySub;
-      readySub = service.on('serviceReady').listen((_) {
-        if (!readyCompleter.isCompleted) {
-          readyCompleter.complete();
-        }
-        readySub?.cancel();
-      });
-
-      // Wait for ready signal OR timeout after 6 seconds
-      await readyCompleter.future.timeout(
-        const Duration(seconds: 6),
-        onTimeout: () {
-          debugPrint('⚠ serviceReady timeout — sending command anyway');
+        // Wait for the background isolate to fully spin up and register its
+        // listeners. We listen for 'serviceReady' with a timeout fallback.
+        debugPrint('⏳ Waiting for background service to be ready...');
+        final readyCompleter = Completer<void>();
+        StreamSubscription? readySub;
+        readySub = service.on('serviceReady').listen((_) {
+          if (!readyCompleter.isCompleted) {
+            readyCompleter.complete();
+          }
           readySub?.cancel();
-        },
-      );
-      debugPrint('✅ Background service is ready');
+        });
+
+        // Wait for ready signal OR timeout after 6 seconds
+        await readyCompleter.future.timeout(
+          const Duration(seconds: 6),
+          onTimeout: () {
+            debugPrint('⚠ serviceReady timeout — sending command anyway');
+            readySub?.cancel();
+          },
+        );
+        debugPrint('✅ Background service is ready');
+      } catch (e) {
+        debugPrint('⚠️ Error starting background service: $e');
+      }
     }
 
     debugPrint('📤 Invoking startDownload command for $id');

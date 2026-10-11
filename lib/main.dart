@@ -34,10 +34,10 @@ Future<void> main() async {
   PaintingBinding.instance.imageCache.maximumSizeBytes = 120 << 20; // 120 MB
   PaintingBinding.instance.imageCache.maximumSize = 350;
 
-  // Validate required environment variables are configured via --dart-define
-  Env.validate();
-
   try {
+    // Validate environment variables (warns if missing without terminating)
+    Env.validate();
+
     // Override the default release-mode blank screen error behavior
     ErrorWidget.builder = (FlutterErrorDetails details) {
       debugPrint('----------------------------------------');
@@ -114,9 +114,6 @@ Future<void> main() async {
       debugPrint('[Startup] ⚠️ SQLite Database init error: $e');
     }
 
-    // Remove native splash immediately — launch UI NOW!
-    FlutterNativeSplash.remove();
-
     runApp(
       const RestartWidget(
         child: ProviderScope(
@@ -129,6 +126,9 @@ Future<void> main() async {
     // Stagger services into execution tiers so the UI renders at 120 FPS
     // before any background network, IPC, or heavy engine setup begins.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Remove native splash smoothly once the first Flutter frame is painted
+      FlutterNativeSplash.remove();
+
       // ── Tier 2 (1.2s delay): Critical Cloud Sync (Auth & Domains) ─────
       Future.delayed(const Duration(milliseconds: 1200), () async {
         try {
@@ -151,7 +151,8 @@ Future<void> main() async {
           }
         } catch (e) {
           debugPrint('[Startup:Tier2] Supabase init error: $e');
-          if (!supabaseReady.isCompleted) supabaseReady.completeError(e);
+          // Complete to unblock awaiting futures without failing the app process
+          if (!supabaseReady.isCompleted) supabaseReady.complete();
         }
       });
 

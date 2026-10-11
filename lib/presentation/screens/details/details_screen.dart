@@ -2434,13 +2434,13 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     if (l.contains('vcloud.fit') ||
         l.contains('vcloud.zip') ||
         (l.contains('hubcloud') && l.contains('/drive/')) ||
-        l.contains('download.php') ||
+        (l.contains('download.php') && !l.contains('token=')) ||
         l.contains('nexdrive') ||
         l.contains('vgmlink') ||
         l.contains('gdflix') ||
         l.contains('vegadrive') ||
         l.contains('filebee') ||
-        l.endsWith('.php') ||
+        (l.endsWith('.php') && !l.contains('token=')) ||
         l.endsWith('.html')) {
       return false;
     }

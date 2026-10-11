@@ -1463,6 +1463,25 @@ class SitePostExtractor {
     try {
       final lurl = url.toLowerCase();
 
+      // Case 0: Direct playable media URL or already resolved stream link
+      if (lurl.contains('.mp4') ||
+          lurl.contains('.mkv') ||
+          lurl.contains('.m3u8') ||
+          lurl.contains('googleusercontent.com') ||
+          lurl.contains('pixeldrain.dev/api/file') ||
+          lurl.contains('pixeldrain.com/api/file') ||
+          (lurl.contains('download.php') && lurl.contains('token='))) {
+        if (lurl.contains('s3.') || lurl.contains('fslv2')) {
+          return VcloudStreamResult(fslv2Url: url);
+        } else if (lurl.contains('googleusercontent.com') || lurl.contains('fastdl')) {
+          return VcloudStreamResult(fastDlUrl: url);
+        } else if (lurl.contains('pixeldrain')) {
+          return VcloudStreamResult(pixeldrainUrl: url);
+        } else {
+          return VcloudStreamResult(fslUrl: url);
+        }
+      }
+
       // Case A: FastDL embed link (yields direct Google User Content video stream)
       if (lurl.contains('fastdl.zip')) {
         final fHtml = await fetchHtml(url,

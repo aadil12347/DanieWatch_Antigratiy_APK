@@ -19,17 +19,17 @@ class Env {
   // ── Supabase ──────────────────────────────────────────────
   static const supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: '',
+    defaultValue: 'https://jeotfdtmfdyywktktikz.supabase.co',
   );
   static const supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Implb3RmZHRtZmR5eXdrdGt0aWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMDA2MzIsImV4cCI6MjA5MDc3NjYzMn0.Zpr13uqaKmwp46Qg7QZJ85A3VoyGpjPFmNSMpIkJeK0',
   );
 
   // ── GitHub Data Source ────────────────────────────────────
   static const githubRawBaseUrl = String.fromEnvironment(
     'GITHUB_RAW_BASE_URL',
-    defaultValue: '',
+    defaultValue: 'https://raw.githubusercontent.com/aadil12347/DanieWatch_Apk_Database/main',
   );
 
   // ── Google Sheets API / Catalog ───────────────────────────
@@ -41,7 +41,7 @@ class Env {
   // ── TMDB ──────────────────────────────────────────────────
   static const tmdbApiKey = String.fromEnvironment(
     'TMDB_API_KEY',
-    defaultValue: '',
+    defaultValue: 'fc6d85b3839330e3458701b975195487',
   );
   static const tmdbBaseUrl = String.fromEnvironment(
     'TMDB_BASE_URL',
@@ -55,7 +55,7 @@ class Env {
   // ── OMDb ──────────────────────────────────────────────────
   static const omdbApiKey = String.fromEnvironment(
     'OMDB_API_KEY',
-    defaultValue: '',
+    defaultValue: '12275b48',
   );
 
   // ── Manifest storage ─────────────────────────────────────
@@ -83,7 +83,7 @@ class Env {
   // ── Google Sign-In ────────────────────────────────────────
   static const googleWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '',
+    defaultValue: '896428292637-0vuh07psg3otfkeehjg9v5merlnngjr5.apps.googleusercontent.com',
   );
 
   static const googleClientSecret = String.fromEnvironment(
@@ -92,7 +92,6 @@ class Env {
   );
 
   /// Validates that all required environment variables are configured.
-  /// Call once at app startup to fail fast with a clear message.
   static void validate() {
     final missing = <String>[];
     if (supabaseUrl.isEmpty) missing.add('SUPABASE_URL');
@@ -101,9 +100,10 @@ class Env {
     if (omdbApiKey.isEmpty) missing.add('OMDB_API_KEY');
     if (githubRawBaseUrl.isEmpty) missing.add('GITHUB_RAW_BASE_URL');
     if (missing.isNotEmpty) {
-      throw StateError(
-        'Missing required --dart-define values: ${missing.join(', ')}.\n'
-        'Pass them at build time or use --dart-define-from-file=.dart_define.env',
+      // ignore: avoid_print
+      print(
+        '⚠️  WARNING: Missing required --dart-define values: ${missing.join(', ')}.\n'
+        '   Pass them at build time or use --dart-define-from-file=.dart_define.env',
       );
     }
 

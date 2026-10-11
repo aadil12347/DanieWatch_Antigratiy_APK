@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -12,29 +10,55 @@ import '../../domain/models/user_profile.dart';
 import '../../data/local/database.dart';
 import '../../main.dart' show supabaseReady;
 
-/// Lazy getter — safe to call before or after Supabase.initialize().
+/// Safe lazy getter for SupabaseClient.
+SupabaseClient? get safeSupabaseClient {
+  try {
+    return Supabase.instance.client;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Fallback lazy getter (for call sites that require non-null).
 SupabaseClient get supabaseClient => Supabase.instance.client;
 
 /// Provides the current Supabase User.
 /// Waits for Supabase to be ready before subscribing to the auth stream.
 final authStateProvider = StreamProvider<User?>((ref) async* {
-  // Wait until Supabase is initialized (runs in background in main.dart)
-  await supabaseReady.future;
-  yield* supabaseClient.auth.onAuthStateChange.map((event) => event.session?.user);
+  try {
+    // Wait until Supabase is initialized (runs in background in main.dart)
+    await supabaseReady.future;
+    final client = safeSupabaseClient;
+    if (client != null) {
+      yield* client.auth.onAuthStateChange.map((event) => event.session?.user);
+    } else {
+      yield null;
+    }
+  } catch (_) {
+    yield null;
+  }
 });
 
 /// Provides the current session
 final sessionProvider = Provider<Session?>((ref) {
-  if (!supabaseReady.isCompleted) return null;
-  return supabaseClient.auth.currentSession;
+  try {
+    if (!supabaseReady.isCompleted) return null;
+    return safeSupabaseClient?.auth.currentSession;
+  } catch (_) {
+    return null;
+  }
 });
 
 /// Synchronous fallback: checks Supabase's in-memory current user.
 /// Used by splash screen when the auth stream hasn't emitted yet.
 final currentUserProvider = Provider<User?>((ref) {
   ref.watch(authStateProvider);
-  if (!supabaseReady.isCompleted) return null;
-  return supabaseClient.auth.currentUser;
+  try {
+    if (!supabaseReady.isCompleted) return null;
+    return safeSupabaseClient?.auth.currentUser;
+  } catch (_) {
+    return null;
+  }
 });
 
 /// Notifier for the User Profile

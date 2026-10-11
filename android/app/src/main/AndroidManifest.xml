@@ -46,8 +46,15 @@
         android:allowBackup="true"
         android:largeHeap="true"
         android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
         android:requestLegacyExternalStorage="true"
         android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- Flutter Background Service for Downloads -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
         
         <!-- Flutter Downloader Provider -->
         <provider

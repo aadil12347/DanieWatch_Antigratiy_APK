@@ -119,7 +119,7 @@ internal class BetterPlayer(
         loadControl = loadBuilder.build()
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context).apply {
             setEnableDecoderFallback(true)
-            setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         }
         exoPlayer = ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
@@ -387,11 +387,15 @@ internal class BetterPlayer(
     ): MediaSource {
         val type: Int
         if (formatHint == null) {
-            var lastPathSegment = uri?.lastPathSegment
-            if (lastPathSegment == null) {
-                lastPathSegment = ""
+            type = if (uri != null) {
+                try {
+                    Util.inferContentType(uri)
+                } catch (e: Exception) {
+                    C.CONTENT_TYPE_OTHER
+                }
+            } else {
+                C.CONTENT_TYPE_OTHER
             }
-            type = Util.inferContentTypeForExtension(lastPathSegment.split(".")[1])
         } else {
             type = when (formatHint) {
                 FORMAT_SS -> C.CONTENT_TYPE_SS

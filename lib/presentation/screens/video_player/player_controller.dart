@@ -205,7 +205,8 @@ class PlayerController extends ChangeNotifier {
         displayName: 'Direct Link',
         url: directUrl,
       ));
-      await _playSource(_sources.first, startPosition: startPosition);
+      await _playSource(_sources.first,
+          startPosition: startPosition, skipServerExtraction: true);
     } else if (streamResolver != null) {
       _state = PlaybackState.extracting;
       _safeNotify();
@@ -226,7 +227,8 @@ class PlayerController extends ChangeNotifier {
             _populateResolutionMap(initialResolutionMap);
           }
 
-          await _playSource(_sources.first, startPosition: startPosition);
+          await _playSource(_sources.first,
+              startPosition: startPosition, skipServerExtraction: true);
 
           // Background resolution resolver
           if (resolutionMapResolver != null) {
@@ -380,6 +382,19 @@ class PlayerController extends ChangeNotifier {
 
   // ─── Playback ──────────────────────────────────────────────────────────
 
+  bool _isDirectMediaUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.contains('.mp4') ||
+        lower.contains('.mkv') ||
+        lower.contains('.m3u8') ||
+        lower.contains('googleusercontent.com') ||
+        lower.contains('pixeldrain.dev/api/file') ||
+        lower.contains('pixeldrain.com/api/file') ||
+        lower.contains('r2.cloudflarestorage.com') ||
+        lower.contains('r2.dev') ||
+        (lower.contains('download.php') && lower.contains('token='));
+  }
+
   /// Play a specific source.
   Future<void> _playSource(
     ExtractorLink source, {
@@ -400,6 +415,7 @@ class PlayerController extends ChangeNotifier {
     String playableUrl = source.url;
     final lower = playableUrl.toLowerCase();
     if (!skipServerExtraction &&
+        !_isDirectMediaUrl(playableUrl) &&
         (lower.contains('vcloud') ||
          lower.contains('v-cloud') ||
          lower.contains('hubcloud') ||
@@ -662,14 +678,15 @@ class PlayerController extends ChangeNotifier {
 
     String streamUrl = targetUrl;
     final lower = targetUrl.toLowerCase();
-    if (lower.contains('vcloud') ||
-        lower.contains('v-cloud') ||
-        lower.contains('hubcloud') ||
-        lower.contains('nexdrive') ||
-        lower.contains('vgmlink') ||
-        lower.contains('fastdl') ||
-        lower.contains('download.php') ||
-        lower.contains('/drive/')) {
+    if (!_isDirectMediaUrl(targetUrl) &&
+        (lower.contains('vcloud') ||
+         lower.contains('v-cloud') ||
+         lower.contains('hubcloud') ||
+         lower.contains('nexdrive') ||
+         lower.contains('vgmlink') ||
+         lower.contains('fastdl') ||
+         lower.contains('download.php') ||
+         lower.contains('/drive/'))) {
       try {
         final res = await SitePostExtractor.instance.resolveVcloudStream(targetUrl);
         if (res.canStreamOnline && res.onlineStreamUrl != null) {
@@ -697,7 +714,11 @@ class PlayerController extends ChangeNotifier {
       quality: qVal,
     );
 
-    await _playSource(targetSource, startPosition: startSeconds);
+    await _playSource(
+      targetSource,
+      startPosition: startSeconds,
+      skipServerExtraction: _isDirectMediaUrl(streamUrl),
+    );
   }
 
   /// Switch to a different direct server (e.g. "Server 2 (FSLv2)", "Server 1 (FSL)", "FastDL", "Pixeldrain")
