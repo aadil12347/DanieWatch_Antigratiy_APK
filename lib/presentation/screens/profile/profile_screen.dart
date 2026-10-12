@@ -344,11 +344,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             onTap: () => context.push('/notification-settings'),
           ),
           SettingsTile(
-            icon: Icons.school_outlined,
-            title: 'GIP Course & Resources',
+            icon: Icons.monetization_on_outlined,
+            title: 'Earn Money',
             infoText: 'TikTok Gaming Incentive Program Guide',
-            accentColor: const Color(0xFFA855F7),
-            onTap: () => context.push('/gip-course'),
+            accentColor: const Color(0xFF10B981),
+            onTap: () => context.push('/earn-money'),
           ),
 
           const SizedBox(height: 20),

@@ -452,14 +452,29 @@ class MovieSiteScraperService {
   static List<ManifestItem> _parseSingleCategoryIsolate(String rawJson) {
     try {
       final decoded = jsonDecode(rawJson);
+      List<dynamic>? rawList;
       if (decoded is List) {
-        return decoded
-            .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
-            .toList();
+        rawList = decoded;
       } else if (decoded is Map<String, dynamic> && decoded['items'] is List) {
-        return (decoded['items'] as List)
+        rawList = decoded['items'] as List;
+      }
+      if (rawList != null) {
+        final list = rawList
             .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
             .toList();
+        final deduped = <ManifestItem>[];
+        final seenIds = <dynamic>{};
+        final seenTitles = <String>{};
+        for (final item in list) {
+          final cleanTitle = ManifestItem.cleanPostTitle(item.title).toLowerCase().trim();
+          if (seenIds.contains(item.id) || (cleanTitle.isNotEmpty && seenTitles.contains(cleanTitle))) {
+            continue;
+          }
+          seenIds.add(item.id);
+          if (cleanTitle.isNotEmpty) seenTitles.add(cleanTitle);
+          deduped.add(item);
+        }
+        return deduped;
       }
     } catch (_) {}
     return [];
@@ -523,9 +538,22 @@ class MovieSiteScraperService {
       final categories = <String, List<ManifestItem>>{};
       for (final entry in catsData.entries) {
         if (entry.value is List) {
-          categories[entry.key] = (entry.value as List)
+          final list = (entry.value as List)
               .map((e) => ManifestItem.fromJson(e as Map<String, dynamic>))
               .toList();
+          final deduped = <ManifestItem>[];
+          final seenIds = <dynamic>{};
+          final seenTitles = <String>{};
+          for (final item in list) {
+            final cleanTitle = ManifestItem.cleanPostTitle(item.title).toLowerCase().trim();
+            if (seenIds.contains(item.id) || (cleanTitle.isNotEmpty && seenTitles.contains(cleanTitle))) {
+              continue;
+            }
+            seenIds.add(item.id);
+            if (cleanTitle.isNotEmpty) seenTitles.add(cleanTitle);
+            deduped.add(item);
+          }
+          categories[entry.key] = deduped;
         }
       }
       result['categories'] = categories;
@@ -1946,6 +1974,8 @@ class MovieSiteScraperService {
 
     final items = <ManifestItem>[];
     final seenUrls = <String>{};
+    final seenIds = <dynamic>{};
+    final seenTitles = <String>{};
 
     for (final card in cards) {
       if (seenUrls.contains(card.postUrl)) continue;
@@ -1956,6 +1986,14 @@ class MovieSiteScraperService {
         localMap: localMap,
         categoryTag: key,
       );
+
+      final cleanTitle = ManifestItem.cleanPostTitle(item.title).toLowerCase().trim();
+      if (seenIds.contains(item.id) || (cleanTitle.isNotEmpty && seenTitles.contains(cleanTitle))) {
+        continue;
+      }
+      seenIds.add(item.id);
+      if (cleanTitle.isNotEmpty) seenTitles.add(cleanTitle);
+
       items.add(item);
     }
 

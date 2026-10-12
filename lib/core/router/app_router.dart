@@ -240,8 +240,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       pageBuilder: (context, state) => _quickPage(const ProfileScreen(), state),
     ),
     GoRoute(
+      path: '/earn-money',
+      pageBuilder: (context, state) => _quickPage(const EarnMoneyScreen(), state),
+    ),
+    GoRoute(
       path: '/gip-course',
-      pageBuilder: (context, state) => _quickPage(const GipCourseScreen(), state),
+      pageBuilder: (context, state) => _quickPage(const EarnMoneyScreen(), state),
     ),
     GoRoute(
       path: '/account-settings',

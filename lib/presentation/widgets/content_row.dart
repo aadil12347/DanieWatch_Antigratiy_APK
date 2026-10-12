@@ -62,15 +62,28 @@ class _ContentRowState extends ConsumerState<ContentRow> {
     final rightPad = r.w(16).clamp(12.0, 24.0);
     final spacing = widget.isRanked ? r.w(42).clamp(30.0, 56.0) : r.w(12).clamp(8.0, 18.0);
 
-    List<ManifestItem> displayItems = widget.items;
+    List<ManifestItem> rawItems = widget.items;
     bool isLoadingMore = false;
 
     if (widget.categorySlug != null) {
       final pagState = ref.watch(paginatedCategoryProvider(widget.categorySlug!)).valueOrNull;
       if (pagState != null && pagState.items.isNotEmpty) {
-        displayItems = pagState.items;
+        rawItems = pagState.items;
         isLoadingMore = pagState.isLoadingMore;
       }
+    }
+
+    final List<ManifestItem> displayItems = [];
+    final seenIds = <dynamic>{};
+    final seenTitles = <String>{};
+    for (final item in rawItems) {
+      final cleanTitle = ManifestItem.cleanPostTitle(item.title).toLowerCase().trim();
+      if (seenIds.contains(item.id) || (cleanTitle.isNotEmpty && seenTitles.contains(cleanTitle))) {
+        continue;
+      }
+      seenIds.add(item.id);
+      if (cleanTitle.isNotEmpty) seenTitles.add(cleanTitle);
+      displayItems.add(item);
     }
 
     // SHELL-FIRST: Show empty placeholder cards when no data yet
